@@ -1,0 +1,26 @@
+# Rust (agent/)
+target/
+
+# Node / SvelteKit
+node_modules/
+.svelte-kit/
+/build/
+vite.config.ts.timestamp-*
+
+# Local data and secrets
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# SQLite data folder
+/data/

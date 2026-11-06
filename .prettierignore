@@ -1,0 +1,5 @@
+package-lock.json
+/static/
+/src/lib/server/database/migrations/
+/agent/
+/LICENSE
