@@ -51,5 +51,9 @@ windows-registry = "=0.6.1"
 # Terminal sessions: ConPTY, pipes, processes and Job Objects (already in the build through other crates).
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Threading"] }
 
+[build-dependencies]
+base64.workspace = true
+bmuster-protocol.workspace = true
+
 [dev-dependencies]
 tempfile = "=3.27.0"

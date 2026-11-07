@@ -5,13 +5,16 @@ import type { AppDatabase } from '../../database/connection.ts';
 import type { AuthenticatedAgent } from './agent-auth.ts';
 import { localCodesFrom, localUsersUpdate } from './local-users.ts';
 
+/** What a check-in records, before the update offer is added (SPEC-AGENT-UPDATES). */
+export type CheckInRecord = Omit<CheckInReply, 'update'>;
+
 /** Records a check-in (SPEC-ENROLMENT 7). */
 export function recordCheckIn(
 	database: AppDatabase,
 	agent: AuthenticatedAgent,
 	checkIn: CheckInRequest,
 	now: number
-): CheckInReply {
+): CheckInRecord {
 	const at = new Date(now);
 	return database.transaction((tx) => {
 		// The last user is kept when nobody is signed in (SPEC-MACHINE-DETAILS D7).

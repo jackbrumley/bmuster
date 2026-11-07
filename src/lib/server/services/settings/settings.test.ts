@@ -7,7 +7,12 @@ import { getSetting, listSettings, updateSetting } from './settings.ts';
 
 describe('server settings (S16)', () => {
 	it('declares each setting once, with a default its own type accepts, changed by admins', () => {
-		expect(SETTING_KEYS).toEqual(['defaultConsent', 'connectedNotice', 'localNetworkMode']);
+		expect(SETTING_KEYS).toEqual([
+			'defaultConsent',
+			'connectedNotice',
+			'agentUpdatePolicy',
+			'localNetworkMode'
+		]);
 		for (const key of SETTING_KEYS) {
 			const definition = SETTING_DEFINITIONS[key];
 			expect(definition.schema.safeParse(definition.defaultValue).success, key).toBe(true);

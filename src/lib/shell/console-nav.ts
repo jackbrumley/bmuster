@@ -2,6 +2,7 @@ import { resolve } from '$app/paths';
 import {
 	IconActivity,
 	IconAdjustments,
+	IconCloudDownload,
 	IconDevices,
 	IconLock,
 	IconLogin2,
@@ -25,6 +26,7 @@ type NavRoute =
 	| '/(console)/groups'
 	| '/(console)/access'
 	| '/(console)/sign-in'
+	| '/(console)/updates'
 	| '/(console)/settings';
 
 export type NavItem = { route: NavRoute; label: string; icon: typeof IconDevices };
@@ -52,6 +54,7 @@ export function adminNav(role: ConsoleRole): NavItem[] {
 				{ route: '/(console)/groups', label: 'Groups', icon: IconUsersGroup },
 				{ route: '/(console)/access', label: 'Access rules', icon: IconLock },
 				{ route: '/(console)/sign-in', label: 'Sign-in', icon: IconLogin2 },
+				{ route: '/(console)/updates', label: 'Updates', icon: IconCloudDownload },
 				{ route: '/(console)/settings', label: 'Settings', icon: IconAdjustments }
 			];
 		case 'member':

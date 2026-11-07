@@ -5,8 +5,10 @@
 	import Panel from '#lib/ui/panel.svelte';
 	import ScrollBatches from '#lib/ui/scroll-batches.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
+	import UpdateBadge from '#lib/ui/update-badge.svelte';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
 	import { formatBytes, formatRelative } from '#lib/utils/format.ts';
+	import { updateBadge } from '#lib/domain/machines/agent-updates.ts';
 	import { osLabel } from '#lib/domain/machines/machine.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import type { MachineRow } from './machine-row.ts';
@@ -65,7 +67,7 @@
 								</p>
 							{/if}
 
-							{#if updates > 0 || machine.inUse.length > 0}
+							{#if updates > 0 || machine.inUse.length > 0 || updateBadge(machine.update).kind === 'shown'}
 								<div class="tags">
 									{#if machine.inUse.length > 0}
 										<span class="tag in-use">In use: {inUseLabel(machine.inUse)}</span>
@@ -73,6 +75,7 @@
 									{#if updates > 0}
 										<span class="tag warn">{updates} updates</span>
 									{/if}
+									<UpdateBadge state={machine.update} />
 								</div>
 							{/if}
 						</a>

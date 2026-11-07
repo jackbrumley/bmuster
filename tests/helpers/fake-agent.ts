@@ -7,6 +7,7 @@ import { isRefusal, type AgentRefusal } from '#lib/server/services/agents/agent-
 import { requestMessage } from '#lib/server/services/agents/signing.ts';
 import type { SignedRequest } from '#lib/server/services/agents/agent-auth.ts';
 import type { InventoryWire } from '#lib/schemas/agents/agent-protocol.ts';
+import type { ReleaseLookup } from '#lib/server/services/agents/releases.ts';
 
 /** A fresh, migrated in-memory database for one test file. */
 export function testDatabase(): AppDatabase {
@@ -115,3 +116,6 @@ export const SAMPLE_INVENTORY: InventoryWire = {
 		}
 	]
 };
+
+/** A server with no signed agent builds (SPEC-AGENT-UPDATES): nothing to offer. */
+export const NO_RELEASES: ReleaseLookup = () => undefined;

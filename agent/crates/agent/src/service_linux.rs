@@ -1,5 +1,6 @@
 //! Linux install: binary in /opt/bmuster, data in /var/lib/bmuster, a
-//! systemd unit that runs `bmuster-agent run` as root.
+//! systemd unit that runs `bmuster-agent launch` as root. The launcher runs
+//! the agent from /var/lib/bmuster/versions/current (SPEC-AGENT-UPDATES).
 
 use crate::client::TlsMode;
 use crate::identity::{self, EnrolOptions};
@@ -33,8 +34,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart={BINARY} run
-# Any other exit restarts the agent, including 4: the local page's Restart.
+ExecStart={BINARY} launch
+# The launcher restarts the agent itself; it exits only to stop, on a crash,
+# or with 3 when the machine was removed.
 Restart=always
 RestartSec=10
 RestartPreventExitStatus={REVOKED_EXIT_CODE}
@@ -146,6 +148,7 @@ pub fn uninstall(purge: bool) -> Result<()> {
         log::info!("Removed {INSTALL_DIR}.");
     }
     let data_dir = paths::default_data_dir()?;
+    crate::updates::remove_versions(&data_dir)?;
     if purge {
         if data_dir.exists() {
             fs::remove_dir_all(&data_dir)
@@ -207,7 +210,7 @@ mod tests {
     #[test]
     fn unit_runs_the_installed_binary_and_spares_revoked_exits() {
         let unit = unit_file();
-        assert!(unit.contains("ExecStart=/opt/bmuster/bmuster-agent run\n"));
+        assert!(unit.contains("ExecStart=/opt/bmuster/bmuster-agent launch\n"));
         assert!(unit.contains("Restart=always\n"));
         assert!(unit.contains("RestartPreventExitStatus=3\n"));
         assert!(unit.contains("ReadWritePaths=/var/lib/bmuster\n"));

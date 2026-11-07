@@ -1,18 +1,20 @@
 //! Windows install: binary in C:\Program Files\BMuster, data and log in
 //! C:\ProgramData\BMuster, service "BMuster Agent" running as LocalSystem.
+//! The service is the launcher; it runs the agent from
+//! C:\ProgramData\BMuster\versions\current (SPEC-AGENT-UPDATES).
 
 use crate::client::TlsMode;
 use crate::identity::{self, EnrolOptions};
+use crate::launcher::{Ended, Launcher};
 use crate::paths;
-use crate::status::RunMode;
-use crate::worker::{self, Outcome, RunOptions, Signal};
 use anyhow::{Context as _, Result};
 use bmuster_protocol::ServerTrust;
 use bmuster_service::windows::{self as service, status, Account, ServiceSpec};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use windows_service::service::{ServiceControl, ServiceState};
 use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
 use windows_service::{define_windows_service, service_dispatcher};
@@ -22,9 +24,6 @@ pub const SERVICE_NAME: &str = "BMusterAgent";
 const DISPLAY_NAME: &str = "BMuster Agent";
 const DESCRIPTION: &str = "Reports this machine to its BMuster server.";
 pub const REVOKED_EXIT_CODE: u32 = 3;
-/// The process exits with this without telling the service manager it
-/// stopped, which counts as a failure, so the failure actions start it again.
-pub const RESTART_EXIT_CODE: i32 = 4;
 const ERROR_EXIT_CODE: u32 = 1;
 const LOG_FILE: &str = "agent.log";
 
@@ -84,7 +83,7 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
         display_name: DISPLAY_NAME,
         description: DESCRIPTION,
         executable: binary,
-        arguments: vec![OsString::from("run"), OsString::from("--service")],
+        arguments: vec![OsString::from("launch"), OsString::from("--service")],
         account: Account::LocalSystem,
     })?;
     log::info!("Installed and started the \"{DISPLAY_NAME}\" service.");
@@ -111,6 +110,7 @@ pub fn uninstall(purge: bool) -> Result<()> {
         }
     }
     let data_dir = paths::default_data_dir()?;
+    crate::updates::remove_versions(&data_dir)?;
     if purge && data_dir.exists() {
         std::fs::remove_dir_all(&data_dir)
             .with_context(|| format!("could not remove {}", data_dir.display()))?;
@@ -183,11 +183,11 @@ fn service_main(_arguments: Vec<OsString>) {
 }
 
 fn service_body() -> Result<()> {
-    let (sender, signals) = mpsc::channel();
-    let stop_sender = sender.clone();
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_flag = Arc::clone(&stop);
     let handle = service_control_handler::register(SERVICE_NAME, move |control| match control {
         ServiceControl::Stop | ServiceControl::Shutdown => {
-            let _ = stop_sender.send(Signal::Stop);
+            stop_flag.store(true, Ordering::SeqCst);
             ServiceControlHandlerResult::NoError
         }
         ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
@@ -196,20 +196,12 @@ fn service_body() -> Result<()> {
     .context("could not register with the service manager")?;
     handle.set_service_status(status(ServiceState::Running, 0))?;
 
-    let options = RunOptions {
-        data_dir: paths::default_data_dir()?,
-        insecure_dev_tls: false,
-        mode: RunMode::Service,
-        local_page_port: None,
-    };
-    let exit_code = match worker::run(&options, sender, signals) {
-        Ok(Outcome::Stopped) => 0,
-        Ok(Outcome::Revoked) => REVOKED_EXIT_CODE,
-        Ok(Outcome::Restart) => {
-            log::info!("Restarting through the service manager.");
-            log::logger().flush();
-            std::process::exit(RESTART_EXIT_CODE);
-        }
+    // The launcher stops the agent (it has no console to signal) when asked.
+    let ended = Launcher::new(paths::default_data_dir()?, Vec::new())
+        .and_then(|launcher| launcher.run(&stop));
+    let exit_code = match ended {
+        Ok(Ended::Stopped) => 0,
+        Ok(Ended::Revoked) => REVOKED_EXIT_CODE,
         Err(e) => {
             log::error!("{e:#}");
             ERROR_EXIT_CODE

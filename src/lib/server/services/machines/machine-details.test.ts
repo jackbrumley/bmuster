@@ -5,7 +5,12 @@ import {
 	machineNameSchema,
 	updateMachineDetailsRequestSchema
 } from '#lib/schemas/machines/machine-details.ts';
-import { SAMPLE_INVENTORY, enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
+import {
+	SAMPLE_INVENTORY,
+	enrolFakeAgent,
+	testDatabase,
+	NO_RELEASES
+} from '#tests/helpers/fake-agent.ts';
 import { recordCheckIn } from '../agents/check-in.ts';
 import { updateMachineDetails } from './machine-details.ts';
 import { findMachine, listMachines, removeMachine } from './machine-views.ts';
@@ -18,6 +23,7 @@ function checkIn(signedInUser: { kind: 'none' } | { kind: 'user'; name: string }
 	return {
 		agentVersion: '0.2.0',
 		uptimeSeconds: 60,
+		update: { kind: 'no-launcher' as const },
 		signedInUser,
 		load: { cpuPercent: 5, memoryUsedBytes: 1024 },
 		inventory: { kind: 'full' as const, hash: HASH, data: SAMPLE_INVENTORY },
@@ -46,8 +52,8 @@ describe('rename (D1)', () => {
 			NOW + 1
 		);
 		expect(result).toEqual({ kind: 'saved', name: 'Reception PC', description: '' });
-		expect(findMachine(database, agent.machineId, NOW + 1)?.name).toBe('Reception PC');
-		expect(listMachines(database, NOW + 1).map((machine) => machine.name)).toEqual([
+		expect(findMachine(database, agent.machineId, NOW + 1, NO_RELEASES)?.name).toBe('Reception PC');
+		expect(listMachines(database, NOW + 1, NO_RELEASES).map((machine) => machine.name)).toEqual([
 			'Reception PC'
 		]);
 	});
@@ -78,7 +84,7 @@ describe('description (D2)', () => {
 	it('is saved and shown with the machine', () => {
 		const database = testDatabase();
 		const agent = enrolFakeAgent(database, NOW);
-		expect(findMachine(database, agent.machineId, NOW)?.description).toBe('');
+		expect(findMachine(database, agent.machineId, NOW, NO_RELEASES)?.description).toBe('');
 		updateMachineDetails(
 			database,
 			agent.machineId,
@@ -86,7 +92,7 @@ describe('description (D2)', () => {
 			ADMIN_ID,
 			NOW + 1
 		);
-		expect(findMachine(database, agent.machineId, NOW + 1)?.description).toBe(
+		expect(findMachine(database, agent.machineId, NOW + 1, NO_RELEASES)?.description).toBe(
 			'Front desk, label 14'
 		);
 	});
@@ -97,12 +103,14 @@ describe('last signed-in user (D7)', () => {
 		const database = testDatabase();
 		const agent = enrolFakeAgent(database, NOW);
 		const as = { machineId: agent.machineId, checkInSeconds: 60 };
-		expect(findMachine(database, agent.machineId, NOW)?.lastUser).toEqual({ kind: 'none' });
+		expect(findMachine(database, agent.machineId, NOW, NO_RELEASES)?.lastUser).toEqual({
+			kind: 'none'
+		});
 
 		recordCheckIn(database, as, checkIn({ kind: 'user', name: 'sarah.k' }), NOW + 1000);
 		recordCheckIn(database, as, checkIn({ kind: 'none' }), NOW + 61_000);
 		const later = NOW + 2 * 24 * 3_600_000;
-		expect(findMachine(database, agent.machineId, later)).toMatchObject({
+		expect(findMachine(database, agent.machineId, later, NO_RELEASES)).toMatchObject({
 			status: { kind: 'offline' },
 			lastUser: { kind: 'user', name: 'sarah.k', seenIso: new Date(NOW + 1000).toISOString() }
 		});
@@ -114,7 +122,7 @@ describe('last signed-in user (D7)', () => {
 		const as = { machineId: agent.machineId, checkInSeconds: 60 };
 		recordCheckIn(database, as, checkIn({ kind: 'user', name: 'sarah.k' }), NOW + 1000);
 		recordCheckIn(database, as, checkIn({ kind: 'user', name: 'tom' }), NOW + 61_000);
-		expect(listMachines(database, NOW + 61_000)[0]?.lastUser).toEqual({
+		expect(listMachines(database, NOW + 61_000, NO_RELEASES)[0]?.lastUser).toEqual({
 			kind: 'user',
 			name: 'tom',
 			seenIso: new Date(NOW + 61_000).toISOString()
@@ -132,7 +140,7 @@ describe('graphics cards (D8)', () => {
 			checkIn({ kind: 'none' }),
 			NOW + 1000
 		);
-		const inventory = findMachine(database, agent.machineId, NOW + 1000)?.inventory;
+		const inventory = findMachine(database, agent.machineId, NOW + 1000, NO_RELEASES)?.inventory;
 		expect(inventory?.kind === 'known' ? inventory.gpus : undefined).toEqual([
 			{
 				name: 'NVIDIA GeForce RTX 4070',
@@ -160,7 +168,7 @@ describe('graphics cards (D8)', () => {
 		const database = testDatabase();
 		const agent = enrolFakeAgent(database, NOW);
 		recordCheckIn(database, { machineId: agent.machineId, checkInSeconds: 60 }, parsed, NOW + 1);
-		const inventory = findMachine(database, agent.machineId, NOW + 1)?.inventory;
+		const inventory = findMachine(database, agent.machineId, NOW + 1, NO_RELEASES)?.inventory;
 		expect(inventory?.kind === 'known' ? inventory.gpus : undefined).toEqual([]);
 	});
 

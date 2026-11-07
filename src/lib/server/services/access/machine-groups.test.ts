@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { done } from '#tests/helpers/access.ts';
-import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
+import { enrolFakeAgent, testDatabase, NO_RELEASES } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import { listMachines, removeMachine } from '../machines/machine-views.ts';
 import {
@@ -113,7 +113,7 @@ describe('machine groups (A2)', () => {
 		);
 		done(setGroupMembers(database, 'machine', admin.id, office, [first], NOW));
 		done(deleteGroup(database, 'machine', admin.id, office, NOW));
-		expect(listMachines(database, NOW).map((machine) => machine.id)).toContain(first);
+		expect(listMachines(database, NOW, NO_RELEASES).map((machine) => machine.id)).toContain(first);
 	});
 });
 

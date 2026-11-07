@@ -6,6 +6,7 @@ export {
 	userGroupMembers,
 	userGroups
 } from './schema/access.ts';
+export { agentRollouts, machineUpdates } from './schema/agent-updates.ts';
 export { auditEntries } from './schema/audit.ts';
 export { emailMessages } from './schema/email.ts';
 export { identityProviders } from './schema/identity-providers.ts';

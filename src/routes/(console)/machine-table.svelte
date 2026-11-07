@@ -5,6 +5,7 @@
 	import type { DataTableColumn } from '#lib/ui/data-table/data-table-types.ts';
 	import OsIcon from '#lib/ui/os-icon.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
+	import UpdateBadge from '#lib/ui/update-badge.svelte';
 	import { formatBytes, formatRelative } from '#lib/utils/format.ts';
 	import { osLabel } from '#lib/domain/machines/machine.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
@@ -152,7 +153,10 @@
 {/snippet}
 
 {#snippet statusCell({ machine }: MachineRow)}
-	<StatusBadge status={machine.status} {now} since="hidden" />
+	<span class="status">
+		<StatusBadge status={machine.status} {now} since="hidden" />
+		<UpdateBadge state={machine.update} />
+	</span>
 	{#if machine.inUse.length > 0}
 		<span class="in-use">In use: {inUseLabel(machine.inUse)}</span>
 	{/if}
@@ -263,6 +267,13 @@
 	.updates {
 		margin-left: var(--space-1);
 		color: var(--warning);
+	}
+
+	.status {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-1);
 	}
 
 	.figure {

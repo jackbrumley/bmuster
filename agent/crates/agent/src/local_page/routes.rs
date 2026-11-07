@@ -10,6 +10,7 @@ use super::Page;
 use crate::inventory::{self, Probe};
 use crate::logging;
 use crate::status::RunMode;
+use crate::updates;
 use bmuster_protocol::{CodeOwners, LocalEvent};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -401,8 +402,11 @@ fn status_page(page: &Page, notice: Option<&str>, codes: &CodeOwners) -> String 
         .collect::<Vec<_>>()
         .join(", ");
     let mut agent_rows = vec![
-        pages::row("Version", env!("CARGO_PKG_VERSION")),
-        pages::row("Updates", "automatic updates are not part of this version"),
+        pages::row("Version", updates::VERSION),
+        pages::row(
+            "Updates",
+            &updates::describe_state(&page.data_dir, page.launched),
+        ),
         pages::row(
             "Started by",
             match page.mode {
@@ -524,6 +528,7 @@ mod tests {
             gate: Gate::new(SECRET, Arc::clone(&people), Arc::clone(&journal)),
             people,
             journal,
+            launched: false,
             hosts: Hosts {
                 port: 47591,
                 loopback_only: true,

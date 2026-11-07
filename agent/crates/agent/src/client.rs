@@ -17,7 +17,7 @@ use ureq::http::Uri;
 use ureq::unversioned::resolver::DefaultResolver;
 use ureq::unversioned::transport::{ConnectProxyConnector, Connector as _, TcpConnector};
 
-pub const USER_AGENT: &str = concat!("bmuster-agent/", env!("CARGO_PKG_VERSION"));
+pub const USER_AGENT: &str = concat!("bmuster-agent/", env!("BMUSTER_VERSION"));
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 /// The `Date` header has one-second resolution; ignore differences below this.
 const DRIFT_TOLERANCE_MS: i64 = 2_000;
@@ -224,6 +224,31 @@ impl Channel {
             .read_to_string()
             .with_context(|| format!("could not read the reply from {url}"))?;
         parse_reply(status, &text).with_context(|| format!("unexpected reply from {url}"))
+    }
+
+    /// GETs a file of at most `limit` bytes (an agent build, SPEC-AGENT-UPDATES).
+    pub fn get_bytes(&self, path: &str, limit: u64, timeout: Duration) -> Result<Vec<u8>> {
+        let url = self.server.http_url(path);
+        let mut response = self
+            .http
+            .get(&url)
+            .config()
+            .timeout_global(Some(timeout))
+            .build()
+            .call()
+            .with_context(|| format!("could not reach {url}"))?;
+        let status = response.status().as_u16();
+        if status != 200 {
+            bail!("HTTP {status} from {url}");
+        }
+        response
+            .body_mut()
+            .with_config()
+            // ureq refuses a body that reaches the limit; one byte over lets a
+            // body of exactly `limit` through (the caller checks the size).
+            .limit(limit.saturating_add(1))
+            .read_to_vec()
+            .with_context(|| format!("could not download {url}"))
     }
 }
 
@@ -536,6 +561,45 @@ mod tests {
             Security::once(TlsMode::Checked(ServerTrust::Public)),
         );
         Session::new(transport, "m".into(), SigningKey::from_bytes(&[1; 32]))
+    }
+
+    /// Serves one HTTP reply with `body` on a loopback port; returns its URL.
+    fn serve_once(body: Vec<u8>) -> ServerUrl {
+        use std::io::{Read as _, Write as _};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request).unwrap();
+            let head = format!(
+                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(head.as_bytes()).unwrap();
+            stream.write_all(&body).unwrap();
+        });
+        ServerUrl::parse(&format!("http://127.0.0.1:{port}")).unwrap()
+    }
+
+    #[test]
+    fn a_download_of_exactly_the_expected_size_is_read_and_a_bigger_one_refused() {
+        let provider = tls::crypto_provider();
+        let exact = Channel::new(
+            &serve_once(vec![7; 5000]),
+            Check::AnyCertificate,
+            provider.clone(),
+        )
+        .unwrap();
+        let bytes = exact
+            .get_bytes("/build", 5000, Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(bytes.len(), 5000);
+        let bigger =
+            Channel::new(&serve_once(vec![7; 5002]), Check::AnyCertificate, provider).unwrap();
+        assert!(bigger
+            .get_bytes("/build", 5000, Duration::from_secs(5))
+            .is_err());
     }
 
     #[test]

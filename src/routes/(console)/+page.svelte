@@ -4,6 +4,7 @@
 	import { IconDevices, IconLockAccess, IconSearch } from '@tabler/icons-svelte-runes';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import EmptyState from '#lib/ui/empty-state.svelte';
+	import Notice from '#lib/ui/notice.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import { matchesSearch } from '#lib/domain/machines/machine.ts';
 	import MachineCards from './machine-cards.svelte';
@@ -83,6 +84,13 @@
 	{summary}
 	actions={data.view.kind === 'machines' && machines.length > 0 ? viewSwitch : undefined}
 />
+
+{#if data.rollout.kind === 'rollout' && data.rollout.paused.kind === 'paused' && data.rollout.paused.by === 'system'}
+	<Notice tone="danger" title="Agent updates are paused: version {data.rollout.version} failed">
+		<p>{data.rollout.paused.reason}</p>
+		<p><a href={resolve('/(console)/updates')}>Open Updates</a> to look into it and resume.</p>
+	</Notice>
+{/if}
 
 {#if data.view.kind === 'awaiting-access'}
 	<EmptyState

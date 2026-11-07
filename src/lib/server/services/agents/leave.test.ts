@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { machines } from '../../database/schema.ts';
-import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
+import { enrolFakeAgent, testDatabase, NO_RELEASES } from '#tests/helpers/fake-agent.ts';
 import { NOW } from '#tests/helpers/people.ts';
 import { listAudit } from '../audit/audit.ts';
 import { findMachine, listMachines } from '../machines/machine-views.ts';
@@ -35,8 +35,8 @@ describe('leaving a server (SPEC-AGENT-LOCAL 3)', () => {
 		expect(row?.movedAt).toEqual(new Date(NOW + 1));
 		expect(row?.removedAt).toEqual(new Date(NOW + 1));
 		// Gone from the lists and pages, like a removed machine; the row stays for the history.
-		expect(listMachines(database, NOW + 2)).toEqual([]);
-		expect(findMachine(database, agent.machineId, NOW + 2)).toBeUndefined();
+		expect(listMachines(database, NOW + 2, NO_RELEASES)).toEqual([]);
+		expect(findMachine(database, agent.machineId, NOW + 2, NO_RELEASES)).toBeUndefined();
 		expect(closed).toEqual([{ code: 4001, reason: 'revoked' }]);
 		expect(isAgentConnected(agent.machineId)).toBe(false);
 

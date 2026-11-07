@@ -34,6 +34,7 @@ type SettingDefinition<T> = {
 };
 
 const consentSchema = z.enum(CONSENTS);
+const updatePolicySchema = z.enum(['automatic', 'manual']);
 
 export const SETTING_DEFINITIONS = {
 	defaultConsent: {
@@ -62,6 +63,22 @@ export const SETTING_DEFINITIONS = {
 		section: 'general',
 		control: { kind: 'switch' }
 	} satisfies SettingDefinition<boolean>,
+	agentUpdatePolicy: {
+		label: 'Agent updates',
+		description:
+			'Automatic: a new agent version goes to the Early updates group first, then to 10% of machines after an hour without a failure, then to all. A failure pauses it. Manual: machines update only when an admin chooses Update now on the Updates page.',
+		schema: updatePolicySchema,
+		defaultValue: 'automatic',
+		changedBy: 'admin',
+		section: 'general',
+		control: {
+			kind: 'choice',
+			options: [
+				{ value: 'automatic', label: 'Automatic, in stages' },
+				{ value: 'manual', label: 'Manual' }
+			]
+		}
+	} satisfies SettingDefinition<z.infer<typeof updatePolicySchema>>,
 	localNetworkMode: {
 		label: 'Local network mode',
 		description:

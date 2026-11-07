@@ -5,6 +5,7 @@
 	import { localCodeReplySchema } from '#lib/schemas/machines/local-page.ts';
 	import Button from '#lib/ui/button.svelte';
 	import Panel from '#lib/ui/panel.svelte';
+	import Notice from '#lib/ui/notice.svelte';
 	import CopyField from '#lib/ui/copy-field.svelte';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 
@@ -112,10 +113,14 @@
 
 <Panel heading="Local page" actions={undefined} tone="normal" padding="normal">
 	{#if localPage.kind === 'none'}
-		<p class="muted">
-			Update the agent to get a local page. Newer agents serve a page on the machine itself for
-			checking and fixing the agent, even while the internet is down.
-		</p>
+		<Notice tone="warning" title="This agent is too old for the local page">
+			<p>
+				Newer agents serve a page on the machine itself for checking and fixing the agent, even
+				while the internet is down. This one was installed before that. Reinstall it once with
+				Reinstall agent below: it keeps this machine's name, notes and history, and from then on it
+				updates itself.
+			</p>
+		</Notice>
 	{:else}
 		<p class="muted">
 			Someone at the machine can open this page to check the agent, test its connection, restart it,
@@ -176,7 +181,9 @@
 					>
 				</div>
 			{:else if codeState.kind === 'not-reported'}
-				<p class="muted">Update the agent to get a local page.</p>
+				<Notice tone="warning" title="This agent has not reported its local page">
+					<p>Reinstall it once with Reinstall agent below to get the local page.</p>
+				</Notice>
 			{:else if codeState.kind === 'not-listed'}
 				<p class="muted">
 					You are not one of the people who may sign in to this machine's local page.

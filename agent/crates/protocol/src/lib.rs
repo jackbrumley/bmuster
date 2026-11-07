@@ -12,6 +12,11 @@ use sha2::{Digest, Sha256};
 use std::fmt;
 
 pub mod session;
+mod updates;
+pub use updates::{
+    release_message, release_message_of, release_path, AgentVersion, UpdateEvent, UpdateOffer,
+    UpdateReport, VersionError, RELEASE_SIGNING_DOMAIN,
+};
 
 /// First line of every signed message; bump it if the message format changes.
 pub const SIGNING_DOMAIN: &str = "BMUSTER-REQ-1";
@@ -288,6 +293,8 @@ pub struct CheckInRequest {
     /// The list of people who may sign in to the local page that the agent
     /// holds (SPEC-AGENT-LOCAL 7). Older agents send none.
     pub local_users: LocalUsersHeld,
+    /// Whether this agent can update itself, and its last update (SPEC-AGENT-UPDATES).
+    pub update: UpdateReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -421,6 +428,9 @@ pub struct CheckInReply {
     /// servers older than SPEC-AGENT-LOCAL 7).
     #[serde(default)]
     pub local_users: LocalUsersUpdate,
+    /// A newer signed build to install; none from servers before SPEC-AGENT-UPDATES.
+    #[serde(default)]
+    pub update: UpdateOffer,
 }
 
 // ---------------------------------------------------------------------------
@@ -690,7 +700,8 @@ mod tests {
                 check_in_seconds: 60,
                 inventory_wanted: true,
                 machine_name: String::new(),
-                local_users: LocalUsersUpdate::Unchanged
+                local_users: LocalUsersUpdate::Unchanged,
+                update: UpdateOffer::None
             }
         );
         assert_eq!(

@@ -3,6 +3,7 @@ import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { Machine } from '#lib/domain/machines/machine.ts';
 import MachinesPage from './+page.svelte';
+import type { PageData } from './$types';
 
 const NOW = Date.parse('2026-11-07T12:00:00.000Z');
 
@@ -13,6 +14,7 @@ function machine(overrides: Partial<Machine> & Pick<Machine, 'id' | 'name'>): Ma
 		osFamily: 'linux',
 		target: 'x86_64-unknown-linux-gnu',
 		agentVersion: '0.2.0',
+		update: { kind: 'up-to-date' },
 		status: { kind: 'online' },
 		lastUser: { kind: 'none' },
 		live: { kind: 'none' },
@@ -54,7 +56,9 @@ function fleet(count: number): Machine[] {
 	});
 }
 
-function renderPage(machines: Machine[] = MACHINES) {
+type Rollout = PageData['rollout'];
+
+function renderPage(machines: Machine[] = MACHINES, rollout: Rollout = { kind: 'none' }) {
 	return render(MachinesPage, {
 		params: {},
 		form: undefined,
@@ -62,6 +66,7 @@ function renderPage(machines: Machine[] = MACHINES) {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
 			localNetworkMode: false,
 			now: NOW,
+			rollout,
 			view: { kind: 'machines', machines }
 		}
 	});
@@ -196,5 +201,60 @@ describe('Machines views: cards and table', () => {
 		await expect
 			.element(list.getByRole('link', { name: /Machine 002/ }))
 			.toHaveTextContent('Machine 002 machine-002 Offline');
+	});
+
+	it('SPEC-AGENT-UPDATES: an out-of-date agent is badged on its card and its table row', async () => {
+		const machines = [
+			machine({
+				id: '33333333-3333-4333-8333-333333333333',
+				name: 'Old agent',
+				agentVersion: '0.1.0',
+				update: { kind: 'available', version: '0.2.0', needsReinstall: true }
+			}),
+			machine({
+				id: '44444444-4444-4444-8444-444444444444',
+				name: 'Fussy',
+				update: { kind: 'pinned', available: { kind: 'none' } }
+			}),
+			machine({
+				id: '55555555-5555-4555-8555-555555555555',
+				name: 'Broken update',
+				update: { kind: 'rolled-back', version: '0.3.0', reason: 'no check-in' }
+			}),
+			machine({ id: '66666666-6666-4666-8666-666666666666', name: 'Current' })
+		];
+		const screen = await renderPage(machines);
+		await screen.getByRole('button', { name: 'Cards' }).click();
+		await expect.element(screen.getByText('Update available')).toBeVisible();
+		await expect.element(screen.getByText('Pinned')).toBeVisible();
+		await expect.element(screen.getByText('Rolled back')).toBeVisible();
+		expect(screen.container.querySelectorAll('[data-update-state]')).toHaveLength(3);
+
+		await screen.getByRole('button', { name: 'Table' }).click();
+		const row = screen.getByRole('row').filter({ hasText: 'Old agent' });
+		await expect.element(row.getByText('Update available')).toBeVisible();
+		const current = screen.getByRole('row').filter({ hasText: 'Current' });
+		expect(current.getByText(/Update|Pinned|Rolled back/).all()).toHaveLength(0);
+	});
+
+	it('SPEC-AGENT-UPDATES: tells an admin when a failed update paused the roll-out', async () => {
+		const screen = await renderPage(MACHINES, {
+			kind: 'rollout',
+			version: '0.3.0',
+			stage: 'early',
+			startedIso: '2026-11-07T11:00:00.000Z',
+			stageStartedIso: '2026-11-07T11:00:00.000Z',
+			paused: {
+				kind: 'paused',
+				reason: 'Build server rolled back 0.3.0: no check-in',
+				atIso: '2026-11-07T11:30:00.000Z',
+				by: 'system'
+			}
+		});
+		const notice = screen.getByRole('alert');
+		await expect
+			.element(notice.getByText('Agent updates are paused: version 0.3.0 failed'))
+			.toBeVisible();
+		await expect.element(notice.getByRole('link', { name: 'Open Updates' })).toBeVisible();
 	});
 });

@@ -5,6 +5,7 @@
 		IconArrowsExchange,
 		IconBell,
 		IconCertificate,
+		IconCloudDownload,
 		IconDeviceDesktopMinus,
 		IconDeviceDesktopPlus,
 		IconDevices,
@@ -19,6 +20,7 @@
 		IconLogout,
 		IconPlugConnected,
 		IconTrash,
+		IconPin,
 		IconRocket,
 		IconShieldLock,
 		IconShieldX,
@@ -143,6 +145,17 @@
 			case 'notification-rule-changed':
 			case 'notification-rule-deleted':
 				return IconBell;
+			case 'agent-updated':
+			case 'agent-update-requested':
+			case 'agent-rollout-resumed':
+				return IconCloudDownload;
+			case 'agent-update-rolled-back':
+			case 'agent-update-refused':
+			case 'agent-rollout-paused':
+				return IconAlertTriangle;
+			case 'agent-pinned':
+			case 'agent-unpinned':
+				return IconPin;
 		}
 	}
 </script>

@@ -263,6 +263,14 @@ function addBinaries(dir: string, every: boolean): void {
 		mkdirSync(folder, { recursive: true });
 		copyFileSync(agent, join(folder, binaryName('bmuster-agent', agentTarget)));
 		chmodSync(join(folder, binaryName('bmuster-agent', agentTarget)), 0o755);
+		// The release signature (SPEC-AGENT-UPDATES): without it agents install
+		// the build but never take it as an update.
+		const signature = `${agent}.sig`;
+		if (existsSync(signature)) {
+			copyFileSync(signature, join(folder, `${binaryName('bmuster-agent', agentTarget)}.sig`));
+		} else if (every) {
+			fail(`${signature} is missing; release agents are signed (npm run agent:sign)`);
+		}
 	}
 	const launcher = binaryName('bmuster-server', target);
 	copyFileSync(join(dir, target, launcher), join(BUNDLE, launcher));

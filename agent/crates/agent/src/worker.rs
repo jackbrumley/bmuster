@@ -11,10 +11,11 @@ use crate::sessions::Sessions;
 use crate::socket;
 use crate::status::{RunMode, StatusBoard};
 use crate::trust::{Trust, TrustState};
+use crate::updates::{Considered, WorkerUpdates};
 use anyhow::{Context as _, Result};
 use bmuster_protocol::{
     decode_public_key, CheckInReply, CheckInRequest, InventoryReport, Refusal, RefusalReason,
-    CHECK_IN_PATH,
+    UpdateReport, CHECK_IN_PATH,
 };
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -45,6 +46,9 @@ pub enum Outcome {
     /// Start again: the service manager does it for a service; `main`
     /// starts a new copy for a development run.
     Restart,
+    /// A newer build is checked and waiting in `versions/incoming`: the
+    /// launcher switches to it (SPEC-AGENT-UPDATES).
+    Update,
 }
 
 /// Doubling wait between failed attempts.
@@ -83,6 +87,8 @@ pub struct RunOptions {
     /// `--local-page-port`: the local page on this loopback port instead of
     /// what local-page.json or the default says (tests and development).
     pub local_page_port: Option<u16>,
+    /// Started by the launcher (`run --launched`), which can switch versions.
+    pub launched: bool,
 }
 
 /// A signed connection to the server this data folder is enrolled with. The
@@ -126,7 +132,7 @@ pub fn run(
     let server = &session.transport.server;
     log::info!(
         "BMuster agent {} started: machine {}, server {}",
-        env!("CARGO_PKG_VERSION"),
+        env!("BMUSTER_VERSION"),
         identity.machine_id,
         server.base()
     );
@@ -144,6 +150,7 @@ pub fn run(
         port_override: options.local_page_port,
         people: Arc::clone(&people),
         journal: Arc::clone(&journal),
+        launched: options.launched,
     });
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -160,6 +167,7 @@ pub fn run(
             .context("could not start the live socket thread")?
     };
 
+    let updates = WorkerUpdates::new(&options.data_dir, options.launched);
     let outcome = check_in_loop(
         &session,
         &options.data_dir,
@@ -170,6 +178,7 @@ pub fn run(
         &Local {
             people: &people,
             journal: &journal,
+            updates: &updates,
         },
     );
     stop.store(true, Ordering::SeqCst);
@@ -184,6 +193,8 @@ pub fn run(
 pub struct Local<'a> {
     pub people: &'a People,
     pub journal: &'a Journal,
+    /// Signed updates through the launcher (SPEC-AGENT-UPDATES).
+    pub updates: &'a WorkerUpdates,
 }
 
 pub fn check_in_loop(
@@ -202,9 +213,16 @@ pub fn check_in_loop(
     let mut backoff = Backoff::new(Duration::from_secs(5), Duration::from_secs(300));
 
     loop {
-        let wait = match check_in(session, &mut probe, &mut server_hash, local.people) {
+        let wait = match check_in(
+            session,
+            &mut probe,
+            &mut server_hash,
+            local.people,
+            local.updates.report(),
+        ) {
             Ok(Reply::Ok(reply)) => {
                 backoff.reset();
+                local.updates.checked_in();
                 match identity::check_interval(reply.check_in_seconds) {
                     Ok(seconds) if seconds != check_in_seconds => {
                         log::info!("The server set the check-in interval to {seconds} s.");
@@ -231,6 +249,9 @@ pub fn check_in_loop(
                             events_after = Instant::now() + EVENTS_RETRY;
                         }
                     }
+                }
+                if local.updates.consider(session, &reply.update) == Considered::Ready {
+                    return Ok(Outcome::Update);
                 }
                 Duration::from_secs(u64::from(check_in_seconds))
             }
@@ -310,6 +331,7 @@ pub fn check_in(
     probe: &mut Probe,
     server_hash: &mut Option<String>,
     people: &People,
+    update: UpdateReport,
 ) -> Result<Reply<CheckInReply>> {
     let inventory = probe.inventory()?;
     let hash = inventory.hash()?;
@@ -323,12 +345,13 @@ pub fn check_in(
     };
     let full = matches!(report, InventoryReport::Full { .. });
     let request = CheckInRequest {
-        agent_version: env!("CARGO_PKG_VERSION").to_string(),
+        agent_version: env!("BMUSTER_VERSION").to_string(),
         uptime_seconds: inventory::uptime_seconds(),
         signed_in_user: inventory::signed_in_user(),
         load: probe.load(),
         inventory: report,
         local_users: people.held(),
+        update,
     };
     let body = serde_json::to_vec(&request)?;
     let reply = session.post_signed::<CheckInReply>(CHECK_IN_PATH, &body)?;
@@ -372,9 +395,11 @@ mod tests {
             sender.send(signal).unwrap();
         }
         let dir = tempfile::tempdir().unwrap();
+        let updates = WorkerUpdates::with_keys(dir.path(), false, vec![]);
         let local = Local {
             people: &People::load(dir.path()),
             journal: &Journal::open(dir.path()),
+            updates: &updates,
         };
         check_in_loop(
             &unreachable(),

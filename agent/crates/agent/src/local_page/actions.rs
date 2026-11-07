@@ -9,6 +9,7 @@ use crate::relocate::{self, MoveTarget, Moved, OldServer};
 use crate::status::RunMode;
 use crate::tls::{self, Check};
 use crate::trust;
+use crate::updates;
 use crate::worker;
 use bmuster_protocol::{CertificatePin, CodeOwners, LeaveReason, LocalEvent, ServerTrust};
 use rustls::pki_types::ServerName;
@@ -133,7 +134,8 @@ pub fn test_connection(page: &Page) -> Vec<Step> {
 
     let mut probe = lock_probe(page);
     let probe = probe.get_or_insert_with(Probe::new);
-    let result = match worker::check_in(&page.session, probe, &mut None, &page.people) {
+    let report = updates::report(&page.data_dir, page.launched);
+    let result = match worker::check_in(&page.session, probe, &mut None, &page.people, report) {
         Ok(Reply::Ok(reply)) => {
             let interval = page.board.snapshot().check_in_seconds;
             page.board.checked_in(&reply.machine_name, interval);

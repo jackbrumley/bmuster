@@ -11,7 +11,7 @@ import { permissionsFor } from '../access/access.ts';
 import { isAgentConnected, sendToAgent } from '../agents/live-agents.ts';
 import { serverKey } from '../agents/server-keys.ts';
 import { recordAudit } from '../audit/audit.ts';
-import { findMachine } from '../machines/machine-views.ts';
+import { activeMachineBasics } from '../machines/machine-views.ts';
 import type { EndedSession, Relay } from './relay.ts';
 import { signTicket, TICKET_LIFETIME_MS } from './session-ticket.ts';
 
@@ -41,7 +41,7 @@ export function openTerminalSession(
 	now: number
 ): OpenSessionResult {
 	const grants = permissionsFor(database, user, machineId);
-	const machine = findMachine(database, machineId, now);
+	const machine = activeMachineBasics(database, machineId);
 	if (machine === undefined || !grants.some((grant) => grant.permission === 'view')) {
 		return { kind: 'refused', status: 404, message: 'No machine with this id.' };
 	}

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { SAMPLE_INVENTORY, enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
+import {
+	SAMPLE_INVENTORY,
+	enrolFakeAgent,
+	testDatabase,
+	NO_RELEASES
+} from '#tests/helpers/fake-agent.ts';
 import { findMachine } from '../machines/machine-views.ts';
 import { recordCheckIn } from './check-in.ts';
 
@@ -14,6 +19,7 @@ function checkIn(
 	return {
 		agentVersion: '0.1.1',
 		uptimeSeconds: 3600,
+		update: { kind: 'no-launcher' as const },
 		signedInUser: { kind: 'user' as const, name: 'jack' },
 		load: { cpuPercent: 12.5, memoryUsedBytes: 4 * 1024 ** 3 },
 		inventory,
@@ -38,7 +44,7 @@ describe('check-in (A6)', () => {
 			localUsers: { kind: 'unchanged' }
 		});
 
-		const machine = findMachine(database, agent.machineId, NOW + 1000);
+		const machine = findMachine(database, agent.machineId, NOW + 1000, NO_RELEASES);
 		expect(machine?.agentVersion).toBe('0.1.1');
 		expect(machine?.live).toEqual({
 			kind: 'known',

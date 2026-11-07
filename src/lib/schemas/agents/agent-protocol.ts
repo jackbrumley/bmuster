@@ -99,6 +99,36 @@ const localUsersHeldSchema = z.discriminatedUnion('kind', [
 
 export type LocalUsersHeld = z.infer<typeof localUsersHeldSchema>;
 
+const updateVersion = z.string().min(1).max(64);
+const updateReason = z.string().max(500);
+const atMs = z.int().min(0);
+
+/** The last update on the machine (SPEC-AGENT-UPDATES), as the launcher or worker recorded it. */
+const updateEventSchema = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('none') }),
+	z.object({ kind: z.literal('updated'), from: updateVersion, to: updateVersion, atMs }),
+	z.object({
+		kind: z.literal('rolled-back'),
+		version: updateVersion,
+		reason: updateReason,
+		atMs
+	}),
+	z.object({ kind: z.literal('refused'), version: updateVersion, reason: updateReason, atMs })
+]);
+
+/**
+ * Whether the agent can update itself. Agents from before SPEC-AGENT-UPDATES send nothing; they
+ * have no launcher either.
+ */
+const updateReportSchema = z
+	.discriminatedUnion('kind', [
+		z.object({ kind: z.literal('no-launcher') }),
+		z.object({ kind: z.literal('launcher'), last: updateEventSchema })
+	])
+	.default({ kind: 'no-launcher' });
+
+export type UpdateReport = z.infer<typeof updateReportSchema>;
+
 export const checkInRequestSchema = z.object({
 	agentVersion: z.string().min(1).max(32),
 	uptimeSeconds: z.int().min(0),
@@ -108,7 +138,8 @@ export const checkInRequestSchema = z.object({
 		z.object({ kind: z.literal('unchanged'), hash: z.string().length(64) }),
 		z.object({ kind: z.literal('full'), hash: z.string().length(64), data: inventorySchema })
 	]),
-	localUsers: localUsersHeldSchema.default({ kind: 'unsupported' })
+	localUsers: localUsersHeldSchema.default({ kind: 'unsupported' }),
+	update: updateReportSchema
 });
 
 export type CheckInRequest = z.infer<typeof checkInRequestSchema>;
@@ -120,12 +151,18 @@ export type LocalUser = { userId: string; name: string };
 export type LocalUsersUpdate =
 	{ kind: 'unchanged' } | { kind: 'list'; hash: string; users: LocalUser[] };
 
+/** A newer signed build for the agent to install (SPEC-AGENT-UPDATES), or none. */
+export type UpdateOffer =
+	| { kind: 'none' }
+	| { kind: 'offer'; version: string; size: number; sha256: string; signature: string };
+
 /** `machineName`: the machine's name in the console, which the agent's local page shows. */
 export type CheckInReply = {
 	checkInSeconds: number;
 	inventoryWanted: boolean;
 	machineName: string;
 	localUsers: LocalUsersUpdate;
+	update: UpdateOffer;
 };
 
 /** `POST /agent/v1/leave` (SPEC-AGENT-LOCAL): the agent moved to another server, or is being uninstalled. */
