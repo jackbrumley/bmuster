@@ -1,3 +1,4 @@
+import type { ReleaseLookup } from '../agents/releases.ts';
 import { consentLabel, permissionLabel } from '#lib/domain/access/access.ts';
 import { activityLabel, type ActivityEntry } from '#lib/domain/activity/activity.ts';
 import { activitySentence } from '#lib/domain/activity/local-page-activity.ts';
@@ -96,10 +97,11 @@ export function exportMachines(
 	database: AppDatabase,
 	user: ConsoleUser,
 	query: MachinesExportQuery,
-	now: number
+	now: number,
+	releases: ReleaseLookup
 ): ListExport {
 	const visible = visibleMachineIds(database, user);
-	const rows = listMachines(database, now)
+	const rows = listMachines(database, now, releases)
 		.filter((machine) => visible.has(machine.id))
 		.map(toMachineRow);
 	const shown = machinesInOrder(

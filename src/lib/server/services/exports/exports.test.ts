@@ -6,7 +6,7 @@ import {
 	machinesExportQuerySchema
 } from '#lib/schemas/exports/exports.ts';
 import { grantAccess } from '#tests/helpers/access.ts';
-import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
+import { enrolFakeAgent, NO_RELEASES, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { auditEntries } from '../../database/schema.ts';
@@ -77,7 +77,7 @@ function lastExportAudit(database: AppDatabase) {
 describe('Machines export (X5, X6)', () => {
 	it('X5: lists every machine for an admin, with groups; a member gets only theirs, without groups', async () => {
 		const { database, admin, pat } = await setUp();
-		const all = exportMachines(database, admin, machinesQuery({}), NOW);
+		const all = exportMachines(database, admin, machinesQuery({}), NOW, NO_RELEASES);
 		expect(all.header).toEqual([
 			'Name',
 			'Host',
@@ -119,7 +119,7 @@ describe('Machines export (X5, X6)', () => {
 			'Build server notes'
 		]);
 
-		const mine = exportMachines(database, pat, machinesQuery({}), NOW);
+		const mine = exportMachines(database, pat, machinesQuery({}), NOW, NO_RELEASES);
 		expect(mine.header).not.toContain('Groups');
 		expect(column(mine.header, mine.rows, 'Name')).toEqual(['Build server', 'Reception PC']);
 	});
@@ -129,7 +129,7 @@ describe('Machines export (X5, X6)', () => {
 		const nobody = toConsoleUser(
 			await addTestUser(database, { email: 'new@example.com', role: 'member', password: null })
 		);
-		const none = exportMachines(database, nobody, machinesQuery({}), NOW);
+		const none = exportMachines(database, nobody, machinesQuery({}), NOW, NO_RELEASES);
 		expect(none.rows).toEqual([]);
 		expect(none.header[0]).toBe('Name');
 	});
@@ -137,7 +137,7 @@ describe('Machines export (X5, X6)', () => {
 	it('X6: applies the search and filter to every machine, not just a drawn batch', async () => {
 		const { database, admin, pat } = await setUp();
 		const names = (user: ConsoleUser, params: Record<string, string>) => {
-			const result = exportMachines(database, user, machinesQuery(params), NOW);
+			const result = exportMachines(database, user, machinesQuery(params), NOW, NO_RELEASES);
 			return column(result.header, result.rows, 'Name');
 		};
 		expect(names(admin, { search: 'BUILD' })).toEqual(['Build server']);
@@ -152,7 +152,7 @@ describe('Machines export (X5, X6)', () => {
 	it("X6: keeps the table's sort, or the list order in Cards view", async () => {
 		const { database, admin } = await setUp();
 		const names = (params: Record<string, string>) => {
-			const result = exportMachines(database, admin, machinesQuery(params), NOW);
+			const result = exportMachines(database, admin, machinesQuery(params), NOW, NO_RELEASES);
 			return column(result.header, result.rows, 'Name');
 		};
 		expect(names({ sort: 'name', direction: 'desc' })).toEqual([
@@ -176,7 +176,8 @@ describe('Machines export (X5, X6)', () => {
 			database,
 			pat,
 			machinesQuery({ search: 'pc', filter: 'online', sort: 'cpu', direction: 'desc' }),
-			NOW + 5
+			NOW + 5,
+			NO_RELEASES
 		);
 		expect(result.filename).toMatch(/^bmuster-machines-\d{4}-\d{2}-\d{2}\.csv$/);
 		expect(lastExportAudit(database)).toMatchObject({
