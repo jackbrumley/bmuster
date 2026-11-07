@@ -102,13 +102,14 @@ pub fn layout(title: &str, signed_in: bool, body: &str) -> String {
 </head>
 <body>
 <main>
-<header><div class="brand">{LOGO}<h1>BMuster agent</h1></div>{sign_out}</header>
+<header><div class="brand">{LOGO}<div><h1>BMuster agent</h1><p class="muted">Version {version}</p></div></div>{sign_out}</header>
 {body}
 </main>
 </body>
 </html>
 "#,
         title = esc(title),
+        version = esc(env!("BMUSTER_VERSION")),
     )
 }
 
