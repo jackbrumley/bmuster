@@ -53,6 +53,7 @@ function renderTab(notes: NoteView[]) {
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
 			localNetworkMode: false,
+			signedIn: true,
 			now: NOW,
 			machine: MACHINE,
 			grants: [{ permission: 'view', consent: 'unattended' }],

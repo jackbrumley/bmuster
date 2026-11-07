@@ -1,10 +1,11 @@
 import { dev } from '$app/env';
 import { sequence } from '@sveltejs/kit/hooks';
-import type { ServerInit } from '@sveltejs/kit/hooks';
+import type { HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 // Opening the database applies migrations before the first request.
 import { database } from '#lib/server/database/app-database.ts';
 import { scheduleSnapshots } from '#lib/server/database/snapshots.ts';
 import { env } from '#lib/server/env.ts';
+import { errorReference, serverErrorHandler } from '#lib/server/hooks/handle-error.ts';
 import { originCheck } from '#lib/server/hooks/origin-check.ts';
 import { session } from '#lib/server/hooks/session.ts';
 import { setupRedirect } from '#lib/server/hooks/setup-redirect.ts';
@@ -54,3 +55,11 @@ export const init: ServerInit = async () => {
  * refused. Access itself is checked by the guard on each route.
  */
 export const handle = sequence(session, setupRedirect, originCheck);
+
+/**
+ * Unexpected errors go to the server log under a reference the error page
+ * shows (SPEC-ERROR-PAGES E5); the browser never sees the error itself.
+ */
+export const handleError: HandleServerError = serverErrorHandler((line) => {
+	process.stderr.write(`${line}\n`);
+}, errorReference);

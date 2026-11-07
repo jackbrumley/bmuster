@@ -78,6 +78,7 @@ function renderTab(grants: Grant[], machine = TEST_MACHINE) {
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
 			localNetworkMode: false,
+			signedIn: true,
 			now: Date.parse('2026-11-07T12:00:00.000Z'),
 			machine,
 			grants
@@ -357,6 +358,7 @@ describe('the desktop tab', () => {
 			data: {
 				user: { id: 'p', name: 'Pat', email: 'pat@example.com', role: 'member' as const },
 				localNetworkMode: false,
+				signedIn: true,
 				now: Date.parse('2026-11-07T12:00:00.000Z'),
 				machine: TEST_MACHINE,
 				grants: [

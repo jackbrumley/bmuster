@@ -12,14 +12,17 @@ type SettingControl =
 	| { kind: 'switch' }
 	| { kind: 'choice'; options: readonly { value: string; label: string }[] }
 	/** On and off, with the confirmation and certificate details of SPEC-INSTALL-OPTIONS L2. */
-	| { kind: 'local-network-mode' };
+	| { kind: 'local-network-mode' }
+	/** Plain text in a box with Save: one line, or several (`multiline`). */
+	| { kind: 'text'; lines: 'single' | 'multiline'; maxLength: number };
 
 /** Where the Settings page lists a setting. */
-export type SettingSection = 'general' | 'security';
+export type SettingSection = 'general' | 'security' | 'phone-support';
 
 export const SETTING_SECTIONS: readonly { id: SettingSection; title: string }[] = [
 	{ id: 'general', title: 'General' },
-	{ id: 'security', title: 'Security' }
+	{ id: 'security', title: 'Security' },
+	{ id: 'phone-support', title: 'Phone support' }
 ];
 
 type SettingDefinition<T> = {
@@ -35,6 +38,18 @@ type SettingDefinition<T> = {
 
 const consentSchema = z.enum(CONSENTS);
 const updatePolicySchema = z.enum(['automatic', 'manual']);
+
+/** Plain text up to `max` characters, trimmed; `required` refuses a blank one. */
+function textSchema(max: number, required: boolean): z.ZodType<string> {
+	const trimmed = z
+		.string()
+		.trim()
+		.max(max, `Keep it to ${String(max)} characters.`);
+	return required ? trimmed.min(1, 'This cannot be blank.') : trimmed;
+}
+
+const ORGANISATION_NAME_MAX = 80;
+const SCAM_TEXT_MAX = 400;
 
 /** Largest upload in the Files tab, in GB (SPEC-FILES F6). */
 const UPLOAD_LIMITS_GB = ['1', '5', '10', '50', '100', '1000'] as const;
@@ -113,7 +128,37 @@ export const SETTING_DEFINITIONS = {
 		changedBy: 'admin',
 		section: 'security',
 		control: { kind: 'local-network-mode' }
-	} satisfies SettingDefinition<boolean>
+	} satisfies SettingDefinition<boolean>,
+	organisationName: {
+		label: 'Organisation name',
+		description:
+			'Who callers are told will get access on the phone support page: “<support person> at <organisation> will be able to see and control this computer”. Blank uses this server’s address.',
+		schema: textSchema(ORGANISATION_NAME_MAX, false),
+		defaultValue: '',
+		changedBy: 'admin',
+		section: 'phone-support',
+		control: { kind: 'text', lines: 'single', maxLength: ORGANISATION_NAME_MAX }
+	} satisfies SettingDefinition<string>,
+	scamImpersonators: {
+		label: 'Who scammers pretend to be',
+		description:
+			'In the warning on the phone support page: “Scammers pretend to be from <this>, and ask you to install remote access.”',
+		schema: textSchema(SCAM_TEXT_MAX, true),
+		defaultValue: 'Microsoft, your bank, the police, the NBN or a computer company',
+		changedBy: 'admin',
+		section: 'phone-support',
+		control: { kind: 'text', lines: 'single', maxLength: SCAM_TEXT_MAX }
+	} satisfies SettingDefinition<string>,
+	scamReportAdvice: {
+		label: 'Where to report a scam',
+		description: 'Shown when a caller’s answers look like a scam. Web addresses become links.',
+		schema: textSchema(SCAM_TEXT_MAX, true),
+		defaultValue:
+			'Report it to Scamwatch: https://www.scamwatch.gov.au/report-a-scam, or call ReportCyber on 1300 292 371.',
+		changedBy: 'admin',
+		section: 'phone-support',
+		control: { kind: 'text', lines: 'multiline', maxLength: SCAM_TEXT_MAX }
+	} satisfies SettingDefinition<string>
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFINITIONS;

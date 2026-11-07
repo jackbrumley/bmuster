@@ -16,6 +16,7 @@
 		type SettingView
 	} from '#lib/domain/settings/settings-definitions.ts';
 	import LocalNetworkMode from './local-network-mode.svelte';
+	import SettingText from './setting-text.svelte';
 	import SettingsTabs from './settings-tabs.svelte';
 	import type { PageProps } from './$types';
 
@@ -44,6 +45,8 @@
 				return ON_OFF;
 			case 'choice':
 				return control.options;
+			case 'text':
+				return [];
 		}
 	}
 
@@ -54,7 +57,11 @@
 		return setting.value;
 	}
 
-	async function save(setting: SettingView, value: string | boolean, saved: string): Promise<void> {
+	async function save(
+		setting: SettingView,
+		value: string | boolean,
+		saved: string
+	): Promise<{ kind: 'saved' } | { kind: 'refused'; message: string }> {
 		const result = await apiRequest({
 			method: 'PATCH',
 			url: '/api/settings',
@@ -63,6 +70,7 @@
 		});
 		showToast(result.ok ? saved : result.message, result.ok ? 'success' : 'error');
 		await refreshAll();
+		return result.ok ? { kind: 'saved' } : { kind: 'refused', message: result.message };
 	}
 
 	async function change(setting: SettingView, picked: string): Promise<void> {
@@ -71,7 +79,11 @@
 		if (value === setting.value) {
 			return;
 		}
-		await save(setting, value, `“${SETTING_DEFINITIONS[setting.key].label}” is saved.`);
+		await save(setting, value, savedMessage(setting));
+	}
+
+	function savedMessage(setting: SettingView): string {
+		return `“${SETTING_DEFINITIONS[setting.key].label}” is saved.`;
 	}
 
 	async function renewCertificate(): Promise<void> {
@@ -103,13 +115,22 @@
 		{#if definition.control.kind === 'local-network-mode'}
 			<LocalNetworkMode
 				localTls={data.localTls}
-				save={(on: boolean) =>
-					save(
+				save={async (on: boolean) => {
+					await save(
 						setting,
 						on,
 						`Local network mode is ${on ? 'on' : 'off'}. Restart BMuster to apply.`
-					)}
+					);
+				}}
 				renew={renewCertificate}
+			/>
+		{:else if definition.control.kind === 'text'}
+			<SettingText
+				label={definition.label}
+				description={definition.description}
+				lines={definition.control.lines}
+				value={String(setting.value)}
+				save={(text: string) => save(setting, text, savedMessage(setting))}
 			/>
 		{:else}
 			<div class="setting">

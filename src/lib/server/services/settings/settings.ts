@@ -22,7 +22,10 @@ const PARSE: { [K in SettingKey]: (value: unknown) => SettingValues[K] } = {
 	connectedNotice: (value) => SETTING_DEFINITIONS.connectedNotice.schema.parse(value),
 	agentUpdatePolicy: (value) => SETTING_DEFINITIONS.agentUpdatePolicy.schema.parse(value),
 	maxUploadGb: (value) => SETTING_DEFINITIONS.maxUploadGb.schema.parse(value),
-	localNetworkMode: (value) => SETTING_DEFINITIONS.localNetworkMode.schema.parse(value)
+	localNetworkMode: (value) => SETTING_DEFINITIONS.localNetworkMode.schema.parse(value),
+	organisationName: (value) => SETTING_DEFINITIONS.organisationName.schema.parse(value),
+	scamImpersonators: (value) => SETTING_DEFINITIONS.scamImpersonators.schema.parse(value),
+	scamReportAdvice: (value) => SETTING_DEFINITIONS.scamReportAdvice.schema.parse(value)
 };
 
 const DEFAULTS: SettingValues = {
@@ -30,12 +33,24 @@ const DEFAULTS: SettingValues = {
 	connectedNotice: SETTING_DEFINITIONS.connectedNotice.defaultValue,
 	agentUpdatePolicy: SETTING_DEFINITIONS.agentUpdatePolicy.defaultValue,
 	maxUploadGb: SETTING_DEFINITIONS.maxUploadGb.defaultValue,
-	localNetworkMode: SETTING_DEFINITIONS.localNetworkMode.defaultValue
+	localNetworkMode: SETTING_DEFINITIONS.localNetworkMode.defaultValue,
+	organisationName: SETTING_DEFINITIONS.organisationName.defaultValue,
+	scamImpersonators: SETTING_DEFINITIONS.scamImpersonators.defaultValue,
+	scamReportAdvice: SETTING_DEFINITIONS.scamReportAdvice.defaultValue
 };
 
 export function getSetting<K extends SettingKey>(database: Queryable, key: K): SettingValues[K] {
 	const row = database.select().from(settings).where(eq(settings.key, key)).get();
 	return row === undefined ? DEFAULTS[key] : PARSE[key](JSON.parse(row.value));
+}
+
+/**
+ * The organisation callers are told about on /join (SPEC-JOIN J11): the
+ * setting, or this server's host name as people reach it when it is blank.
+ */
+export function organisationName(database: Queryable, hostname: string): string {
+	const name = getSetting(database, 'organisationName');
+	return name === '' ? hostname : name;
 }
 
 export function listSettings(database: Queryable): SettingView[] {
@@ -73,7 +88,14 @@ export function updateSetting(
 	const definition = SETTING_DEFINITIONS[key];
 	const parsed = definition.schema.safeParse(value);
 	if (!parsed.success) {
-		return { kind: 'invalid', message: `That is not a valid value for “${definition.label}”.` };
+		const issue = parsed.error.issues[0];
+		return {
+			kind: 'invalid',
+			message:
+				definition.control.kind === 'text' && issue !== undefined
+					? `“${definition.label}”: ${issue.message}`
+					: `That is not a valid value for “${definition.label}”.`
+		};
 	}
 	writeSetting(database, { kind: 'user', userId: actorUserId }, key, parsed.data, {}, now);
 	return { kind: 'changed', settings: listSettings(database) };

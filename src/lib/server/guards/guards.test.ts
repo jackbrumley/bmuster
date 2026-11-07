@@ -137,6 +137,9 @@ describe('every route is guarded (S7, hygiene route-guard-required)', () => {
 			'src/routes/api/settings/+server.ts',
 			'src/routes/api/join-codes/+server.ts',
 			'src/routes/api/join-codes/[id=uuid]/+server.ts',
+			// SPEC-JOIN J1, J3
+			'src/routes/api/support-codes/+server.ts',
+			'src/routes/api/support-codes/[id=uuid]/+server.ts',
 			'src/routes/api/machines/[id]/+server.ts',
 			'src/routes/api/machines/[id]/local-code/+server.ts',
 			'src/routes/api/user-groups/+server.ts',
@@ -199,6 +202,22 @@ describe('every route is guarded (S7, hygiene route-guard-required)', () => {
 			'src/routes/install.ps1/+server.ts'
 		]) {
 			expect(text(path), path).toMatch(/route\.public\(/);
+		}
+	});
+
+	it('opens only /join and its three code endpoints to anyone (SPEC-JOIN J5)', () => {
+		const join = files.filter((path) => path.startsWith('src/routes/join/'));
+		const guarded = join.filter((path) => /\+(page\.server|server)\.ts$/.test(path)).sort();
+		expect(guarded).toEqual([
+			'src/routes/join/+page.server.ts',
+			'src/routes/join/check/+server.ts',
+			'src/routes/join/install/+server.ts',
+			'src/routes/join/stop/+server.ts'
+		]);
+		expect(text('src/routes/join/+page.server.ts')).toMatch(/page\.public\(/);
+		for (const path of guarded.filter((file) => file.endsWith('/+server.ts'))) {
+			expect(text(path), path).toMatch(/export const POST: RequestHandler = route\.public\(/);
+			expect(text(path), path).not.toMatch(/export const (GET|PUT|PATCH|DELETE)/);
 		}
 	});
 });

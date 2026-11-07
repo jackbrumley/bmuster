@@ -108,6 +108,7 @@ async function openTab(machine: Machine, grants: Grant[] = GRANTS) {
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
 			localNetworkMode: false,
+			signedIn: true,
 			now: Date.parse('2026-11-07T12:00:00.000Z'),
 			machine,
 			grants

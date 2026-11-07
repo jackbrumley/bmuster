@@ -85,7 +85,12 @@ const AUDIT_KINDS = [
 	'folder-created',
 	// SPEC-PRESENCE
 	'machine-offline',
-	'machine-online'
+	'machine-online',
+	// SPEC-JOIN
+	'support-code-started',
+	'support-code-cancelled',
+	'support-code-entered',
+	'support-code-scam-stop'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -264,5 +269,13 @@ export function activityLabel(kind: AuditKind): string {
 			return 'A machine went offline';
 		case 'machine-online':
 			return 'A machine came back online';
+		case 'support-code-started':
+			return 'Started phone support';
+		case 'support-code-cancelled':
+			return 'Cancelled a support code';
+		case 'support-code-entered':
+			return 'A support code was entered on /join';
+		case 'support-code-scam-stop':
+			return 'A support code was stopped by the scam check';
 	}
 }

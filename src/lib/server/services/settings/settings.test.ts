@@ -3,7 +3,7 @@ import { SETTING_DEFINITIONS, SETTING_KEYS } from '#lib/domain/settings/settings
 import { testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import { listAudit } from '../audit/audit.ts';
-import { getSetting, listSettings, updateSetting } from './settings.ts';
+import { getSetting, listSettings, organisationName, updateSetting } from './settings.ts';
 
 describe('server settings (S16)', () => {
 	it('declares each setting once, with a default its own type accepts, changed by admins', () => {
@@ -12,7 +12,10 @@ describe('server settings (S16)', () => {
 			'connectedNotice',
 			'agentUpdatePolicy',
 			'maxUploadGb',
-			'localNetworkMode'
+			'localNetworkMode',
+			'organisationName',
+			'scamImpersonators',
+			'scamReportAdvice'
 		]);
 		for (const key of SETTING_KEYS) {
 			const definition = SETTING_DEFINITIONS[key];
@@ -61,5 +64,68 @@ describe('server settings (S16)', () => {
 				detail: { from: 'true', to: 'false' }
 			})
 		]);
+	});
+
+	it('J11: the organisation name is the host name until an admin sets one, trimmed and audited', async () => {
+		const database = testDatabase();
+		const admin = await addTestUser(database, {
+			email: 'a@example.com',
+			role: 'admin',
+			password: null
+		});
+		expect(SETTING_DEFINITIONS.organisationName).toMatchObject({
+			label: 'Organisation name',
+			section: 'phone-support',
+			defaultValue: '',
+			control: { kind: 'text', lines: 'single' }
+		});
+		expect(organisationName(database, 'bmuster.example.com')).toBe('bmuster.example.com');
+		expect(updateSetting(database, admin.id, 'organisationName', '  Example IT ', NOW).kind).toBe(
+			'changed'
+		);
+		expect(getSetting(database, 'organisationName')).toBe('Example IT');
+		expect(organisationName(database, 'bmuster.example.com')).toBe('Example IT');
+		expect(updateSetting(database, admin.id, 'organisationName', 'x'.repeat(81), NOW)).toEqual({
+			kind: 'invalid',
+			message: '“Organisation name”: Keep it to 80 characters.'
+		});
+		expect(updateSetting(database, admin.id, 'organisationName', '', NOW).kind).toBe('changed');
+		expect(organisationName(database, 'bmuster.example.com')).toBe('bmuster.example.com');
+		expect(listAudit(database, 1)).toEqual([
+			expect.objectContaining({
+				kind: 'setting-changed',
+				target: 'Organisation name',
+				detail: { from: 'Example IT', to: '' }
+			})
+		]);
+	});
+
+	it('J11: the scam wording has Australian defaults and cannot be blanked', async () => {
+		const database = testDatabase();
+		const admin = await addTestUser(database, {
+			email: 'a@example.com',
+			role: 'admin',
+			password: null
+		});
+		expect(getSetting(database, 'scamImpersonators')).toBe(
+			'Microsoft, your bank, the police, the NBN or a computer company'
+		);
+		expect(getSetting(database, 'scamReportAdvice')).toContain(
+			'https://www.scamwatch.gov.au/report-a-scam'
+		);
+		expect(getSetting(database, 'scamReportAdvice')).toContain('1300 292 371');
+		expect(updateSetting(database, admin.id, 'scamReportAdvice', '   ', NOW)).toEqual({
+			kind: 'invalid',
+			message: '“Where to report a scam”: This cannot be blank.'
+		});
+		expect(
+			updateSetting(
+				database,
+				admin.id,
+				'scamReportAdvice',
+				'Report it to Action Fraud: https://www.actionfraud.police.uk',
+				NOW
+			).kind
+		).toBe('changed');
 	});
 });

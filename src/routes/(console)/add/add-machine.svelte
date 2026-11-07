@@ -21,12 +21,14 @@
 	import InstallManually from './install-manually.svelte';
 	import JoinCodeStatus from './join-code-status.svelte';
 	import MachineGroupPicker from './machine-group-picker.svelte';
+	import PhoneSupport from './phone-support.svelte';
 	import { makeJoinCode, type CodeState } from './join-code.ts';
 
 	/**
 	 * Add machine (SPEC-ENROLMENT 4): a join code and the one-line install
 	 * command, with a manual install underneath (SPEC-INSTALL-OPTIONS M1–M4).
 	 * In local network mode the commands carry the certificate pin (L5, L6).
+	 * Phone support (SPEC-JOIN J12) sits underneath, with the same groups.
 	 */
 	let {
 		origin,
@@ -169,6 +171,8 @@
 
 	<InstallManually os={target} {origin} {joinCode} {downloads} {devServer} {pin} {machineGroups} />
 </Panel>
+
+<PhoneSupport {origin} machineGroupIds={groupIds} />
 
 <style>
 	.code-row {

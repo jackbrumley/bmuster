@@ -23,6 +23,8 @@
 		IconLogout,
 		IconPlugConnected,
 		IconTrash,
+		IconPhone,
+		IconPhoneOff,
 		IconPin,
 		IconRocket,
 		IconShieldLock,
@@ -192,6 +194,13 @@
 				return IconWifiOff;
 			case 'machine-online':
 				return IconWifi;
+			case 'support-code-started':
+			case 'support-code-entered':
+				return IconPhone;
+			case 'support-code-cancelled':
+				return IconPhoneOff;
+			case 'support-code-scam-stop':
+				return IconShieldX;
 		}
 	}
 </script>

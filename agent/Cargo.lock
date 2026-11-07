@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "bmuster-agent"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -143,7 +143,7 @@ dependencies = [
 
 [[package]]
 name = "bmuster-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "jpeg-encoder",
  "libc",
@@ -159,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "bmuster-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -171,7 +171,7 @@ dependencies = [
 
 [[package]]
 name = "bmuster-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -183,7 +183,7 @@ dependencies = [
 
 [[package]]
 name = "bmuster-service"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "libc",

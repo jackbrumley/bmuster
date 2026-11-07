@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gt } from 'drizzle-orm';
 import { groupCode, normaliseCode, randomCode } from '../../crypto/random-code.ts';
 import { joinCodes, machines } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
@@ -164,6 +164,21 @@ export function redeemJoinCode(
 				? { kind: 'new-machine' }
 				: { kind: 'reinstall', machineId: row.reinstallMachineId }
 	};
+}
+
+/** Ends a join code now, unused or not (a cancelled support code, SPEC-JOIN J3). */
+export function expireJoinCode(database: Queryable, id: string, now: number): void {
+	database
+		.update(joinCodes)
+		.set({ expiresAt: new Date(now) })
+		.where(and(eq(joinCodes.id, id), gt(joinCodes.expiresAt, new Date(now))))
+		.run();
+}
+
+/** How many times a join code has been used; undefined for an unknown id. */
+export function joinCodeUses(database: Queryable, id: string): number | undefined {
+	return database.select({ uses: joinCodes.uses }).from(joinCodes).where(eq(joinCodes.id, id)).get()
+		?.uses;
 }
 
 /** A join code's uses and the machines that joined with it; undefined for an unknown id. */

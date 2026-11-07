@@ -7,6 +7,7 @@
 		IconPlayerPause,
 		IconPlayerPlay
 	} from '@tabler/icons-svelte-runes';
+	import { CHANGELOG } from '#lib/domain/releases/changelog.ts';
 	import { stageLabel } from '#lib/domain/machines/agent-updates.ts';
 	import { rolloutReplySchema } from '#lib/schemas/machines/agent-updates.ts';
 	import Button from '#lib/ui/button.svelte';
@@ -61,6 +62,15 @@
 	summary="Keep every agent on the newest signed version: in stages, automatically, with a pause for anything that goes wrong."
 	actions={undefined}
 />
+
+<Panel heading="Release notes" actions={undefined} tone="normal" padding="normal">
+	{#each CHANGELOG as release (release.version)}
+		<h2>BMuster {release.version}</h2>
+		<ul>
+			{#each release.changes as change (change)}<li>{change}</li>{/each}
+		</ul>
+	{/each}
+</Panel>
 
 {#if data.rollout.kind === 'rollout' && data.rollout.paused.kind === 'paused'}
 	<Notice

@@ -1,0 +1,145 @@
+<!doctype html>
+<!--
+	SvelteKit's last resort (SPEC-ERROR-PAGES E6): shown when the app itself
+	cannot render, so nothing here may need Svelte, a stylesheet or any other
+	request. The colours copy src/lib/ui/design-tokens.css; the logo is the
+	one in src/lib/ui/logo.svelte.
+-->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<title>BMuster can't load right now</title>
+		<script>
+			// The person's saved theme, as app.html applies it.
+			try {
+				const theme = localStorage.getItem('bmuster-theme');
+				if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+			} catch {}
+		</script>
+		<style>
+			:root {
+				color-scheme: light dark;
+				--bg: light-dark(#f4f7f2, #0f1411);
+				--surface-elevated: light-dark(#ffffff, #171e19);
+				--text: light-dark(#161d14, #e7ece6);
+				--text-soft: light-dark(#364232, #c4ccc2);
+				--muted: light-dark(#657061, #8c978a);
+				--border: light-dark(rgba(22, 29, 20, 0.12), rgba(231, 236, 230, 0.1));
+				--brand: light-dark(#46720e, #a3e635);
+				--brand-contrast: light-dark(#ffffff, #14180f);
+				--shadow-tint: light-dark(rgba(22, 29, 20, 0.08), rgba(0, 0, 0, 0.45));
+			}
+			:root[data-theme='light'] {
+				color-scheme: light;
+			}
+			:root[data-theme='dark'] {
+				color-scheme: dark;
+			}
+			*,
+			*::before,
+			*::after {
+				box-sizing: border-box;
+			}
+			html,
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--text);
+				font-family:
+					'Inter',
+					system-ui,
+					-apple-system,
+					'Segoe UI',
+					Roboto,
+					sans-serif;
+				font-size: 1rem;
+				line-height: 1.5;
+			}
+			main {
+				display: grid;
+				align-content: center;
+				justify-items: center;
+				gap: 1.5rem;
+				min-height: 100dvh;
+				padding: calc(1.5rem + env(safe-area-inset-top, 0px))
+					calc(1rem + env(safe-area-inset-right, 0px))
+					calc(1.5rem + env(safe-area-inset-bottom, 0px))
+					calc(1rem + env(safe-area-inset-left, 0px));
+			}
+			.brand {
+				display: flex;
+				align-items: center;
+				gap: 0.75rem;
+				font-size: 1.5rem;
+				font-weight: 700;
+			}
+			.card {
+				display: grid;
+				justify-items: center;
+				gap: 0.75rem;
+				width: 100%;
+				max-width: 26rem;
+				padding: 1.5rem;
+				border: 1px solid var(--border);
+				border-radius: 12px;
+				background: var(--surface-elevated);
+				box-shadow: 0 8px 24px var(--shadow-tint);
+				text-align: center;
+			}
+			h1 {
+				margin: 0;
+				font-size: 1.25rem;
+			}
+			p {
+				margin: 0;
+				color: var(--text-soft);
+			}
+			.codes {
+				color: var(--muted);
+				font-size: 0.75rem;
+			}
+			a {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				width: 100%;
+				min-height: 48px;
+				margin-top: 0.75rem;
+				border-radius: 999px;
+				background: var(--brand);
+				color: var(--brand-contrast);
+				font-weight: 600;
+				text-decoration: none;
+			}
+			a:focus-visible {
+				outline: 2px solid var(--brand);
+				outline-offset: 2px;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<div class="brand">
+				<svg width="48" height="48" viewBox="12 12 232 232" aria-hidden="true">
+					<rect x="12" y="12" width="232" height="232" rx="44" fill="#1b221d" />
+					<circle cx="128" cy="128" r="88" fill="none" stroke="#3f4a43" stroke-width="8" />
+					<circle cx="128" cy="128" r="56" fill="none" stroke="#3f4a43" stroke-width="8" />
+					<path d="M128 128 L128 40 A88 88 0 0 1 204 84 Z" fill="#a3e635" opacity="0.35" />
+					<path d="M128 128 L204 84" stroke="#a3e635" stroke-width="12" stroke-linecap="round" />
+					<circle cx="128" cy="128" r="12" fill="#a3e635" />
+					<rect x="160" y="148" width="40" height="30" rx="6" fill="#f4f7f2" />
+					<circle cx="84" cy="96" r="9" fill="#a3e635" />
+					<circle cx="92" cy="176" r="9" fill="#a3e635" />
+				</svg>
+				<span>BMuster</span>
+			</div>
+			<div class="card">
+				<h1>BMuster can't load right now</h1>
+				<p>Something stopped this page from loading. Wait a moment, then reload.</p>
+				<p class="codes">Error %sveltekit.status% · %sveltekit.error.message%</p>
+				<a href="">Reload</a>
+			</div>
+		</main>
+	</body>
+</html>

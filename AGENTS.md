@@ -169,7 +169,7 @@ docs/                   concept, plans, specs
 
 - `npm run verify` runs lint, type check, format check, hygiene, dead code and duplication in parallel, then the tests and the build, and prints one pass/fail table. The pre-push hook runs `verify --fast --skip-if-verified`.
 - Run checks as separate commands; never chain them so one failure hides another.
-- **Version:** bump `package.json` (semver) for every user-visible change and add a line to `src/lib/changelog.ts` in plain words.
+- **Version:** bump `package.json` (semver) for every user-visible change and add a line to `src/lib/domain/releases/changelog.ts` in plain words.
 - **Commits:** imperative subject, body with the why. Never add AI co-author trailers or "generated with" footers. Jack Brumley is the only author of record.
 - **Never push without the developer's go-ahead.** Never discard someone else's changes with `checkout`, `restore`, `reset`, `stash` or `clean`.
 
