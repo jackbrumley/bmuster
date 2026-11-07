@@ -11,13 +11,10 @@ import {
 	type InputMessage,
 	type ViewerMessage
 } from '#lib/domain/desktop/messages.ts';
+import type { DesktopScreen } from '#lib/domain/desktop/screen.ts';
 import { DESKTOP_MODES, type DesktopMode } from '#lib/domain/sessions/session.ts';
 import { SessionLink, type Connection } from '#lib/runes/session-link.svelte.ts';
-import {
-	agentDesktopMessageSchema,
-	type AgentDesktopMessage,
-	type DesktopDisplay
-} from '#lib/schemas/desktop/desktop.ts';
+import { agentDesktopMessageSchema, type DesktopDisplay } from '#lib/schemas/desktop/desktop.ts';
 import type { DesktopCanvas } from './desktop-canvas.ts';
 
 /**
@@ -26,8 +23,6 @@ import type { DesktopCanvas } from './desktop-canvas.ts';
  * and messages, draws, acknowledges, and sends the viewer's input. A
  * watch-only session never sends input at all.
  */
-
-export type DesktopState = Extract<AgentDesktopMessage, { type: 'state' }>;
 
 /** Frames and bytes over the last second, for the status line. */
 export type Throughput = { fps: number; bytesPerSecond: number };
@@ -45,7 +40,8 @@ export class DesktopSession {
 	mode = $state<DesktopMode | undefined>(undefined);
 	displays = $state<DesktopDisplay[]>([]);
 	current = $state<string | undefined>(undefined);
-	screenState = $state<DesktopState | undefined>(undefined);
+	/** What the screen at the machine shows; the agent says so after hello and on every change. */
+	screen = $state<DesktopScreen | undefined>(undefined);
 	/** The agent paused frames because no acknowledgement came for 10 s (4.3). */
 	stalled = $state(false);
 	/** The agent's last error, for the person to read. */
@@ -87,6 +83,7 @@ export class DesktopSession {
 			ended: () => {
 				// The next session is a fresh choice: only a reattach keeps the mode.
 				this.mode = undefined;
+				this.screen = undefined;
 				this.#stopClock();
 			}
 		});
@@ -116,6 +113,7 @@ export class DesktopSession {
 	async start(mode: DesktopMode): Promise<void> {
 		this.problem = undefined;
 		this.stalled = false;
+		this.screen = undefined;
 		if (await this.#link.start({ kind: 'desktop', mode }, mode)) {
 			this.mode = mode;
 			this.#startClock();
@@ -234,7 +232,7 @@ export class DesktopSession {
 			case 'stream':
 				return;
 			case 'state':
-				this.screenState = message;
+				this.screen = message.screen;
 				return;
 			case 'stalled':
 				this.stalled = true;

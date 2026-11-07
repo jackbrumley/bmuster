@@ -15,6 +15,7 @@
 		DesktopSettings as PictureSettings,
 		InputMessage
 	} from '#lib/domain/desktop/messages.ts';
+	import { screenLabel } from '#lib/domain/desktop/screen.ts';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 	import { signedInUserOf } from '#lib/domain/machines/machine.ts';
 	import Button from '#lib/ui/button.svelte';
@@ -70,6 +71,8 @@
 	 */
 	const choosing = $derived(connection.kind === 'idle' || connection.kind === 'ended');
 	const frame = $derived(session?.frameSize);
+	/** What the machine's screen shows (sign-in screen, someone's desktop, nothing to show). */
+	const screenState = $derived(running ? session?.screen : undefined);
 	const display = $derived(session?.displays.find((item) => item.id === session?.current));
 	const displayOptions = $derived(
 		(session?.displays ?? []).map((item) => ({
@@ -235,6 +238,10 @@
 				{#if watchOnly && running}
 					<span class="badge"><IconEye size={16} /> View only</span>
 				{/if}
+				{#if screenState !== undefined}
+					<span class="screen-state" data-screen={screenState.kind}>{screenLabel(screenState)}</span
+					>
+				{/if}
 				<span
 					class="status"
 					role="status"
@@ -390,7 +397,9 @@
 		>
 			<canvas class="screen" bind:this={screenCanvas} aria-hidden="true"></canvas>
 			<canvas class="cursor" bind:this={cursorCanvas} aria-hidden="true"></canvas>
-			{#if frame === undefined && running}
+			{#if screenState?.kind === 'unavailable'}
+				<p class="waiting unavailable">{screenLabel(screenState)}</p>
+			{:else if frame === undefined && running}
 				<p class="waiting">{status}</p>
 			{/if}
 			{#if fullScreen && stage !== undefined}
@@ -473,6 +482,12 @@
 		white-space: nowrap;
 	}
 
+	.screen-state {
+		color: var(--text-soft);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
+	}
+
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
@@ -545,6 +560,12 @@
 		color: var(--terminal-text);
 		font-size: var(--text-sm);
 		pointer-events: none;
+	}
+
+	.waiting.unavailable {
+		padding: var(--space-4);
+		background: var(--screen-bg);
+		text-align: center;
 	}
 
 	.mode {

@@ -5,6 +5,7 @@
  * ignored, so later phases can add messages.
  */
 import { z } from 'zod';
+import type { DesktopScreen } from '#lib/domain/desktop/screen.ts';
 
 const displaySchema = z.object({
 	id: z.string(),
@@ -27,6 +28,14 @@ const DESKTOP_ERROR_CODES = [
 	'bad-message'
 ] as const;
 
+/** What the screen at the machine shows (`state`). */
+const screenSchema = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('sign-in') }),
+	z.object({ kind: z.literal('locked'), user: z.string().nullable() }),
+	z.object({ kind: z.literal('desktop'), user: z.string().nullable() }),
+	z.object({ kind: z.literal('unavailable'), reason: z.string() })
+]) satisfies z.ZodType<DesktopScreen>;
+
 export const agentDesktopMessageSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('displays'), list: z.array(displaySchema), current: z.string() }),
 	z.object({
@@ -37,12 +46,7 @@ export const agentDesktopMessageSchema = z.discriminatedUnion('type', [
 		height: z.int(),
 		scale: z.number()
 	}),
-	z.object({
-		type: z.literal('state'),
-		desktop: z.enum(['default', 'winlogon', 'secure', 'greeter']),
-		locked: z.boolean(),
-		signedInUser: z.string().nullable()
-	}),
+	z.object({ type: z.literal('state'), screen: screenSchema }),
 	z.object({ type: z.literal('stalled') }),
 	z.object({
 		type: z.literal('error'),
@@ -50,5 +54,3 @@ export const agentDesktopMessageSchema = z.discriminatedUnion('type', [
 		message: z.string()
 	})
 ]);
-
-export type AgentDesktopMessage = z.infer<typeof agentDesktopMessageSchema>;
