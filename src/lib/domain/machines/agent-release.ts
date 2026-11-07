@@ -23,7 +23,7 @@ export type AgentDownload =
 	| { kind: 'ready'; target: AgentTarget; version: string; size: number; sha256: string };
 
 /** The builds the one-line command for `os` can install: it picks the processor on the machine. */
-export function targetsFor(os: 'linux' | 'windows'): readonly AgentTarget[] {
+function targetsFor(os: 'linux' | 'windows'): readonly AgentTarget[] {
 	return os === 'windows'
 		? ['x86_64-pc-windows-msvc']
 		: ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'];
