@@ -5,7 +5,7 @@
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
 	import { formatBytes, percentOf } from '#lib/utils/format.ts';
-	import type { Machine } from '#lib/domain/machines/machine.ts';
+	import { osLabel, type Machine } from '#lib/domain/machines/machine.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -15,9 +15,33 @@
 	let query = $state('');
 	let filter = $state<Filter>('all');
 
+	type DiskSummary = { mount: string; percent: number; detail: string };
+
+	function fullestDisk(machine: Machine): DiskSummary | undefined {
+		if (machine.inventory.kind !== 'known' || machine.inventory.disks.length === 0) {
+			return undefined;
+		}
+		const disk = machine.inventory.disks.reduce((worst, current) =>
+			percentOf(current.usedBytes, current.sizeBytes) > percentOf(worst.usedBytes, worst.sizeBytes)
+				? current
+				: worst
+		);
+		return {
+			mount: disk.mount,
+			percent: percentOf(disk.usedBytes, disk.sizeBytes),
+			detail: `${formatBytes(disk.sizeBytes - disk.usedBytes)} free`
+		};
+	}
+
+	function pendingUpdates(machine: Machine): number {
+		return machine.inventory.kind === 'known' && machine.inventory.updates.kind === 'known'
+			? machine.inventory.updates.count
+			: 0;
+	}
+
 	function needsAttention(machine: Machine): boolean {
-		const fullDisk = machine.disks.some((disk) => percentOf(disk.usedBytes, disk.sizeBytes) >= 90);
-		return machine.os.updatesPending > 0 || fullDisk;
+		const disk = fullestDisk(machine);
+		return pendingUpdates(machine) > 0 || (disk !== undefined && disk.percent >= 90);
 	}
 
 	function matchesFilter(machine: Machine): boolean {
@@ -35,7 +59,7 @@
 
 	const visible = $derived(
 		data.machines.filter((machine) => {
-			const text = `${machine.name} ${machine.hostname} ${machine.tags.join(' ')}`.toLowerCase();
+			const text = `${machine.name} ${machine.hostname} ${osLabel(machine)}`.toLowerCase();
 			return matchesFilter(machine) && text.includes(query.trim().toLowerCase());
 		})
 	);
@@ -53,19 +77,6 @@
 		{ id: 'offline', label: 'Offline' },
 		{ id: 'attention', label: 'Needs attention' }
 	];
-
-	function fullestDisk(machine: Machine): { percent: number; detail: string; mount: string } {
-		const disk = machine.disks.reduce((worst, current) =>
-			percentOf(current.usedBytes, current.sizeBytes) > percentOf(worst.usedBytes, worst.sizeBytes)
-				? current
-				: worst
-		);
-		return {
-			mount: disk.mount,
-			percent: percentOf(disk.usedBytes, disk.sizeBytes),
-			detail: `${formatBytes(disk.sizeBytes - disk.usedBytes)} free`
-		};
-	}
 </script>
 
 <header class="page-head">
@@ -75,100 +86,110 @@
 	</div>
 </header>
 
-<div class="toolbar">
-	<label class="search">
-		<IconSearch size={18} />
-		<input
-			data-raw-input="list-search"
-			type="search"
-			placeholder="Search name, host or tag"
-			bind:value={query}
-		/>
-	</label>
-	<div class="chips" role="group" aria-label="Filter machines">
-		{#each filters as item (item.id)}
-			<button
-				data-raw-button="chip"
-				type="button"
-				class="chip"
-				aria-pressed={filter === item.id}
-				onclick={() => (filter = item.id)}
-			>
-				{item.label}
-				<span class="count">{counts[item.id]}</span>
-			</button>
-		{/each}
+{#if data.machines.length === 0}
+	<div class="first-run">
+		<p>No machines yet.</p>
+		<a class="first-link" href={resolve('/(console)/add')}>Add your first machine</a>
 	</div>
-</div>
-
-{#if visible.length === 0}
-	<p class="empty">No machines match.</p>
 {:else}
-	<ul class="grid">
-		{#each visible as machine (machine.id)}
-			{@const disk = fullestDisk(machine)}
-			<li class="card">
-				<a class="card-link" href={resolve('/(console)/machines/[id]', { id: machine.id })}>
-					<div class="card-head">
-						<OsIcon family={machine.os.family} size={28} />
-						<div class="names">
-							<h2>{machine.name}</h2>
-							<p>{machine.os.name} {machine.os.version}</p>
-						</div>
-						<StatusBadge status={machine.status} now={data.now} />
-					</div>
+	<div class="toolbar">
+		<label class="search">
+			<IconSearch size={18} />
+			<input
+				data-raw-input="list-search"
+				type="search"
+				placeholder="Search name, host or system"
+				bind:value={query}
+			/>
+		</label>
+		<div class="chips" role="group" aria-label="Filter machines">
+			{#each filters as item (item.id)}
+				<button
+					data-raw-button="chip"
+					type="button"
+					class="chip"
+					aria-pressed={filter === item.id}
+					onclick={() => (filter = item.id)}
+				>
+					{item.label}
+					<span class="count">{counts[item.id]}</span>
+				</button>
+			{/each}
+		</div>
+	</div>
 
-					{#if machine.status.kind === 'online'}
-						<div class="meters">
-							<UsageBar
-								label="CPU"
-								percent={machine.cpu.loadPercent}
-								detail="{machine.cpu.loadPercent}%"
-							/>
-							<UsageBar
-								label="Memory"
-								percent={percentOf(machine.memory.usedBytes, machine.memory.totalBytes)}
-								detail="{formatBytes(machine.memory.usedBytes)} of {formatBytes(
-									machine.memory.totalBytes
-								)}"
-							/>
-							<UsageBar label="Disk {disk.mount}" percent={disk.percent} detail={disk.detail} />
+	{#if visible.length === 0}
+		<p class="empty">No machines match.</p>
+	{:else}
+		<ul class="grid">
+			{#each visible as machine (machine.id)}
+				{@const disk = fullestDisk(machine)}
+				{@const updates = pendingUpdates(machine)}
+				<li class="card">
+					<a class="card-link" href={resolve('/(console)/machines/[id]', { id: machine.id })}>
+						<div class="card-head">
+							<OsIcon family={machine.osFamily} size={28} />
+							<div class="names">
+								<h2>{machine.name}</h2>
+								<p>{osLabel(machine)}</p>
+							</div>
+							<StatusBadge status={machine.status} now={data.now} />
 						</div>
-					{:else}
-						<div class="meters">
-							<UsageBar label="Disk {disk.mount}" percent={disk.percent} detail={disk.detail} />
-						</div>
-					{/if}
 
-					<div class="tags">
-						{#each machine.tags as tag (tag)}
-							<span class="tag">{tag}</span>
-						{/each}
-						{#if machine.os.updatesPending > 0}
-							<span class="tag warn">{machine.os.updatesPending} updates</span>
+						<div class="meters">
+							{#if machine.status.kind === 'online' && machine.live.kind === 'known'}
+								<UsageBar
+									label="CPU"
+									percent={Math.round(machine.live.cpuPercent)}
+									detail="{Math.round(machine.live.cpuPercent)}%"
+								/>
+								{#if machine.inventory.kind === 'known'}
+									<UsageBar
+										label="Memory"
+										percent={percentOf(
+											machine.live.memoryUsedBytes,
+											machine.inventory.memoryTotalBytes
+										)}
+										detail="{formatBytes(machine.live.memoryUsedBytes)} of {formatBytes(
+											machine.inventory.memoryTotalBytes
+										)}"
+									/>
+								{/if}
+							{/if}
+							{#if disk !== undefined}
+								<UsageBar label="Disk {disk.mount}" percent={disk.percent} detail={disk.detail} />
+							{:else}
+								<p class="pending">Waiting for the first inventory.</p>
+							{/if}
+						</div>
+
+						{#if updates > 0}
+							<div class="tags">
+								<span class="tag warn">{updates} updates</span>
+							</div>
 						{/if}
-					</div>
-				</a>
+					</a>
 
-				<div class="actions">
-					<a
-						class="action"
-						class:disabled={machine.status.kind === 'offline'}
-						href={resolve('/(console)/machines/[id]/terminal', { id: machine.id })}
-					>
-						<IconTerminal2 size={18} /> Terminal
-					</a>
-					<a
-						class="action"
-						class:disabled={machine.status.kind === 'offline' || machine.displays === 0}
-						href={resolve('/(console)/machines/[id]/desktop', { id: machine.id })}
-					>
-						<IconDeviceDesktop size={18} /> Desktop
-					</a>
-				</div>
-			</li>
-		{/each}
-	</ul>
+					<div class="actions">
+						<a
+							class="action"
+							class:disabled={machine.status.kind === 'offline'}
+							href={resolve('/(console)/machines/[id]/terminal', { id: machine.id })}
+						>
+							<IconTerminal2 size={18} /> Terminal
+						</a>
+						<a
+							class="action"
+							class:disabled={machine.status.kind === 'offline'}
+							href={resolve('/(console)/machines/[id]/desktop', { id: machine.id })}
+						>
+							<IconDeviceDesktop size={18} /> Desktop
+						</a>
+					</div>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 {/if}
 
 <style>
@@ -248,6 +269,24 @@
 	.count {
 		color: var(--muted);
 		font-variant-numeric: tabular-nums;
+	}
+
+	.first-run {
+		display: grid;
+		justify-items: center;
+		gap: var(--space-3);
+		padding: var(--space-12) 0;
+		color: var(--muted);
+	}
+
+	.first-link {
+		color: var(--brand);
+		font-weight: var(--weight-semibold);
+	}
+
+	.pending {
+		color: var(--muted);
+		font-size: var(--text-xs);
 	}
 
 	.empty {

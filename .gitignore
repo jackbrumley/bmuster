@@ -1,5 +1,6 @@
 # Rust (agent/)
 target/
+agent/dev-data/
 
 # Node / SvelteKit
 node_modules/

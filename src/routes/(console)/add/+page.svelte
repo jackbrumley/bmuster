@@ -5,26 +5,34 @@
 		IconBrandApple,
 		IconBrandUbuntu,
 		IconBrandWindows,
+		IconKey,
 		IconRefresh
 	} from '@tabler/icons-svelte-runes';
 	import CopyField from '#lib/ui/copy-field.svelte';
+	import { apiRequest } from '#lib/utils/api-client.ts';
+	import { createJoinCodeReplySchema } from '#lib/schemas/machines/join-codes.ts';
 	import type { OsFamily } from '#lib/domain/machines/machine.ts';
 
-	/** PROTOTYPE: the join code is made up here; the server issues real ones. */
-	let joinCode = $state('K7P-4QX-29M');
+	type CodeState =
+		| { kind: 'none' }
+		| { kind: 'making' }
+		| { kind: 'ready'; code: string; expiresAtIso: string }
+		| { kind: 'failed'; message: string };
+
+	let joinCode = $state<CodeState>({ kind: 'none' });
 	let target = $state<OsFamily>('linux');
 
 	const origin = $derived(page.url.origin);
 
-	const command = $derived.by(() => {
+	function commandFor(code: string): string {
 		switch (target) {
 			case 'linux':
 			case 'macos':
-				return `curl -fsSL ${origin}/install.sh | sudo sh -s -- --code ${joinCode}`;
+				return `curl -fsSL ${origin}/install.sh | sudo sh -s -- --code ${code}`;
 			case 'windows':
-				return `& ([scriptblock]::Create((irm ${origin}/install.ps1))) -Code ${joinCode}`;
+				return `& ([scriptblock]::Create((irm ${origin}/install.ps1))) -Code ${code}`;
 		}
-	});
+	}
 
 	const targets: { id: OsFamily; label: string; icon: typeof IconBrandUbuntu }[] = [
 		{ id: 'linux', label: 'Linux', icon: IconBrandUbuntu },
@@ -32,13 +40,21 @@
 		{ id: 'macos', label: 'macOS', icon: IconBrandApple }
 	];
 
-	function newCode(): void {
-		const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-		const part = (): string =>
-			Array.from({ length: 3 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join(
-				''
-			);
-		joinCode = `${part()}-${part()}-${part()}`;
+	async function makeCode(): Promise<void> {
+		joinCode = { kind: 'making' };
+		const result = await apiRequest({
+			method: 'POST',
+			url: '/api/join-codes',
+			body: { maxUses: 1, minutes: 60 },
+			reply: createJoinCodeReplySchema
+		});
+		joinCode = result.ok
+			? { kind: 'ready', code: result.data.code, expiresAtIso: result.data.expiresAtIso }
+			: { kind: 'failed', message: result.message };
+	}
+
+	function expiryTime(iso: string): string {
+		return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 	}
 </script>
 
@@ -53,12 +69,29 @@
 	<div class="code-row">
 		<div>
 			<p class="label">Join code</p>
-			<p class="code">{joinCode}</p>
-			<p class="hint">Works once. Expires in 60 minutes.</p>
+			{#if joinCode.kind === 'ready'}
+				<p class="code">{joinCode.code}</p>
+				<p class="hint">Works once. Expires at {expiryTime(joinCode.expiresAtIso)}.</p>
+			{:else if joinCode.kind === 'failed'}
+				<p class="error">{joinCode.message}</p>
+			{:else}
+				<p class="hint">A code lets one machine join, once, within 60 minutes.</p>
+			{/if}
 		</div>
-		<Button variant="secondary" size="compact" type="button" onclick={newCode}
-			><IconRefresh size={18} /> New code</Button
+		<Button
+			variant={joinCode.kind === 'ready' ? 'secondary' : 'primary'}
+			size="compact"
+			type="button"
+			onclick={() => {
+				void makeCode();
+			}}
 		>
+			{#if joinCode.kind === 'ready'}
+				<IconRefresh size={18} /> New code
+			{:else}
+				<IconKey size={18} /> {joinCode.kind === 'making' ? 'Making…' : 'Make a join code'}
+			{/if}
+		</Button>
 	</div>
 
 	<div class="targets" role="group" aria-label="Operating system">
@@ -76,12 +109,16 @@
 		{/each}
 	</div>
 
-	<div class="step">
-		<p class="label">
-			{target === 'windows' ? 'Run in PowerShell as administrator' : 'Run in a terminal'}
-		</p>
-		<CopyField value={command} label="install command" />
-	</div>
+	{#if target === 'macos'}
+		<p class="hint">The macOS agent is not built yet.</p>
+	{:else if joinCode.kind === 'ready'}
+		<div class="step">
+			<p class="label">
+				{target === 'windows' ? 'Run in PowerShell as administrator' : 'Run in a terminal'}
+			</p>
+			<CopyField value={commandFor(joinCode.code)} label="install command" />
+		</div>
+	{/if}
 </section>
 
 <style>
@@ -138,6 +175,11 @@
 	.hint {
 		color: var(--muted);
 		font-size: var(--text-xs);
+	}
+
+	.error {
+		color: var(--danger);
+		font-size: var(--text-sm);
 	}
 
 	.targets {

@@ -1,0 +1,26 @@
+{
+	"note": "Shared signing test vectors. Rust (crates/protocol) and TypeScript (src/lib/server/services/agents/signing.test.ts) must both reproduce these exactly.",
+	"seedHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+	"publicKeyBase64": "ebVWLo/mVPlAeLES6KmLp5AfhTrmlb7X4OORC60ElmQ=",
+	"machineId": "3f0c2b1a-0000-4000-8000-000000000001",
+	"requests": [
+		{
+			"method": "POST",
+			"path": "/agent/v1/check-in",
+			"timestampMs": 1794000000000,
+			"body": "{\"agentVersion\":\"0.1.0\"}",
+			"messageUtf8": "BMUSTER-REQ-1\nPOST\n/agent/v1/check-in\n1794000000000\n823338520cbfd5119f23c8b64ce5539dd787a11922d6ce6f8c8381108f467749",
+			"signatureBase64": "ey4wbfZezwCw9xOsAbDV8ueyyg9EWGEOlXMRFGk4E9Rgk43dZWs1/L8FQ9qsJfrtdlOPvv8VI/4F90AHv+ViDw==",
+			"authorization": "BMuster 3f0c2b1a-0000-4000-8000-000000000001:1794000000000:ey4wbfZezwCw9xOsAbDV8ueyyg9EWGEOlXMRFGk4E9Rgk43dZWs1/L8FQ9qsJfrtdlOPvv8VI/4F90AHv+ViDw=="
+		},
+		{
+			"method": "GET",
+			"path": "/agent/v1/socket",
+			"timestampMs": 1794000000123,
+			"body": "",
+			"messageUtf8": "BMUSTER-REQ-1\nGET\n/agent/v1/socket\n1794000000123\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"signatureBase64": "/Y6/h4KJuDkfa3DPZBfcRoprklkS9nMp7C5kN+YFxlLaC4lSFdb17q10ghY04wRMmmVkRYIVvp2vbfotDUBkBA==",
+			"authorization": "BMuster 3f0c2b1a-0000-4000-8000-000000000001:1794000000123:/Y6/h4KJuDkfa3DPZBfcRoprklkS9nMp7C5kN+YFxlLaC4lSFdb17q10ghY04wRMmmVkRYIVvp2vbfotDUBkBA=="
+		}
+	]
+}

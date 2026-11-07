@@ -1,57 +1,84 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { refreshAll } from '$app/navigation';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
 	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
+	import { osLabel, signedInUserOf } from '#lib/domain/machines/machine.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	const machine = $derived(data.machine);
+	const user = $derived(signedInUserOf(machine));
 
-	const facts = $derived([
-		{ label: 'Operating system', value: `${machine.os.name} ${machine.os.version}` },
-		{
-			label: 'Updates',
-			value: machine.os.updatesPending === 0 ? 'Up to date' : `${machine.os.updatesPending} pending`
-		},
-		{
-			label: 'Signed in',
-			value: machine.signedInUser.kind === 'user' ? machine.signedInUser.name : 'Nobody'
-		},
-		{ label: 'Processor', value: `${machine.cpu.model} · ${machine.cpu.cores} cores` },
-		{ label: 'Memory', value: formatBytes(machine.memory.totalBytes) },
-		{
-			label: 'Displays',
-			value: machine.displays === 0 ? 'None (headless)' : `${machine.displays}`
-		},
-		{ label: 'IP address', value: machine.ipAddress },
-		{ label: 'Agent', value: `v${machine.agentVersion}` },
-		{
-			label: machine.status.kind === 'online' ? 'Online for' : 'Last seen',
-			value:
-				machine.status.kind === 'online'
-					? formatRelative(machine.status.sinceIso, data.now).replace(' ago', '')
-					: formatRelative(machine.status.lastSeenIso, data.now)
+	// Live figures: refresh while the page is visible (the server asks the agent to stream).
+	onMount(() => {
+		const timer = setInterval(() => {
+			if (document.visibilityState === 'visible') {
+				void refreshAll();
+			}
+		}, 3000);
+		return () => {
+			clearInterval(timer);
+		};
+	});
+
+	const facts = $derived.by(() => {
+		const list = [
+			{ label: 'Operating system', value: osLabel(machine) },
+			{ label: 'Signed in', value: user.kind === 'user' ? user.name : 'Nobody' },
+			{ label: 'Agent', value: `v${machine.agentVersion}` },
+			{
+				label: 'Last seen',
+				value:
+					machine.status.kind === 'online' ? 'Now' : formatRelative(machine.lastSeenIso, data.now)
+			},
+			{ label: 'Enrolled', value: formatRelative(machine.enrolledIso, data.now) }
+		];
+		if (machine.inventory.kind === 'known') {
+			const inventory = machine.inventory;
+			list.push(
+				{
+					label: 'Updates',
+					value:
+						inventory.updates.kind === 'unknown'
+							? 'Not reported'
+							: inventory.updates.count === 0
+								? 'Up to date'
+								: `${inventory.updates.count} pending`
+				},
+				{ label: 'Processor', value: `${inventory.cpuModel} · ${inventory.cpuCores} cores` },
+				{ label: 'Memory', value: formatBytes(inventory.memoryTotalBytes) },
+				{ label: 'Build', value: inventory.osBuild === '' ? 'Not reported' : inventory.osBuild },
+				{
+					label: 'Addresses',
+					value: inventory.addresses.length === 0 ? 'None reported' : inventory.addresses.join(', ')
+				}
+			);
 		}
-	]);
+		return list;
+	});
 </script>
 
 <div class="sections">
 	<section class="panel">
 		<h2>Health</h2>
-		{#if machine.status.kind === 'online'}
+		{#if machine.status.kind === 'online' && machine.live.kind === 'known'}
 			<div class="meters">
 				<UsageBar
 					label="CPU"
-					percent={machine.cpu.loadPercent}
-					detail="{machine.cpu.loadPercent}%"
+					percent={Math.round(machine.live.cpuPercent)}
+					detail="{Math.round(machine.live.cpuPercent)}%"
 				/>
-				<UsageBar
-					label="Memory"
-					percent={percentOf(machine.memory.usedBytes, machine.memory.totalBytes)}
-					detail="{formatBytes(machine.memory.usedBytes)} of {formatBytes(
-						machine.memory.totalBytes
-					)}"
-				/>
+				{#if machine.inventory.kind === 'known'}
+					<UsageBar
+						label="Memory"
+						percent={percentOf(machine.live.memoryUsedBytes, machine.inventory.memoryTotalBytes)}
+						detail="{formatBytes(machine.live.memoryUsedBytes)} of {formatBytes(
+							machine.inventory.memoryTotalBytes
+						)}"
+					/>
+				{/if}
 			</div>
 		{:else}
 			<p class="muted">Live figures show when the machine is online.</p>
@@ -60,15 +87,19 @@
 
 	<section class="panel">
 		<h2>Disks</h2>
-		<div class="meters">
-			{#each machine.disks as disk (disk.mount)}
-				<UsageBar
-					label={disk.mount}
-					percent={percentOf(disk.usedBytes, disk.sizeBytes)}
-					detail="{formatBytes(disk.usedBytes)} of {formatBytes(disk.sizeBytes)}"
-				/>
-			{/each}
-		</div>
+		{#if machine.inventory.kind === 'known'}
+			<div class="meters">
+				{#each machine.inventory.disks as disk (disk.mount)}
+					<UsageBar
+						label={disk.mount}
+						percent={percentOf(disk.usedBytes, disk.sizeBytes)}
+						detail="{formatBytes(disk.usedBytes)} of {formatBytes(disk.sizeBytes)}"
+					/>
+				{/each}
+			</div>
+		{:else}
+			<p class="muted">Waiting for the first inventory.</p>
+		{/if}
 	</section>
 
 	<section class="panel wide">

@@ -35,10 +35,10 @@
 <a class="back" href={resolve('/(console)')}><IconChevronLeft size={18} /> Machines</a>
 
 <header class="head">
-	<OsIcon family={data.machine.os.family} size={36} />
+	<OsIcon family={data.machine.osFamily} size={36} />
 	<div class="names">
 		<h1>{data.machine.name}</h1>
-		<p>{data.machine.hostname} · {data.machine.ipAddress}</p>
+		<p>{data.machine.hostname}</p>
 	</div>
 	<StatusBadge status={data.machine.status} now={data.now} />
 </header>

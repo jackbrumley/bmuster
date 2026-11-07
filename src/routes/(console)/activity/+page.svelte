@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import {
 		IconDeviceDesktop,
 		IconFileUpload,
@@ -46,9 +45,7 @@
 				<p class="what">
 					<strong>{entry.actor}</strong>
 					{activityLabel(entry.kind).toLowerCase()} ·
-					<a href={resolve('/(console)/machines/[id]', { id: entry.machineId })}
-						>{entry.machineName}</a
-					>
+					<span class="machine">{entry.machineName}</span>
 				</p>
 				<p class="detail">{entry.detail}</p>
 			</div>
@@ -116,7 +113,7 @@
 		font-size: var(--text-sm);
 	}
 
-	.what a {
+	.what .machine {
 		color: var(--brand);
 		font-weight: var(--weight-medium);
 	}

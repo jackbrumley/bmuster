@@ -1,6 +1,6 @@
 # SPEC-ENROLMENT: Join codes, enrolment, check-in and the live socket
 
-**Status:** `APPROVED` (2026-11-07) · **Date:** 2026-11-07 · **Version target:** 0.2.0
+**Status:** `IN PROGRESS` (approved 2026-11-07; see As built) · **Date:** 2026-11-07 · **Version target:** 0.2.0
 
 ## 1. Problem
 
@@ -72,6 +72,23 @@ signature = Ed25519( "BMUSTER-REQ-1\n" + METHOD + "\n" + path + "\n" + timestamp
 
 **Shared test vectors** for both signatures live in `agent/crates/protocol` and are repeated in `src/lib/server/services/agents/signing.test.ts`.
 
+### 6.1 Wire details (both sides build against these)
+
+- JSON is camelCase UTF-8. Public keys and signatures are standard base64 (with padding) of the raw 32 and 64 bytes.
+- Success: HTTP 200 with the reply object as the body.
+- Refusal: HTTP 400, 401, 404 or 409 with `{ "reason": <code>, "message": <plain sentence> }`. Codes: `bad-request`, `invalid-code`, `expired-code`, `used-code`, `bad-signature`, `stale-timestamp`, `replayed-timestamp`, `unknown-machine`, `revoked`. On `revoked` the agent stops; on the others it logs and retries with back-off.
+- The signed `path` is the URL path only, without query string, exactly as sent.
+- Test vectors: `agent/crates/protocol/tests/vectors.json` (key from a fixed seed, two signed requests). Both sides' tests reproduce them.
+- Enrol request: `{ code, publicKey, hostname, name, osFamily, target, agentVersion }` (`name` is `--name` or the hostname). Reply: `{ machineId, serverPublicKey, checkInSeconds }`.
+- Release manifest (`GET /agent/v1/releases/latest?target=…`): `{ version, target, size, sha256, url }`; binaries live under `RELEASES_PATH/<version>/<target>/bmuster-agent[.exe]`.
+
+### 6.2 Agent commands
+
+- `bmuster-agent install --url <server> --code <code> [--name <name>]`: copies itself into place, enrols, writes and starts the service. Needs root or Administrator. The install scripts download, check the SHA-256 and run this.
+- `bmuster-agent run [--data-dir <dir>]`: the service entry point. `--data-dir` lets a developer run an unprivileged copy (default: `/var/lib/bmuster` or `C:\ProgramData\BMuster`).
+- `bmuster-agent enrol --url <server> --code <code> [--name <name>] [--data-dir <dir>]`: enrol only (for development).
+- `bmuster-agent status [--data-dir <dir>]`, `bmuster-agent uninstall [--purge]`, `bmuster-agent --version`.
+
 ## 7. Check-in and inventory
 
 `POST /agent/v1/check-in`, every `checkInSeconds` (60 by default; the server can change it in the reply).
@@ -96,7 +113,7 @@ Inventory = {
 ```
 
 - The agent sends the full inventory on its first check-in after start and whenever its hash changes; otherwise `unchanged`.
-- Reply: `{ checkInSeconds }`. Later specs add an update offer.
+- Reply: `{ checkInSeconds, inventoryWanted }`. When `inventoryWanted` is true the agent sends the full inventory on its next check-in, even if the hash is unchanged (the server has none, or a different one). Later specs add an update offer.
 - `updatesPending`: Windows Update API on Windows; `apt`/`dnf` counts on Linux where available, else omitted as `{ kind: 'unknown' }` (to be modelled in the schema).
 
 ## 8. Live socket
@@ -161,3 +178,23 @@ agent/
 1. **Display name:** the install script takes an optional `--name`; without it the machine is named after its hostname. Admins can rename it in the console.
 2. **Reusable codes:** single use is the default. For roll-outs an admin may set up to 100 uses and up to 7 days; every use is audited.
 3. **First Linux targets:** Debian/Ubuntu and Fedora/RHEL families with systemd, on x86_64 and aarch64.
+
+## 14. As built (2026-11-07)
+
+Tested end to end on Linux: the Rust agent enrolled against a dev server, checked in with its real inventory, kept its live socket open, streamed figures while the machine page was open, and stopped with exit code 3 when the machine was removed.
+
+| #          | State                                                                                                                                                            |
+| :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1, A2     | Done. Machine groups are stored on the code; joining them waits for the access model.                                                                            |
+| A3         | Done (`install-scripts.test.ts`, `releases.test.ts`). Not yet run on a real systemd or Windows machine.                                                          |
+| A4–A9, A11 | Done, with the tests named above (`machine-views.test.ts` covers A7 and A8).                                                                                     |
+| A10        | Machines and Overview show real data. **Not yet:** a Remove button (needs the shared `confirmAction` dialog); removal works through `DELETE /api/machines/<id>`. |
+
+Differences from the text above:
+
+- The check-in reply also carries `inventoryWanted` (Section 7).
+- Upgrade refusals on the socket carry the same JSON `{ reason, message }` body as HTTP refusals; removal closes the socket with code 4001 and reason `revoked`.
+- `join_codes` has no `created_by` yet; it is added with SPEC-SIGN-IN.
+- The agent reports displays as an empty list and updates as `unknown` for now; Windows reports no signed-in user until the WTS API is used.
+- Release binaries are read into memory when served (a few MB); streaming can come with release signing.
+- The console has no accounts yet: the server refuses to start unless `CONSOLE_AUTH=none-development`. Never expose such a build.

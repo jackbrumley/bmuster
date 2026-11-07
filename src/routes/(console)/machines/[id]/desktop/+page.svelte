@@ -7,6 +7,7 @@
 		IconPointer,
 		IconHandFinger
 	} from '@tabler/icons-svelte-runes';
+	import { signedInUserOf } from '#lib/domain/machines/machine.ts';
 	import type { PageProps } from './$types';
 
 	/**
@@ -16,15 +17,21 @@
 	let { data }: PageProps = $props();
 
 	const machine = $derived(data.machine);
+	const user = $derived(signedInUserOf(machine));
 
 	let display = $state(0);
 	let inputMode = $state<'trackpad' | 'touch'>('trackpad');
 
 	const displays = $derived(
-		Array.from({ length: machine.displays }, (_, index) => ({
-			index,
-			label: `Display ${index + 1}`
-		}))
+		Array.from(
+			{
+				length: Math.max(1, machine.inventory.kind === 'known' ? machine.inventory.displayCount : 1)
+			},
+			(_, index) => ({
+				index,
+				label: `Display ${index + 1}`
+			})
+		)
 	);
 </script>
 
@@ -33,7 +40,7 @@
 		<IconPlugConnected size={32} />
 		<p>This machine is offline. The desktop opens when it checks in again.</p>
 	</div>
-{:else if machine.displays === 0}
+{:else if machine.inventory.kind === 'known' && machine.inventory.displayCount === 0 && machine.osFamily === 'windows'}
 	<div class="notice">
 		<IconDeviceDesktop size={32} />
 		<p>This machine has no display. Use the terminal instead.</p>
@@ -79,8 +86,8 @@
 			<IconDeviceDesktop size={48} stroke={1.25} />
 			<p>{machine.name} · Display {display + 1}</p>
 			<p class="hint">
-				{machine.signedInUser.kind === 'user'
-					? `${machine.signedInUser.name} will be asked to allow this session.`
+				{user.kind === 'user'
+					? `${user.name} will be asked to allow this session.`
 					: 'Nobody is signed in. The session starts at the sign-in screen.'}
 			</p>
 		</div>

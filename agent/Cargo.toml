@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = ["crates/protocol", "crates/agent"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+publish = false
+rust-version = "1.88"
+
+[workspace.dependencies]
+bmuster-protocol = { path = "crates/protocol" }
+anyhow = "=1.0.104"
+base64 = "=0.22.1"
+clap = { version = "=4.6.7", features = ["derive"] }
+ed25519-dalek = "=2.2.0"
+getrandom = { version = "=0.2.17", features = ["std"] }
+hex = "=0.4.3"
+httpdate = "=1.0.3"
+log = { version = "=0.4.35", features = ["std"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+sha2 = "=0.10.9"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = "z"
+panic = "abort"

@@ -35,6 +35,11 @@ export const fileLayoutFixtures: readonly RuleFixture[] = [
 		good: path('src/routes/(console)/machines/[id=uuid]/+page.svelte')
 	},
 	{
+		rule: 'naming',
+		bad: path('src/routes/Install.sh/+server.ts'),
+		good: path('src/routes/install.sh/+server.ts')
+	},
+	{
 		rule: 'css-placement',
 		bad: path('src/lib/ui/card.css'),
 		good: path('src/lib/ui/design-tokens.css')

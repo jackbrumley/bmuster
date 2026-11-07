@@ -4,6 +4,7 @@ import { playwright } from '@vitest/browser-playwright';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { webSockets } from './src/lib/server/sockets/vite-plugin.ts';
 
 const packageJson: unknown = JSON.parse(readFileSync('package.json', 'utf8'));
 if (
@@ -30,6 +31,8 @@ export default defineConfig(({ command, mode }) => ({
 			},
 			adapter: adapter()
 		}),
+		// Attaches the socket routes (agents' live sockets) to the dev server.
+		webSockets(),
 		// `npm run dev` serves HTTPS with a self-signed certificate, so phones on
 		// the local network get a secure context (clipboard, WebCodecs). Only for
 		// `vite dev`: builds, previews and Vitest stay on plain HTTP.

@@ -10,7 +10,7 @@ export const load: PageLoad = () => {
 	const now = Date.now();
 	return {
 		users: prototypeUsers(now),
-		machines: prototypeMachines(now),
+		machines: prototypeMachines(),
 		userGroups: prototypeUserGroups(),
 		machineGroups: prototypeMachineGroups()
 	};

@@ -13,7 +13,7 @@
 
 	const machine = $derived(data.machine);
 
-	const path = $derived(machine.os.family === 'windows' ? 'C:\\Users\\Public\\Downloads' : '/home');
+	const path = $derived(machine.osFamily === 'windows' ? 'C:\\Users\\Public\\Downloads' : '/home');
 
 	const entries = [
 		{ name: 'Installers', kind: 'folder', size: '' },

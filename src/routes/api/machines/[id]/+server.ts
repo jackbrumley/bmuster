@@ -1,0 +1,12 @@
+import { error } from '@sveltejs/kit';
+import { database } from '#lib/server/database/app-database.ts';
+import { removeMachine } from '#lib/server/services/machines/machine-views.ts';
+import type { RequestHandler } from './$types';
+
+/** DELETE /api/machines/<id>: remove a machine; its agent is refused from now on (SPEC-ENROLMENT 9). */
+export const DELETE: RequestHandler = ({ params }) => {
+	if (!removeMachine(database, params.id, Date.now())) {
+		error(404, 'No machine with this id');
+	}
+	return Response.json({ removed: true });
+};

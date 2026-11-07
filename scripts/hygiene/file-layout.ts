@@ -80,8 +80,8 @@ function isKebabCaseFilePath(relPath: string): boolean {
 		if (segment === '.well-known') continue;
 
 		if (!isFile) {
-			// Endpoint folders named after the file they serve: `manifest.json/+server.ts`.
-			const served = /^(.+)\.(json|xml|txt|webmanifest)$/.exec(segment);
+			// Endpoint folders named after the file they serve: `manifest.json/+server.ts`, `install.sh/+server.ts`.
+			const served = /^(.+)\.(json|xml|txt|webmanifest|sh|ps1)$/.exec(segment);
 			if (!kebabCaseRegex.test(served ? (served[1] ?? '') : segment)) return false;
 			continue;
 		}

@@ -1,0 +1,35 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { latestRelease, releaseFile } from './releases.ts';
+import { sha256Hex } from './signing.ts';
+
+function releasesFolder(builds: Record<string, string>): string {
+	const root = mkdtempSync(join(tmpdir(), 'bmuster-releases-'));
+	for (const [path, content] of Object.entries(builds)) {
+		mkdirSync(join(root, path, '..'), { recursive: true });
+		writeFileSync(join(root, path), content);
+	}
+	return root;
+}
+
+describe('agent releases (A3)', () => {
+	it('serves the newest version that has a build for the target', () => {
+		const root = releasesFolder({
+			'0.1.0/x86_64-unknown-linux-gnu/bmuster-agent': 'old',
+			'0.10.0/x86_64-unknown-linux-gnu/bmuster-agent': 'newest',
+			'0.11.0/x86_64-pc-windows-msvc/bmuster-agent.exe': 'windows only'
+		});
+		expect(latestRelease(root, 'x86_64-unknown-linux-gnu', 'https://s.example')).toEqual({
+			version: '0.10.0',
+			target: 'x86_64-unknown-linux-gnu',
+			size: 6,
+			sha256: sha256Hex(Buffer.from('newest')),
+			url: 'https://s.example/agent/v1/releases/0.10.0/x86_64-unknown-linux-gnu'
+		});
+		expect(latestRelease(root, 'aarch64-unknown-linux-gnu', 'https://s.example')).toBeUndefined();
+		expect(releaseFile(root, '0.10.0', 'x86_64-unknown-linux-gnu')?.size).toBe(6);
+		expect(releaseFile(root, '../0.10.0', 'x86_64-unknown-linux-gnu')).toBeUndefined();
+	});
+});

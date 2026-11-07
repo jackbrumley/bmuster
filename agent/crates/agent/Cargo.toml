@@ -1,0 +1,39 @@
+[package]
+name = "bmuster-agent"
+description = "BMuster agent: enrols a machine with a BMuster server, checks in and keeps a live socket open"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "bmuster-agent"
+path = "src/main.rs"
+
+[dependencies]
+bmuster-protocol.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+ed25519-dalek.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+httpdate.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-platform-verifier = "=0.7.1"
+sysinfo = { version = "=0.38.4", default-features = false, features = ["system", "disk", "network"] }
+tungstenite = { version = "=0.30.0", default-features = false, features = ["handshake", "rustls-tls-native-roots"] }
+ureq = { version = "=3.5.1", default-features = false, features = ["rustls-no-provider", "platform-verifier", "win-system-proxy"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "=0.8.1"
+
+[dev-dependencies]
+tempfile = "=3.27.0"

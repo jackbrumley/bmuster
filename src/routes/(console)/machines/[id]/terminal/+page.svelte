@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { IconPlugConnected } from '@tabler/icons-svelte-runes';
-	import { shellsFor } from '#lib/domain/machines/machine.ts';
+	import { shellsFor, signedInUserOf } from '#lib/domain/machines/machine.ts';
 	import type { PageProps } from './$types';
 
 	/**
@@ -10,15 +10,17 @@
 	let { data }: PageProps = $props();
 
 	const machine = $derived(data.machine);
-	const shells = $derived(shellsFor(machine.os.family));
+	const signedIn = $derived(signedInUserOf(machine));
+	const userName = $derived(signedIn.kind === 'user' ? signedIn.name : 'root');
+	const shells = $derived(shellsFor(machine.osFamily));
 
 	let shellId = $state('');
 	const activeShell = $derived(shells.find((shell) => shell.id === shellId) ?? shells[0]);
 
 	const prompt = $derived(
-		machine.os.family === 'windows'
+		machine.osFamily === 'windows'
 			? 'PS C:\\Users\\Administrator>'
-			: `${machine.signedInUser.kind === 'user' ? machine.signedInUser.name : 'root'}@${machine.hostname}:~$`
+			: `${userName}@${machine.hostname}:~$`
 	);
 
 	let lines = $state<string[]>([]);

@@ -11,107 +11,19 @@ import type {
 	UserGroup
 } from '#lib/domain/access/access.ts';
 import type { ActivityEntry } from '#lib/domain/activity/activity.ts';
-import type { Machine } from '#lib/domain/machines/machine.ts';
-
-const GB = 1024 ** 3;
 
 function minutesAgo(now: number, minutes: number): string {
 	return new Date(now - minutes * 60_000).toISOString();
 }
 
-export function prototypeMachines(now: number): Machine[] {
+/** Names for the prototype machine groups; real machines come from the database. */
+export function prototypeMachines(): { id: string; name: string }[] {
 	return [
-		{
-			id: '0b6f2a52-6d3e-4c51-9a0e-6f1c2d7a8b01',
-			name: 'Reception PC',
-			hostname: 'RECEPTION-01',
-			os: {
-				family: 'windows',
-				name: 'Windows 11 Pro',
-				version: '24H2 (26100.4652)',
-				updatesPending: 3
-			},
-			status: { kind: 'online', sinceIso: minutesAgo(now, 312) },
-			signedInUser: { kind: 'user', name: 'sarah.k' },
-			ipAddress: '192.168.1.24',
-			agentVersion: '0.1.0',
-			cpu: { model: 'Intel Core i5-12400', cores: 6, loadPercent: 18 },
-			memory: { totalBytes: 16 * GB, usedBytes: 9.4 * GB },
-			disks: [
-				{ mount: 'C:', sizeBytes: 476 * GB, usedBytes: 391 * GB },
-				{ mount: 'D:', sizeBytes: 931 * GB, usedBytes: 212 * GB }
-			],
-			displays: 2,
-			tags: ['Front office']
-		},
-		{
-			id: '1c7a3b63-7e4f-4d62-8b1f-7a2d3e8b9c02',
-			name: 'Build server',
-			hostname: 'build-01',
-			os: { family: 'linux', name: 'Ubuntu', version: '24.04.3 LTS', updatesPending: 0 },
-			status: { kind: 'online', sinceIso: minutesAgo(now, 60 * 24 * 19) },
-			signedInUser: { kind: 'none' },
-			ipAddress: '10.0.0.12',
-			agentVersion: '0.1.0',
-			cpu: { model: 'AMD Ryzen 9 7950X', cores: 16, loadPercent: 64 },
-			memory: { totalBytes: 64 * GB, usedBytes: 41 * GB },
-			disks: [
-				{ mount: '/', sizeBytes: 1863 * GB, usedBytes: 1702 * GB },
-				{ mount: '/srv', sizeBytes: 3726 * GB, usedBytes: 1210 * GB }
-			],
-			displays: 0,
-			tags: ['Servers']
-		},
-		{
-			id: '2d8b4c74-8f50-4e73-9c20-8b3e4f9cad03',
-			name: "Jack's laptop",
-			hostname: 'mint',
-			os: { family: 'linux', name: 'Linux Mint', version: '22.2', updatesPending: 12 },
-			status: { kind: 'online', sinceIso: minutesAgo(now, 47) },
-			signedInUser: { kind: 'user', name: 'jack' },
-			ipAddress: '192.168.1.50',
-			agentVersion: '0.1.0',
-			cpu: { model: 'Intel Core Ultra 7 155H', cores: 16, loadPercent: 9 },
-			memory: { totalBytes: 32 * GB, usedBytes: 12.6 * GB },
-			disks: [{ mount: '/', sizeBytes: 953 * GB, usedBytes: 388 * GB }],
-			displays: 1,
-			tags: ['Staff']
-		},
-		{
-			id: '3e9c5d85-9061-4f84-ad31-9c4f50adbe04',
-			name: 'Design Mac',
-			hostname: 'Design-Studio.local',
-			os: { family: 'macos', name: 'macOS', version: '26.1 Tahoe', updatesPending: 1 },
-			status: { kind: 'offline', lastSeenIso: minutesAgo(now, 60 * 26) },
-			signedInUser: { kind: 'none' },
-			ipAddress: '192.168.1.31',
-			agentVersion: '0.1.0',
-			cpu: { model: 'Apple M3 Pro', cores: 12, loadPercent: 0 },
-			memory: { totalBytes: 36 * GB, usedBytes: 0 },
-			disks: [{ mount: '/', sizeBytes: 994 * GB, usedBytes: 702 * GB }],
-			displays: 2,
-			tags: ['Staff']
-		},
-		{
-			id: '4fad6e96-a172-4095-be42-ad5061becf05',
-			name: 'Workshop PC',
-			hostname: 'WORKSHOP-02',
-			os: {
-				family: 'windows',
-				name: 'Windows 10 Pro',
-				version: '22H2 (19045.6216)',
-				updatesPending: 7
-			},
-			status: { kind: 'offline', lastSeenIso: minutesAgo(now, 9) },
-			signedInUser: { kind: 'none' },
-			ipAddress: '192.168.1.77',
-			agentVersion: '0.1.0',
-			cpu: { model: 'Intel Core i3-8100', cores: 4, loadPercent: 0 },
-			memory: { totalBytes: 8 * GB, usedBytes: 0 },
-			disks: [{ mount: 'C:', sizeBytes: 238 * GB, usedBytes: 221 * GB }],
-			displays: 1,
-			tags: ['Workshop']
-		}
+		{ id: '0b6f2a52-6d3e-4c51-9a0e-6f1c2d7a8b01', name: 'Reception PC' },
+		{ id: '1c7a3b63-7e4f-4d62-8b1f-7a2d3e8b9c02', name: 'Build server' },
+		{ id: '2d8b4c74-8f50-4e73-9c20-8b3e4f9cad03', name: "Jack's laptop" },
+		{ id: '3e9c5d85-9061-4f84-ad31-9c4f50adbe04', name: 'Design Mac' },
+		{ id: '4fad6e96-a172-4095-be42-ad5061becf05', name: 'Workshop PC' }
 	];
 }
 
