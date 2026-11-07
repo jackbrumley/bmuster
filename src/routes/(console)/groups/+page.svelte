@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { builtInGroupAbout } from '#lib/domain/access/access.ts';
 	import ExportButton from '#lib/ui/export-button.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import { describeRule } from '../access/rule-names.ts';
@@ -14,6 +16,7 @@
 			id: group.id,
 			name: group.name,
 			description: group.description,
+			about: undefined,
 			membership: { kind: 'chosen' as const, memberIds: group.memberIds }
 		}))
 	);
@@ -23,12 +26,16 @@
 			id: group.id,
 			name: group.name,
 			description: group.description,
+			about: group.builtIn === 'none' ? undefined : builtInGroupAbout(group.builtIn),
 			membership:
 				group.membership.kind === 'all-machines'
 					? { kind: 'all-machines' as const }
 					: { kind: 'chosen' as const, memberIds: group.membership.machineIds }
 		}))
 	);
+
+	/** `?machineGroup=<id>` opens that group (the Updates page links to Early updates this way). */
+	const openedMachineGroup = $derived(page.url.searchParams.get('machineGroup') ?? undefined);
 
 	function rulesUsing(groupId: string): string[] {
 		return data.rules
@@ -52,6 +59,7 @@
 	nouns={{ one: 'person', many: 'people' }}
 	groups={userGroups}
 	candidates={data.people}
+	opened={undefined}
 	{rulesUsing}
 />
 <GroupSection
@@ -60,5 +68,6 @@
 	nouns={{ one: 'machine', many: 'machines' }}
 	groups={machineGroups}
 	candidates={data.machines}
+	opened={openedMachineGroup}
 	{rulesUsing}
 />

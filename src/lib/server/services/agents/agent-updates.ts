@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {
-	EARLY_UPDATES_GROUP,
 	NEW_UPDATE_RECORD,
 	advanceStage,
 	firstStage,
 	machineUpdateState,
 	shouldOffer,
+	type EarlyUpdatesGroup,
 	type MachineUpdateState,
 	type RolloutStage,
 	type UpdateEvent,
@@ -96,19 +96,14 @@ function upsert(
 		.run();
 }
 
-/** Machines in the Early updates group (by name, any case). */
+/** The machines in the built-in Early updates group (found by `built_in`, never by name). */
 function earlyMachineIds(database: Queryable): Set<string> {
 	const rows = database
 		.select({ machineId: machineGroupMembers.machineId })
 		.from(machineGroupMembers)
 		.innerJoin(machineGroups, eq(machineGroups.id, machineGroupMembers.machineGroupId))
 		.innerJoin(machines, eq(machines.id, machineGroupMembers.machineId))
-		.where(
-			and(
-				sql`lower(${machineGroups.name}) = ${EARLY_UPDATES_GROUP.toLowerCase()}`,
-				isNull(machines.removedAt)
-			)
-		)
+		.where(and(eq(machineGroups.builtIn, 'early'), isNull(machines.removedAt)))
 		.all();
 	return new Set(rows.map((row) => row.machineId));
 }
@@ -403,9 +398,20 @@ export function rolloutView(
 	};
 }
 
-/** How many machines are in the Early updates group (0 when there is no such group). */
-export function earlyGroupSize(database: Queryable): number {
-	return earlyMachineIds(database).size;
+/**
+ * The built-in Early updates group and how many machines are in it, for the
+ * Updates page. The migration makes the group, so a database without it is broken.
+ */
+export function earlyUpdatesGroup(database: Queryable): EarlyUpdatesGroup {
+	const group = database
+		.select({ id: machineGroups.id, name: machineGroups.name })
+		.from(machineGroups)
+		.where(eq(machineGroups.builtIn, 'early'))
+		.get();
+	if (group === undefined) {
+		throw new Error('The built-in Early updates machine group is missing; run the migrations.');
+	}
+	return { ...group, machines: earlyMachineIds(database).size };
 }
 
 /** Pause by an admin. False if it was already paused. */

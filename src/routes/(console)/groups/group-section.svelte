@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
-	import { IconPlus } from '@tabler/icons-svelte-runes';
+	import { onMount } from 'svelte';
+	import { IconLock, IconPlus } from '@tabler/icons-svelte-runes';
 	import {
 		changedReplySchema,
 		groupDescriptionSchema,
@@ -19,12 +20,15 @@
 	/**
 	 * One kind of group on the Groups page (SPEC-ACCESS A1–A3, A8): the list,
 	 * then a view modal, then the edit and members modals. People and machines
-	 * work the same way; the built-in All machines group is read-only.
+	 * work the same way. Built-in groups (A3, A11) cannot be renamed or deleted:
+	 * All machines is read-only; Early updates takes machines like any other.
 	 */
 	type Group = {
 		id: string;
 		name: string;
 		description: string;
+		/** What a built-in group does; undefined for groups people made. */
+		about: string | undefined;
 		membership: { kind: 'all-machines' } | { kind: 'chosen'; memberIds: string[] };
 	};
 
@@ -36,6 +40,7 @@
 		nouns,
 		groups,
 		candidates,
+		opened,
 		rulesUsing
 	}: {
 		kind: 'user' | 'machine';
@@ -44,6 +49,8 @@
 		nouns: { one: string; many: string };
 		groups: Group[];
 		candidates: Candidate[];
+		/** The group to open when the page loads, from a link. */
+		opened: string | undefined;
 		/** "IT → Office" for every rule that uses the group. */
 		rulesUsing: (groupId: string) => string[];
 	} = $props();
@@ -69,6 +76,12 @@
 		panel.kind === 'closed' || panel.kind === 'add' ? undefined : panel.id
 	);
 	const selected = $derived(groups.find((group) => group.id === selectedId));
+
+	onMount(() => {
+		if (opened !== undefined && groups.some((group) => group.id === opened)) {
+			panel = { kind: 'view', id: opened };
+		}
+	});
 
 	function count(group: Group): string {
 		if (group.membership.kind === 'all-machines') {
@@ -212,7 +225,12 @@
 		dimmed={false}
 	>
 		<span class="body">
-			<span class="name">{group.name}</span>
+			<span class="name">
+				{group.name}
+				{#if group.about !== undefined}
+					<span class="built-in"><IconLock size={14} /> Built in</span>
+				{/if}
+			</span>
 			{#if group.description !== ''}
 				<span class="meta">{group.description}</span>
 			{/if}
@@ -238,6 +256,9 @@
 >
 	{#if selected !== undefined}
 		{@const rules = rulesUsing(selected.id)}
+		{#if selected.about !== undefined}
+			<p class="about"><IconLock size={16} /> {selected.about}</p>
+		{/if}
 		{#if selected.description !== ''}
 			<p class="description">{selected.description}</p>
 		{/if}
@@ -245,7 +266,7 @@
 			<dt>{nouns.many.slice(0, 1).toUpperCase()}{nouns.many.slice(1)}</dt>
 			<dd>
 				{#if selected.membership.kind === 'all-machines'}
-					Every machine on this server, now and later. Machines cannot be added or taken out.
+					Every machine on this server, now and later.
 				{:else if memberLabels(selected).length === 0}
 					None yet
 				{:else}
@@ -259,9 +280,11 @@
 	{#snippet footer()}
 		{#if selected?.membership.kind === 'chosen'}
 			{@const group = selected}
-			<Button variant="danger" size="compact" type="button" onclick={() => void remove(group)}>
-				Delete
-			</Button>
+			{#if group.about === undefined}
+				<Button variant="danger" size="compact" type="button" onclick={() => void remove(group)}>
+					Delete
+				</Button>
+			{/if}
 			<Button
 				variant="secondary"
 				size="compact"
@@ -272,16 +295,18 @@
 			>
 				{kind === 'user' ? 'People' : 'Machines'}
 			</Button>
-			<Button
-				variant="primary"
-				size="compact"
-				type="button"
-				onclick={() => {
-					openDetails(group);
-				}}
-			>
-				Edit
-			</Button>
+			{#if group.about === undefined}
+				<Button
+					variant="primary"
+					size="compact"
+					type="button"
+					onclick={() => {
+						openDetails(group);
+					}}
+				>
+					Edit
+				</Button>
+			{/if}
 		{:else}
 			<Button variant="secondary" size="compact" type="button" onclick={close}>Close</Button>
 		{/if}
@@ -393,6 +418,24 @@
 	.name {
 		font-weight: var(--weight-semibold);
 		overflow-wrap: anywhere;
+	}
+
+	.built-in {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1);
+		margin-inline-start: var(--space-2);
+		color: var(--muted);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
+	}
+
+	.about {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-2);
+		color: var(--text-soft);
+		font-size: var(--text-sm);
 	}
 
 	.meta {

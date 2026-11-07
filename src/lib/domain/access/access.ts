@@ -116,13 +116,31 @@ export type UserGroupView = {
 };
 
 /**
+ * The machine groups BMuster makes itself, which cannot be renamed or
+ * deleted: All machines (A3) and Early updates (A11).
+ */
+export type BuiltInMachineGroup = 'all' | 'early' | 'none';
+
+/** One line on what a built-in group does, for its page. */
+export function builtInGroupAbout(builtIn: Exclude<BuiltInMachineGroup, 'none'>): string {
+	switch (builtIn) {
+		case 'all':
+			return 'Built in: every machine on this server, now and later. Machines cannot be added or taken out.';
+		case 'early':
+			return 'Built in: new agent versions reach these machines first, an hour before the rest. Add one or two test machines.';
+	}
+}
+
+/**
  * A group of machines. The built-in All machines group always holds every
  * machine; its members are not stored and it cannot be changed by hand (A3).
+ * The built-in Early updates group holds chosen machines like any other (A11).
  */
 export type MachineGroupView = {
 	id: string;
 	name: string;
 	description: string;
+	builtIn: BuiltInMachineGroup;
 	membership: { kind: 'all-machines' } | { kind: 'chosen'; machineIds: string[] };
 };
 

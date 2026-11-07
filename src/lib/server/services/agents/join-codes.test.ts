@@ -248,5 +248,7 @@ describe('join codes name machine groups (SPEC-ACCESS A7)', () => {
 		expect(areChosenMachineGroups(database, [])).toBe(true);
 		expect(areChosenMachineGroups(database, [all])).toBe(false);
 		expect(areChosenMachineGroups(database, [office])).toBe(false);
+		const early = listMachineGroups(database).find((group) => group.builtIn === 'early')?.id ?? '';
+		expect(areChosenMachineGroups(database, [early])).toBe(true);
 	});
 });

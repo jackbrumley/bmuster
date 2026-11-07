@@ -11,6 +11,7 @@ import {
 	setGroupsOfMember,
 	updateGroupDetails
 } from './groups.ts';
+import { createRule } from './rules.ts';
 
 async function setUp() {
 	const database = testDatabase();
@@ -32,6 +33,12 @@ function allMachinesId(database: ReturnType<typeof testDatabase>): string {
 	return group.id;
 }
 
+function earlyUpdatesId(database: ReturnType<typeof testDatabase>): string {
+	const group = listMachineGroups(database).find((candidate) => candidate.builtIn === 'early');
+	if (group === undefined) throw new Error('no Early updates group');
+	return group.id;
+}
+
 function machineIdsOf(database: ReturnType<typeof testDatabase>, id: string): string[] {
 	const group = listMachineGroups(database).find((candidate) => candidate.id === id);
 	if (group?.membership.kind !== 'chosen') throw new Error(`no chosen group ${id}`);
@@ -48,6 +55,7 @@ describe('machine groups (A2)', () => {
 			id,
 			name: 'Office',
 			description: 'Front',
+			builtIn: 'none',
 			membership: { kind: 'chosen', machineIds: [] }
 		});
 		done(
@@ -65,7 +73,10 @@ describe('machine groups (A2)', () => {
 			description: 'Reception'
 		});
 		done(deleteGroup(database, 'machine', admin.id, id, NOW));
-		expect(listMachineGroups(database).map((group) => group.id)).toEqual([allMachinesId(database)]);
+		expect(listMachineGroups(database).map((group) => group.id)).toEqual([
+			allMachinesId(database),
+			earlyUpdatesId(database)
+		]);
 	});
 
 	it('A2: adds and removes machines on the group and from a machine’s Manage tab', async () => {
@@ -124,6 +135,7 @@ describe('All machines (A3)', () => {
 		const groups = listMachineGroups(database);
 		expect(groups[0]).toMatchObject({
 			name: 'All machines',
+			builtIn: 'all',
 			membership: { kind: 'all-machines' }
 		});
 		expect(groups.filter((group) => group.membership.kind === 'all-machines')).toHaveLength(1);
@@ -154,5 +166,89 @@ describe('All machines (A3)', () => {
 		expect(
 			createGroup(database, 'machine', admin.id, { name: 'all machines', description: '' }, NOW)
 		).toMatchObject(refused);
+	});
+});
+
+describe('Early updates (A11)', () => {
+	it('A11: exists from the start, listed right after All machines, with no machines yet', async () => {
+		const { database, admin } = await setUp();
+		done(createGroup(database, 'machine', admin.id, { name: 'Aardvarks', description: '' }, NOW));
+		const groups = listMachineGroups(database);
+		expect(groups.map((group) => group.name)).toEqual([
+			'All machines',
+			'Early updates',
+			'Aardvarks'
+		]);
+		expect(groups[1]).toMatchObject({
+			builtIn: 'early',
+			description:
+				'New agent versions reach these machines first. Put one or two test machines here.',
+			membership: { kind: 'chosen', machineIds: [] }
+		});
+	});
+
+	it('A11: cannot be renamed, described or deleted, and says why', async () => {
+		const { database, admin } = await setUp();
+		const early = earlyUpdatesId(database);
+		const refused = { kind: 'refused', status: 409 };
+		expect(deleteGroup(database, 'machine', admin.id, early, NOW)).toMatchObject(refused);
+		expect(
+			updateGroupDetails(
+				database,
+				'machine',
+				admin.id,
+				early,
+				{ name: 'Canaries', description: '' },
+				NOW
+			)
+		).toMatchObject(refused);
+		expect(
+			createGroup(database, 'machine', admin.id, { name: 'early updates', description: '' }, NOW)
+		).toMatchObject({ kind: 'refused', status: 409 });
+		expect(listMachineGroups(database)[1]).toMatchObject({ id: early, name: 'Early updates' });
+		const all = allMachinesId(database);
+		const allRefusal = deleteGroup(database, 'machine', admin.id, all, NOW);
+		expect(allRefusal.kind === 'refused' ? allRefusal.message : '').toMatch(
+			/^All machines always holds every machine/
+		);
+		const earlyRefusal = deleteGroup(database, 'machine', admin.id, early, NOW);
+		expect(earlyRefusal.kind === 'refused' ? earlyRefusal.message : '').toMatch(
+			/^Early updates is built in/
+		);
+	});
+
+	it('A11: machines are added and taken out on the group and from a machine’s Manage tab', async () => {
+		const { database, admin, first, second } = await setUp();
+		const early = earlyUpdatesId(database);
+		done(setGroupMembers(database, 'machine', admin.id, early, [first, second], NOW));
+		expect(machineIdsOf(database, early)).toEqual([first, second].toSorted());
+		done(setGroupMembers(database, 'machine', admin.id, early, [first], NOW));
+		expect(machineIdsOf(database, early)).toEqual([first]);
+		done(setGroupsOfMember(database, 'machine', admin.id, second, [early], NOW));
+		expect(machineIdsOf(database, early)).toEqual([first, second].toSorted());
+		done(setGroupsOfMember(database, 'machine', admin.id, first, [], NOW));
+		expect(machineIdsOf(database, early)).toEqual([second]);
+	});
+
+	it('A11: access rules may target it', async () => {
+		const { database, admin, first } = await setUp();
+		const early = earlyUpdatesId(database);
+		done(setGroupMembers(database, 'machine', admin.id, early, [first], NOW));
+		const testers = done(
+			createGroup(database, 'user', admin.id, { name: 'Testers', description: '' }, NOW)
+		);
+		expect(
+			createRule(
+				database,
+				admin.id,
+				{
+					userGroupId: testers,
+					machineGroupId: early,
+					permissions: ['view'],
+					consent: 'ask'
+				},
+				NOW
+			).kind
+		).toBe('done');
 	});
 });

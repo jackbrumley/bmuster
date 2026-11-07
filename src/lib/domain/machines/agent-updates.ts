@@ -8,8 +8,11 @@ import { isOlderAgent } from './agent-version.ts';
 
 export type UpdatePolicy = 'automatic' | 'manual';
 
-/** The name of the machine group whose machines get a new version first. */
-export const EARLY_UPDATES_GROUP = 'Early updates';
+/**
+ * The built-in Early updates machine group (SPEC-ACCESS A11): its machines get
+ * a new version first. Found by its built-in marker, so its name is only shown.
+ */
+export type EarlyUpdatesGroup = { id: string; name: string; machines: number };
 
 /** Each roll-out stage lasts this long without a failure before the next starts. */
 export const STAGE_MS = 60 * 60 * 1000;

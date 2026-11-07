@@ -7,7 +7,7 @@
 		IconPlayerPause,
 		IconPlayerPlay
 	} from '@tabler/icons-svelte-runes';
-	import { EARLY_UPDATES_GROUP, stageLabel } from '#lib/domain/machines/agent-updates.ts';
+	import { stageLabel } from '#lib/domain/machines/agent-updates.ts';
 	import { rolloutReplySchema } from '#lib/schemas/machines/agent-updates.ts';
 	import Button from '#lib/ui/button.svelte';
 	import ListCard from '#lib/ui/list-card.svelte';
@@ -26,6 +26,17 @@
 	 * roll-out has got, every machine's version and update state, Pause and Update now.
 	 */
 	let { data }: PageProps = $props();
+
+	const earlyCount = $derived(
+		`${String(data.earlyGroup.machines)} ${data.earlyGroup.machines === 1 ? 'machine' : 'machines'}`
+	);
+
+	/** Opens the Early updates group on the Groups page. */
+	const earlyGroupHref = $derived(
+		resolve(
+			`/(console)/groups?${new URLSearchParams({ machineGroup: data.earlyGroup.id }).toString()}`
+		)
+	);
 
 	type Build = (typeof data.builds)[number];
 
@@ -93,14 +104,6 @@
 					</dd>
 				</div>
 			{/if}
-			<div>
-				<dt>{EARLY_UPDATES_GROUP}</dt>
-				<dd>
-					{data.earlyGroupSize === 0
-						? `No machines. Put a few in a machine group named “${EARLY_UPDATES_GROUP}” to get new versions first.`
-						: `${String(data.earlyGroupSize)} ${data.earlyGroupSize === 1 ? 'machine gets' : 'machines get'} new versions first.`}
-				</dd>
-			</div>
 		</dl>
 		<div>
 			{#if data.rollout.paused.kind === 'paused'}
@@ -124,6 +127,10 @@
 			{/if}
 		</div>
 	{/if}
+	<p class="early">
+		Machines in {data.earlyGroup.name} get new versions first. {earlyCount} —
+		<a href={earlyGroupHref}>{data.earlyGroup.machines === 0 ? 'add one' : 'add or take out'}</a>
+	</p>
 </Panel>
 
 <UpdateMachines machines={data.machines} now={data.now} />
@@ -175,8 +182,14 @@
 		overflow-wrap: anywhere;
 	}
 
-	dd a {
+	dd a,
+	.early a {
 		color: var(--brand);
+	}
+
+	.early {
+		color: var(--text-soft);
+		font-size: var(--text-sm);
 	}
 
 	code {

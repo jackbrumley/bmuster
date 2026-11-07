@@ -158,7 +158,11 @@ describe('deleting a group used by rules (A8)', () => {
 		done(deleteGroup(database, 'user', admin.id, it, NOW));
 		expect(listAccessRules(database)).toEqual([]);
 		expect(listUserGroups(database)).toEqual([]);
-		expect(listMachineGroups(database).map((group) => group.name)).toEqual(['All machines', 'Lab']);
+		expect(listMachineGroups(database).map((group) => group.name)).toEqual([
+			'All machines',
+			'Early updates',
+			'Lab'
+		]);
 		expect(listUsers(database).map((user) => user.id)).toEqual([admin.id]);
 		expect(listMachines(database, NOW, NO_RELEASES).map((machine) => machine.id)).toEqual([
 			machineId
