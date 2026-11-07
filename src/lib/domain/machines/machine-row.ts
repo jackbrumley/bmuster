@@ -65,7 +65,7 @@ export function machineSortValue(key: MachineSortKey, now: number): (row: Machin
 			return (row) => (row.machine.lastUser.kind === 'user' ? row.machine.lastUser.name : null);
 		case 'lastSeen':
 			return (row) =>
-				row.machine.status.kind === 'online' ? now : Date.parse(row.machine.lastSeenIso);
+				row.machine.status.kind === 'online' ? now : Date.parse(row.machine.status.sinceIso);
 	}
 }
 

@@ -12,6 +12,7 @@ import {
 	lanCertificateNames,
 	startupServedCertificate
 } from '#lib/server/services/agents/local-tls.ts';
+import { restorePresence } from '#lib/server/services/agents/presence.ts';
 import { applyFirstRunLocalNetworkMode, prepareFirstRun } from '#lib/server/services/auth/setup.ts';
 import { startEmailWorker } from '#lib/server/services/email/email-worker.ts';
 import { printToServerLog, serverSetupCode } from '#lib/server/services/auth/setup-code.ts';
@@ -26,8 +27,9 @@ import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts
  * installer's local network mode default is applied first (SPEC-SERVER-INSTALL
  * I12), then the first admin is created from the environment, or a setup code
  * is printed (SPEC-SIGN-IN S17, S18); the email queue starts working
- * (SPEC-EMAIL E3). The dev server registers Vite's own certificate. A
- * built server also schedules the nightly database snapshot (SPEC-HOSTING
+ * (SPEC-EMAIL E3); machines whose live socket was open when the server
+ * stopped get a grace period to reconnect (SPEC-PRESENCE P4). The dev
+ * server registers Vite's own certificate. A built server also schedules the nightly database snapshot (SPEC-HOSTING
  * H3); the dev server does not, so it never writes backups beside a
  * developer's database.
  */
@@ -44,6 +46,7 @@ export const init: ServerInit = async () => {
 		scheduleSnapshots(database.$client, env.databasePath, env.backupSchedule, printToServerLog);
 	}
 	startEmailWorker(database, env.secretsKey);
+	restorePresence(database, Date.now());
 };
 
 /**

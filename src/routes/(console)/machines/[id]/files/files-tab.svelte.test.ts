@@ -231,7 +231,7 @@ describe('when Files cannot open (F11)', () => {
 	it('says the machine is offline', async () => {
 		const screen = await openTab({
 			...LINUX,
-			status: { kind: 'offline', lastSeenIso: '2026-11-07T11:00:00.000Z' }
+			status: { kind: 'offline', sinceIso: '2026-11-07T11:00:00.000Z' }
 		});
 		await expect.element(screen.getByText('This machine is offline.')).toBeVisible();
 		expect(requests).toEqual([]);

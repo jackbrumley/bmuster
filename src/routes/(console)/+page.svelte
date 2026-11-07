@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { IconDevices, IconLockAccess, IconSearch } from '@tabler/icons-svelte-runes';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
@@ -14,6 +15,7 @@
 		toMachineRow,
 		type MachineFilter
 	} from '#lib/domain/machines/machine-row.ts';
+	import { LiveStatuses } from '#lib/runes/live-statuses.svelte.ts';
 	import MachineCards from './machine-cards.svelte';
 	import MachineTable from './machine-table.svelte';
 	import { defaultView, readSavedView, saveView, type MachinesView } from './machines-view.ts';
@@ -24,8 +26,21 @@
 	/** Cards or rows rendered at first, and added each time the end of the list nears. */
 	const BATCH_SIZE = 60;
 
-	const machines = $derived(data.view.kind === 'machines' ? data.view.machines : []);
+	/**
+	 * Status changes arrive live (SPEC-PRESENCE P5) and are laid over the
+	 * loaded list, so the scroll position and the batches drawn stay put.
+	 */
+	const statuses = new LiveStatuses();
+	onMount(() => statuses.connect(resolve('/api/machines/events'), refreshAll));
+
+	const machines = $derived(
+		(data.view.kind === 'machines' ? data.view.machines : []).map((machine) => ({
+			...machine,
+			status: statuses.statusOf(machine.id, machine.status, data.now)
+		}))
+	);
 	const rows = $derived(machines.map(toMachineRow));
+	const now = $derived(Math.max(data.now, statuses.latestAtMs));
 
 	let query = $state('');
 	let filter = $state<MachineFilter | null>('all');
@@ -147,9 +162,9 @@
 			children={undefined}
 		/>
 	{:else if view === 'table'}
-		<MachineTable rows={visible} now={data.now} batchSize={BATCH_SIZE} {resetKey} bind:sort />
+		<MachineTable rows={visible} {now} batchSize={BATCH_SIZE} {resetKey} bind:sort />
 	{:else}
-		<MachineCards rows={visible} now={data.now} batchSize={BATCH_SIZE} {resetKey} />
+		<MachineCards rows={visible} {now} batchSize={BATCH_SIZE} {resetKey} />
 	{/if}
 {/if}
 

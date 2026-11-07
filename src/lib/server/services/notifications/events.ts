@@ -21,6 +21,16 @@ export const EVENT_DETAIL_SCHEMAS = {
 		machineName: z.string(),
 		hostname: z.string(),
 		removedByUserId: z.string()
+	}),
+	'machine-offline': z.object({
+		machineName: z.string(),
+		hostname: z.string(),
+		offlineSince: z.string()
+	}),
+	'machine-online': z.object({
+		machineName: z.string(),
+		hostname: z.string(),
+		offlineSince: z.string()
 	})
 } satisfies Record<NotificationEventKind, z.ZodType<Record<string, string>>>;
 

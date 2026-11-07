@@ -39,7 +39,17 @@ export const machines = sqliteTable('machines', {
 		.notNull()
 		.default('shared'),
 	/** The highest local page event sequence number taken; resent events at or below it are ignored. */
-	localEventsSeq: integer().notNull().default(0)
+	localEventsSeq: integer().notNull().default(0),
+	/**
+	 * When its live socket last opened (SPEC-PRESENCE P1); null for an agent that has never held
+	 * one, which keeps the check-in rule for its status.
+	 */
+	socketConnectedAt: integer({ mode: 'timestamp_ms' }),
+	/**
+	 * When its live socket closed, set once the grace period ran out and it went offline
+	 * (SPEC-PRESENCE P2); null while it is online. A restart reads it to know who was offline.
+	 */
+	socketOfflineSince: integer({ mode: 'timestamp_ms' })
 });
 
 /**

@@ -1,7 +1,6 @@
 import { inUseLabel } from '#lib/domain/sessions/session.ts';
 import { describe, expect, it } from 'vitest';
 import { enrolFakeAgent, testDatabase, NO_RELEASES } from '#tests/helpers/fake-agent.ts';
-import { agentConnected, agentDisconnected } from '../agents/live-agents.ts';
 import { listAudit } from '../audit/audit.ts';
 import { sessionRelay } from '../sessions/relay.ts';
 import { findMachine, listMachines, removeMachine } from './machine-views.ts';
@@ -10,7 +9,7 @@ const NOW = 1_794_000_000_000;
 const ADMIN_ID = crypto.randomUUID();
 
 describe('machine status (A7, A8)', () => {
-	it('is online within 3 check-in intervals of the last contact, then offline with its last-seen time', () => {
+	it('without a live socket, is online within 3 check-in intervals of the last contact, then offline since then (SPEC-PRESENCE P7)', () => {
 		const database = testDatabase();
 		const agent = enrolFakeAgent(database, NOW);
 		expect(findMachine(database, agent.machineId, NOW + 179_000, NO_RELEASES)?.status).toEqual({
@@ -18,22 +17,8 @@ describe('machine status (A7, A8)', () => {
 		});
 		expect(findMachine(database, agent.machineId, NOW + 180_000, NO_RELEASES)?.status).toEqual({
 			kind: 'offline',
-			lastSeenIso: new Date(NOW).toISOString()
+			sinceIso: new Date(NOW).toISOString()
 		});
-	});
-
-	it('is online while the live socket is open, whatever the last check-in', () => {
-		const database = testDatabase();
-		const agent = enrolFakeAgent(database, NOW);
-		const peer = { send: () => undefined, close: () => undefined };
-		agentConnected(agent.machineId, peer);
-		expect(findMachine(database, agent.machineId, NOW + 3_600_000, NO_RELEASES)?.status).toEqual({
-			kind: 'online'
-		});
-		agentDisconnected(agent.machineId, peer);
-		expect(findMachine(database, agent.machineId, NOW + 3_600_000, NO_RELEASES)?.status.kind).toBe(
-			'offline'
-		);
 	});
 
 	it('shows a new machine with its inventory pending, and hides removed machines', () => {

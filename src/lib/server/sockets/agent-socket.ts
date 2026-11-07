@@ -1,7 +1,5 @@
-import { eq } from 'drizzle-orm';
 import { agentSocketMessageSchema } from '#lib/schemas/agents/agent-protocol.ts';
 import { database } from '../database/app-database.ts';
-import { machines } from '../database/schema.ts';
 import { isRefusal } from '../services/agents/agent-refusal.ts';
 import { authenticateAgent } from '../services/agents/agent-auth.ts';
 import { pinUpdate } from '../services/agents/local-tls.ts';
@@ -12,6 +10,7 @@ import {
 	recordLiveFigures,
 	type LivePeer
 } from '../services/agents/live-agents.ts';
+import { socketClosed, socketOpened } from '../services/agents/presence.ts';
 import { sessionRelay } from '../services/sessions/relay.ts';
 import { defineSocketRoute } from './socket-route.ts';
 
@@ -61,7 +60,7 @@ export const agentSocketRoute = defineSocketRoute<{
 		agentConnected(peer.context.machineId, live);
 		// Every connection hears which certificate to expect next (SPEC-INSTALL-OPTIONS L7).
 		live.send(pinUpdate(database, servedCertificate()));
-		touch(peer.context.machineId);
+		socketOpened(database, peer.context.machineId, Date.now());
 	},
 	message(peer, data) {
 		let json: unknown;
@@ -97,13 +96,12 @@ export const agentSocketRoute = defineSocketRoute<{
 		peer.close(4002, 'Binary messages belong on a session socket');
 	},
 	close(peer) {
-		if (peer.context.peer !== undefined) {
-			agentDisconnected(peer.context.machineId, peer.context.peer);
+		// A connection replaced by a newer one from the same machine leaves it online.
+		if (
+			peer.context.peer !== undefined &&
+			agentDisconnected(peer.context.machineId, peer.context.peer)
+		) {
+			socketClosed(database, peer.context.machineId, Date.now());
 		}
-		touch(peer.context.machineId);
 	}
 });
-
-function touch(machineId: string): void {
-	database.update(machines).set({ lastSeenAt: new Date() }).where(eq(machines.id, machineId)).run();
-}

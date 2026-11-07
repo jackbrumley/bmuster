@@ -72,7 +72,7 @@ describe('Machines list rows', () => {
 
 	it('has no live figures for an offline machine, or before the first inventory', () => {
 		const offline = toMachineRow(
-			machine({ status: { kind: 'offline', lastSeenIso: '2026-11-01T00:00:00.000Z' } })
+			machine({ status: { kind: 'offline', sinceIso: '2026-11-01T00:00:00.000Z' } })
 		);
 		expect([offline.cpuPercent, offline.memoryPercent]).toEqual([null, null]);
 		const pending = toMachineRow(machine({ inventory: { kind: 'pending' } }));
@@ -96,7 +96,7 @@ describe('Machines list rows', () => {
 	it('filters by status', () => {
 		const online = toMachineRow(machine({}));
 		const offline = toMachineRow(
-			machine({ status: { kind: 'offline', lastSeenIso: '2026-11-01T00:00:00.000Z' } })
+			machine({ status: { kind: 'offline', sinceIso: '2026-11-01T00:00:00.000Z' } })
 		);
 		expect([online, offline].filter((row) => matchesFilter(row, 'online'))).toEqual([online]);
 		expect([online, offline].filter((row) => matchesFilter(row, 'offline'))).toEqual([offline]);

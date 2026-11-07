@@ -1,9 +1,47 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import type { MachineStatusEvent } from '#lib/domain/machines/machine-events.ts';
 import type { Machine } from '#lib/domain/machines/machine.ts';
 import MachinesPage from './+page.svelte';
 import type { PageData } from './$types';
+
+const refreshAll = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock('$app/navigation', () => ({ refreshAll }));
+
+/** Stands in for the browser's EventSource, so a test can push status events. */
+class FakeEventSource extends EventTarget {
+	static readonly CLOSED = 2;
+	static opened: FakeEventSource[] = [];
+	readyState = 1;
+	readonly url: string;
+
+	constructor(url: string) {
+		super();
+		this.url = url;
+		FakeEventSource.opened.push(this);
+	}
+
+	close(): void {
+		this.readyState = FakeEventSource.CLOSED;
+	}
+
+	push(event: MachineStatusEvent): void {
+		this.dispatchEvent(new MessageEvent('status', { data: JSON.stringify(event) }));
+	}
+
+	/** What the browser does when the server refuses the stream. */
+	refuse(): void {
+		this.readyState = FakeEventSource.CLOSED;
+		this.dispatchEvent(new Event('error'));
+	}
+}
+
+function feed(): FakeEventSource {
+	const source = FakeEventSource.opened.at(-1);
+	if (source === undefined) throw new Error('The page opened no live feed');
+	return source;
+}
 
 const NOW = Date.parse('2026-11-07T12:00:00.000Z');
 
@@ -51,7 +89,7 @@ function fleet(count: number): Machine[] {
 			status:
 				index % 2 === 0
 					? { kind: 'online' }
-					: { kind: 'offline', lastSeenIso: '2026-11-06T12:00:00.000Z' }
+					: { kind: 'offline', sinceIso: '2026-11-06T12:00:00.000Z' }
 		});
 	});
 }
@@ -73,6 +111,9 @@ function renderPage(machines: Machine[] = MACHINES, rollout: Rollout = { kind: '
 }
 
 beforeEach(async () => {
+	FakeEventSource.opened = [];
+	refreshAll.mockClear();
+	vi.stubGlobal('EventSource', FakeEventSource);
 	localStorage.clear();
 	await page.viewport(1280, 800);
 });
@@ -315,5 +356,79 @@ describe('Machines export (SPEC-CSV-EXPORT X1, X6)', () => {
 		const box = exportButton.element().getBoundingClientRect();
 		expect(box.right).toBeLessThanOrEqual(390);
 		expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
+	});
+});
+
+describe('Machines list, live (SPEC-PRESENCE P5)', () => {
+	const RECEPTION = MACHINES[0]?.id ?? '';
+	const offline = (atMs: number): MachineStatusEvent => ({
+		machineId: RECEPTION,
+		status: { kind: 'offline', sinceIso: new Date(atMs).toISOString() },
+		atIso: new Date(atMs).toISOString()
+	});
+
+	it('listens to the live feed and updates a card when a machine goes offline and back', async () => {
+		const screen = await renderPage();
+		expect(feed().url).toBe('/api/machines/events');
+		const card = screen.getByRole('listitem').filter({ hasText: 'Reception PC' });
+		await expect.element(card.getByText('Online')).toBeVisible();
+		await expect.element(screen.getByText('2 of 2 online')).toBeVisible();
+
+		feed().push(offline(NOW + 60_000));
+		await expect.element(card.getByText('Offline · just now')).toBeVisible();
+		await expect.element(screen.getByText('1 of 2 online')).toBeVisible();
+
+		feed().push({
+			machineId: RECEPTION,
+			status: { kind: 'online' },
+			atIso: new Date(NOW + 90_000).toISOString()
+		});
+		await expect.element(card.getByText('Online')).toBeVisible();
+		expect(refreshAll).not.toHaveBeenCalled();
+	});
+
+	it('updates a table row too, and ignores a status older than the loaded page', async () => {
+		localStorage.setItem('bmuster-machines-view', 'table');
+		const screen = await renderPage();
+		const row = screen.getByRole('row').filter({ hasText: 'Reception PC' });
+		feed().push(offline(NOW - 60_000));
+		await expect.element(screen.getByText('2 of 2 online')).toBeVisible();
+		feed().push(offline(NOW + 120_000));
+		await expect.element(row.getByText('Offline')).toBeVisible();
+		await expect.element(screen.getByText('1 of 2 online')).toBeVisible();
+	});
+
+	it('keeps the cards drawn and the scroll position when an update arrives', async () => {
+		const machines = fleet(130);
+		const screen = await renderPage(machines);
+		await screen.getByRole('button', { name: 'Cards' }).click();
+		const cards = () => screen.container.querySelectorAll('ul.grid > li').length;
+		screen.getByTestId('scroll-batches-end').element().scrollIntoView();
+		await expect.poll(cards).toBe(120);
+		const scrolled = window.scrollY;
+		expect(scrolled).toBeGreaterThan(0);
+
+		feed().push({
+			machineId: machines[0]?.id ?? '',
+			status: { kind: 'offline', sinceIso: new Date(NOW).toISOString() },
+			atIso: new Date(NOW + 1000).toISOString()
+		});
+		await expect.element(screen.getByText('64 of 130 online')).toBeVisible();
+		expect(cards()).toBe(120);
+		expect(window.scrollY).toBe(scrolled);
+	});
+
+	it('falls back to reloading every 15 seconds when the feed is refused', async () => {
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+		try {
+			await renderPage();
+			feed().refuse();
+			vi.advanceTimersByTime(15_000);
+			expect(refreshAll).toHaveBeenCalledOnce();
+			vi.advanceTimersByTime(15_000);
+			expect(refreshAll).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

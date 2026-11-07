@@ -4,7 +4,11 @@ import type { MachineUpdateState } from './agent-updates.ts';
 
 export type OsFamily = 'windows' | 'linux' | 'macos';
 
-export type MachineStatus = { kind: 'online' } | { kind: 'offline'; lastSeenIso: string };
+/**
+ * Online or offline (SPEC-PRESENCE). `sinceIso` is when it went offline: when its live socket
+ * closed, or its last check-in for an agent without one.
+ */
+export type MachineStatus = { kind: 'online' } | { kind: 'offline'; sinceIso: string };
 
 export type SignedInUser = { kind: 'none' } | { kind: 'user'; name: string };
 

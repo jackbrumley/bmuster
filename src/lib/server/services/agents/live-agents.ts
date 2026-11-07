@@ -58,11 +58,14 @@ export function agentConnected(machineId: string, peer: LivePeer): void {
 	}
 }
 
-export function agentDisconnected(machineId: string, peer: LivePeer): void {
-	if (peers.get(machineId) === peer) {
-		peers.delete(machineId);
-		figures.delete(machineId);
+/** Forgets a closed connection; false when a newer one from the same machine had replaced it. */
+export function agentDisconnected(machineId: string, peer: LivePeer): boolean {
+	if (peers.get(machineId) !== peer) {
+		return false;
 	}
+	peers.delete(machineId);
+	figures.delete(machineId);
+	return true;
 }
 
 export function isAgentConnected(machineId: string): boolean {

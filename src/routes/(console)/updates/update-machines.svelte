@@ -158,7 +158,7 @@
 			<p class="muted">
 				Version {machine.agentVersion} · {machine.status.kind === 'online'
 					? 'online'
-					: `offline, seen ${formatRelative(machine.status.lastSeenIso, now)}`}
+					: `went offline ${formatRelative(machine.status.sinceIso, now)}`}
 			</p>
 			{#if machine.update.kind !== 'up-to-date'}
 				<p class="detail">{updateStateText(machine.update)}</p>
