@@ -16,6 +16,7 @@ const LINUX: Machine = {
 	osFamily: 'linux',
 	target: 'x86_64-unknown-linux-gnu',
 	agentVersion: '0.2.0',
+	update: { kind: 'up-to-date' },
 	status: { kind: 'online' },
 	lastUser: { kind: 'none' },
 	live: { kind: 'none' },
@@ -116,7 +117,7 @@ afterEach(() => {
 
 async function openTab(machine: Machine, grants: Grant[] = GRANTS) {
 	await render(ConfirmDialog);
-	return render(FilesTab, {
+	const props = {
 		params: { id: machine.id },
 		form: undefined,
 		data: {
@@ -126,7 +127,8 @@ async function openTab(machine: Machine, grants: Grant[] = GRANTS) {
 			machine,
 			grants
 		}
-	});
+	};
+	return render(FilesTab, props);
 }
 
 describe('the Files tab (SPEC-FILES F3, F9)', () => {

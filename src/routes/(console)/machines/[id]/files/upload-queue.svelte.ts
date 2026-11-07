@@ -173,7 +173,7 @@ export class UploadQueue {
 			}
 			const before = upload.sent;
 			const attempt = await this.#attempt(upload);
-			if (upload.state.kind === 'cancelled' || attempt === 'cancelled') {
+			if (upload.controller.signal.aborted || attempt === 'cancelled') {
 				return;
 			}
 			if (attempt === 'done') {
@@ -213,7 +213,7 @@ export class UploadQueue {
 		await hashUpTo(upload, offset);
 		upload.sent = offset;
 		while (offset < upload.size) {
-			if (upload.state.kind === 'cancelled') {
+			if (upload.controller.signal.aborted) {
 				return 'cancelled';
 			}
 			upload.state = { kind: 'sending' };
