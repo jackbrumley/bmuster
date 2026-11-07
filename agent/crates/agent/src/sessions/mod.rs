@@ -10,6 +10,8 @@
 mod desktop;
 mod exec;
 mod files;
+#[cfg(target_os = "linux")]
+pub mod files_helper;
 mod pump;
 mod terminal;
 #[cfg(test)]
@@ -17,6 +19,7 @@ mod testing;
 
 use crate::client::Session;
 use crate::exec::pipe::Limits;
+use crate::exec::placement::{Kind, Placement, SessionMode};
 use crate::exec::PtySize;
 use crate::socket::{connect_to, Connect, Socket};
 use anyhow::{Context as _, Result};
@@ -49,6 +52,8 @@ struct Inner {
     seen: Mutex<HashMap<String, i64>>,
     running: Mutex<usize>,
     stop: Arc<AtomicBool>,
+    /// Where terminal, exec and files sessions run.
+    mode: SessionMode,
 }
 
 /// A `session-open` the agent would not start.
@@ -74,7 +79,14 @@ fn claimed_session_id(ticket_base64: &str) -> Option<String> {
 }
 
 impl Sessions {
-    pub fn new(session: Arc<Session>, server_key: VerifyingKey, stop: Arc<AtomicBool>) -> Self {
+    pub fn new(
+        session: Arc<Session>,
+        server_key: VerifyingKey,
+        stop: Arc<AtomicBool>,
+        mode: SessionMode,
+    ) -> Self {
+        log::info!("{}", mode.describe());
+        mode.sweep();
         Self {
             inner: Arc::new(Inner {
                 session,
@@ -82,6 +94,7 @@ impl Sessions {
                 seen: Mutex::new(HashMap::new()),
                 running: Mutex::new(0),
                 stop,
+                mode,
             }),
         }
     }
@@ -173,6 +186,7 @@ fn serve(inner: &Inner, ticket: &SessionTicket) -> Result<Ended> {
             anyhow::bail!("the server refused the session socket: {message}")
         }
     };
+    let placement = |kind: Kind| inner.mode.placement(kind, &ticket.session_id);
     match &ticket.purpose {
         SessionPurpose::Terminal { shell, cols, rows } => {
             let request = terminal::Request {
@@ -180,7 +194,9 @@ fn serve(inner: &Inner, ticket: &SessionTicket) -> Result<Ended> {
                 size: PtySize::clamped(*cols, *rows),
                 console_user: &ticket.user.name,
             };
-            match terminal::start(&request) {
+            match placement(Kind::Terminal)
+                .and_then(|placement| terminal::start(&request, placement))
+            {
                 Ok(spawned) => terminal::run(&mut socket, spawned, &inner.stop),
                 Err(e) => fail(&mut socket, &e),
             }
@@ -197,12 +213,21 @@ fn serve(inner: &Inner, ticket: &SessionTicket) -> Result<Ended> {
                 limits: Limits::clamped(*timeout_ms, *max_output_bytes),
                 console_user: &ticket.user.name,
             };
-            match exec::prepare(&request) {
-                Ok(launch) => exec::run(&mut socket, launch, request.limits, &inner.stop),
+            match placement(Kind::Exec)
+                .and_then(|placement| Ok((exec::prepare(&request)?, placement)))
+            {
+                Ok((launch, placement)) => {
+                    exec::run(&mut socket, launch, placement, request.limits, &inner.stop)
+                }
                 Err(e) => fail(&mut socket, &e),
             }
         }
-        SessionPurpose::Files {} => files::run(&mut socket, &inner.stop),
+        SessionPurpose::Files {} => match placement(Kind::Files) {
+            Ok(Placement::InProcess) => files::run(&mut socket, &inner.stop),
+            #[cfg(target_os = "linux")]
+            Ok(Placement::Unit(unit)) => files_helper::relay(&mut socket, &unit, &inner.stop),
+            Err(e) => fail(&mut socket, &e),
+        },
         SessionPurpose::Desktop { consent, notice } => {
             let request = desktop::Request {
                 permissions: &ticket.permissions,
@@ -256,6 +281,7 @@ mod tests {
             Arc::new(session),
             server.verifying_key(),
             Arc::new(AtomicBool::new(false)),
+            SessionMode::InProcess,
         )
     }
 

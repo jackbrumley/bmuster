@@ -9,6 +9,7 @@
 //! reason MeshCentral hosts ConPTY in a child process), so it runs on its own
 //! thread while the session's reader keeps reading to the end.
 
+use super::placement::Placement;
 use super::spawn::Launch;
 use super::tree::Job;
 use super::PtySize;
@@ -154,7 +155,9 @@ fn environment_block(env: &[(OsString, OsString)]) -> Vec<u16> {
 }
 
 impl Pty {
-    pub fn spawn(launch: &Launch, size: PtySize) -> Result<Spawned> {
+    pub fn spawn(launch: &Launch, placement: Placement, size: PtySize) -> Result<Spawned> {
+        // Windows sessions always run in the agent's process.
+        let Placement::InProcess = placement;
         let (input_read, input_write) = pipe()?;
         let (output_read, output_write) = pipe()?;
         let mut console: HPCON = 0;

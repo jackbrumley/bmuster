@@ -196,7 +196,7 @@ pub fn agent_account() -> Account {
 /// The search path for session processes on Unix: the agent's own may be a
 /// service manager's minimal one.
 #[cfg(unix)]
-const UNIX_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+pub const UNIX_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 /// The environment for a session, as the agent's account, for console user
 /// `console_user`. On Unix it starts clean (a service's environment is not a

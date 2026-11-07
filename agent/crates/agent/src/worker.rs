@@ -2,6 +2,7 @@
 //! its own thread, and the local page on its own threads.
 
 use crate::client::{Reply, Security, ServerUrl, Session, Transport};
+use crate::exec::placement::SessionMode;
 use crate::identity;
 use crate::inventory::{self, Probe};
 use crate::local_page::journal::Journal;
@@ -89,6 +90,8 @@ pub struct RunOptions {
     pub local_page_port: Option<u16>,
     /// Started by the launcher (`run --launched`), which can switch versions.
     pub launched: bool,
+    /// `--sessions`: where terminal, exec and files sessions run.
+    pub sessions: SessionMode,
 }
 
 /// A signed connection to the server this data folder is enrolled with. The
@@ -156,7 +159,12 @@ pub fn run(
     let stop = Arc::new(AtomicBool::new(false));
     let server_key = decode_public_key(&identity.server_public_key)
         .context("identity.json holds an unreadable server key")?;
-    let sessions = Sessions::new(Arc::clone(&session), server_key, Arc::clone(&stop));
+    let sessions = Sessions::new(
+        Arc::clone(&session),
+        server_key,
+        Arc::clone(&stop),
+        options.sessions,
+    );
     let socket_thread = {
         let session = Arc::clone(&session);
         let stop = Arc::clone(&stop);

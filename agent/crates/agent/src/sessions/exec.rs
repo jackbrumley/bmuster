@@ -5,6 +5,7 @@
 
 use super::pump::{pump, Ended, Outgoing};
 use crate::exec::pipe::{self, Limits, Stream};
+use crate::exec::placement::Placement;
 use crate::exec::spawn::{agent_account, command_line, environment, Launch};
 use crate::socket::Socket;
 use anyhow::Result;
@@ -41,6 +42,7 @@ pub fn prepare(request: &Request<'_>) -> Result<Launch> {
 pub fn run(
     socket: &mut Socket,
     launch: Launch,
+    placement: Placement,
     limits: Limits,
     stop: &AtomicBool,
 ) -> Result<Ended> {
@@ -51,15 +53,16 @@ pub fn run(
         std::thread::Builder::new()
             .name("exec".into())
             .spawn(move || {
-                let outcome = pipe::run(&launch, limits, &cancelled, |stream, bytes| {
-                    let mut frame = Vec::with_capacity(bytes.len() + 1);
-                    frame.push(match stream {
-                        Stream::Stdout => EXEC_STDOUT,
-                        Stream::Stderr => EXEC_STDERR,
+                let outcome =
+                    pipe::run(&launch, &placement, limits, &cancelled, |stream, bytes| {
+                        let mut frame = Vec::with_capacity(bytes.len() + 1);
+                        frame.push(match stream {
+                            Stream::Stdout => EXEC_STDOUT,
+                            Stream::Stderr => EXEC_STDERR,
+                        });
+                        frame.extend_from_slice(bytes);
+                        let _ = output.send(Outgoing::Bytes(frame));
                     });
-                    frame.extend_from_slice(bytes);
-                    let _ = output.send(Outgoing::Bytes(frame));
-                });
                 let event = match outcome {
                     Ok(done) => SessionEvent::ExecDone {
                         exit_code: done.exit_code,
@@ -106,7 +109,7 @@ mod tests {
         let limits = request.limits;
         let agent = std::thread::spawn(move || {
             let stop = AtomicBool::new(false);
-            run(&mut client, launch, limits, &stop).unwrap()
+            run(&mut client, launch, Placement::InProcess, limits, &stop).unwrap()
         });
         let mut server = Server::new(server);
         let done = server.wait_for_text();

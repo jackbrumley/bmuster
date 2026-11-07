@@ -29,6 +29,7 @@ use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::{CertificatePin, ServerTrust};
 use clap::{Args, Parser, Subcommand};
 use client::TlsMode;
+use exec::placement::SessionMode;
 use status::RunMode;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -122,7 +123,22 @@ enum Command {
         /// Started by the launcher, which switches versions and restarts it
         #[arg(long, hide = true)]
         launched: bool,
+        /// Where terminal, command and files sessions run: in this process,
+        /// or (Linux, installed) as transient systemd services outside the
+        /// service's sandbox. The installed unit sets BMUSTER_SESSIONS=systemd.
+        #[arg(
+            long,
+            value_enum,
+            env = "BMUSTER_SESSIONS",
+            default_value = "in-process"
+        )]
+        sessions: SessionMode,
     },
+    /// Serve one files session over stdin and stdout (run by the agent in a
+    /// transient systemd service; not for use by hand)
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    FilesHelper,
     /// Move this machine to another BMuster server: enrol there first, then
     /// leave this one (needs root or Administrator when installed)
     Rejoin {
@@ -251,6 +267,7 @@ fn dispatch(command: Command) -> Result<ExitCode> {
             insecure_dev_tls,
             local_page_port,
             launched,
+            sessions,
         } => {
             // Under the launcher the agent restarts like a service: by exiting.
             let mode = if launched {
@@ -264,6 +281,7 @@ fn dispatch(command: Command) -> Result<ExitCode> {
                 mode,
                 local_page_port,
                 launched,
+                sessions,
             };
             let (sender, signals) = mpsc::channel();
             match worker::run(&options, sender, signals)? {
@@ -284,6 +302,11 @@ fn dispatch(command: Command) -> Result<ExitCode> {
         Command::Status { data_dir } => status(&paths::data_dir(data_dir)?),
         Command::Uninstall { purge } => {
             platform::uninstall(purge)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        #[cfg(target_os = "linux")]
+        Command::FilesHelper => {
+            sessions::files_helper::serve(std::io::stdin(), std::io::stdout())?;
             Ok(ExitCode::SUCCESS)
         }
     }

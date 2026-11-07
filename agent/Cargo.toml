@@ -15,7 +15,7 @@ bmuster-service = { path = "crates/service" }
 bmuster-desktop = { path = "crates/desktop" }
 anyhow = "=1.0.104"
 base64 = "=0.22.1"
-clap = { version = "=4.6.7", features = ["derive"] }
+clap = { version = "=4.6.7", features = ["derive", "env"] }
 ed25519-dalek = "=2.2.0"
 getrandom = { version = "=0.2.17", features = ["std"] }
 hex = "=0.4.3"
