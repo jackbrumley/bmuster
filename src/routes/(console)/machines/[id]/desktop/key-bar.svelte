@@ -7,7 +7,6 @@
 		IconKeyboard
 	} from '@tabler/icons-svelte-runes';
 	import type { InputMessage } from '#lib/domain/desktop/messages.ts';
-	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { characterKeys, KEY_BAR, type BarKey } from './key-bar.ts';
 
 	/**
@@ -55,7 +54,8 @@
 				alt = !alt;
 				return;
 			case 'ctrl-alt-del':
-				showToast('Ctrl+Alt+Del: Windows only, coming later.', 'error');
+				// Windows: the agent's service sends it with SendSAS; Linux: the key chord.
+				send({ type: 'special', name: 'ctrl-alt-del' });
 				return;
 			case 'key':
 				tap(key.code, key.key);

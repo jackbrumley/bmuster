@@ -31,6 +31,7 @@ agent/
     src/exec/             starting session processes: pseudo-terminals, pipes, process trees, and
                           transient systemd units for sessions (placement.rs, unit.rs; SPEC-SESSION-UNITS)
     src/sessions/         terminal, exec, files and desktop sessions; files_helper.rs runs files in a unit
+                          windows_desktop/: the Windows desktop helper (supervisor, helper, SendSAS policy)
     src/service_windows.rs  Windows service install, uninstall and service entry point
 ```
 
@@ -98,6 +99,10 @@ Installed locations:
 | Data (key, `identity.json`) | `/var/lib/bmuster` (0700, files 0600) | `C:\ProgramData\BMuster` (SYSTEM and Administrators only) |
 | Service | `bmuster-agent.service` (systemd, root) | `BMusterAgent`, shown as "BMuster Agent" (LocalSystem) |
 | Log | journald (`journalctl -u bmuster-agent`) | `C:\ProgramData\BMuster\agent.log` |
+
+## Desktop on Windows (SPEC-DESKTOP section 17)
+
+The service runs in session 0, which has no screen, so each desktop session runs in `bmuster-agent desktop-helper`, started by the service as SYSTEM in the active console session (with `winlogon.exe`'s token) and ended with it (Job Object). The ticket goes to the helper over a SYSTEM-only named pipe; the helper checks it again, opens the session socket itself and follows the input desktop (sign-in screen, lock screen, UAC prompts, the user's desktop). It logs to `C:\ProgramData\BMuster\desktop-helper.log`. Ctrl+Alt+Del needs the `SoftwareSASGeneration` policy to allow services: `install` sets it (and the first Ctrl+Alt+Del does on older installs), recording the old value in `sas-policy.json`; `uninstall` puts that back.
 
 Set the log level with `BMUSTER_LOG=debug` (`error`, `warn`, `info` (the default), `debug` or `trace`).
 

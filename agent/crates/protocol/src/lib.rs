@@ -605,6 +605,12 @@ pub enum ServerMessage {
         ticket: String,
         signature: String,
     },
+    /// A message box on the console session's screen from `from`, a
+    /// console user (Windows only for now).
+    UserMessage {
+        from: String,
+        text: String,
+    },
 }
 
 /// Agent to server.
@@ -864,5 +870,20 @@ mod tests {
         assert_eq!(decode_public_key(&text).unwrap(), key);
         assert_eq!(decode_public_key("not base64!"), Err(KeyError::NotBase64));
         assert_eq!(decode_public_key("AAAA"), Err(KeyError::WrongLength(3)));
+    }
+
+    #[test]
+    fn a_user_message_reads_from_the_server() {
+        let message: ServerMessage = serde_json::from_str(
+            r#"{"type":"user-message","from":"Jack","text":"Rebooting at 5"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            message,
+            ServerMessage::UserMessage {
+                from: "Jack".into(),
+                text: "Rebooting at 5".into()
+            }
+        );
     }
 }

@@ -16,6 +16,20 @@ use ::windows::Win32::UI::Input::KeyboardAndMouse::{
 use ::windows::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
+use std::sync::OnceLock;
+
+/// How Ctrl+Alt+Del reaches Windows: only a service may call `SendSAS`, so
+/// the desktop helper sets a hook that asks the service over its pipe.
+pub type SecureAttention = Box<dyn Fn() -> Result<(), String> + Send + Sync>;
+
+static SECURE_ATTENTION: OnceLock<SecureAttention> = OnceLock::new();
+
+/// Sets the Ctrl+Alt+Del hook for this process (the desktop helper, once).
+pub fn set_secure_attention(hook: SecureAttention) {
+    if SECURE_ATTENTION.set(hook).is_err() {
+        log::warn!("The Ctrl+Alt+Del hook was already set");
+    }
+}
 
 const XBUTTON1: u32 = 1;
 const XBUTTON2: u32 = 2;
@@ -172,10 +186,13 @@ impl InputBackend for SendInputBackend {
     }
 
     fn secure_attention(&mut self) -> InputResult<bool> {
-        Err(InputError(
-            "Ctrl+Alt+Del needs SendSAS from the service, which comes with the secure desktop work (phase 3)"
-                .into(),
-        ))
+        // A chord from SendInput never reaches Windows' secure attention
+        // handler, so there is no fallback to the keys.
+        let hook = SECURE_ATTENTION.get().ok_or_else(|| {
+            InputError("Ctrl+Alt+Del needs the desktop helper's service connection".into())
+        })?;
+        hook().map_err(InputError)?;
+        Ok(true)
     }
 
     fn flush(&mut self) -> InputResult<()> {

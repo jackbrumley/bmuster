@@ -14,7 +14,7 @@
 //!   pure logic, tested without a display.
 //!
 //! [`open_console`] says how a session gets this machine's screen: on Linux
-//! it follows seat0; on Windows [`open_platform`] opens the input desktop.
+//! it follows seat0, on Windows the input desktop of the helper's session.
 
 pub mod capture;
 pub mod control;
@@ -25,6 +25,7 @@ pub mod input;
 pub mod notice;
 pub mod pacing;
 pub mod session;
+pub mod winsession;
 
 pub use control::{EndReason, Mode};
 pub use follow::{Look, ScreenWatch};
@@ -57,8 +58,18 @@ pub fn open_console() -> Result<Console, String> {
     )))
 }
 
-/// The input desktop, which the Windows helper follows itself.
-#[cfg(not(target_os = "linux"))]
+/// Follows the input desktop of the console session the desktop helper
+/// runs in: Default, or Winlogon for the sign-in screen, the lock screen and
+/// UAC prompts (Windows).
+#[cfg(windows)]
+pub fn open_console() -> Result<Console, String> {
+    Ok(Console::Following(Box::new(
+        capture::windows_follow::InputDesktopWatch,
+    )))
+}
+
+/// One fixed screen elsewhere (none yet: macOS comes later).
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn open_console() -> Result<Console, String> {
     open_platform().map(Console::Fixed)
 }

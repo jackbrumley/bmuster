@@ -1,8 +1,10 @@
 //! Windows capture (SPEC-DESKTOP 6.2): DXGI Desktop Duplication, falling
 //! back to GDI `BitBlt` when DXGI cannot start or fails (RDP-attached
-//! sessions, some VMs, old drivers). Phase 1 covers the Default desktop; the
-//! helper process that runs this in the console session, and following the
-//! input desktop, come with phase 3.
+//! sessions, some VMs, old drivers, often the Winlogon desktop). It runs in
+//! the desktop helper on the desktop its thread is on; following the input
+//! desktop is [`super::windows_follow`]. A capturer whose desktop is no
+//! longer the input desktop fails its next poll, so the following session
+//! looks again at once.
 //!
 //! The display list and the cursor come from user32 for both paths, so a
 //! switch from DXGI to GDI keeps the same display ids.
@@ -13,6 +15,7 @@ use super::{
     CaptureError, CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState,
     DisplayInfo, Frame,
 };
+use crate::winsession::input_desktop;
 use ::windows::core::BOOL;
 use ::windows::Win32::Foundation::{LPARAM, RECT};
 use ::windows::Win32::Graphics::Gdi::{
@@ -37,6 +40,8 @@ pub struct WindowsCapturer {
     grabber: Grabber,
     /// The next capture must be full (new grabber).
     fresh: bool,
+    /// The desktop this capturer opened on (the input desktop then).
+    desktop: String,
 }
 
 /// Opens capture on the primary display.
@@ -51,6 +56,7 @@ pub fn open() -> CaptureResult<Box<dyn Capturer>> {
         current,
         grabber,
         fresh: true,
+        desktop: input_desktop::input_desktop_name().unwrap_or_default(),
     }))
 }
 
@@ -164,6 +170,19 @@ impl Capturer for WindowsCapturer {
     }
 
     fn poll_layout(&mut self) -> CaptureResult<bool> {
+        // Capture and SendInput reach only the desktop the calling thread is
+        // on, and the session may poll from another thread than the one that
+        // opened this capturer: move this thread to the input desktop. If
+        // that is another desktop (lock, sign-in, a UAC prompt), the screen
+        // changed and the following session reopens on it.
+        if let Ok((input, _)) = input_desktop::follow_input_desktop() {
+            if !self.desktop.is_empty() && input != self.desktop {
+                return Err(CaptureError::new(format!(
+                    "the screen switched from the {} desktop to {input}",
+                    self.desktop
+                )));
+            }
+        }
         let displays = list_displays()?;
         if displays == self.displays {
             return Ok(false);

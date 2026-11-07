@@ -7,6 +7,7 @@ use crate::client::TlsMode;
 use crate::identity::{self, EnrolOptions};
 use crate::launcher::{Ended, Launcher};
 use crate::paths;
+use crate::sessions::windows_desktop::sas;
 use anyhow::{Context as _, Result};
 use bmuster_protocol::ServerTrust;
 use bmuster_service::windows::{self as service, status, Account, ServiceSpec};
@@ -76,6 +77,12 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
         },
     )?;
 
+    // Ctrl+Alt+Del from the console needs the SoftwareSASGeneration policy
+    // to allow services; uninstall puts back what was there.
+    if let Err(e) = sas::allow_services(&data_dir) {
+        log::warn!("Ctrl+Alt+Del from the console will not work: {e:#}");
+    }
+
     // Restarts after a crash; a clean stop with the revoked exit code is not
     // a failure, so a removed machine stays stopped.
     service::create_and_start(&ServiceSpec {
@@ -110,6 +117,9 @@ pub fn uninstall(purge: bool) -> Result<()> {
         }
     }
     let data_dir = paths::default_data_dir()?;
+    if let Err(e) = sas::restore_policy(&data_dir) {
+        log::warn!("Could not put back the Ctrl+Alt+Del policy: {e:#}");
+    }
     crate::updates::remove_versions(&data_dir)?;
     if purge && data_dir.exists() {
         std::fs::remove_dir_all(&data_dir)

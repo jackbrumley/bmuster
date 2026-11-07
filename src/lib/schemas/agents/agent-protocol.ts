@@ -268,7 +268,9 @@ export type ServerSocketMessage =
 	/** The certificate the server will serve after its next restart (L7). */
 	| { type: 'pin-update'; next: ServerTrust }
 	/** Start a session: a ticket (base64 JSON) and the server's signature over it (SPEC-SESSIONS T3). */
-	| { type: 'session-open'; ticket: string; signature: string };
+	| { type: 'session-open'; ticket: string; signature: string }
+	/** A message box on the console session's screen, from `from` (Windows). */
+	| { type: 'user-message'; from: string; text: string };
 
 export type RefusalReason =
 	| 'bad-request'

@@ -37,6 +37,12 @@ import { OutputRing } from './output-ring.ts';
 export type RelayLimits = {
 	/** The agent must open its session socket within this. */
 	agentWaitMs: number;
+	/**
+	 * A desktop session whose agent socket closed waits this long for a new
+	 * one: on Windows the helper moves when the console session changes
+	 * (SPEC-DESKTOP 6.2), and a signed-out session's helper is gone first.
+	 */
+	agentHandoverMs: number;
 	/** A session with no browser this long ends (T6). */
 	noBrowserMs: number;
 	/** A session with no input this long ends. */
@@ -53,6 +59,7 @@ export type RelayLimits = {
 
 export const RELAY_LIMITS: RelayLimits = {
 	agentWaitMs: 20_000,
+	agentHandoverMs: 15_000,
 	noBrowserMs: 60_000,
 	idleMs: 60 * 60_000,
 	replayBytes: 256 * 1024,
@@ -331,10 +338,18 @@ export function createRelay(limits: RelayLimits) {
 			if (session?.machineId !== machineId) {
 				return { kind: 'refused', message: 'No such session for this machine.' };
 			}
-			if (session.agent.peer !== undefined) {
+			const handover = session.record.kind === 'desktop';
+			const previous = session.agent.peer;
+			if (previous !== undefined && !handover) {
 				return { kind: 'refused', message: 'This session is already connected.' };
 			}
-			session.agent.peer = peer;
+			// A desktop session moves to the machine's newer socket (the Windows
+			// helper in another console session); the browser greets it afresh.
+			previous?.close(CLOSE_REPLACED, 'Handed over to a newer connection');
+			if (handover) {
+				session.earlyInput = [];
+			}
+			session.agent = { peer, waiting: 0, paused: false };
 			cancel(session, 'agent');
 			for (const input of session.earlyInput) {
 				forward(session.agent, session.browser, input);
@@ -421,9 +436,18 @@ export function createRelay(limits: RelayLimits) {
 		},
 
 		agentClosed(sessionId: string, peer: RelayPeer): void {
-			if (live(sessionId)?.agent.peer === peer) {
-				end(sessionId, 'agent-lost', 'The connection to the machine was lost.');
+			const session = live(sessionId);
+			if (session?.agent.peer !== peer) {
+				return;
 			}
+			if (session.record.kind !== 'desktop' || session.local !== undefined) {
+				end(sessionId, 'agent-lost', 'The connection to the machine was lost.');
+				return;
+			}
+			session.agent = { peer: undefined, waiting: 0, paused: false };
+			later(session, 'agent', limits.agentHandoverMs, () => {
+				end(sessionId, 'agent-lost', 'The connection to the machine was lost.');
+			});
 		},
 
 		/** The agent would not start the session (its `session-refused`). */

@@ -440,6 +440,19 @@ impl Session {
         local_now_ms() + lock(&self.clock).offset_ms
     }
 
+    /// The correction from this machine's clock to the server's.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn clock_offset_ms(&self) -> i64 {
+        lock(&self.clock).offset_ms
+    }
+
+    /// Takes another process's correction (the Windows desktop helper uses
+    /// the service's), so its signed requests carry the same clock.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn adopt_clock_offset_ms(&self, offset_ms: i64) {
+        lock(&self.clock).offset_ms = offset_ms;
+    }
+
     /// Signs one request. Keep the result alive until the request is sent.
     pub fn sign(&self, method: &str, path: &str, body: &[u8]) -> Signed<'_> {
         let order = lock(&self.order);

@@ -409,3 +409,60 @@ describe('desktop sessions in the relay (SPEC-DESKTOP R2)', () => {
 		expect(ended.map((session) => session.reason)).toEqual(['closed']);
 	});
 });
+
+describe('desktop agent hand-over (SPEC-DESKTOP R13, Windows helper)', () => {
+	function desktop() {
+		const relay = createRelay(RELAY_LIMITS);
+		const ended: EndedSession[] = [];
+		relay.start({ ...RECORD, kind: 'desktop', mode: 'control', openedAt: Date.now() }, (session) =>
+			ended.push(session)
+		);
+		const agent = fakePeer(true);
+		const browser = fakePeer(true);
+		connectBrowser(relay, browser);
+		relay.attachAgent(RECORD.id, RECORD.machineId, agent);
+		browser.texts.length = 0;
+		return { relay, ended, agent, browser };
+	}
+
+	it('a new agent socket takes the session over: the old one is closed and the browser greets the new one', () => {
+		const { relay, ended, agent, browser } = desktop();
+		const moved = fakePeer(true);
+		expect(relay.attachAgent(RECORD.id, RECORD.machineId, moved)).toEqual({ kind: 'attached' });
+		expect(agent.closed?.code).toBe(CLOSE_REPLACED);
+		expect(browser.texts).toEqual([{ type: 'ready' }]);
+		// The old helper's last words and frames no longer count.
+		relay.agentText(RECORD.id, agent, '{"type":"ended","reason":"agent-lost"}');
+		relay.fromAgent(RECORD.id, agent, Buffer.from([9]));
+		relay.agentClosed(RECORD.id, agent);
+		expect(ended).toEqual([]);
+		expect(browser.bytes).toEqual([]);
+		relay.browserText(RECORD.id, browser, '{"type":"keyframe"}');
+		expect(moved.texts).toEqual([{ type: 'keyframe' }]);
+		expect(agent.texts).toEqual([]);
+	});
+
+	it('waits for a lost agent socket to come back before ending the session', () => {
+		const { relay, ended, agent, browser } = desktop();
+		relay.agentClosed(RECORD.id, agent);
+		vi.advanceTimersByTime(RELAY_LIMITS.agentHandoverMs - 1);
+		expect(ended).toEqual([]);
+		const back = fakePeer(true);
+		expect(relay.attachAgent(RECORD.id, RECORD.machineId, back)).toEqual({ kind: 'attached' });
+		expect(browser.texts).toEqual([{ type: 'ready' }]);
+		vi.advanceTimersByTime(RELAY_LIMITS.agentWaitMs);
+		expect(ended).toEqual([]);
+
+		relay.agentClosed(RECORD.id, back);
+		vi.advanceTimersByTime(RELAY_LIMITS.agentHandoverMs);
+		expect(ended).toMatchObject([{ reason: 'agent-lost' }]);
+	});
+
+	it('another machine cannot take a desktop session over', () => {
+		const { relay, agent } = desktop();
+		expect(relay.attachAgent(RECORD.id, 'machine-2', fakePeer(true))).toMatchObject({
+			kind: 'refused'
+		});
+		expect(agent.closed).toBeUndefined();
+	});
+});

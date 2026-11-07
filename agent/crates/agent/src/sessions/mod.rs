@@ -16,6 +16,8 @@ mod pump;
 mod terminal;
 #[cfg(test)]
 mod testing;
+#[cfg(windows)]
+pub mod windows_desktop;
 
 use crate::client::Session;
 use crate::exec::pipe::Limits;
@@ -139,6 +141,10 @@ impl Sessions {
         }
         let inner = Arc::clone(&self.inner);
         let session_id = admitted.session_id.clone();
+        let text = TicketText {
+            ticket: ticket.to_string(),
+            signature: signature.to_string(),
+        };
         let started = std::thread::Builder::new()
             .name(format!(
                 "session-{}",
@@ -151,7 +157,7 @@ impl Sessions {
                     admitted.user.name,
                     purpose_label(&admitted.purpose)
                 );
-                match serve(&inner, &admitted) {
+                match serve(&inner, &admitted, &text) {
                     Ok(ended) => log::info!("Session {} ended: {ended:?}.", admitted.session_id),
                     Err(e) => log::warn!("Session {} failed: {e:#}", admitted.session_id),
                 }
@@ -177,8 +183,24 @@ fn purpose_label(purpose: &SessionPurpose) -> String {
     }
 }
 
+/// A ticket as the server sent it: the Windows desktop helper checks it
+/// again itself.
+#[cfg_attr(not(windows), allow(dead_code))]
+struct TicketText {
+    ticket: String,
+    signature: String,
+}
+
 /// Opens the session's socket and runs the session on it.
-fn serve(inner: &Inner, ticket: &SessionTicket) -> Result<Ended> {
+fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<Ended> {
+    // Windows: session 0 has no screen; the helper in the console session
+    // opens the socket and runs the session (SPEC-DESKTOP 6.2).
+    #[cfg(windows)]
+    if let SessionPurpose::Desktop { .. } = ticket.purpose {
+        return windows_desktop::serve(inner, ticket, text);
+    }
+    #[cfg(not(windows))]
+    let _ = text;
     let path = session_socket_path(&ticket.session_id);
     let mut socket = match connect_to(&inner.session, &path)? {
         Connect::Open(socket) => *socket,
