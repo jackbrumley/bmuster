@@ -70,13 +70,24 @@ function fileFacts(path: string): { size: number; sha256: string } {
 	return facts;
 }
 
-/** The newest version folder that has a build for `target`, or undefined. */
+/**
+ * The build installs hand out for `target`: the newest signed one, or, while
+ * the server has no signed build at all, the newest unsigned one. Signed
+ * builds win because a newly installed agent can then update itself, and
+ * because an older unsigned folder with a plain version (`0.1.0`) would
+ * otherwise outrank every development build of that version
+ * (`0.1.0-dev.…` sorts before `0.1.0`) and installs would get the stale one.
+ */
 export function latestRelease(
 	releasesPath: string,
 	target: AgentTarget,
 	origin: string
 ): ReleaseManifest | undefined {
-	const version = versionsFor(releasesPath, target).at(-1);
+	const versions = versionsFor(releasesPath, target);
+	const signed = versions.filter((candidate) =>
+		existsSync(`${binaryPath(releasesPath, candidate, target)}.sig`)
+	);
+	const version = (signed.length > 0 ? signed : versions).at(-1);
 	if (version === undefined) {
 		return undefined;
 	}

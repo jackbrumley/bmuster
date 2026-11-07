@@ -42,7 +42,7 @@ describe('agent releases (A3)', () => {
 			[`not-a-version/${linux}/bmuster-agent`]: 'ignored'
 		});
 		expect(latestRelease(root, linux, 'https://s.example')?.version).toBe(
-			'0.1.0-dev.20261107160000'
+			'0.1.0-dev.20261107153000'
 		);
 		expect(latestSignedRelease(root, linux)).toEqual({
 			version: '0.1.0-dev.20261107153000',
@@ -56,5 +56,17 @@ describe('agent releases (A3)', () => {
 			{ version: '0.1.0-dev.20261107153000', target: linux, signed: true }
 		]);
 		expect(releaseFile(root, '0.1.0-dev.20261107153000', linux)?.size).toBe(7);
+	});
+
+	it('installs the newest signed build, not an older unsigned 0.1.0 that outranks dev builds', () => {
+		const linux = 'x86_64-unknown-linux-gnu';
+		const root = releasesFolder({
+			[`0.1.0/${linux}/bmuster-agent`]: 'stale, unsigned',
+			[`0.1.0-dev.20261107100351/${linux}/bmuster-agent`]: 'current',
+			[`0.1.0-dev.20261107100351/${linux}/bmuster-agent.sig`]: 'c2lnbmF0dXJl\n'
+		});
+		expect(latestRelease(root, linux, 'https://s.example')?.version).toBe(
+			'0.1.0-dev.20261107100351'
+		);
 	});
 });
