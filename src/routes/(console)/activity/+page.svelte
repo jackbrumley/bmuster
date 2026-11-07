@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		IconAdjustments,
+		IconArrowsExchange,
 		IconCertificate,
 		IconDeviceDesktopMinus,
 		IconDeviceDesktopPlus,
@@ -60,6 +61,12 @@
 				return IconNoteOff;
 			case 'machine-reinstalled':
 				return IconRefresh;
+			case 'machine-moved':
+				return IconArrowsExchange;
+			case 'machine-uninstalled':
+				return IconDeviceDesktopMinus;
+			case 'local-code-viewed':
+				return IconKey;
 		}
 	}
 </script>

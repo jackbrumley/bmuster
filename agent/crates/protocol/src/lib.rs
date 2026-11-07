@@ -20,6 +20,10 @@ pub const AUTH_SCHEME: &str = "BMuster";
 pub const ENROL_PATH: &str = "/agent/v1/enrol";
 pub const CHECK_IN_PATH: &str = "/agent/v1/check-in";
 pub const SOCKET_PATH: &str = "/agent/v1/socket";
+/// The agent leaves this server: it moved to another one, or was uninstalled.
+pub const LEAVE_PATH: &str = "/agent/v1/leave";
+/// The local page's sign-in secret and certificate (SPEC-AGENT-LOCAL).
+pub const LOCAL_PAGE_PATH: &str = "/agent/v1/local-page";
 
 // ---------------------------------------------------------------------------
 // Signing
@@ -402,6 +406,44 @@ pub struct CheckInReply {
     pub check_in_seconds: u32,
     /// The server has no inventory for this machine; send it in full next time.
     pub inventory_wanted: bool,
+    /// The machine's name in the console (shown on the local page). Empty
+    /// from servers older than SPEC-AGENT-LOCAL.
+    #[serde(default)]
+    pub machine_name: String,
+}
+
+// ---------------------------------------------------------------------------
+// Leaving a server and the local page (SPEC-AGENT-LOCAL)
+// ---------------------------------------------------------------------------
+
+/// Why the agent leaves its server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LeaveReason {
+    /// It enrolled with another server (local page or `rejoin`).
+    Moved,
+    /// It is being uninstalled from the local page.
+    Uninstalled,
+}
+
+/// `POST /agent/v1/leave`, signed. The server refuses the machine from then on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeaveRequest {
+    pub reason: LeaveReason,
+}
+
+/// `POST /agent/v1/local-page`, signed: what the console needs to show the
+/// local page's sign-in code and certificate.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalPageReport {
+    /// The 20-byte TOTP secret (RFC 6238, SHA-1, 6 digits, 30 s), standard base64.
+    pub totp_secret: String,
+    /// SHA-256 of the page's certificate (DER), lower-case hex.
+    pub certificate_sha256: String,
+    /// The port the page listens on.
+    pub port: u16,
 }
 
 // ---------------------------------------------------------------------------
@@ -510,8 +552,32 @@ mod tests {
             .unwrap(),
             CheckInReply {
                 check_in_seconds: 60,
-                inventory_wanted: true
+                inventory_wanted: true,
+                machine_name: String::new()
             }
+        );
+        assert_eq!(
+            serde_json::to_value(LeaveRequest {
+                reason: LeaveReason::Moved
+            })
+            .unwrap(),
+            json!({ "reason": "moved" })
+        );
+        assert_eq!(
+            serde_json::to_value(LeaveRequest {
+                reason: LeaveReason::Uninstalled
+            })
+            .unwrap(),
+            json!({ "reason": "uninstalled" })
+        );
+        assert_eq!(
+            serde_json::to_value(LocalPageReport {
+                totp_secret: "AAAA".into(),
+                certificate_sha256: "ab".into(),
+                port: 47500
+            })
+            .unwrap(),
+            json!({ "totpSecret": "AAAA", "certificateSha256": "ab", "port": 47500 })
         );
     }
 

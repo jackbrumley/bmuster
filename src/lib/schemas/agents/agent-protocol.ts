@@ -100,7 +100,33 @@ export const checkInRequestSchema = z.object({
 
 export type CheckInRequest = z.infer<typeof checkInRequestSchema>;
 
-export type CheckInReply = { checkInSeconds: number; inventoryWanted: boolean };
+/** `machineName`: the machine's name in the console, which the agent's local page shows. */
+export type CheckInReply = {
+	checkInSeconds: number;
+	inventoryWanted: boolean;
+	machineName: string;
+};
+
+/** `POST /agent/v1/leave` (SPEC-AGENT-LOCAL): the agent moved to another server, or is being uninstalled. */
+export const leaveRequestSchema = z.object({ reason: z.enum(['moved', 'uninstalled']) });
+
+export type LeaveReason = z.infer<typeof leaveRequestSchema>['reason'];
+
+/** The local page's TOTP secret is 20 random bytes (RFC 4226's recommended length). */
+const TOTP_SECRET_BYTES = 20;
+
+/** `POST /agent/v1/local-page` (SPEC-AGENT-LOCAL): what the console needs for the local page. */
+export const localPageReportSchema = z.object({
+	totpSecret: z
+		.base64()
+		.refine((text) => Buffer.from(text, 'base64').length === TOTP_SECRET_BYTES, {
+			message: 'The secret must be 20 bytes'
+		}),
+	certificateSha256: z.string().regex(/^[0-9a-f]{64}$/),
+	port: z.int().min(1).max(65_535)
+});
+
+export type LocalPageReport = z.infer<typeof localPageReportSchema>;
 
 /** Messages an agent sends on its live socket. */
 export const agentSocketMessageSchema = z.discriminatedUnion('type', [

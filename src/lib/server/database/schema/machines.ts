@@ -2,7 +2,11 @@ import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core
 import { joinCodes } from './join-codes.ts';
 import { users } from './users.ts';
 
-/** One enrolled machine. `removedAt` marks a removed machine; the row stays for the audit log. */
+/**
+ * One enrolled machine. `removedAt` marks a machine that left this server (removed by an admin,
+ * uninstalled, or moved); the row stays for the audit log. `movedAt` is also set when it left
+ * by moving to another server (SPEC-AGENT-LOCAL).
+ */
 export const machines = sqliteTable('machines', {
 	id: text().primaryKey(),
 	name: text().notNull(),
@@ -24,7 +28,26 @@ export const machines = sqliteTable('machines', {
 	description: text().notNull().default(''),
 	/** The last person a check-in reported at the machine (D7); kept after they sign out. */
 	lastUserName: text(),
-	lastUserSeenAt: integer({ mode: 'timestamp_ms' })
+	lastUserSeenAt: integer({ mode: 'timestamp_ms' }),
+	/** When the agent said it moved to another server (signed leave); null otherwise. */
+	movedAt: integer({ mode: 'timestamp_ms' })
+});
+
+/**
+ * The agent's local page (SPEC-AGENT-LOCAL): its sign-in secret, sealed with SECRETS_KEY, so
+ * the console can show admins the current code, and its certificate so people can check the
+ * browser warning. One row per machine, replaced when the agent reports again.
+ */
+export const machineLocalPages = sqliteTable('machine_local_pages', {
+	machineId: text()
+		.primaryKey()
+		.references(() => machines.id),
+	/** The 20-byte TOTP secret (RFC 6238, SHA-1, 6 digits, 30 s), sealed. */
+	totpSecretSealed: text().notNull(),
+	/** SHA-256 of the page's certificate (DER), lower-case hex. */
+	certificateSha256: text().notNull(),
+	port: integer().notNull(),
+	reportedAt: integer({ mode: 'timestamp_ms' }).notNull()
 });
 
 /** Notes people keep on a machine (SPEC-MACHINE-DETAILS D3, D4). Deleted notes keep their row. */

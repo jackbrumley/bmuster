@@ -3,13 +3,42 @@
 //!
 //! Only this program's own records are shown below `warn`, so library debug
 //! output (which can include request headers) never reaches the log.
+//!
+//! The last [`RECENT_LINES`] lines are also kept in memory for the local
+//! page (SPEC-AGENT-LOCAL).
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
+use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::Write as _;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::SystemTime;
+
+/// How many log lines the local page can show.
+pub const RECENT_LINES: usize = 200;
+
+static RECENT: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
+
+fn remember(line: String) {
+    let mut recent = RECENT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if recent.len() == RECENT_LINES {
+        recent.pop_front();
+    }
+    recent.push_back(line);
+}
+
+/// The most recent log lines, oldest first, each with its UTC time.
+pub fn recent_lines() -> Vec<String> {
+    RECENT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .cloned()
+        .collect()
+}
 
 /// Above this size the file log is moved to `agent.log.old` at start-up.
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -51,6 +80,11 @@ impl Log for Logger {
             return;
         }
         let level = record.level().as_str();
+        remember(format!(
+            "{} {level:<5} {}",
+            httpdate::fmt_http_date(SystemTime::now()),
+            record.args()
+        ));
         match &self.sink {
             Sink::Stderr => {
                 let _ = writeln!(std::io::stderr(), "{level:<5} {}", record.args());
@@ -116,4 +150,22 @@ pub fn init_file(path: &Path) -> Result<(), String> {
         level: level_from_env()?,
         sink: Sink::File(Mutex::new(file)),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_last_lines_are_kept() {
+        for n in 0..RECENT_LINES + 5 {
+            remember(format!("line {n}"));
+        }
+        let lines = recent_lines();
+        assert_eq!(lines.len(), RECENT_LINES);
+        assert_eq!(
+            lines.last().map(String::as_str),
+            Some(format!("line {}", RECENT_LINES + 4).as_str())
+        );
+    }
 }

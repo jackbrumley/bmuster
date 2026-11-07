@@ -18,10 +18,12 @@ export function recordCheckIn(
 			checkIn.signedInUser.kind === 'user'
 				? { lastUserName: checkIn.signedInUser.name, lastUserSeenAt: at }
 				: {};
-		tx.update(machines)
+		const machine = tx
+			.update(machines)
 			.set({ agentVersion: checkIn.agentVersion, lastSeenAt: at, ...lastUser })
 			.where(eq(machines.id, agent.machineId))
-			.run();
+			.returning({ name: machines.name })
+			.get();
 
 		const status = {
 			signedInUser: JSON.stringify(checkIn.signedInUser),
@@ -59,6 +61,6 @@ export function recordCheckIn(
 				break;
 			}
 		}
-		return { checkInSeconds: agent.checkInSeconds, inventoryWanted };
+		return { checkInSeconds: agent.checkInSeconds, inventoryWanted, machineName: machine.name };
 	});
 }

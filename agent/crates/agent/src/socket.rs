@@ -3,6 +3,7 @@
 
 use crate::client::{parse_reply, Channel, Reply, Session, USER_AGENT};
 use crate::inventory::Probe;
+use crate::status::StatusBoard;
 use crate::worker::{Backoff, Signal};
 use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::{AgentMessage, RefusalReason, ServerMessage, SOCKET_PATH};
@@ -45,7 +46,7 @@ enum Ended {
 }
 
 /// Keeps the socket open until `stop` is set or the machine is revoked.
-pub fn run(session: &Session, signals: &Sender<Signal>, stop: &AtomicBool) {
+pub fn run(session: &Session, signals: &Sender<Signal>, stop: &AtomicBool, board: &StatusBoard) {
     let mut backoff = Backoff::new(Duration::from_secs(1), Duration::from_secs(60));
     let mut probe = Probe::new();
     while !stop.load(Ordering::SeqCst) {
@@ -53,7 +54,10 @@ pub fn run(session: &Session, signals: &Sender<Signal>, stop: &AtomicBool) {
         let result = match connect(session) {
             Ok(Connect::Open(socket)) => {
                 log::info!("Live socket connected.");
-                serve(*socket, session, signals, stop, &mut probe)
+                board.socket(true);
+                let ended = serve(*socket, session, signals, stop, &mut probe);
+                board.socket(false);
+                ended
             }
             Ok(Connect::Revoked(message)) => Ok(Ended::Revoked(message)),
             Err(e) => Err(e),

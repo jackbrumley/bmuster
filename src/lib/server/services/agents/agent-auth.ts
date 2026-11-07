@@ -49,6 +49,9 @@ export function authenticateAgent(
 	if (!verifySignature(machine.publicKey, message, auth.signature)) {
 		return refuse('bad-signature', "The signature does not match this machine's key.");
 	}
+	if (machine.movedAt !== null) {
+		return refuse('revoked', 'This machine moved to another BMuster server.');
+	}
 	if (machine.removedAt !== null) {
 		return refuse('revoked', 'This machine was removed from the server.');
 	}

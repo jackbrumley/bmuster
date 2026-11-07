@@ -1,10 +1,12 @@
-//! `bmuster-agent run`: the check-in loop on this thread and the live socket
-//! on its own thread.
+//! `bmuster-agent run`: the check-in loop on this thread, the live socket on
+//! its own thread, and the local page on its own threads.
 
 use crate::client::{Reply, Security, ServerUrl, Session, Transport};
 use crate::identity;
 use crate::inventory::{self, Probe};
+use crate::local_page::{self, Reporter};
 use crate::socket;
+use crate::status::{RunMode, StatusBoard};
 use crate::trust::{Trust, TrustState};
 use anyhow::{Context as _, Result};
 use bmuster_protocol::{
@@ -20,15 +22,21 @@ use std::time::Duration;
 pub enum Signal {
     CheckInNow,
     Revoked(String),
-    /// The service manager asked the agent to stop (Windows).
-    #[cfg_attr(not(windows), allow(dead_code))]
+    /// The service manager asked the agent to stop (Windows), or the local
+    /// page uninstalled a development copy.
     Stop,
+    /// The local page asked for a restart (also after moving servers).
+    Restart,
 }
 
 /// How `run` ended without an error.
+#[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
     Stopped,
     Revoked,
+    /// Start again: the service manager does it for a service; `main`
+    /// starts a new copy for a development run.
+    Restart,
 }
 
 /// Doubling wait between failed attempts.
@@ -63,22 +71,23 @@ pub struct RunOptions {
     /// `--insecure-dev-tls`: any certificate. Otherwise the certificate is
     /// checked as identity.json says (trust store or pinned key).
     pub insecure_dev_tls: bool,
+    pub mode: RunMode,
+    /// `--local-page-port`: the local page on this loopback port instead of
+    /// what local-page.json or the default says (tests and development).
+    pub local_page_port: Option<u16>,
 }
 
-/// Runs until revoked or stopped. `signals` is the check-in loop's inbox; its
-/// sender is shared with the socket thread and (on Windows) the service.
-pub fn run(
-    options: &RunOptions,
-    sender: Sender<Signal>,
-    signals: Receiver<Signal>,
-) -> Result<Outcome> {
-    let identity = identity::load(&options.data_dir)?;
-    let key = identity::load_key(&options.data_dir)?;
+/// A signed connection to the server this data folder is enrolled with. The
+/// certificate check follows identity.json (and saves planned changes to it)
+/// unless `insecure_dev_tls`.
+pub fn open_session(data_dir: &Path, insecure_dev_tls: bool) -> Result<Session> {
+    let identity = identity::load(data_dir)?;
+    let key = identity::load_key(data_dir)?;
     let server = ServerUrl::parse(&identity.server_url)?;
-    let security = if options.insecure_dev_tls {
+    let security = if insecure_dev_tls {
         Security::InsecureDev
     } else {
-        let dir = options.data_dir.clone();
+        let dir = data_dir.to_path_buf();
         Security::Checked(Trust::new(
             TrustState::new(identity.server_trust(), identity.next_pin),
             Box::new(move |state| {
@@ -89,8 +98,24 @@ pub fn run(
             }),
         ))
     };
-    let transport = Transport::new(server.clone(), security);
-    let session = Arc::new(Session::new(transport, identity.machine_id.clone(), key));
+    Ok(Session::new(
+        Transport::new(server, security),
+        identity.machine_id,
+        key,
+    ))
+}
+
+/// Runs until revoked or stopped. `signals` is the check-in loop's inbox; its
+/// sender is shared with the socket thread and (on Windows) the service.
+pub fn run(
+    options: &RunOptions,
+    sender: Sender<Signal>,
+    signals: Receiver<Signal>,
+) -> Result<Outcome> {
+    identity::finish_pending_move(&options.data_dir)?;
+    let identity = identity::load(&options.data_dir)?;
+    let session = Arc::new(open_session(&options.data_dir, options.insecure_dev_tls)?);
+    let server = &session.transport.server;
     log::info!(
         "BMuster agent {} started: machine {}, server {}",
         env!("CARGO_PKG_VERSION"),
@@ -98,13 +123,25 @@ pub fn run(
         server.base()
     );
 
+    let board = Arc::new(StatusBoard::new(identity.check_in_seconds));
+    let mut reporter = local_page::start(local_page::Setup {
+        data_dir: options.data_dir.clone(),
+        session: Arc::clone(&session),
+        signals: sender.clone(),
+        board: Arc::clone(&board),
+        mode: options.mode,
+        insecure_dev_tls: options.insecure_dev_tls,
+        port_override: options.local_page_port,
+    });
+
     let stop = Arc::new(AtomicBool::new(false));
     let socket_thread = {
         let session = Arc::clone(&session);
         let stop = Arc::clone(&stop);
+        let board = Arc::clone(&board);
         std::thread::Builder::new()
             .name("live-socket".into())
-            .spawn(move || socket::run(&session, &sender, &stop))
+            .spawn(move || socket::run(&session, &sender, &stop, &board))
             .context("could not start the live socket thread")?
     };
 
@@ -113,6 +150,8 @@ pub fn run(
         &options.data_dir,
         identity.check_in_seconds,
         &signals,
+        &board,
+        reporter.as_mut(),
     );
     stop.store(true, Ordering::SeqCst);
     if socket_thread.join().is_err() {
@@ -121,11 +160,13 @@ pub fn run(
     outcome
 }
 
-fn check_in_loop(
+pub fn check_in_loop(
     session: &Session,
     data_dir: &Path,
     mut check_in_seconds: u32,
     signals: &Receiver<Signal>,
+    board: &StatusBoard,
+    mut reporter: Option<&mut Reporter>,
 ) -> Result<Outcome> {
     let mut probe = Probe::new();
     // The inventory hash the server is known to hold; `None` sends it in full.
@@ -145,17 +186,19 @@ fn check_in_loop(
                     Ok(_) => {}
                     Err(e) => log::warn!("Ignoring the new interval: {e:#}"),
                 }
+                board.checked_in(&reply.machine_name, check_in_seconds);
+                if let Some(reporter) = reporter.as_deref_mut() {
+                    reporter.after_check_in(session);
+                }
                 Duration::from_secs(u64::from(check_in_seconds))
             }
             Ok(Reply::Refused(Refusal {
                 reason: RefusalReason::Revoked,
                 message,
-            })) => {
-                log_revoked(&message);
-                return Ok(Outcome::Revoked);
-            }
+            })) => return Ok(revoked(&message, board, signals)),
             Ok(Reply::Refused(refusal)) => {
                 let wait = backoff.next_wait();
+                board.failed(format!("{} ({})", refusal.message, refusal.reason));
                 log::warn!(
                     "Check-in refused: {} ({}); retrying in {} s",
                     refusal.message,
@@ -166,6 +209,7 @@ fn check_in_loop(
             }
             Err(e) => {
                 let wait = backoff.next_wait();
+                board.failed(format!("{e:#}"));
                 log::warn!("Check-in failed: {e:#}; retrying in {} s", wait.as_secs());
                 wait
             }
@@ -173,14 +217,39 @@ fn check_in_loop(
 
         match signals.recv_timeout(wait) {
             Ok(Signal::CheckInNow) | Err(RecvTimeoutError::Timeout) => {}
-            Ok(Signal::Revoked(message)) => {
-                log_revoked(&message);
-                return Ok(Outcome::Revoked);
+            Ok(Signal::Revoked(message)) => return Ok(revoked(&message, board, signals)),
+            Ok(Signal::Restart) => {
+                log::info!("Restarting.");
+                return Ok(Outcome::Restart);
             }
             Ok(Signal::Stop) | Err(RecvTimeoutError::Disconnected) => {
                 log::info!("Stopping.");
                 return Ok(Outcome::Stopped);
             }
+        }
+    }
+}
+
+/// The server refused this machine. While the agent is leaving on purpose
+/// (moving or uninstalling from the local page) that is expected: wait for
+/// the local page to say restart or stop instead of stopping as revoked.
+fn revoked(message: &str, board: &StatusBoard, signals: &Receiver<Signal>) -> Outcome {
+    if !board.is_leaving() {
+        log_revoked(message);
+        return Outcome::Revoked;
+    }
+    log::info!("The server no longer accepts this identity, as expected while leaving it.");
+    loop {
+        match signals.recv() {
+            Ok(Signal::Restart) => {
+                log::info!("Restarting.");
+                return Outcome::Restart;
+            }
+            Ok(Signal::Stop) | Err(_) => {
+                log::info!("Stopping.");
+                return Outcome::Stopped;
+            }
+            Ok(Signal::CheckInNow | Signal::Revoked(_)) => {}
         }
     }
 }
@@ -194,7 +263,7 @@ fn log_revoked(message: &str) {
 }
 
 /// One signed check-in. On success `server_hash` records what the server holds.
-fn check_in(
+pub fn check_in(
     session: &Session,
     probe: &mut Probe,
     server_hash: &mut Option<String>,
@@ -218,18 +287,7 @@ fn check_in(
         inventory: report,
     };
     let body = serde_json::to_vec(&request)?;
-    let reply = session.transport.exchange(|channel| {
-        // Signed afresh for each attempt, so a retry never repeats a timestamp.
-        let signed = session.sign("POST", CHECK_IN_PATH, &body);
-        let reply = channel.post::<CheckInReply>(
-            CHECK_IN_PATH,
-            &body,
-            Some(&signed.authorization),
-            |date| session.observe_date(date),
-        );
-        drop(signed);
-        reply
-    })?;
+    let reply = session.post_signed::<CheckInReply>(CHECK_IN_PATH, &body)?;
     if let Reply::Ok(ok) = &reply {
         log::debug!(
             "Checked in ({} inventory)",
@@ -248,6 +306,71 @@ fn check_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::client::TlsMode;
+    use bmuster_protocol::ServerTrust;
+    use ed25519_dalek::SigningKey;
+    use std::sync::mpsc;
+
+    /// A session with a server that is not there (nothing listens on port 9),
+    /// so every check-in fails at once and the loop goes straight to its inbox.
+    fn unreachable() -> Session {
+        let transport = Transport::new(
+            ServerUrl::parse("http://127.0.0.1:9").unwrap(),
+            Security::once(TlsMode::Checked(ServerTrust::Public)),
+        );
+        Session::new(transport, "m".into(), SigningKey::from_bytes(&[1; 32]))
+    }
+
+    fn outcome(board: &StatusBoard, inbox: Vec<Signal>) -> Outcome {
+        let (sender, signals) = mpsc::channel();
+        for signal in inbox {
+            sender.send(signal).unwrap();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        check_in_loop(&unreachable(), dir.path(), 60, &signals, board, None).unwrap()
+    }
+
+    #[test]
+    fn the_local_page_can_restart_the_agent() {
+        let board = StatusBoard::new(60);
+        assert_eq!(outcome(&board, vec![Signal::Restart]), Outcome::Restart);
+        assert!(
+            board.snapshot().last_error.is_some(),
+            "the failed check-in is on the board"
+        );
+    }
+
+    #[test]
+    fn revoked_stops_the_agent_unless_it_is_leaving_on_purpose() {
+        let board = StatusBoard::new(60);
+        assert_eq!(
+            outcome(
+                &board,
+                vec![Signal::Revoked("removed".into()), Signal::Restart]
+            ),
+            Outcome::Revoked
+        );
+        board.begin_leaving();
+        assert_eq!(
+            outcome(
+                &board,
+                vec![
+                    Signal::Revoked("moved".into()),
+                    Signal::CheckInNow,
+                    Signal::Restart
+                ]
+            ),
+            Outcome::Restart
+        );
+        assert_eq!(
+            outcome(
+                &board,
+                vec![Signal::Revoked("uninstalled".into()), Signal::Stop]
+            ),
+            Outcome::Stopped
+        );
+    }
 
     #[test]
     fn backoff_doubles_to_its_limit_and_resets() {

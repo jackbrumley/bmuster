@@ -1,6 +1,11 @@
 import { eq } from 'drizzle-orm';
 import type { EnrolReply, EnrolRequest } from '#lib/schemas/agents/agent-protocol.ts';
-import { machineInventory, machineStatus, machines } from '../../database/schema.ts';
+import {
+	machineInventory,
+	machineLocalPages,
+	machineStatus,
+	machines
+} from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { isRefusal, type AgentRefusal } from './agent-refusal.ts';
@@ -92,8 +97,8 @@ function enrolNew(
 /**
  * The new agent takes over the machine's entry: same id, name, description,
  * notes and history, with the new key, so the old key is refused from now on.
- * Status and inventory are cleared so the page waits for the new agent's
- * first check-in rather than showing the old install's figures.
+ * Status, inventory and the local page are cleared so the page waits for the
+ * new agent's first check-in rather than showing the old install's figures.
  */
 function takeOver(
 	tx: Queryable,
@@ -127,6 +132,8 @@ function takeOver(
 		.run();
 	tx.delete(machineStatus).where(eq(machineStatus.machineId, machineId)).run();
 	tx.delete(machineInventory).where(eq(machineInventory.machineId, machineId)).run();
+	// The new agent makes its own local page secret and certificate.
+	tx.delete(machineLocalPages).where(eq(machineLocalPages.machineId, machineId)).run();
 	recordAudit(
 		tx,
 		{

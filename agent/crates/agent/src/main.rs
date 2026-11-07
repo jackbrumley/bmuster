@@ -5,27 +5,35 @@ mod client;
 mod gpus;
 mod identity;
 mod inventory;
+mod local_page;
 mod logging;
 mod paths;
+mod relocate;
 #[cfg(target_os = "linux")]
 mod service_linux;
 #[cfg(windows)]
 mod service_windows;
 mod socket;
+mod status;
 mod tls;
+mod totp;
 mod trust;
 mod worker;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::{CertificatePin, ServerTrust};
 use clap::{Args, Parser, Subcommand};
 use client::TlsMode;
-use std::path::PathBuf;
+use status::RunMode;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::mpsc;
 
 /// Exit code when the server has removed this machine (distinct from a crash).
 const EXIT_REVOKED: u8 = 3;
+/// Exit code asking the service manager to start the agent again (the local
+/// page's Restart, or after moving servers).
+const EXIT_RESTART: u8 = 4;
 
 #[derive(Parser)]
 #[command(name = "bmuster-agent", version, about = "BMuster agent")]
@@ -83,10 +91,25 @@ enum Command {
         /// DEVELOPMENT ONLY: accept any TLS certificate from the server
         #[arg(long)]
         insecure_dev_tls: bool,
+        /// Serve the local page on this port on localhost (tests and development)
+        #[arg(long, hide = true, value_name = "PORT")]
+        local_page_port: Option<u16>,
         /// Started by the Windows service manager
         #[cfg(windows)]
         #[arg(long, hide = true)]
         service: bool,
+    },
+    /// Move this machine to another BMuster server: enrol there first, then
+    /// leave this one (needs root or Administrator when installed)
+    Rejoin {
+        #[command(flatten)]
+        join: Join,
+        /// Data folder (default: /var/lib/bmuster or C:\ProgramData\BMuster)
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        /// DEVELOPMENT ONLY: accept any TLS certificate from both servers
+        #[arg(long)]
+        insecure_dev_tls: bool,
     },
     /// Show this machine's enrolment and service state
     Status {
@@ -172,18 +195,31 @@ fn dispatch(command: Command) -> Result<ExitCode> {
         Command::Run {
             data_dir,
             insecure_dev_tls,
+            local_page_port,
             ..
         } => {
+            let mode = run_mode();
             let options = worker::RunOptions {
                 data_dir: paths::data_dir(data_dir)?,
                 insecure_dev_tls,
+                mode,
+                local_page_port,
             };
             let (sender, signals) = mpsc::channel();
             match worker::run(&options, sender, signals)? {
                 worker::Outcome::Stopped => Ok(ExitCode::SUCCESS),
                 worker::Outcome::Revoked => Ok(ExitCode::from(EXIT_REVOKED)),
+                worker::Outcome::Restart => match mode {
+                    RunMode::Service => Ok(ExitCode::from(EXIT_RESTART)),
+                    RunMode::Foreground => restart_in_place(),
+                },
             }
         }
+        Command::Rejoin {
+            join,
+            data_dir,
+            insecure_dev_tls,
+        } => rejoin(&join, data_dir, insecure_dev_tls),
         Command::Status { data_dir } => status(&paths::data_dir(data_dir)?),
         Command::Uninstall { purge } => {
             platform::uninstall(purge)?;
@@ -192,7 +228,93 @@ fn dispatch(command: Command) -> Result<ExitCode> {
     }
 }
 
-fn status(data_dir: &std::path::Path) -> Result<ExitCode> {
+/// Started by systemd (which sets `INVOCATION_ID` for every unit), or by hand.
+/// The Windows service enters through `run --service` instead.
+fn run_mode() -> RunMode {
+    if cfg!(target_os = "linux")
+        && std::env::var_os("INVOCATION_ID").is_some_and(|id| !id.is_empty())
+    {
+        RunMode::Service
+    } else {
+        RunMode::Foreground
+    }
+}
+
+/// A copy started by hand restarts itself with the same arguments: in place
+/// on Unix (same process id and terminal), as a new process on Windows.
+fn restart_in_place() -> Result<ExitCode> {
+    let program = std::env::current_exe().context("could not find this program's path")?;
+    let arguments: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    log::info!("Starting again: {} {:?}", program.display(), arguments);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        let error = std::process::Command::new(&program).args(&arguments).exec();
+        Err(error).context("could not restart the agent")
+    }
+    #[cfg(not(unix))]
+    {
+        std::process::Command::new(&program)
+            .args(&arguments)
+            .spawn()
+            .context("could not restart the agent")?;
+        Ok(ExitCode::SUCCESS)
+    }
+}
+
+/// `bmuster-agent rejoin`: the local page's Move, from the command line. An
+/// installed agent's service is stopped for the move and started again after
+/// it, whether the move worked or not.
+fn rejoin(join: &Join, data_dir: Option<PathBuf>, insecure_dev_tls: bool) -> Result<ExitCode> {
+    let installed = data_dir.is_none();
+    let dir = paths::data_dir(data_dir)?;
+    if installed {
+        platform::require_admin()?;
+    }
+    identity::finish_pending_move(&dir)?;
+    let session = worker::open_session(&dir, insecure_dev_tls)?;
+    let tls = match (join.pin_cert, insecure_dev_tls) {
+        (Some(pin), _) => TlsMode::Checked(ServerTrust::Pin { pin }),
+        (None, true) => TlsMode::InsecureDev,
+        (None, false) => TlsMode::Checked(ServerTrust::Public),
+    };
+    let was_running = installed && platform::stop_service()?;
+    let moved = relocate::move_to(
+        &dir,
+        &relocate::MoveTarget {
+            url: &join.url,
+            code: &join.code,
+            name: join.name.as_deref(),
+            tls,
+        },
+        &session,
+    );
+    if was_running {
+        platform::start_service()?;
+    }
+    let moved = moved?;
+    println!(
+        "Moved: this machine joined {} as machine {}.",
+        moved.server_url, moved.machine_id
+    );
+    match moved.old_server {
+        relocate::OldServer::Told => {
+            println!("The old server was told and now refuses the old identity.")
+        }
+        relocate::OldServer::NotTold(reason) => println!(
+            "The old server could not be told ({reason}); remove the machine there by hand."
+        ),
+    }
+    if !installed {
+        println!(
+            "Restart any agent running from {} to use the new identity.",
+            dir.display()
+        );
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn status(data_dir: &Path) -> Result<ExitCode> {
     println!("Agent version: {}", env!("CARGO_PKG_VERSION"));
     println!("Data folder:   {}", data_dir.display());
     println!("Service:       {}", platform::service_state());
@@ -217,16 +339,23 @@ fn status(data_dir: &std::path::Path) -> Result<ExitCode> {
 
 #[cfg(target_os = "linux")]
 mod platform {
-    pub use crate::service_linux::{install, service_state, uninstall};
+    pub use crate::service_linux::{
+        install, require_admin, schedule_uninstall, service_state, start_service, stop_service,
+        uninstall,
+    };
 
     const _: () = assert!(crate::service_linux::REVOKED_EXIT_CODE == crate::EXIT_REVOKED);
 }
 
 #[cfg(windows)]
 mod platform {
-    pub use crate::service_windows::{install, service_state, uninstall};
+    pub use crate::service_windows::{
+        install, require_admin, schedule_uninstall, service_state, start_service, stop_service,
+        uninstall,
+    };
 
     const _: () = assert!(crate::service_windows::REVOKED_EXIT_CODE == crate::EXIT_REVOKED as u32);
+    const _: () = assert!(crate::service_windows::RESTART_EXIT_CODE == crate::EXIT_RESTART as i32);
 }
 
 #[cfg(not(any(target_os = "linux", windows)))]
@@ -249,5 +378,21 @@ mod platform {
 
     pub fn service_state() -> String {
         "not supported on this system".into()
+    }
+
+    pub fn require_admin() -> Result<()> {
+        Ok(())
+    }
+
+    pub fn stop_service() -> Result<bool> {
+        Ok(false)
+    }
+
+    pub fn start_service() -> Result<()> {
+        Ok(())
+    }
+
+    pub fn schedule_uninstall() -> Result<()> {
+        bail!("uninstalling a service is supported on Linux and Windows only")
     }
 }

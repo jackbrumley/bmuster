@@ -130,7 +130,8 @@ describe('every route is guarded (S7, hygiene route-guard-required)', () => {
 			'src/routes/api/settings/+server.ts',
 			'src/routes/api/join-codes/+server.ts',
 			'src/routes/api/join-codes/[id=uuid]/+server.ts',
-			'src/routes/api/machines/[id]/+server.ts'
+			'src/routes/api/machines/[id]/+server.ts',
+			'src/routes/api/machines/[id]/local-code/+server.ts'
 		]) {
 			expect(text(path), path).toMatch(/route\.admin\(/);
 			expect(text(path), path).not.toMatch(/route\.user\(/);
@@ -142,7 +143,13 @@ describe('every route is guarded (S7, hygiene route-guard-required)', () => {
 	});
 
 	it('leaves agent routes on their own checks', () => {
-		expect(text('src/routes/agent/v1/check-in/+server.ts')).toMatch(/route\.agent\(/);
+		for (const path of [
+			'src/routes/agent/v1/check-in/+server.ts',
+			'src/routes/agent/v1/leave/+server.ts',
+			'src/routes/agent/v1/local-page/+server.ts'
+		]) {
+			expect(text(path), path).toMatch(/route\.agent\(/);
+		}
 		for (const path of [
 			'src/routes/agent/v1/enrol/+server.ts',
 			'src/routes/install.sh/+server.ts',

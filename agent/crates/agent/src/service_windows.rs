@@ -4,6 +4,7 @@
 use crate::client::TlsMode;
 use crate::identity::{self, EnrolOptions};
 use crate::paths;
+use crate::status::RunMode;
 use crate::worker::{self, Outcome, RunOptions, Signal};
 use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::ServerTrust;
@@ -26,6 +27,9 @@ pub const SERVICE_NAME: &str = "BMusterAgent";
 const DISPLAY_NAME: &str = "BMuster Agent";
 const DESCRIPTION: &str = "Reports this machine to its BMuster server.";
 pub const REVOKED_EXIT_CODE: u32 = 3;
+/// The process exits with this without telling the service manager it
+/// stopped, which counts as a failure, so the failure actions start it again.
+pub const RESTART_EXIT_CODE: i32 = 4;
 const ERROR_EXIT_CODE: u32 = 1;
 const LOG_FILE: &str = "agent.log";
 
@@ -196,6 +200,74 @@ pub fn uninstall(purge: bool) -> Result<()> {
     Ok(())
 }
 
+pub fn require_admin() -> Result<()> {
+    manager(ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE).map(|_| ())
+}
+
+fn wait_for(service: &windows_service::service::Service, state: ServiceState) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while service.query_status()?.current_state != state {
+        if Instant::now() > deadline {
+            bail!("the service did not reach {state:?} within 30 s");
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    Ok(())
+}
+
+/// Stops the service if it runs; returns whether it was running (`rejoin`).
+pub fn stop_service() -> Result<bool> {
+    let manager = manager(ServiceManagerAccess::CONNECT)?;
+    let Ok(service) = manager.open_service(
+        SERVICE_NAME,
+        ServiceAccess::QUERY_STATUS | ServiceAccess::STOP,
+    ) else {
+        return Ok(false);
+    };
+    if service.query_status()?.current_state == ServiceState::Stopped {
+        return Ok(false);
+    }
+    service.stop().context("could not stop the service")?;
+    wait_for(&service, ServiceState::Stopped)?;
+    Ok(true)
+}
+
+pub fn start_service() -> Result<()> {
+    let manager = manager(ServiceManagerAccess::CONNECT)?;
+    let service = manager
+        .open_service(
+            SERVICE_NAME,
+            ServiceAccess::QUERY_STATUS | ServiceAccess::START,
+        )
+        .context("could not open the service")?;
+    service
+        .start::<&OsStr>(&[])
+        .context("could not start the service")
+}
+
+/// The local page's Uninstall, from inside the service: a copy of this
+/// program outside the program folder (so that folder can be deleted) runs
+/// `uninstall --purge` a few seconds later, after the page has replied. It
+/// stops this service first. The copy in the temp folder stays behind.
+pub fn schedule_uninstall() -> Result<()> {
+    use std::os::windows::process::CommandExt as _;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    let program = std::env::current_exe().context("could not find this program's path")?;
+    let copy = std::env::temp_dir().join("bmuster-agent-uninstall.exe");
+    std::fs::copy(&program, &copy)
+        .with_context(|| format!("could not copy the agent to {}", copy.display()))?;
+    Command::new("cmd.exe")
+        .raw_arg(format!(
+            "/d /c \"ping -n 4 127.0.0.1 >nul & \"{}\" uninstall --purge\"",
+            copy.display()
+        ))
+        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .spawn()
+        .context("could not start the uninstall")?;
+    Ok(())
+}
+
 pub fn service_state() -> String {
     let Ok(manager) = manager(ServiceManagerAccess::CONNECT) else {
         return "unknown (could not open the service manager)".into();
@@ -264,10 +336,17 @@ fn service_body() -> Result<()> {
     let options = RunOptions {
         data_dir: paths::default_data_dir()?,
         insecure_dev_tls: false,
+        mode: RunMode::Service,
+        local_page_port: None,
     };
     let exit_code = match worker::run(&options, sender, signals) {
         Ok(Outcome::Stopped) => 0,
         Ok(Outcome::Revoked) => REVOKED_EXIT_CODE,
+        Ok(Outcome::Restart) => {
+            log::info!("Restarting through the service manager.");
+            log::logger().flush();
+            std::process::exit(RESTART_EXIT_CODE);
+        }
         Err(e) => {
             log::error!("{e:#}");
             ERROR_EXIT_CODE

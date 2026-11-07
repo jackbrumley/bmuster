@@ -2,7 +2,9 @@
 
 use crate::client::{Reply, Security, ServerUrl, TlsMode, Transport};
 use crate::inventory;
-use crate::paths::{IDENTITY_FILE, KEY_FILE};
+use crate::paths::{
+    IDENTITY_FILE, KEY_FILE, LOCAL_PAGE_REPORTED_FILE, LOCAL_PAGE_SECRET_FILE, MOVE_PENDING_DIR,
+};
 use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::{
     decode_public_key, encode_public_key, CertificatePin, EnrolReply, EnrolRequest, ServerTrust,
@@ -96,7 +98,7 @@ pub fn prepare_data_dir(dir: &Path) -> Result<()> {
 }
 
 /// Writes a file only its owner can read, replacing any old copy atomically.
-fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
+pub fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     let temp = path.with_extension("tmp");
     let _ = fs::remove_file(&temp);
     let mut options = fs::OpenOptions::new();
@@ -118,7 +120,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
 
 /// Refuses a private file others can read (Unix only; Windows relies on the
 /// folder ACL set by `install`).
-fn check_private(path: &Path) -> Result<()> {
+pub fn check_private(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -213,6 +215,37 @@ pub fn update(dir: &Path, change: impl FnOnce(&mut Identity)) -> Result<Identity
     change(&mut identity);
     save(dir, &identity)?;
     Ok(identity)
+}
+
+/// Completes a move to another server (SPEC-AGENT-LOCAL): the staged key and
+/// identity in `move-pending` replace the current ones. Each rename is atomic
+/// and the folder goes last, so a crash part-way is finished at the next
+/// start. The local page's secret is dropped too: the old server knew it, so
+/// a new one is made and sent to the new server. Returns whether a move was
+/// pending.
+pub fn finish_pending_move(dir: &Path) -> Result<bool> {
+    let pending = dir.join(MOVE_PENDING_DIR);
+    if !pending.is_dir() {
+        return Ok(false);
+    }
+    for name in [KEY_FILE, IDENTITY_FILE] {
+        let staged = pending.join(name);
+        if staged.exists() {
+            fs::rename(&staged, dir.join(name))
+                .with_context(|| format!("could not move {} into place", staged.display()))?;
+        }
+    }
+    for name in [LOCAL_PAGE_SECRET_FILE, LOCAL_PAGE_REPORTED_FILE] {
+        let path = dir.join(name);
+        if path.exists() {
+            fs::remove_file(&path)
+                .with_context(|| format!("could not remove {}", path.display()))?;
+        }
+    }
+    fs::remove_dir_all(&pending)
+        .with_context(|| format!("could not remove {}", pending.display()))?;
+    log::info!("Switched to the new server's identity.");
+    Ok(true)
 }
 
 pub struct EnrolOptions<'a> {

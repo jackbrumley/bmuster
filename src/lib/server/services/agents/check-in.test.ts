@@ -30,7 +30,11 @@ describe('check-in (A6)', () => {
 			checkIn({ kind: 'full', hash: HASH, data: SAMPLE_INVENTORY }),
 			NOW + 1000
 		);
-		expect(reply).toEqual({ checkInSeconds: 60, inventoryWanted: false });
+		expect(reply).toEqual({
+			checkInSeconds: 60,
+			inventoryWanted: false,
+			machineName: 'Test machine'
+		});
 
 		const machine = findMachine(database, agent.machineId, NOW + 1000);
 		expect(machine?.agentVersion).toBe('0.1.1');

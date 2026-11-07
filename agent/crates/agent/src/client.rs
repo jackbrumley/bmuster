@@ -107,6 +107,11 @@ impl ServerUrl {
         &self.host
     }
 
+    /// `https://` (as opposed to plain `http://` to this machine).
+    pub fn secure(&self) -> bool {
+        self.secure
+    }
+
     pub fn port(&self) -> u16 {
         self.port
     }
@@ -285,6 +290,26 @@ impl Transport {
         }
     }
 
+    /// How the next connection checks the server's certificate.
+    pub fn check(&self) -> Check {
+        match &self.security {
+            Security::InsecureDev => Check::AnyCertificate,
+            Security::Checked(trust) => Check::Trust(trust.state().current),
+        }
+    }
+
+    /// A certificate change the server announced and the agent has not yet adopted.
+    pub fn announced(&self) -> Option<ServerTrust> {
+        match &self.security {
+            Security::InsecureDev => None,
+            Security::Checked(trust) => trust.state().next,
+        }
+    }
+
+    pub fn provider(&self) -> Arc<CryptoProvider> {
+        self.provider.clone()
+    }
+
     /// The server announced the certificate it serves after its next restart.
     pub fn announce(&self, next: ServerTrust) {
         match &self.security {
@@ -396,6 +421,19 @@ impl Session {
         }
     }
 
+    /// POSTs a signed JSON body (already serialised) to `path`.
+    pub fn post_signed<T: DeserializeOwned>(&self, path: &str, body: &[u8]) -> Result<Reply<T>> {
+        self.transport.exchange(|channel| {
+            // Signed afresh for each attempt, so a retry never repeats a timestamp.
+            let signed = self.sign("POST", path, body);
+            let reply = channel.post::<T>(path, body, Some(&signed.authorization), |date| {
+                self.observe_date(date);
+            });
+            drop(signed);
+            reply
+        })
+    }
+
     /// Corrects the clock from the server's `Date` header.
     pub fn observe_date(&self, date: Option<&str>) {
         let Some(text) = date else {
@@ -470,7 +508,15 @@ mod tests {
     fn replies_and_refusals() {
         let ok: Reply<CheckInReply> =
             parse_reply(200, r#"{"checkInSeconds":30,"inventoryWanted":false}"#).unwrap();
-        assert!(matches!(ok, Reply::Ok(r) if r.check_in_seconds == 30));
+        assert!(
+            matches!(ok, Reply::Ok(r) if r.check_in_seconds == 30 && r.machine_name.is_empty())
+        );
+        let named: Reply<CheckInReply> = parse_reply(
+            200,
+            r#"{"checkInSeconds":30,"inventoryWanted":false,"machineName":"Reception PC"}"#,
+        )
+        .unwrap();
+        assert!(matches!(named, Reply::Ok(r) if r.machine_name == "Reception PC"));
         let refused: Reply<CheckInReply> =
             parse_reply(401, r#"{"reason":"revoked","message":"Removed."}"#).unwrap();
         assert!(matches!(refused, Reply::Refused(r) if r.reason == RefusalReason::Revoked));

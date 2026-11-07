@@ -10,6 +10,7 @@
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import { removeMachineReplySchema } from '#lib/schemas/machines/remove-machine.ts';
 	import { agentCommands } from '#lib/domain/machines/agent-commands.ts';
+	import LocalPage from './local-page.svelte';
 	import MachineDetails from './machine-details.svelte';
 	import ReinstallAgent from './reinstall-agent.svelte';
 	import type { PageProps } from './$types';
@@ -69,11 +70,19 @@
 			<p class="command-label">Uninstall and delete everything</p>
 			<CopyField value={commands.purge} label="purge command" />
 		</div>
+		<div class="command">
+			<p class="command-label">
+				Move to another BMuster server (make a join code on its Add machine page first)
+			</p>
+			<CopyField value={commands.rejoin} label="rejoin command" />
+		</div>
 		<p class="muted">
-			To move this machine to another BMuster server: uninstall with --purge, then run the install
-			command from the other server's Add machine page.
+			The agent joins the other server first and only then leaves this one, which then shows it as
+			moved. The local page below can do the same.
 		</p>
 	</section>
+
+	<LocalPage machineId={machine.id} localPage={data.localPage} />
 
 	<ReinstallAgent
 		{machine}

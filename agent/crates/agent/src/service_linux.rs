@@ -32,6 +32,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart={BINARY} run
+# Any other exit restarts the agent, including 4: the local page's Restart.
 Restart=always
 RestartSec=10
 RestartPreventExitStatus={REVOKED_EXIT_CODE}
@@ -62,6 +63,10 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 WantedBy=multi-user.target
 "
     )
+}
+
+pub fn require_admin() -> Result<()> {
+    require_root()
 }
 
 fn require_root() -> Result<()> {
@@ -183,6 +188,47 @@ pub fn uninstall(purge: bool) -> Result<()> {
             "Kept {} (identity and key); add --purge to remove it.",
             data_dir.display()
         );
+    }
+    Ok(())
+}
+
+/// Stops the service if it runs; returns whether it was running (`rejoin`).
+pub fn stop_service() -> Result<bool> {
+    if !Path::new(UNIT_PATH).exists() {
+        return Ok(false);
+    }
+    if service_state() != "active" {
+        return Ok(false);
+    }
+    systemctl(&["stop", UNIT_NAME])?;
+    Ok(true)
+}
+
+pub fn start_service() -> Result<()> {
+    systemctl(&["start", UNIT_NAME])
+}
+
+/// The local page's Uninstall, from inside the service: the unit's sandbox
+/// (ProtectSystem=strict) cannot remove the unit or the program, and
+/// stopping the service would end this process part-way. So systemd runs
+/// `uninstall --purge` as its own short-lived unit, three seconds from now,
+/// after the page has replied.
+pub fn schedule_uninstall() -> Result<()> {
+    let program = std::env::current_exe().context("could not find this program's path")?;
+    let status = Command::new("systemd-run")
+        .arg("--quiet")
+        .arg("--collect")
+        .arg("--on-active=3")
+        .arg(format!(
+            "--unit=bmuster-agent-uninstall-{}",
+            std::process::id()
+        ))
+        .arg(&program)
+        .args(["uninstall", "--purge"])
+        .status()
+        .context("could not run systemd-run")?;
+    if !status.success() {
+        bail!("systemd-run failed ({status})");
     }
     Ok(())
 }

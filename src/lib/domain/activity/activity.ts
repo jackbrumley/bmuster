@@ -21,7 +21,10 @@ const AUDIT_KINDS = [
 	'machine-renamed',
 	'machine-description-changed',
 	'machine-note-deleted',
-	'machine-reinstalled'
+	'machine-reinstalled',
+	'machine-moved',
+	'machine-uninstalled',
+	'local-code-viewed'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -84,5 +87,11 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Deleted a note on a machine';
 		case 'machine-reinstalled':
 			return "Reinstalled a machine's agent";
+		case 'machine-moved':
+			return 'Recorded that a machine moved to another server';
+		case 'machine-uninstalled':
+			return "Recorded that a machine's agent was uninstalled";
+		case 'local-code-viewed':
+			return "Viewed a machine's local page code";
 	}
 }
