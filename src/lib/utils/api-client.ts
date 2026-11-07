@@ -3,8 +3,12 @@ import type { z } from 'zod';
 /**
  * The one way browser code talks to the server (AGENTS.md §6): JSON in, a
  * zod-checked reply out, and failures as a result rather than a throw.
+ * `status` is the HTTP status of a refusal, or 0 when the server could not
+ * be reached (worth trying again).
  */
-export type ApiResult<T> = { ok: true; data: T } | { ok: false; message: string };
+export type ApiResult<T> = { ok: true; data: T } | { ok: false; message: string; status: number };
+
+const UNREACHABLE = 'Could not reach the server. Check your connection.';
 
 export async function apiRequest<Reply>(options: {
 	method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -20,15 +24,64 @@ export async function apiRequest<Reply>(options: {
 			body: options.body === undefined ? null : JSON.stringify(options.body)
 		});
 	} catch {
-		return { ok: false, message: 'Could not reach the server. Check your connection.' };
+		return { ok: false, message: UNREACHABLE, status: 0 };
 	}
 	const json: unknown = await response.json().catch(() => undefined);
-	if (!response.ok) {
-		return { ok: false, message: messageFrom(json) ?? `The server said ${response.status}.` };
+	return resultOf(response.status, json, options.reply);
+}
+
+/**
+ * Sends raw bytes with `PUT` (an upload piece), reporting progress as it
+ * goes; `signal` stops it. XMLHttpRequest, because fetch reports no upload
+ * progress.
+ */
+export function apiUpload<Reply>(options: {
+	url: string;
+	body: Blob;
+	reply: z.ZodType<Reply>;
+	onProgress: (sentBytes: number) => void;
+	signal: AbortSignal;
+}): Promise<ApiResult<Reply>> {
+	return new Promise((resolve) => {
+		const request = new XMLHttpRequest();
+		request.open('PUT', options.url);
+		request.setRequestHeader('content-type', 'application/octet-stream');
+		request.upload.addEventListener('progress', (event) => {
+			options.onProgress(event.loaded);
+		});
+		request.addEventListener('load', () => {
+			let json: unknown;
+			try {
+				json = JSON.parse(request.responseText);
+			} catch {
+				json = undefined;
+			}
+			resolve(resultOf(request.status, json, options.reply));
+		});
+		request.addEventListener('error', () => {
+			resolve({ ok: false, message: UNREACHABLE, status: 0 });
+		});
+		request.addEventListener('abort', () => {
+			resolve({ ok: false, message: 'Stopped.', status: 0 });
+		});
+		if (options.signal.aborted) {
+			resolve({ ok: false, message: 'Stopped.', status: 0 });
+			return;
+		}
+		options.signal.addEventListener('abort', () => {
+			request.abort();
+		});
+		request.send(options.body);
+	});
+}
+
+function resultOf<Reply>(status: number, json: unknown, reply: z.ZodType<Reply>): ApiResult<Reply> {
+	if (status < 200 || status > 299) {
+		return { ok: false, message: messageFrom(json) ?? `The server said ${status}.`, status };
 	}
-	const parsed = options.reply.safeParse(json);
+	const parsed = reply.safeParse(json);
 	if (!parsed.success) {
-		return { ok: false, message: 'The server sent a reply this page does not understand.' };
+		return { ok: false, message: 'The server sent a reply this page does not understand.', status };
 	}
 	return { ok: true, data: parsed.data };
 }

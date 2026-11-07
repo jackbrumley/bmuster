@@ -11,6 +11,7 @@ describe('server settings (S16)', () => {
 			'defaultConsent',
 			'connectedNotice',
 			'agentUpdatePolicy',
+			'maxUploadGb',
 			'localNetworkMode'
 		]);
 		for (const key of SETTING_KEYS) {

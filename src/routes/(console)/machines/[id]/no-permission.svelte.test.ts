@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { Grant } from '#lib/domain/access/access.ts';
 import type { Machine } from '#lib/domain/machines/machine.ts';
@@ -64,6 +64,11 @@ describe('machine tabs without the permission (SPEC-ACCESS A6)', () => {
 		);
 		expect(desktop.container.textContent).not.toContain(NO_PERMISSION);
 		await desktop.unmount();
+		// The Files tab lists a folder as it opens; nothing here needs the answer.
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => Promise.resolve(Response.json({ message: 'Not here.' }, { status: 404 })))
+		);
 		const files = await render(
 			FilesTab,
 			props([...VIEW_ONLY, { permission: 'files', consent: 'ask' }])

@@ -73,7 +73,13 @@ const AUDIT_KINDS = [
 	'agent-rollout-paused',
 	'agent-rollout-resumed',
 	// SPEC-CSV-EXPORT
-	'list-exported'
+	'list-exported',
+	// SPEC-FILES
+	'file-downloaded',
+	'file-uploaded',
+	'files-deleted',
+	'file-renamed',
+	'folder-created'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -195,9 +201,9 @@ export function activityLabel(kind: AuditKind): string {
 		case 'access-rule-deleted':
 			return 'Deleted an access rule';
 		case 'session-opened':
-			return 'Opened a terminal';
+			return 'Opened a session';
 		case 'session-ended':
-			return 'Closed a terminal';
+			return 'Closed a session';
 		case 'email-sent':
 			return 'Sent an email';
 		case 'email-failed':
@@ -234,5 +240,15 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Resumed the agent roll-out';
 		case 'list-exported':
 			return 'Exported a list';
+		case 'file-downloaded':
+			return 'Downloaded a file';
+		case 'file-uploaded':
+			return 'Uploaded a file';
+		case 'files-deleted':
+			return 'Deleted files';
+		case 'file-renamed':
+			return 'Renamed a file';
+		case 'folder-created':
+			return 'Made a folder';
 	}
 }

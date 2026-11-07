@@ -69,6 +69,7 @@
 		"vitest-browser-svelte": "3.1.0"
 	},
 	"dependencies": {
+		"@noble/hashes": "1.8.0",
 		"@node-rs/argon2": "2.2.2",
 		"@upyo/core": "0.6.0",
 		"@upyo/smtp": "0.6.0",

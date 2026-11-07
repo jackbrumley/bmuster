@@ -7,6 +7,9 @@ use std::process::Command;
 /// The bundled Node on `app/server.js`, in `app/` (migrations are found
 /// relative to it), reading `server.env`. DATABASE_PATH and RELEASES_PATH
 /// come from the folders; set in the environment, they win over the file.
+/// BODY_SIZE_LIMIT is adapter-node's request size limit (512 KB by default):
+/// Files uploads come in 8 MB pieces (SPEC-FILES F6), so it is 16 MB, as in
+/// the container image.
 pub fn command(layout: &Layout) -> Command {
     let mut env_file = OsString::from("--env-file=");
     env_file.push(layout.env_file());
@@ -17,7 +20,8 @@ pub fn command(layout: &Layout) -> Command {
         .current_dir(layout.app())
         .env("NODE_ENV", "production")
         .env("DATABASE_PATH", layout.database())
-        .env("RELEASES_PATH", layout.releases());
+        .env("RELEASES_PATH", layout.releases())
+        .env("BODY_SIZE_LIMIT", "16M");
     command
 }
 
@@ -53,5 +57,6 @@ mod tests {
             Some(layout.releases().as_os_str())
         )));
         assert!(envs.contains(&(OsStr::new("NODE_ENV"), Some(OsStr::new("production")))));
+        assert!(envs.contains(&(OsStr::new("BODY_SIZE_LIMIT"), Some(OsStr::new("16M")))));
     }
 }

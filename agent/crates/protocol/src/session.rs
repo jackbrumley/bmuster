@@ -7,7 +7,7 @@
 //! it against the server key it stored at enrolment, then opens a signed
 //! WebSocket at [`session_socket_path`]. On that socket binary frames carry
 //! the session's bytes and text frames carry JSON control messages. Terminal,
-//! exec and (later) file sessions share the ticket and the socket; only the
+//! exec and file sessions share the ticket and the socket; only the
 //! ticket's `purpose` and the meaning of the frames differ.
 
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -114,6 +114,10 @@ pub enum SessionPurpose {
         timeout_ms: u64,
         max_output_bytes: u64,
     },
+    /// File actions (SPEC-FILES): the server sends requests on the session
+    /// socket ([`crate::files`]); nothing runs until it asks. A struct
+    /// variant, so a field this agent does not know is refused.
+    Files {},
 }
 
 impl SessionPurpose {
@@ -122,6 +126,7 @@ impl SessionPurpose {
         match self {
             SessionPurpose::Terminal { .. } => "terminal",
             SessionPurpose::Exec { .. } => "ai-commands",
+            SessionPurpose::Files {} => "files",
         }
     }
 }
@@ -377,6 +382,30 @@ mod tests {
             open(&key, &exec, NOW),
             Err(TicketError::MissingPermission("ai-commands"))
         );
+        let files = ticket_json(json!({ "purpose": { "kind": "files" } }));
+        assert_eq!(
+            open(&key, &files, NOW),
+            Err(TicketError::MissingPermission("files"))
+        );
+        let allowed = ticket_json(json!({
+            "permissions": ["view", "files"],
+            "purpose": { "kind": "files" }
+        }));
+        assert_eq!(
+            open(&key, &allowed, NOW).unwrap().purpose,
+            SessionPurpose::Files {}
+        );
+        assert!(matches!(
+            open(
+                &key,
+                &ticket_json(json!({
+                    "permissions": ["view", "files"],
+                    "purpose": { "kind": "files", "readOnly": false }
+                })),
+                NOW
+            ),
+            Err(TicketError::NotATicket(_))
+        ));
     }
 
     #[test]

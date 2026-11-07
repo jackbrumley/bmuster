@@ -3,6 +3,7 @@
 
 mod client;
 mod exec;
+mod files;
 mod gpus;
 mod identity;
 mod inventory;
