@@ -37,17 +37,28 @@
 		pin: ServedPin;
 	} = $props();
 
-	let linuxTarget = $state<AgentTarget>('x86_64-unknown-linux-gnu');
+	/** The processor is the admin's choice: nothing is picked until they pick it. */
+	type TargetChoice = { kind: 'none' } | { kind: 'chosen'; target: AgentTarget };
+
+	let linuxChoice = $state<TargetChoice>({ kind: 'none' });
 
 	const linuxTargets = [
 		{ value: 'x86_64-unknown-linux-gnu', label: 'x86_64 (Intel, AMD)' },
 		{ value: 'aarch64-unknown-linux-gnu', label: 'aarch64 (ARM)' }
 	] as const;
 
-	const target = $derived<AgentTarget>(os === 'windows' ? 'x86_64-pc-windows-msvc' : linuxTarget);
-	const download = $derived<AgentDownload>(
-		downloads.find((item) => item.target === target) ?? { kind: 'none', target }
+	// Windows has one build, so it is chosen straight away.
+	const choice = $derived<TargetChoice>(
+		os === 'windows' ? { kind: 'chosen', target: 'x86_64-pc-windows-msvc' } : linuxChoice
 	);
+
+	function chooseLinux(target: AgentTarget | null): void {
+		linuxChoice = target === null ? { kind: 'none' } : { kind: 'chosen', target };
+	}
+
+	function downloadFor(target: AgentTarget): AgentDownload {
+		return downloads.find((item) => item.target === target) ?? { kind: 'none', target };
+	}
 </script>
 
 <details class="manual">
@@ -67,38 +78,49 @@
 			</p>
 
 			{#if os === 'linux'}
-				<SegmentedControl label="Processor" options={linuxTargets} bind:value={linuxTarget} />
+				<SegmentedControl
+					label="Processor"
+					options={linuxTargets}
+					bind:value={
+						() => (linuxChoice.kind === 'chosen' ? linuxChoice.target : null), chooseLinux
+					}
+				/>
 			{/if}
 
-			{#if download.kind === 'ready'}
-				<div class="step">
-					<a
-						class="download"
-						href={resolve('/agent/v1/releases/[version]/[target]', {
-							version: download.version,
-							target: download.target
-						})}
-						download
-					>
-						<IconDownload size={18} /> Download agent
-					</a>
-					<p class="hint">
-						Version {download.version} for {download.target} · {formatBytes(download.size)}
-					</p>
-				</div>
-				<div class="step">
-					<p class="label">SHA-256 (check the downloaded file against it)</p>
-					<CopyField value={download.sha256} label="SHA-256" />
-				</div>
+			{#if choice.kind === 'none'}
+				<p class="hint">Choose the machine's processor to see its download.</p>
 			{:else}
-				<div class="step">
-					<p class="missing">This server has no agent build for {download.target} yet.</p>
-					{#if devServer}
+				{@const download = downloadFor(choice.target)}
+				{#if download.kind === 'ready'}
+					<div class="step">
+						<a
+							class="download"
+							href={resolve('/agent/v1/releases/[version]/[target]', {
+								version: download.version,
+								target: download.target
+							})}
+							download
+						>
+							<IconDownload size={18} /> Download agent
+						</a>
 						<p class="hint">
-							Run <code>npm run agent:release-local</code> to build one for this computer.
+							Version {download.version} for {download.target} · {formatBytes(download.size)}
 						</p>
-					{/if}
-				</div>
+					</div>
+					<div class="step">
+						<p class="label">SHA-256 (check the downloaded file against it)</p>
+						<CopyField value={download.sha256} label="SHA-256" />
+					</div>
+				{:else}
+					<div class="step">
+						<p class="missing">This server has no agent build for {download.target} yet.</p>
+						{#if devServer}
+							<p class="hint">
+								Run <code>npm run agent:release-local</code> to build one for this computer.
+							</p>
+						{/if}
+					</div>
+				{/if}
 			{/if}
 
 			<div class="step">

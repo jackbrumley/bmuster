@@ -197,4 +197,7 @@ Differences from the text above:
 - `join_codes` has no `created_by` yet; it is added with SPEC-SIGN-IN.
 - The agent reports displays as an empty list and updates as `unknown` for now; Windows reports no signed-in user until the WTS API is used.
 - Release binaries are read into memory when served (a few MB); streaming can come with release signing.
+- Add machine shows what happened to each join code, polling `GET /api/join-codes/<id>` (admins) every 3 seconds while the page is visible and the code can still change: "Waiting for a machine to join…", "Used by <machine> at <time>" with a link, "<n> of <max> machines joined" with the newest five names for a roll-out code, or "Expired at <time>" (with Make a new code for an unused single-use code). Removed machines stay in the list, marked removed and without a link.
+- `machines.join_code_id` records the code each machine enrolled with (null for machines enrolled before it was added).
+- Every enrolment is audited (`machine-enrolled`, actor System, with hostname, system and single use or roll-out), and so is every removal (`machine-removed`, actor the admin), each in the same transaction as the change.
 - The console has no accounts yet: the server refuses to start unless `CONSOLE_AUTH=none-development`. Never expose such a build.

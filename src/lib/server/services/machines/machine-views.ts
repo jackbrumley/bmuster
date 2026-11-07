@@ -8,6 +8,7 @@ import type {
 } from '#lib/domain/machines/machine.ts';
 import { machineInventory, machineStatus, machines } from '../../database/schema.ts';
 import type { AppDatabase } from '../../database/connection.ts';
+import { recordAudit } from '../audit/audit.ts';
 import { disconnectAgent, isAgentConnected, liveFigures } from '../agents/live-agents.ts';
 
 /** A machine with no socket and no check-in for this many intervals shows Offline. */
@@ -47,15 +48,47 @@ export function findMachine(database: AppDatabase, id: string, now: number): Mac
 	return toMachine(row.machines, row.machine_status, row.machine_inventory, now);
 }
 
-/** Removes a machine (SPEC-ENROLMENT 9): kept for the record, refused from now on. */
-export function removeMachine(database: AppDatabase, id: string, now: number): boolean {
-	const result = database
-		.update(machines)
-		.set({ removedAt: new Date(now) })
-		.where(eq(machines.id, id))
-		.run();
+/**
+ * Removes a machine (SPEC-ENROLMENT 9): kept for the record, refused from now
+ * on, and audited with the admin who removed it. False for an unknown id.
+ */
+export function removeMachine(
+	database: AppDatabase,
+	id: string,
+	removedBy: string,
+	now: number
+): boolean {
+	const removed = database.transaction((tx) => {
+		const row = tx
+			.select({ name: machines.name, hostname: machines.hostname, removedAt: machines.removedAt })
+			.from(machines)
+			.where(eq(machines.id, id))
+			.get();
+		if (row === undefined) {
+			return false;
+		}
+		// Already removed: nothing to do, and nothing to audit twice.
+		if (row.removedAt !== null) {
+			return false;
+		}
+		tx.update(machines)
+			.set({ removedAt: new Date(now) })
+			.where(eq(machines.id, id))
+			.run();
+		recordAudit(
+			tx,
+			{
+				actor: { kind: 'user', userId: removedBy },
+				kind: 'machine-removed',
+				target: row.name,
+				detail: { hostname: row.hostname }
+			},
+			now
+		);
+		return true;
+	});
 	disconnectAgent(id, 4001, 'revoked');
-	return result.changes === 1;
+	return removed;
 }
 
 function toMachine(

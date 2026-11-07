@@ -1,0 +1,1 @@
+ALTER TABLE `machines` ADD `join_code_id` text REFERENCES join_codes(id);

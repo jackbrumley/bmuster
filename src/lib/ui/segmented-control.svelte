@@ -2,7 +2,8 @@
 	/**
 	 * Pick one of a few options (a role, a mode, on or off): a row of pills,
 	 * the chosen one in the brand colour. Arrow keys are not needed; each
-	 * option is its own button with `aria-pressed`.
+	 * option is its own button with `aria-pressed`. A `null` value shows
+	 * nothing chosen yet, for a choice the person must make themselves.
 	 */
 	let {
 		label,
@@ -11,7 +12,7 @@
 	}: {
 		label: string;
 		options: readonly { value: T; label: string }[];
-		value: T;
+		value: T | null;
 	} = $props();
 </script>
 

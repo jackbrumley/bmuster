@@ -25,12 +25,50 @@ const DOWNLOADS: AgentDownload[] = [
 	}
 ];
 
-/** Answers POST /api/join-codes like the server, and records each request body. */
-function stubJoinCodes(): { bodies: unknown[] } {
+const SINGLE_ID = '11111111-1111-4111-8111-111111111111';
+const ROLLOUT_ID = '22222222-2222-4222-8222-222222222222';
+
+type StubStatus = {
+	maxUses: number;
+	uses: number;
+	expiresAtIso: string;
+	state: 'open' | 'used-up' | 'expired';
+	machines: { id: string; name: string; enrolledAtIso: string; removed: boolean }[];
+};
+
+const OPEN: StubStatus = {
+	maxUses: 1,
+	uses: 0,
+	expiresAtIso: '2026-11-08T10:00:00.000Z',
+	state: 'open',
+	machines: []
+};
+
+/**
+ * Answers POST /api/join-codes and GET /api/join-codes/<id> like the server.
+ * Records each POST body and counts the status requests; `statuses` says what
+ * each code's status is now, and a test changes it to show a machine joining.
+ */
+function stubJoinCodes(): {
+	bodies: unknown[];
+	statusRequests: () => number;
+	statuses: Map<string, StubStatus>;
+} {
 	const bodies: unknown[] = [];
+	let statusRequests = 0;
+	const statuses = new Map<string, StubStatus>([
+		[SINGLE_ID, OPEN],
+		[ROLLOUT_ID, { ...OPEN, maxUses: 100 }]
+	]);
 	vi.stubGlobal(
 		'fetch',
 		vi.fn((url: string, init: RequestInit) => {
+			if (url.startsWith('/api/join-codes/') && init.method === 'GET') {
+				statusRequests += 1;
+				const status = statuses.get(url.slice('/api/join-codes/'.length));
+				if (status === undefined) throw new Error(`unknown code in ${url}`);
+				return Promise.resolve(Response.json(status));
+			}
 			if (url !== '/api/join-codes' || typeof init.body !== 'string') {
 				throw new Error(`unexpected request to ${url}`);
 			}
@@ -40,6 +78,7 @@ function stubJoinCodes(): { bodies: unknown[] } {
 				typeof body === 'object' && body !== null && 'maxUses' in body ? body.maxUses : 1;
 			return Promise.resolve(
 				Response.json({
+					id: maxUses === 1 ? SINGLE_ID : ROLLOUT_ID,
 					code: maxUses === 1 ? 'ABC-DEF-GHJ' : 'RLL-OUT-234',
 					expiresAtIso: '2026-11-08T10:00:00.000Z',
 					maxUses
@@ -47,7 +86,7 @@ function stubJoinCodes(): { bodies: unknown[] } {
 			);
 		})
 	);
-	return { bodies };
+	return { bodies, statusRequests: () => statusRequests, statuses };
 }
 
 const PUBLIC_TLS: LocalTlsStatus = { on: false, restartNeeded: false, served: { kind: 'none' } };
@@ -90,6 +129,7 @@ describe('Add machine: install manually', () => {
 	it('M2: Download agent for the chosen OS, with version, size and SHA-256', async () => {
 		const screen = await renderPage(DOWNLOADS, false);
 		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'x86_64 (Intel, AMD)' }).click();
 		const link = screen.getByRole('link', { name: 'Download agent' });
 		await expect
 			.element(link)
@@ -122,12 +162,48 @@ describe('Add machine: install manually', () => {
 		await screen.unmount();
 		const production = await renderPage([], false);
 		await production.getByText('Install manually').click();
+		await production.getByRole('button', { name: 'x86_64 (Intel, AMD)' }).click();
 		await expect
 			.element(
 				production.getByText('This server has no agent build for x86_64-unknown-linux-gnu yet.')
 			)
 			.toBeVisible();
 		expect(production.container.textContent).not.toContain('agent:release-local');
+	});
+
+	it('M2: no processor is chosen for Linux until the admin picks one', async () => {
+		const screen = await renderPage(DOWNLOADS, false);
+		await screen.getByText('Install manually').click();
+		await expect
+			.element(screen.getByText("Choose the machine's processor to see its download."))
+			.toBeVisible();
+		for (const name of ['x86_64 (Intel, AMD)', 'aarch64 (ARM)']) {
+			await expect
+				.element(screen.getByRole('button', { name }))
+				.toHaveAttribute('aria-pressed', 'false');
+		}
+		expect(screen.container.querySelector('a[download]')).toBeNull();
+		expect(screen.container.textContent).not.toContain(SHA);
+
+		await screen.getByRole('button', { name: 'aarch64 (ARM)' }).click();
+		await expect
+			.element(screen.getByRole('button', { name: 'aarch64 (ARM)' }))
+			.toHaveAttribute('aria-pressed', 'true');
+		await expect
+			.element(
+				screen.getByText('This server has no agent build for aarch64-unknown-linux-gnu yet.')
+			)
+			.toBeVisible();
+	});
+
+	it('M2: Windows has one build, so its download shows straight away', async () => {
+		const screen = await renderPage(DOWNLOADS, false);
+		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Windows' }).click();
+		await expect
+			.element(screen.getByRole('link', { name: 'Download agent' }))
+			.toHaveAttribute('href', '/agent/v1/releases/0.1.0/x86_64-pc-windows-msvc');
+		expect(screen.container.textContent).not.toContain("Choose the machine's processor");
 	});
 
 	it('M3: the command beside the file, with the server and a join code made when the page opens', async () => {
@@ -258,5 +334,75 @@ describe('Add machine: local network mode', () => {
 				screen.getByText(`curl -fsSL ${ORIGIN}/install.sh | sudo sh -s -- --code ABC-DEF-GHJ`)
 			)
 			.toBeVisible();
+	});
+});
+
+describe('Add machine: what happened to the join code', () => {
+	it('waits for a machine, then says which machine used the code with a link, and stops asking', async () => {
+		const { statusRequests, statuses } = stubJoinCodes();
+		const screen = await renderPage(DOWNLOADS, false);
+		await expect.element(screen.getByText('Waiting for a machine to join…')).toBeVisible();
+
+		const machineId = '33333333-3333-4333-8333-333333333333';
+		statuses.set(SINGLE_ID, {
+			...OPEN,
+			uses: 1,
+			state: 'used-up',
+			machines: [
+				{
+					id: machineId,
+					name: 'Build server',
+					enrolledAtIso: '2026-11-08T09:10:00.000Z',
+					removed: false
+				}
+			]
+		});
+		await expect
+			.element(screen.getByRole('link', { name: 'Build server' }), { timeout: 5000 })
+			.toHaveAttribute('href', `/machines/${machineId}`);
+		await expect.element(screen.getByText(/^Used by/)).toBeVisible();
+
+		// The code cannot change any more, so the page stops asking.
+		const asked = statusRequests();
+		await new Promise((done) => setTimeout(done, 3500));
+		expect(statusRequests()).toBe(asked);
+	});
+
+	it('says when a single-use code expired unused, and offers a new one', async () => {
+		const { bodies, statuses } = stubJoinCodes();
+		statuses.set(SINGLE_ID, { ...OPEN, state: 'expired' });
+		const screen = await renderPage(DOWNLOADS, false);
+		await expect.element(screen.getByText(/^Expired at .*Nothing joined with it\.$/)).toBeVisible();
+		await screen.getByRole('button', { name: 'Make a new code' }).click();
+		await expect.poll(() => bodies).toHaveLength(2);
+	});
+
+	it('counts a roll-out code and names the newest five machines, then how many more', async () => {
+		const { statuses } = stubJoinCodes();
+		statuses.set(ROLLOUT_ID, {
+			...OPEN,
+			maxUses: 100,
+			uses: 7,
+			machines: Array.from({ length: 7 }, (_, index) => ({
+				id: `44444444-4444-4444-8444-44444444444${index}`,
+				name: `Laptop ${7 - index}`,
+				enrolledAtIso: '2026-11-08T09:10:00.000Z',
+				removed: index === 1
+			}))
+		});
+		const screen = await renderPage(DOWNLOADS, false);
+		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Make a roll-out code' }).click();
+		await expect.element(screen.getByText('7 of 100 machines joined')).toBeVisible();
+		const names = screen.getByRole('list', { name: 'Machines that joined, newest first' });
+		await expect.element(screen.getByText('and 2 more')).toBeVisible();
+		expect(
+			[...names.element().querySelectorAll('li')].map((item) => item.textContent.trim())
+		).toEqual(['Laptop 7', 'Laptop 6 (removed)', 'Laptop 5', 'Laptop 4', 'Laptop 3', 'and 2 more']);
+		await expect
+			.element(screen.getByRole('link', { name: 'Laptop 7' }))
+			.toHaveAttribute('href', '/machines/44444444-4444-4444-8444-444444444440');
+		// A removed machine has no page to link to.
+		expect(names.element().querySelectorAll('a')).toHaveLength(4);
 	});
 });

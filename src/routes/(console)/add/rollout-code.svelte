@@ -5,6 +5,7 @@
 	import Button from '#lib/ui/button.svelte';
 	import CopyField from '#lib/ui/copy-field.svelte';
 	import SegmentedControl from '#lib/ui/segmented-control.svelte';
+	import JoinCodeStatus from './join-code-status.svelte';
 	import { makeJoinCode, type CodeState } from './join-code.ts';
 
 	/**
@@ -67,6 +68,7 @@
 			<span class="code">{rollout.code}</span> works for {rollout.maxUses} machines until
 			{expiry(rollout.expiresAtIso)}.
 		</p>
+		<JoinCodeStatus codeId={rollout.id} mode={{ kind: 'rollout' }} />
 		<CopyField
 			value={manualInstallCommand(os, origin, rollout.code, pin)}
 			label="roll-out install command"

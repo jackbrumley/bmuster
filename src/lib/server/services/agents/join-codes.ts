@@ -1,13 +1,24 @@
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { groupCode, normaliseCode, randomCode } from '../../crypto/random-code.ts';
-import { joinCodes } from '../../database/schema.ts';
+import { joinCodes, machines } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { sha256Hex } from './signing.ts';
 import { refuse, type AgentRefusal } from './agent-refusal.ts';
 
 const JOIN_CODE_LIMITS = { maxUses: 100, maxMinutes: 7 * 24 * 60 } as const;
 
-export type NewJoinCode = { code: string; expiresAt: Date; maxUses: number };
+export type NewJoinCode = { id: string; code: string; expiresAt: Date; maxUses: number };
+
+/** What has happened to a join code since it was made (Add machine shows it live). */
+export type JoinCodeStatus = {
+	maxUses: number;
+	uses: number;
+	expiresAt: Date;
+	/** `open` until every use is taken (`used-up`) or the time runs out (`expired`); used-up wins. */
+	state: 'open' | 'used-up' | 'expired';
+	/** Machines enrolled with the code, newest first, removed ones included and marked. */
+	machines: { id: string; name: string; enrolledAt: Date; removed: boolean }[];
+};
 
 /** Makes a join code (SPEC-ENROLMENT 5). The code itself is returned once and never stored. */
 export function createJoinCode(
@@ -28,11 +39,12 @@ export function createJoinCode(
 		throw new Error('A join code lasts between 1 minute and 7 days');
 	}
 	const raw = randomCode(9);
+	const id = crypto.randomUUID();
 	const expiresAt = new Date(now + options.minutes * 60_000);
 	database
 		.insert(joinCodes)
 		.values({
-			id: crypto.randomUUID(),
+			id,
 			codeHash: hashCode(raw),
 			machineGroupIds: JSON.stringify(options.machineGroupIds),
 			maxUses: options.maxUses,
@@ -43,6 +55,7 @@ export function createJoinCode(
 		})
 		.run();
 	return {
+		id,
 		code: groupCode(raw, 3),
 		expiresAt,
 		maxUses: options.maxUses
@@ -54,7 +67,7 @@ export function redeemJoinCode(
 	database: Queryable,
 	typed: string,
 	now: number
-): { machineGroupIds: string[] } | AgentRefusal {
+): { joinCodeId: string; maxUses: number; machineGroupIds: string[] } | AgentRefusal {
 	const row = database
 		.select()
 		.from(joinCodes)
@@ -78,7 +91,54 @@ export function redeemJoinCode(
 	if (!Array.isArray(groups) || !groups.every((group) => typeof group === 'string')) {
 		throw new Error(`Join code ${row.id} has malformed machine group ids`);
 	}
-	return { machineGroupIds: groups };
+	return { joinCodeId: row.id, maxUses: row.maxUses, machineGroupIds: groups };
+}
+
+/** A join code's uses and the machines that joined with it; undefined for an unknown id. */
+export function joinCodeStatus(
+	database: Queryable,
+	id: string,
+	now: number
+): JoinCodeStatus | undefined {
+	const row = database.select().from(joinCodes).where(eq(joinCodes.id, id)).get();
+	if (row === undefined) {
+		return undefined;
+	}
+	const joined = database
+		.select({
+			id: machines.id,
+			name: machines.name,
+			enrolledAt: machines.enrolledAt,
+			removedAt: machines.removedAt
+		})
+		.from(machines)
+		.where(eq(machines.joinCodeId, id))
+		.orderBy(desc(machines.enrolledAt))
+		.all();
+	return {
+		maxUses: row.maxUses,
+		uses: row.uses,
+		expiresAt: row.expiresAt,
+		state: codeState(row.uses, row.maxUses, row.expiresAt, now),
+		machines: joined.map((machine) => ({
+			id: machine.id,
+			name: machine.name,
+			enrolledAt: machine.enrolledAt,
+			removed: machine.removedAt !== null
+		}))
+	};
+}
+
+function codeState(
+	uses: number,
+	maxUses: number,
+	expiresAt: Date,
+	now: number
+): JoinCodeStatus['state'] {
+	if (uses >= maxUses) {
+		return 'used-up';
+	}
+	return expiresAt.getTime() <= now ? 'expired' : 'open';
 }
 
 function hashCode(raw: string): string {

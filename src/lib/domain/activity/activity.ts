@@ -15,7 +15,9 @@ const AUDIT_KINDS = [
 	'provider-changed',
 	'provider-deleted',
 	'setting-changed',
-	'local-certificate-renewed'
+	'local-certificate-renewed',
+	'machine-enrolled',
+	'machine-removed'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -66,5 +68,9 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Changed a setting';
 		case 'local-certificate-renewed':
 			return 'Made a new local network certificate';
+		case 'machine-enrolled':
+			return 'Enrolled a machine';
+		case 'machine-removed':
+			return 'Removed a machine';
 	}
 }

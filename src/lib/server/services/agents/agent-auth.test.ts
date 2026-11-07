@@ -6,6 +6,7 @@ import { authenticateAgent } from './agent-auth.ts';
 import { requestMessage } from './signing.ts';
 
 const NOW = 1_794_000_000_000;
+const ADMIN_ID = crypto.randomUUID();
 const PATH = '/agent/v1/check-in';
 
 describe('signed agent requests (A5, A9)', () => {
@@ -74,7 +75,7 @@ describe('signed agent requests (A5, A9)', () => {
 	it('refuses a removed machine with revoked (A9)', () => {
 		const database = testDatabase();
 		const agent = enrolFakeAgent(database, NOW);
-		expect(removeMachine(database, agent.machineId, NOW)).toBe(true);
+		expect(removeMachine(database, agent.machineId, ADMIN_ID, NOW)).toBe(true);
 		expect(
 			authenticateAgent(database, agent.signed('POST', PATH, '{}', NOW + 1), NOW + 1)
 		).toMatchObject({

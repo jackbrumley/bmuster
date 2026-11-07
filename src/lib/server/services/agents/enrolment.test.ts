@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { machines } from '../../database/schema.ts';
 import { SERVER_PUBLIC_KEY, testDatabase } from '#tests/helpers/fake-agent.ts';
+import { listAudit } from '../audit/audit.ts';
 import { createJoinCode } from './join-codes.ts';
 import { enrolMachine } from './enrolment.ts';
 
@@ -44,5 +45,55 @@ describe('enrolment (A4)', () => {
 		);
 		expect(reply).toMatchObject({ refused: true, reason: 'invalid-code' });
 		expect(database.select().from(machines).all()).toHaveLength(0);
+		expect(listAudit(database, 10)).toEqual([]);
+	});
+
+	it('keeps the join code on the machine and audits the enrolment, saying which kind of code', () => {
+		const database = testDatabase();
+		const single = createJoinCode(
+			database,
+			{ maxUses: 1, minutes: 60, machineGroupIds: [], createdBy: null },
+			NOW
+		);
+		const rollout = createJoinCode(
+			database,
+			{ maxUses: 25, minutes: 60, machineGroupIds: [], createdBy: null },
+			NOW
+		);
+		enrolMachine(database, { ...REQUEST, code: single.code }, SERVER_PUBLIC_KEY, NOW);
+		enrolMachine(
+			database,
+			{ ...REQUEST, name: 'Laptop 7', hostname: 'lap-07', code: rollout.code },
+			SERVER_PUBLIC_KEY,
+			NOW + 1
+		);
+		expect(
+			database
+				.select({ name: machines.name, joinCodeId: machines.joinCodeId })
+				.from(machines)
+				.orderBy(machines.enrolledAt)
+				.all()
+		).toEqual([
+			{ name: 'Build server', joinCodeId: single.id },
+			{ name: 'Laptop 7', joinCodeId: rollout.id }
+		]);
+		expect(listAudit(database, 10)).toMatchObject([
+			{
+				actorUserId: null,
+				kind: 'machine-enrolled',
+				target: 'Laptop 7',
+				detail: {
+					hostname: 'lap-07',
+					system: 'linux (x86_64-unknown-linux-gnu)',
+					code: 'roll-out'
+				}
+			},
+			{
+				actorUserId: null,
+				kind: 'machine-enrolled',
+				target: 'Build server',
+				detail: { hostname: 'build-01', code: 'single use' }
+			}
+		]);
 	});
 });

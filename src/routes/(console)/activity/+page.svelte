@@ -2,6 +2,8 @@
 	import {
 		IconAdjustments,
 		IconCertificate,
+		IconDeviceDesktopMinus,
+		IconDeviceDesktopPlus,
 		IconKey,
 		IconLogin2,
 		IconLogout,
@@ -44,13 +46,17 @@
 				return IconAdjustments;
 			case 'local-certificate-renewed':
 				return IconCertificate;
+			case 'machine-enrolled':
+				return IconDeviceDesktopPlus;
+			case 'machine-removed':
+				return IconDeviceDesktopMinus;
 		}
 	}
 </script>
 
 <PageHeader
 	title="Activity"
-	summary="Sign-ins and changes to people, providers and settings."
+	summary="Sign-ins, machines joining and leaving, and changes to people, providers and settings."
 	actions={undefined}
 />
 

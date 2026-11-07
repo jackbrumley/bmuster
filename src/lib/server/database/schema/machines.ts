@@ -1,4 +1,5 @@
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { joinCodes } from './join-codes.ts';
 
 /** One enrolled machine. `removedAt` marks a removed machine; the row stays for the audit log. */
 export const machines = sqliteTable('machines', {
@@ -15,7 +16,9 @@ export const machines = sqliteTable('machines', {
 	checkInSeconds: integer().notNull(),
 	enrolledAt: integer({ mode: 'timestamp_ms' }).notNull(),
 	lastSeenAt: integer({ mode: 'timestamp_ms' }).notNull(),
-	removedAt: integer({ mode: 'timestamp_ms' })
+	removedAt: integer({ mode: 'timestamp_ms' }),
+	/** The join code the machine enrolled with; null for machines enrolled before it was kept. */
+	joinCodeId: text().references(() => joinCodes.id)
 });
 
 /** The latest figures from a check-in. One row per machine. */

@@ -22,6 +22,7 @@ export const POST: RequestHandler = route.admin(async ({ request }, { user }) =>
 		Date.now()
 	);
 	return Response.json({
+		id: created.id,
 		code: created.code,
 		expiresAtIso: created.expiresAt.toISOString(),
 		maxUses: created.maxUses

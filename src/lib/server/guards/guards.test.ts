@@ -128,7 +128,9 @@ describe('every route is guarded (S7, hygiene route-guard-required)', () => {
 			'src/routes/api/identity-providers/+server.ts',
 			'src/routes/api/identity-providers/[id=uuid]/+server.ts',
 			'src/routes/api/settings/+server.ts',
-			'src/routes/api/join-codes/+server.ts'
+			'src/routes/api/join-codes/+server.ts',
+			'src/routes/api/join-codes/[id=uuid]/+server.ts',
+			'src/routes/api/machines/[id]/+server.ts'
 		]) {
 			expect(text(path), path).toMatch(/route\.admin\(/);
 			expect(text(path), path).not.toMatch(/route\.user\(/);

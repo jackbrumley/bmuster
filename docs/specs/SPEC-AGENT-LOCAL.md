@@ -8,7 +8,7 @@ Someone at the machine (often the admin, on site) needs to see whether the agent
 
 ## 2. The local page
 
-- The agent serves `https://localhost:47400` with a self-signed certificate it makes on first run. The console shows the certificate's SHA-256 fingerprint so the browser warning can be checked.
+- The agent serves `https://localhost:47500` (not 47400, which Wannon Beacon uses, so both can run on one machine) with a self-signed certificate it makes on first run. The console shows the certificate's SHA-256 fingerprint so the browser warning can be checked.
 - **Localhost only by default.** A server setting can open it to the local network (for headless machines); the agent then also opens its firewall port, and closes it again on uninstall.
 - **Sign-in with a 6-digit code** from the console: machine Overview → _Show local page code_ (admins only). The code changes every 30 seconds (RFC 6238 TOTP) from a secret the agent makes and sends once, inside a signed check-in. It works while the internet is down. 5 wrong codes pause sign-in for 5 minutes. A session lasts 1 hour from the last action.
 - **Shows:** connected or not, server address, machine name and id, last check-in and last error, agent version and update state, CPU, memory, disks, the recent log.
@@ -17,6 +17,7 @@ Someone at the machine (often the admin, on site) needs to see whether the agent
   - _Check in now_.
   - _Restart the agent_.
   - _Move to another server_ (section 3).
+  - _Uninstall the agent_ (with a confirmation): removes the service, the program and its identity, the same as `bmuster-agent uninstall --purge`, and tells the server it is leaving.
 - `/healthz` answers without sign-in (200 healthy, 503 not), for monitoring.
 
 ## 3. Moving to another server
@@ -31,7 +32,7 @@ Already built: the status, uninstall and uninstall-and-purge commands for the ma
 
 To add:
 
-- _Show local page code_ (admins), with the local address and certificate fingerprint.
+- A **Local page** section: the address to open on the machine itself (`https://localhost:47500`, with a copy button), the certificate fingerprint to check the browser warning against, and **Show local page code** (admins): the current 6-digit code with a countdown to the next one. Viewing the code is audited.
 - _Remove from this server_ (confirmation dialog): refuses the agent from now on; the agent stops.
 - The `rejoin` command for moving servers.
 

@@ -5,7 +5,7 @@ import { apiRequest } from '#lib/utils/api-client.ts';
 export type CodeState =
 	| { kind: 'none' }
 	| { kind: 'making' }
-	| { kind: 'ready'; code: string; expiresAtIso: string; maxUses: number }
+	| { kind: 'ready'; id: string; code: string; expiresAtIso: string; maxUses: number }
 	| { kind: 'failed'; message: string };
 
 export async function makeJoinCode(maxUses: number, minutes: number): Promise<CodeState> {
@@ -18,6 +18,7 @@ export async function makeJoinCode(maxUses: number, minutes: number): Promise<Co
 	return result.ok
 		? {
 				kind: 'ready',
+				id: result.data.id,
 				code: result.data.code,
 				expiresAtIso: result.data.expiresAtIso,
 				maxUses: result.data.maxUses

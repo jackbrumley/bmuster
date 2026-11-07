@@ -14,6 +14,7 @@
 	import { installPin, type LocalTlsStatus } from '#lib/domain/settings/local-tls.ts';
 	import CertificatePin from './certificate-pin.svelte';
 	import InstallManually from './install-manually.svelte';
+	import JoinCodeStatus from './join-code-status.svelte';
 	import { makeJoinCode, type CodeState } from './join-code.ts';
 
 	/**
@@ -75,6 +76,15 @@
 			{#if joinCode.kind === 'ready'}
 				<p class="code">{joinCode.code}</p>
 				<p class="hint">Works once. Expires at {expiryTime(joinCode.expiresAtIso)}.</p>
+				<JoinCodeStatus
+					codeId={joinCode.id}
+					mode={{
+						kind: 'single',
+						onNewCode: () => {
+							void makeCode();
+						}
+					}}
+				/>
 			{:else if joinCode.kind === 'failed'}
 				<p class="error">{joinCode.message}</p>
 			{:else}
