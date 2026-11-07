@@ -2,10 +2,19 @@
 	import type { MachineStatus } from '#lib/domain/machines/machine.ts';
 	import { formatRelative } from '#lib/utils/format.ts';
 
-	let { status, now }: { status: MachineStatus; now: number } = $props();
+	/**
+	 * Online or Offline. `since: 'shown'` adds how long ago an offline machine
+	 * was last seen; tables that show it in a column of their own hide it.
+	 */
+	let { status, now, since }: { status: MachineStatus; now: number; since: 'shown' | 'hidden' } =
+		$props();
 
 	const label = $derived(
-		status.kind === 'online' ? 'Online' : `Offline · ${formatRelative(status.lastSeenIso, now)}`
+		status.kind === 'online'
+			? 'Online'
+			: since === 'shown'
+				? `Offline · ${formatRelative(status.lastSeenIso, now)}`
+				: 'Offline'
 	);
 </script>
 

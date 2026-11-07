@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { Machine } from '#lib/domain/machines/machine.ts';
 import MachinesPage from './+page.svelte';
@@ -37,7 +38,22 @@ const MACHINES: Machine[] = [
 	})
 ];
 
-function renderPage() {
+/** `count` machines named Machine 001, Machine 002…, alternating online and offline. */
+function fleet(count: number): Machine[] {
+	return Array.from({ length: count }, (_, index) => {
+		const number = String(index + 1).padStart(3, '0');
+		return machine({
+			id: `00000000-0000-4000-8000-000000000${number}`,
+			name: `Machine ${number}`,
+			status:
+				index % 2 === 0
+					? { kind: 'online' }
+					: { kind: 'offline', lastSeenIso: '2026-11-06T12:00:00.000Z' }
+		});
+	});
+}
+
+function renderPage(machines: Machine[] = MACHINES) {
 	return render(MachinesPage, {
 		params: {},
 		form: undefined,
@@ -45,10 +61,15 @@ function renderPage() {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
 			localNetworkMode: false,
 			now: NOW,
-			view: { kind: 'machines', machines: MACHINES }
+			view: { kind: 'machines', machines }
 		}
 	});
 }
+
+beforeEach(async () => {
+	localStorage.clear();
+	await page.viewport(1280, 800);
+});
 
 describe('Machines list (D6, D7)', () => {
 	it('D6: search covers name, hostname, description and operating system', async () => {
@@ -76,5 +97,103 @@ describe('Machines list (D6, D7)', () => {
 		const screen = await renderPage();
 		await expect.element(screen.getByText('Last user: sarah.k, 2 days ago')).toBeVisible();
 		expect(screen.container.querySelectorAll('.last-user')).toHaveLength(1);
+	});
+});
+
+describe('Machines views: cards and table', () => {
+	const tableOf = (screen: Awaited<ReturnType<typeof renderPage>>) =>
+		screen.getByRole('table', { name: 'Machines' });
+
+	it('shows cards up to 50 machines and the table above, until someone picks', async () => {
+		const few = await renderPage(fleet(50));
+		await expect.element(few.getByRole('heading', { name: 'Machine 001' })).toBeVisible();
+		await expect.element(tableOf(few)).not.toBeInTheDocument();
+		await few.unmount();
+
+		const many = await renderPage(fleet(51));
+		await expect.element(tableOf(many)).toBeVisible();
+	});
+
+	it('remembers the pick in this browser', async () => {
+		const first = await renderPage();
+		await first.getByRole('button', { name: 'Table' }).click();
+		await expect.element(tableOf(first)).toBeVisible();
+		expect(localStorage.getItem('bmuster-machines-view')).toBe('table');
+		await first.unmount();
+
+		const again = await renderPage();
+		await expect.element(tableOf(again)).toBeVisible();
+		await expect
+			.element(again.getByRole('button', { name: 'Table' }))
+			.toHaveAttribute('aria-pressed', 'true');
+	});
+
+	it('uses the default, and still switches, when storage is blocked', async () => {
+		vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+			throw new DOMException('blocked', 'SecurityError');
+		});
+		vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new DOMException('blocked', 'SecurityError');
+		});
+		const screen = await renderPage(fleet(60));
+		await expect.element(tableOf(screen)).toBeVisible();
+		await screen.getByRole('button', { name: 'Cards' }).click();
+		await expect.element(screen.getByRole('heading', { name: 'Machine 001' })).toBeVisible();
+	});
+
+	it('the table shares the search and the filter chips', async () => {
+		localStorage.setItem('bmuster-machines-view', 'table');
+		const screen = await renderPage(fleet(10));
+		const table = tableOf(screen);
+		await expect.element(table).toBeVisible();
+		await screen.getByRole('button', { name: /^Offline/ }).click();
+		expect(table.element().querySelectorAll('tbody tr')).toHaveLength(5);
+		await screen.getByPlaceholder('Search name, host, description or system').fill('machine 002');
+		await expect.poll(() => table.element().querySelectorAll('tbody tr').length).toBe(1);
+		await expect.element(table.getByRole('link', { name: /Machine 002/ }).first()).toBeVisible();
+	});
+
+	it('the table sorts by status and opens machines, with Terminal and Desktop per row', async () => {
+		localStorage.setItem('bmuster-machines-view', 'table');
+		const screen = await renderPage(fleet(4));
+		await screen.getByRole('button', { name: 'Status' }).click();
+		const names = [...tableOf(screen).element().querySelectorAll('tbody tr .title')].map(
+			(cell) => cell.textContent
+		);
+		expect(names).toEqual(['Machine 002', 'Machine 004', 'Machine 001', 'Machine 003']);
+		await expect
+			.element(screen.getByRole('link', { name: 'Terminal on Machine 001' }))
+			.toHaveAttribute('href', `/machines/${fleet(1)[0]?.id ?? ''}/terminal`);
+		await expect
+			.element(screen.getByRole('link', { name: 'Desktop on Machine 001' }))
+			.toBeVisible();
+	});
+
+	it('renders the first 60 cards and adds more on scroll, while counts cover every machine', async () => {
+		const screen = await renderPage(fleet(130));
+		await screen.getByRole('button', { name: 'Cards' }).click();
+		const cards = () => screen.container.querySelectorAll('ul.grid > li').length;
+		await expect.poll(cards).toBe(60);
+		await expect.element(screen.getByText('65 of 130 online')).toBeVisible();
+		await expect
+			.element(screen.getByRole('button', { name: /^Offline/ }))
+			.toHaveTextContent('Offline 65');
+		screen.getByTestId('scroll-batches-end').element().scrollIntoView();
+		await expect.poll(cards).toBe(120);
+		// Search still reaches machines that were never rendered.
+		await screen.getByPlaceholder('Search name, host, description or system').fill('machine 130');
+		await expect.element(screen.getByRole('heading', { name: 'Machine 130' })).toBeVisible();
+	});
+
+	it('on a phone the table is one line per machine', async () => {
+		await page.viewport(390, 844);
+		localStorage.setItem('bmuster-machines-view', 'table');
+		const screen = await renderPage(fleet(3));
+		const list = screen.getByRole('list', { name: 'Machines' });
+		await expect.element(list).toBeVisible();
+		expect(screen.container.querySelector('table')?.checkVisibility()).toBe(false);
+		await expect
+			.element(list.getByRole('link', { name: /Machine 002/ }))
+			.toHaveTextContent('Machine 002 machine-002 Offline');
 	});
 });

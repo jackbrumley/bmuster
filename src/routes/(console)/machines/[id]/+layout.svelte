@@ -55,7 +55,7 @@
 			<h1>{data.machine.name}</h1>
 			<p>{data.machine.hostname}</p>
 		</div>
-		<StatusBadge status={data.machine.status} now={data.now} />
+		<StatusBadge status={data.machine.status} now={data.now} since="shown" />
 	</div>
 	{#if data.machine.description !== ''}
 		<p class="description">{data.machine.description}</p>

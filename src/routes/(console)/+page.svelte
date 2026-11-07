@@ -1,83 +1,59 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import {
-		IconDeviceDesktop,
-		IconDevices,
-		IconLockAccess,
-		IconSearch,
-		IconTerminal2
-	} from '@tabler/icons-svelte-runes';
+	import { IconDevices, IconLockAccess, IconSearch } from '@tabler/icons-svelte-runes';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import EmptyState from '#lib/ui/empty-state.svelte';
-	import OsIcon from '#lib/ui/os-icon.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
-	import Panel from '#lib/ui/panel.svelte';
-	import StatusBadge from '#lib/ui/status-badge.svelte';
-	import UsageBar from '#lib/ui/usage-bar.svelte';
-	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
-	import { matchesSearch, osLabel, type Machine } from '#lib/domain/machines/machine.ts';
+	import { matchesSearch } from '#lib/domain/machines/machine.ts';
+	import MachineCards from './machine-cards.svelte';
+	import { matchesFilter, toMachineRow, type MachineFilter } from './machine-row.ts';
+	import MachineTable from './machine-table.svelte';
+	import { defaultView, readSavedView, saveView, type MachinesView } from './machines-view.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	const machines = $derived(data.view.kind === 'machines' ? data.view.machines : []);
+	/** Cards or rows rendered at first, and added each time the end of the list nears. */
+	const BATCH_SIZE = 60;
 
-	type Filter = 'all' | 'online' | 'offline' | 'attention';
+	const machines = $derived(data.view.kind === 'machines' ? data.view.machines : []);
+	const rows = $derived(machines.map(toMachineRow));
 
 	let query = $state('');
-	let filter = $state<Filter | null>('all');
+	let filter = $state<MachineFilter | null>('all');
 
-	type DiskSummary = { mount: string; percent: number; detail: string };
+	// The view this browser picked before; read after mount (the server cannot see it).
+	let picked = $state<MachinesView | undefined>(undefined);
+	onMount(() => {
+		picked = readSavedView();
+	});
+	const view = $derived(picked ?? defaultView(machines.length));
 
-	function fullestDisk(machine: Machine): DiskSummary | undefined {
-		if (machine.inventory.kind !== 'known' || machine.inventory.disks.length === 0) {
-			return undefined;
-		}
-		const disk = machine.inventory.disks.reduce((worst, current) =>
-			percentOf(current.usedBytes, current.sizeBytes) > percentOf(worst.usedBytes, worst.sizeBytes)
-				? current
-				: worst
-		);
-		return {
-			mount: disk.mount,
-			percent: percentOf(disk.usedBytes, disk.sizeBytes),
-			detail: `${formatBytes(disk.sizeBytes - disk.usedBytes)} free`
-		};
-	}
+	const viewOptions = [
+		{ value: 'cards', label: 'Cards', count: undefined },
+		{ value: 'table', label: 'Table', count: undefined }
+	] as const;
 
-	function pendingUpdates(machine: Machine): number {
-		return machine.inventory.kind === 'known' && machine.inventory.updates.kind === 'known'
-			? machine.inventory.updates.count
-			: 0;
-	}
-
-	function needsAttention(machine: Machine): boolean {
-		const disk = fullestDisk(machine);
-		return pendingUpdates(machine) > 0 || (disk !== undefined && disk.percent >= 90);
-	}
-
-	function matchesFilter(machine: Machine): boolean {
-		switch (filter ?? 'all') {
-			case 'all':
-				return true;
-			case 'online':
-				return machine.status.kind === 'online';
-			case 'offline':
-				return machine.status.kind === 'offline';
-			case 'attention':
-				return needsAttention(machine);
+	function pickView(next: MachinesView | null): void {
+		if (next !== null) {
+			picked = next;
+			saveView(next);
 		}
 	}
 
 	const visible = $derived(
-		machines.filter((machine) => matchesFilter(machine) && matchesSearch(machine, query))
+		rows.filter((row) => matchesFilter(row, filter ?? 'all') && matchesSearch(row.machine, query))
 	);
 
+	// A new search or filter starts the list again from the first batch.
+	const resetKey = $derived(`${filter ?? 'all'}|${query}`);
+
 	const counts = $derived({
-		all: machines.length,
-		online: machines.filter((m) => m.status.kind === 'online').length,
-		offline: machines.filter((m) => m.status.kind === 'offline').length,
-		attention: machines.filter(needsAttention).length
+		all: rows.length,
+		online: rows.filter((row) => matchesFilter(row, 'online')).length,
+		offline: rows.filter((row) => matchesFilter(row, 'offline')).length,
+		attention: rows.filter((row) => matchesFilter(row, 'attention')).length
 	});
 
 	const filters = $derived(
@@ -98,7 +74,15 @@
 	);
 </script>
 
-<PageHeader title="Machines" {summary} actions={undefined} />
+{#snippet viewSwitch()}
+	<ChipGroup label="View" options={viewOptions} bind:value={() => view, pickView} />
+{/snippet}
+
+<PageHeader
+	title="Machines"
+	{summary}
+	actions={data.view.kind === 'machines' && machines.length > 0 ? viewSwitch : undefined}
+/>
 
 {#if data.view.kind === 'awaiting-access'}
 	<EmptyState
@@ -132,86 +116,10 @@
 			detail={undefined}
 			children={undefined}
 		/>
+	{:else if view === 'table'}
+		<MachineTable rows={visible} now={data.now} batchSize={BATCH_SIZE} {resetKey} />
 	{:else}
-		<ul class="grid">
-			{#each visible as machine (machine.id)}
-				{@const disk = fullestDisk(machine)}
-				{@const updates = pendingUpdates(machine)}
-				<li>
-					<Panel heading={undefined} actions={undefined} tone="normal" padding="none">
-						<a class="card-link" href={resolve('/(console)/machines/[id]', { id: machine.id })}>
-							<div class="card-head">
-								<OsIcon family={machine.osFamily} size={28} />
-								<div class="names">
-									<h2>{machine.name}</h2>
-									<p>{osLabel(machine)}</p>
-								</div>
-								<StatusBadge status={machine.status} now={data.now} />
-							</div>
-
-							<div class="meters">
-								{#if machine.status.kind === 'online' && machine.live.kind === 'known'}
-									<UsageBar
-										label="CPU"
-										percent={Math.round(machine.live.cpuPercent)}
-										detail="{Math.round(machine.live.cpuPercent)}%"
-									/>
-									{#if machine.inventory.kind === 'known'}
-										<UsageBar
-											label="Memory"
-											percent={percentOf(
-												machine.live.memoryUsedBytes,
-												machine.inventory.memoryTotalBytes
-											)}
-											detail="{formatBytes(machine.live.memoryUsedBytes)} of {formatBytes(
-												machine.inventory.memoryTotalBytes
-											)}"
-										/>
-									{/if}
-								{/if}
-								{#if disk !== undefined}
-									<UsageBar label="Disk {disk.mount}" percent={disk.percent} detail={disk.detail} />
-								{:else}
-									<p class="pending">Waiting for the first inventory.</p>
-								{/if}
-							</div>
-
-							{#if machine.lastUser.kind === 'user'}
-								<p class="last-user">
-									Last user: {machine.lastUser.name}, {formatRelative(
-										machine.lastUser.seenIso,
-										data.now
-									)}
-								</p>
-							{/if}
-
-							{#if updates > 0}
-								<div class="tags">
-									<span class="tag warn">{updates} updates</span>
-								</div>
-							{/if}
-						</a>
-
-						<div class="actions">
-							<a
-								class="action"
-								class:disabled={machine.status.kind === 'offline'}
-								href={resolve('/(console)/machines/[id]/terminal', { id: machine.id })}
-							>
-								<IconTerminal2 size={18} /> Terminal
-							</a>
-							<a
-								class="action"
-								class:disabled={machine.status.kind === 'offline'}
-								href={resolve('/(console)/machines/[id]/desktop', { id: machine.id })}
-							>
-								<IconDeviceDesktop size={18} /> Desktop
-							</a>
-						</div>
-					</Panel>
-				</li>
-			{/each}
-		</ul>
+		<MachineCards rows={visible} now={data.now} batchSize={BATCH_SIZE} {resetKey} />
 	{/if}
 {/if}
 
@@ -246,116 +154,5 @@
 	.first-link {
 		color: var(--brand);
 		font-weight: var(--weight-semibold);
-	}
-
-	.pending {
-		color: var(--muted);
-		font-size: var(--text-xs);
-	}
-
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-		gap: var(--space-4);
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	/* The card fills its grid cell, so every card in a row is the same height. */
-	li {
-		display: grid;
-	}
-
-	.card-link {
-		display: grid;
-		align-content: start;
-		gap: var(--space-4);
-		padding: var(--space-4);
-	}
-
-	.card-head {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--space-3);
-	}
-
-	.names {
-		flex: 1;
-		min-width: 0;
-	}
-
-	h2 {
-		font-size: var(--text-base);
-		font-weight: var(--weight-semibold);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.names p {
-		color: var(--muted);
-		font-size: var(--text-xs);
-	}
-
-	.meters {
-		display: grid;
-		gap: var(--space-3);
-	}
-
-	.last-user {
-		color: var(--muted);
-		font-size: var(--text-xs);
-		overflow-wrap: anywhere;
-	}
-
-	.tags {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-	}
-
-	.tag {
-		padding: var(--space-0-5) var(--space-2);
-		border-radius: var(--radius-pill);
-		background: var(--surface-muted);
-		color: var(--text-soft);
-		font-size: var(--text-xs);
-	}
-
-	.tag.warn {
-		background: var(--warning-bg);
-		color: var(--warning);
-	}
-
-	.actions {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		border-top: 1px solid var(--border);
-	}
-
-	.action {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: var(--space-2);
-		height: 48px;
-		color: var(--brand);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-	}
-
-	.action + .action {
-		border-left: 1px solid var(--border);
-	}
-
-	.action:hover {
-		background: var(--brand-tint);
-	}
-
-	.action.disabled {
-		color: var(--muted);
-		pointer-events: none;
-		opacity: 0.6;
 	}
 </style>
