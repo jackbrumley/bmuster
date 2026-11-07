@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		IconAdjustments,
+		IconAlertTriangle,
 		IconArrowsExchange,
 		IconCertificate,
 		IconDeviceDesktopMinus,
@@ -13,6 +14,8 @@
 		IconLock,
 		IconLogin2,
 		IconLogout,
+		IconPlugConnected,
+		IconTrash,
 		IconRocket,
 		IconShieldLock,
 		IconShieldX,
@@ -24,6 +27,7 @@
 		type ActivityEntry,
 		type AuditKind
 	} from '#lib/domain/activity/activity.ts';
+	import { activitySentence } from '#lib/domain/activity/local-page-activity.ts';
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
@@ -35,6 +39,9 @@
 	 * about machines they can see (SPEC-ACCESS A6).
 	 */
 	let { data }: PageProps = $props();
+
+	/** A local page event that reached the server this much later happened while it was away. */
+	const REPORTED_LATE_MS = 2 * 60_000;
 
 	function iconFor(kind: AuditKind): typeof IconUser {
 		switch (kind) {
@@ -79,6 +86,27 @@
 				return IconDeviceDesktopMinus;
 			case 'local-code-viewed':
 				return IconKey;
+			case 'local-signed-in':
+				return IconLogin2;
+			case 'local-signed-out':
+			case 'local-session-expired':
+				return IconLogout;
+			case 'local-wrong-code':
+			case 'local-locked-out':
+				return IconShieldX;
+			case 'local-restarted':
+				return IconRefresh;
+			case 'local-connection-tested':
+				return IconPlugConnected;
+			case 'local-move-started':
+			case 'local-move-finished':
+			case 'local-move-failed':
+			case 'local-leaving':
+				return IconArrowsExchange;
+			case 'local-uninstalled':
+				return IconTrash;
+			case 'local-events-dropped':
+				return IconAlertTriangle;
 			case 'user-group-added':
 			case 'user-group-changed':
 			case 'user-group-deleted':
@@ -109,20 +137,34 @@
 
 {#snippet entryRow(entry: ActivityEntry)}
 	{@const Icon = iconFor(entry.kind)}
+	{@const sentence = activitySentence(entry)}
 	<ListRow action={{ kind: 'static' }} align="start" dimmed={false}>
-		<span class="icon" class:refused={entry.kind === 'sign-in-failed'}>
+		<span
+			class="icon"
+			class:refused={entry.kind === 'sign-in-failed'}
+			class:warning={sentence.kind === 'local' && sentence.warning}
+		>
 			<Icon size={20} stroke={1.75} />
 		</span>
 		<div class="body">
-			<p class="what">
-				<strong>{entry.actor.kind === 'user' ? entry.actor.name : 'System'}</strong>
-				{activityLabel(entry.kind).toLowerCase()} ·
-				<span class="target">{entry.target}</span>
-			</p>
-			{#if entry.detail.length > 0}
-				<p class="detail">
-					{entry.detail.map((item) => `${item.label}: ${item.value}`).join(' · ')}
+			{#if sentence.kind === 'local'}
+				<p class="what">{sentence.text}</p>
+				{#if Date.parse(sentence.sentIso) - Date.parse(entry.atIso) > REPORTED_LATE_MS}
+					<p class="detail">
+						Reported by the agent {formatRelative(sentence.sentIso, data.now)}, after it was offline
+					</p>
+				{/if}
+			{:else}
+				<p class="what">
+					<strong>{entry.actor.kind === 'user' ? entry.actor.name : 'System'}</strong>
+					{activityLabel(entry.kind).toLowerCase()} ·
+					<span class="target">{entry.target}</span>
 				</p>
+				{#if entry.detail.length > 0}
+					<p class="detail">
+						{entry.detail.map((item) => `${item.label}: ${item.value}`).join(' · ')}
+					</p>
+				{/if}
 			{/if}
 		</div>
 		<time datetime={entry.atIso}>{formatRelative(entry.atIso, data.now)}</time>
@@ -155,6 +197,11 @@
 	.icon.refused {
 		background: var(--danger-bg);
 		color: var(--danger);
+	}
+
+	.icon.warning {
+		background: var(--warning-bg);
+		color: var(--warning);
 	}
 
 	.body {

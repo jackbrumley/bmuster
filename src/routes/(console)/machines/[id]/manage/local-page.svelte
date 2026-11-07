@@ -11,15 +11,18 @@
 	/**
 	 * The agent's local page (SPEC-AGENT-LOCAL): where to open it on the machine,
 	 * its certificate to check the browser warning against, and the sign-in code
-	 * (admins), which changes every 30 seconds. Viewing the code is audited.
+	 * (admins), which changes every 30 seconds. Each person sees their own code
+	 * (SPEC-AGENT-LOCAL 7); an older agent still takes one shared code. Viewing
+	 * the code is audited.
 	 */
 	let { machineId, localPage }: { machineId: string; localPage: LocalPageInfo } = $props();
 
 	type CodeState =
 		| { kind: 'hidden' }
 		| { kind: 'loading' }
-		| { kind: 'shown'; code: string; secondsLeft: number }
+		| { kind: 'shown'; code: string; secondsLeft: number; scope: 'person' | 'machine' }
 		| { kind: 'not-reported' }
+		| { kind: 'not-listed' }
 		| { kind: 'failed'; message: string };
 
 	let codeState = $state<CodeState>({ kind: 'hidden' });
@@ -54,12 +57,17 @@
 				codeState = {
 					kind: 'shown',
 					code: result.data.code,
-					secondsLeft: result.data.secondsLeft
+					secondsLeft: result.data.secondsLeft,
+					scope: result.data.scope
 				};
 				break;
 			case 'not-reported':
 				stopTicking();
 				codeState = { kind: 'not-reported' };
+				break;
+			case 'not-listed':
+				stopTicking();
+				codeState = { kind: 'not-listed' };
 				break;
 		}
 	}
@@ -149,6 +157,16 @@
 							{/if}
 						</button>
 					</div>
+					{#if codeState.scope === 'person'}
+						<p class="muted">
+							Your own code: Activity records when it signs in and what is done with it.
+						</p>
+					{:else}
+						<p class="warning">
+							A shared code: every admin sees this one, so Activity cannot say who used it. Update
+							the agent to give each person their own code.
+						</p>
+					{/if}
 					<p class="muted">
 						Changes in {codeState.secondsLeft} s; the next one appears here. Viewing it is recorded in
 						Activity.
@@ -159,6 +177,10 @@
 				</div>
 			{:else if codeState.kind === 'not-reported'}
 				<p class="muted">Update the agent to get a local page.</p>
+			{:else if codeState.kind === 'not-listed'}
+				<p class="muted">
+					You are not one of the people who may sign in to this machine's local page.
+				</p>
 			{:else}
 				<p class="error">{codeState.message}</p>
 				<div>
@@ -179,6 +201,11 @@
 
 	.error {
 		color: var(--danger);
+		font-size: var(--text-sm);
+	}
+
+	.warning {
+		color: var(--warning);
 		font-size: var(--text-sm);
 	}
 

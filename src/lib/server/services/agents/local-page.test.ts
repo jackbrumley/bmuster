@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { machineLocalPages } from '../../database/schema.ts';
-import { enrolFakeAgent, enrolWithCode, testDatabase } from '#tests/helpers/fake-agent.ts';
+import {
+	SAMPLE_INVENTORY,
+	enrolFakeAgent,
+	enrolWithCode,
+	testDatabase
+} from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
-import { totpCode } from '../../crypto/totp.ts';
+import { localUserSecret, totpCode } from '../../crypto/totp.ts';
 import { listAudit } from '../audit/audit.ts';
 import { removeMachine } from '../machines/machine-views.ts';
 import { isRefusal } from './agent-refusal.ts';
+import { recordCheckIn } from './check-in.ts';
 import { createReinstallCode } from './join-codes.ts';
 import { localPageInfo, storeLocalPage, viewLocalCode } from './local-page.ts';
 import type { AppDatabase } from '../../database/connection.ts';
@@ -72,7 +78,8 @@ describe('the local page in the console (SPEC-AGENT-LOCAL)', () => {
 		expect(viewLocalCode(database, agent.machineId, admin.id, KEY, at)).toEqual({
 			kind: 'code',
 			code: totpCode(SECRET, at / 1000),
-			secondsLeft: 20
+			secondsLeft: 20,
+			scope: 'machine'
 		});
 	});
 
@@ -127,5 +134,78 @@ describe('the local page in the console (SPEC-AGENT-LOCAL)', () => {
 		const fresh = enrolWithCode(database, code.code, 'rebuilt-host', NOW + 4);
 		if (isRefusal(fresh)) throw new Error(fresh.message);
 		expect(localPageInfo(database, agent.machineId)).toEqual({ kind: 'none' });
+	});
+
+	describe('per-person codes (SPEC-AGENT-LOCAL 7)', () => {
+		/** A check-in from an agent that takes per-person codes (it says what list it holds). */
+		function updatedAgentChecksIn(database: AppDatabase, machineId: string): void {
+			recordCheckIn(
+				database,
+				{ machineId, checkInSeconds: 60 },
+				{
+					agentVersion: '0.3.0',
+					uptimeSeconds: 1,
+					signedInUser: { kind: 'none' },
+					load: { cpuPercent: 1, memoryUsedBytes: 1 },
+					inventory: { kind: 'full', hash: 'c'.repeat(64), data: SAMPLE_INVENTORY },
+					localUsers: { kind: 'none' }
+				},
+				NOW + 5
+			);
+		}
+
+		it('P2: shows each admin only their own code, never the shared one', async () => {
+			const database = testDatabase();
+			const { admin, agent } = await reported(database);
+			const other = await addTestUser(database, {
+				email: 'bo@example.com',
+				role: 'admin',
+				password: null
+			});
+			updatedAgentChecksIn(database, agent.machineId);
+			const at = 1_794_000_010_000;
+			const mine = viewLocalCode(database, agent.machineId, admin.id, KEY, at);
+			const theirs = viewLocalCode(database, agent.machineId, other.id, KEY, at);
+			expect(mine).toEqual({
+				kind: 'code',
+				code: totpCode(localUserSecret(SECRET, admin.id), at / 1000),
+				secondsLeft: 20,
+				scope: 'person'
+			});
+			expect(theirs).toEqual({
+				kind: 'code',
+				code: totpCode(localUserSecret(SECRET, other.id), at / 1000),
+				secondsLeft: 20,
+				scope: 'person'
+			});
+			expect(mine).not.toMatchObject({ code: totpCode(SECRET, at / 1000) });
+			expect(codeViews(database)[0]).toMatchObject({ detail: { code: 'their own' } });
+		});
+
+		it('P3: keeps the shared code for an older agent until it says it takes per-person codes', async () => {
+			const database = testDatabase();
+			const { admin, agent } = await reported(database);
+			expect(viewLocalCode(database, agent.machineId, admin.id, KEY, NOW)).toMatchObject({
+				scope: 'machine'
+			});
+			updatedAgentChecksIn(database, agent.machineId);
+			expect(viewLocalCode(database, agent.machineId, admin.id, KEY, NOW)).toMatchObject({
+				scope: 'person'
+			});
+		});
+
+		it('refuses someone who is not on the list', async () => {
+			const database = testDatabase();
+			const { agent } = await reported(database);
+			const member = await addTestUser(database, {
+				email: 'mo@example.com',
+				role: 'member',
+				password: null
+			});
+			updatedAgentChecksIn(database, agent.machineId);
+			expect(viewLocalCode(database, agent.machineId, member.id, KEY, NOW)).toEqual({
+				kind: 'not-listed'
+			});
+		});
 	});
 });
