@@ -12,7 +12,7 @@ log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # JPEG tiles (SPEC-DESKTOP 4.4). Licence: (MIT OR Apache-2.0) AND IJG; see NOTICE.md.
-jpeg-encoder = { version = "=0.7.1", default-features = false, features = ["std"] }
+jpeg-encoder = { version = "=0.7.1", default-features = false, features = ["std", "simd"] }
 # Cursor shapes are sent as PNG (SPEC-DESKTOP 4.2).
 
 
