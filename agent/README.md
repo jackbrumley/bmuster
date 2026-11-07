@@ -8,6 +8,8 @@ The program that runs on each managed machine. It enrols with a BMuster server u
 agent/
   Cargo.toml              workspace (AGPL-3.0-only, exact versions, small release build)
   crates/protocol/        wire types, request signing, shared test vectors (tests/vectors.json)
+  crates/service/         systemd and Windows service plumbing shared by the agent and the server launcher
+  crates/server/          the `bmuster-server` launcher (runs and installs the server, SPEC-SERVER-INSTALL)
   crates/agent/           the `bmuster-agent` binary
     src/client.rs         server URL, HTTP and socket channels, signed requests, clock-drift correction
     src/tls.rs            rustls set-up: trust store, pinned key (--pin-cert) or --insecure-dev-tls

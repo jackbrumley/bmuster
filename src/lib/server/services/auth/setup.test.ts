@@ -7,7 +7,8 @@ import { listAudit } from '../audit/audit.ts';
 import { hasUsers } from '../users/users.ts';
 import { signInWithPassword } from './password-sign-in.ts';
 import { findSession } from './sessions.ts';
-import { prepareFirstRun, setupFirstAdmin } from './setup.ts';
+import { getSetting, updateSetting } from '../settings/settings.ts';
+import { applyFirstRunLocalNetworkMode, prepareFirstRun, setupFirstAdmin } from './setup.ts';
 import { SETUP_CODE_TRIES, setupCodeKeeper, type SetupCodeKeeper } from './setup-code.ts';
 
 /** A keeper whose printed lines the test can read, and the code from the latest banner. */
@@ -40,7 +41,10 @@ describe('first-run setup (S1)', () => {
 			'/api/users',
 			'/_app/x.js',
 			'/agent/v1/check-in',
-			'/install.sh'
+			'/install.sh',
+			// Probes (SPEC-SERVER-INSTALL I14) answer before setup too.
+			'/healthz',
+			'/readyz'
 		]) {
 			expect(needsSetupRedirect(path, false), path).toBe(false);
 		}
@@ -248,5 +252,48 @@ describe('admin from the environment (S18)', () => {
 			)
 		).rejects.toThrow('BMUSTER_ADMIN_PASSWORD: Use at least 12 characters.');
 		expect(hasUsers(database)).toBe(false);
+	});
+});
+
+describe('local network mode from the installer (SPEC-SERVER-INSTALL I12)', () => {
+	it('turns it on for a server with no users, audited as the system', () => {
+		const database = testDatabase();
+		applyFirstRunLocalNetworkMode(database, true, NOW);
+		expect(getSetting(database, 'localNetworkMode')).toBe(true);
+		expect(listAudit(database, 10)).toMatchObject([
+			{
+				kind: 'setting-changed',
+				actorUserId: null,
+				target: 'Local network mode',
+				detail: { from: 'false', to: 'true', source: 'BMUSTER_LOCAL_NETWORK_MODE' }
+			}
+		]);
+
+		// Restarts before setup change nothing more.
+		applyFirstRunLocalNetworkMode(database, true, NOW + 1);
+		expect(listAudit(database, 10)).toHaveLength(1);
+	});
+
+	it('leaves the setting alone when the variable is not set', () => {
+		const database = testDatabase();
+		applyFirstRunLocalNetworkMode(database, false, NOW);
+		expect(getSetting(database, 'localNetworkMode')).toBe(false);
+		expect(listAudit(database, 10)).toEqual([]);
+	});
+
+	it('does nothing once the server has users, so Settings owns it after setup', async () => {
+		const database = testDatabase();
+		const admin = await addTestUser(database, {
+			email: 'ada@example.com',
+			role: 'admin',
+			password: PASSWORD
+		});
+		applyFirstRunLocalNetworkMode(database, true, NOW);
+		expect(getSetting(database, 'localNetworkMode')).toBe(false);
+
+		updateSetting(database, admin.id, 'localNetworkMode', true, NOW);
+		updateSetting(database, admin.id, 'localNetworkMode', false, NOW + 1);
+		applyFirstRunLocalNetworkMode(database, true, NOW + 2);
+		expect(getSetting(database, 'localNetworkMode')).toBe(false);
 	});
 });

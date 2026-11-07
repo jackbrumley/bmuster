@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 bmuster-protocol.workspace = true
+bmuster-service.workspace = true
 anyhow.workspace = true
 base64.workspace = true
 clap.workspace = true
@@ -39,10 +40,10 @@ tungstenite = { version = "=0.30.0", default-features = false, features = ["hand
 ureq = { version = "=3.5.1", default-features = false, features = ["rustls-no-provider", "platform-verifier", "win-system-proxy"] }
 
 [target.'cfg(unix)'.dependencies]
-libc = "=0.2.191"
+libc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-service = "=0.8.1"
+windows-service.workspace = true
 # Graphics cards (SPEC-MACHINE-DETAILS D8): Win32_VideoController over COM, no child process.
 wmi = { version = "=0.18.4", default-features = false }
 # Video memory over 4 GB, which Win32_VideoController's 32-bit AdapterRAM cannot hold.

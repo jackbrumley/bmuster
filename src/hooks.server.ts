@@ -11,7 +11,7 @@ import {
 	lanCertificateNames,
 	startupServedCertificate
 } from '#lib/server/services/agents/local-tls.ts';
-import { prepareFirstRun } from '#lib/server/services/auth/setup.ts';
+import { applyFirstRunLocalNetworkMode, prepareFirstRun } from '#lib/server/services/auth/setup.ts';
 import { printToServerLog, serverSetupCode } from '#lib/server/services/auth/setup-code.ts';
 import { registerSocketRoutes } from '#lib/server/sockets/socket-registry.ts';
 import { SOCKET_ROUTES } from '#lib/server/sockets/socket-route-table.ts';
@@ -21,11 +21,14 @@ import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts
  * Start-up: socket routes and the certificate to serve (plain HTTP, or the
  * server's own in local network mode, SPEC-INSTALL-OPTIONS L4) are handed to
  * server.ts before the server takes requests; on a server with no users the
- * first admin is created from the environment, or a setup code is printed
- * (SPEC-SIGN-IN S17, S18). The dev server registers Vite's own certificate.
+ * installer's local network mode default is applied first (SPEC-SERVER-INSTALL
+ * I12), then the first admin is created from the environment, or a setup code
+ * is printed (SPEC-SIGN-IN S17, S18). The dev server registers Vite's own
+ * certificate.
  */
 export const init: ServerInit = async () => {
 	registerSocketRoutes(SOCKET_ROUTES);
+	applyFirstRunLocalNetworkMode(database, env.localNetworkModeAtFirstRun, Date.now());
 	if (!dev) {
 		registerServedCertificate(
 			startupServedCertificate(database, env.secretsKey, lanCertificateNames(), Date.now())

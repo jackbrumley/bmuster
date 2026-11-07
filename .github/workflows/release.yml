@@ -1,0 +1,295 @@
+# Builds the BMuster server release archives and, for a tag, publishes them
+# (docs/specs/SPEC-SERVER-INSTALL.md, I13).
+#
+#   Tag push (vX.Y.Z, equal to package.json's version): builds the agents and
+#     launchers on each platform, then the three archives on native runners,
+#     writes SHA256SUMS, install-tests the Linux and Windows archives with the
+#     installers from this commit, and only then creates the GitHub release
+#     with all four files at once, so the installers' "latest" never sees a
+#     half-filled release.
+#   Manual run (Actions tab, or `gh workflow run release.yml --ref <branch>`):
+#     a dry run of everything but the release; the files stay as workflow
+#     artifacts.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Pinned so a release is reproducible; Linux binaries link against glibc 2.31.
+  ZIGLANG_VERSION: '0.17.1'
+  CARGO_ZIGBUILD_VERSION: '0.24.1'
+  GLIBC_FLOOR: '2.31'
+
+jobs:
+  check:
+    name: Check the version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tag matches package.json
+        if: github.event_name == 'push'
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $expected. Bump package.json, commit, then tag."
+            exit 1
+          fi
+
+  binaries:
+    name: Agent and launcher (${{ matrix.target }})
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust if missing
+        run: |
+          if ! command -v rustup > /dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Add the Rust target
+        run: rustup target add "${{ matrix.target }}"
+
+      # The runner's own glibc is newer than Debian 11, Ubuntu 22.04 or
+      # Raspberry Pi OS; zig links against an older one instead.
+      - name: Install zig and cargo-zigbuild (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m pip install --target "$RUNNER_TEMP/zig" "ziglang==$ZIGLANG_VERSION" "cargo-zigbuild==$CARGO_ZIGBUILD_VERSION"
+          echo "$RUNNER_TEMP/zig/bin" >> "$GITHUB_PATH"
+          echo "PYTHONPATH=$RUNNER_TEMP/zig" >> "$GITHUB_ENV"
+
+      - name: Build (Linux, glibc ${{ env.GLIBC_FLOOR }})
+        if: runner.os == 'Linux'
+        working-directory: agent
+        run: cargo-zigbuild zigbuild --release --target "${{ matrix.target }}.$GLIBC_FLOOR" -p bmuster-agent -p bmuster-server
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        working-directory: agent
+        run: cargo build --release --target "${{ matrix.target }}" -p bmuster-agent -p bmuster-server
+
+      - name: Collect
+        run: |
+          ext=""
+          if [ "$RUNNER_OS" = "Windows" ]; then ext=".exe"; fi
+          mkdir -p "binaries/${{ matrix.target }}"
+          for name in bmuster-agent bmuster-server; do
+            cp "agent/target/${{ matrix.target }}/release/${name}${ext}" "binaries/${{ matrix.target }}/"
+          done
+
+      - name: Check the glibc floor (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          for file in binaries/${{ matrix.target }}/*; do
+            newest="$(objdump -T "$file" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -n 1)"
+            echo "$file needs glibc $newest"
+            highest="$(printf '%s\n%s\n' "$newest" "$GLIBC_FLOOR" | sort -V | tail -n 1)"
+            if [ "$highest" != "$GLIBC_FLOOR" ]; then
+              echo "::error::$file needs glibc $newest, above the $GLIBC_FLOOR floor"
+              exit 1
+            fi
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: binaries-${{ matrix.target }}
+          path: binaries/
+          retention-days: 7
+
+  package:
+    name: Archive (${{ matrix.platform }})
+    needs: binaries
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+          - runner: windows-latest
+            platform: windows-x64
+    # Native runners: node_modules holds native modules for its platform.
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      # The prepare script is POSIX shell, which Windows npm cannot run; the
+      # build syncs SvelteKit itself.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: binaries-*
+          path: dist/binaries
+          merge-multiple: true
+
+      - name: Build the archive
+        run: node scripts/release-server.ts --binaries dist/binaries
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: archive-${{ matrix.platform }}
+          path: dist/release/bmuster-server-${{ matrix.platform }}.*
+          retention-days: 7
+
+  sums:
+    name: Checksums
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: archive-*
+          path: release
+          merge-multiple: true
+
+      - name: Write SHA256SUMS
+        working-directory: release
+        run: |
+          sha256sum bmuster-server-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: release/
+          retention-days: 14
+
+  # Installs, upgrades and removes the archives as users will, with the
+  # installers from this commit (the ones bmuster.com serves once merged).
+  install-test-linux:
+    name: Install test (Linux)
+    needs: sums
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release
+
+      - name: Install
+        run: sudo sh docs/install.sh --archive release/bmuster-server-linux-x64.tar.gz
+
+      - name: Ready, with a setup code in the log
+        run: |
+          curl -fsk https://127.0.0.1:8443/readyz
+          curl -fsk https://127.0.0.1:8443/healthz
+          sudo journalctl -u bmuster-server -o cat --no-pager | grep -q 'first-run setup code:'
+          test "$(stat -c %U /var/lib/bmuster-server)" = "bmuster-server"
+
+      - name: Upgrade keeps the data
+        run: |
+          key="$(sudo grep '^SECRETS_KEY=' /var/lib/bmuster-server/server.env)"
+          sudo sh docs/install.sh --archive release/bmuster-server-linux-x64.tar.gz
+          test "$(sudo grep '^SECRETS_KEY=' /var/lib/bmuster-server/server.env)" = "$key"
+          sudo test -f /var/lib/bmuster-server/bmuster.db
+
+      - name: Uninstall
+        run: |
+          sudo /opt/bmuster-server/bmuster-server uninstall --purge
+          test ! -e /opt/bmuster-server
+          test ! -e /var/lib/bmuster-server
+          test ! -e /etc/systemd/system/bmuster-server.service
+          ! id bmuster-server
+
+  install-test-windows:
+    name: Install test (Windows)
+    needs: sums
+    runs-on: windows-latest
+    defaults:
+      run:
+        # Windows PowerShell 5.1, the one `irm | iex` users have.
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release
+
+      - name: Install
+        run: '& .\docs\install.ps1 -Archive release\bmuster-server-windows-x64.zip'
+
+      - name: Ready
+        run: |
+          curl.exe -fsk https://127.0.0.1:8443/readyz
+          if ($LASTEXITCODE -ne 0) { throw 'not ready' }
+          if ((Get-Service BMusterServer).Status -ne 'Running') { throw 'service not running' }
+
+      - name: Upgrade keeps the data
+        run: |
+          $key = Select-String '^SECRETS_KEY=' 'C:\ProgramData\BMuster Server\server.env'
+          & .\docs\install.ps1 -Archive release\bmuster-server-windows-x64.zip
+          $again = Select-String '^SECRETS_KEY=' 'C:\ProgramData\BMuster Server\server.env'
+          if ($key.Line -ne $again.Line) { throw 'the secrets key changed' }
+
+      - name: Uninstall
+        run: |
+          & 'C:\Program Files\BMuster Server\bmuster-server.exe' uninstall --purge
+          if ($LASTEXITCODE -ne 0) { throw 'uninstall failed' }
+          Start-Sleep -Seconds 8
+          if (Get-Service BMusterServer -ErrorAction SilentlyContinue) { throw 'service still there' }
+          if (Test-Path 'C:\Program Files\BMuster Server') { throw 'program folder still there' }
+          if (Test-Path 'C:\ProgramData\BMuster Server') { throw 'data folder still there' }
+
+  publish:
+    name: Publish the release
+    needs: [install-test-linux, install-test-windows]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --verify-tag \
+            --title "BMuster $GITHUB_REF_NAME" \
+            --generate-notes

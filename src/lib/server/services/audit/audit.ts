@@ -8,7 +8,7 @@ import type { Queryable } from '../../database/connection.ts';
  * users, providers and settings. A foundation area: it never imports a
  * feature area, so callers pass the actor's id, not the user.
  */
-type AuditActor = { kind: 'system' } | { kind: 'user'; userId: string };
+export type AuditActor = { kind: 'system' } | { kind: 'user'; userId: string };
 
 export type NewAuditEntry = {
 	actor: AuditActor;

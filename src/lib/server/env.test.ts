@@ -7,7 +7,13 @@ describe('environment (S15)', () => {
 		vi.resetModules();
 		const { env } = await import('#lib/server/env.ts');
 		expect(env.databasePath).toBe(':memory:');
-		expect(Object.keys(env)).toEqual(['databasePath', 'secretsKey', 'releasesPath', 'firstAdmin']);
+		expect(Object.keys(env)).toEqual([
+			'databasePath',
+			'secretsKey',
+			'releasesPath',
+			'firstAdmin',
+			'localNetworkModeAtFirstRun'
+		]);
 		expect(env.firstAdmin).toEqual({ kind: 'none' });
 	});
 
@@ -27,6 +33,21 @@ describe('environment (S15)', () => {
 		vi.resetModules();
 		await expect(import('#lib/server/env.ts')).rejects.toThrow(
 			'Set both BMUSTER_ADMIN_EMAIL and BMUSTER_ADMIN_PASSWORD, or neither'
+		);
+	});
+
+	it('reads BMUSTER_LOCAL_NETWORK_MODE (SPEC-SERVER-INSTALL I12): on or nothing', async () => {
+		vi.resetModules();
+		expect((await import('#lib/server/env.ts')).env.localNetworkModeAtFirstRun).toBe(false);
+
+		vi.stubEnv('BMUSTER_LOCAL_NETWORK_MODE', 'on');
+		vi.resetModules();
+		expect((await import('#lib/server/env.ts')).env.localNetworkModeAtFirstRun).toBe(true);
+
+		vi.stubEnv('BMUSTER_LOCAL_NETWORK_MODE', 'yes');
+		vi.resetModules();
+		await expect(import('#lib/server/env.ts')).rejects.toThrow(
+			'BMUSTER_LOCAL_NETWORK_MODE must be on or left out, not yes'
 		);
 	});
 

@@ -3,6 +3,7 @@ import { firstAdminSchema } from '#lib/schemas/auth/sign-in.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import type { FirstAdmin } from '../../env.ts';
 import { recordAudit } from '../audit/audit.ts';
+import { getSetting, updateSettingAsSystem } from '../settings/settings.ts';
 import { hasUsers, insertUser, markSignedIn, toConsoleUser } from '../users/users.ts';
 import type { SignInClient } from './client.ts';
 import { hashPassword } from './passwords.ts';
@@ -86,6 +87,23 @@ export async function prepareFirstRun(
 	if (!hasUsers(database)) {
 		setupCode.ensureIssued();
 	}
+}
+
+/**
+ * Start-up, before the listener is chosen (SPEC-SERVER-INSTALL I12): with
+ * BMUSTER_LOCAL_NETWORK_MODE=on and no users yet, local network mode is
+ * turned on, so a fresh install with no domain serves HTTPS. Once someone has
+ * set the server up, Settings owns the setting and the variable does nothing.
+ */
+export function applyFirstRunLocalNetworkMode(
+	database: AppDatabase,
+	wanted: boolean,
+	now: number
+): void {
+	if (!wanted || hasUsers(database) || getSetting(database, 'localNetworkMode')) {
+		return;
+	}
+	updateSettingAsSystem(database, 'localNetworkMode', true, 'BMUSTER_LOCAL_NETWORK_MODE', now);
 }
 
 /** True when the admin was created; false when the server already had users. */
