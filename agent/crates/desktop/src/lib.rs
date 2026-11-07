@@ -25,6 +25,7 @@ pub mod input;
 pub mod notice;
 pub mod pacing;
 pub mod session;
+pub mod winsession;
 
 pub use control::{EndReason, Mode};
 pub use follow::{Look, ScreenWatch};
