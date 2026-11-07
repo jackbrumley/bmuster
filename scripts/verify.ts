@@ -99,12 +99,20 @@ const LINT_ARGS = fast
 /** Checks that each use about one core: run side by side after SYNC, the slowest first. */
 const SIDE_BY_SIDE: readonly Check[] = [
 	check('lint', 'npm', ['run', 'lint', '--', ...LINT_ARGS]),
-	check('type check', 'npm', ['run', 'check']),
+	// The tools directly, not `npm run check` / `npm run deadcode`: those scripts
+	// start with their own `svelte-kit sync`, and two syncs side by side
+	// rewrite .svelte-kit under each other ("Cannot find module './$types'").
+	check('type check', 'npx', [
+		'svelte-check',
+		'--tsconfig',
+		'./tsconfig.json',
+		'--fail-on-warnings'
+	]),
 	check('format', 'npm', ['run', 'fmt:check']),
 	// `npm run hygiene` chains these with &&, so a hygiene failure would skip
 	// the other two: here each runs on its own.
 	check('hygiene rules', node, ['scripts/hygiene.ts']),
-	check('dead code', 'npm', ['run', 'deadcode']),
+	check('dead code', 'npx', ['knip']),
 	check('duplication', 'npm', ['run', 'duplication'])
 ];
 
