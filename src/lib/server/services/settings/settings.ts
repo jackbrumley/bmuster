@@ -8,7 +8,7 @@ import {
 } from '#lib/domain/settings/settings-definitions.ts';
 import { settings } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
-import { recordAudit } from '../audit/audit.ts';
+import { recordAudit, type AuditActor } from '../audit/audit.ts';
 
 /**
  * Server settings (SPEC-SIGN-IN S16). Each is declared in
@@ -71,36 +71,55 @@ export function updateSetting(
 	if (!parsed.success) {
 		return { kind: 'invalid', message: `That is not a valid value for “${definition.label}”.` };
 	}
+	writeSetting(database, { kind: 'user', userId: actorUserId }, key, parsed.data, {}, now);
+	return { kind: 'changed', settings: listSettings(database) };
+}
+
+/**
+ * Changes one setting on the server's own behalf (start-up, from the
+ * installer's environment), and audits it with the system as the actor and
+ * `source` naming where the value came from.
+ */
+export function updateSettingAsSystem<K extends SettingKey>(
+	database: AppDatabase,
+	key: K,
+	value: SettingValues[K],
+	source: string,
+	now: number
+): void {
+	writeSetting(database, { kind: 'system' }, key, value, { source }, now);
+}
+
+function writeSetting(
+	database: AppDatabase,
+	actor: AuditActor,
+	key: SettingKey,
+	value: unknown,
+	extraDetail: Record<string, string>,
+	now: number
+): void {
+	const definition = SETTING_DEFINITIONS[key];
+	const updatedBy = actor.kind === 'user' ? actor.userId : 'system';
 	database.transaction((transaction) => {
 		const before = getSetting(transaction, key);
 		transaction
 			.insert(settings)
-			.values({
-				key,
-				value: JSON.stringify(parsed.data),
-				updatedAt: new Date(now),
-				updatedBy: actorUserId
-			})
+			.values({ key, value: JSON.stringify(value), updatedAt: new Date(now), updatedBy })
 			.onConflictDoUpdate({
 				target: settings.key,
-				set: {
-					value: JSON.stringify(parsed.data),
-					updatedAt: new Date(now),
-					updatedBy: actorUserId
-				}
+				set: { value: JSON.stringify(value), updatedAt: new Date(now), updatedBy }
 			})
 			.run();
 		recordAudit(
 			transaction,
 			{
-				actor: { kind: 'user', userId: actorUserId },
+				actor,
 				kind: 'setting-changed',
 				target: definition.label,
 				machineId: null,
-				detail: { from: String(before), to: String(parsed.data) }
+				detail: { from: String(before), to: String(value), ...extraDetail }
 			},
 			now
 		);
 	});
-	return { kind: 'changed', settings: listSettings(database) };
 }

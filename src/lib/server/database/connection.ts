@@ -11,7 +11,7 @@ export type AppDatabase = BetterSQLite3Database<typeof schema>;
 export type Queryable = AppDatabase | Parameters<Parameters<AppDatabase['transaction']>[0]>[0];
 
 /** Where the generated migrations live, relative to the working directory. */
-const MIGRATIONS_FOLDER = 'src/lib/server/database/migrations';
+export const MIGRATIONS_FOLDER = 'src/lib/server/database/migrations';
 
 /**
  * Opens (or creates) the SQLite file and applies every committed migration.

@@ -16,6 +16,9 @@ export function needsSetupRedirect(pathname: string, usersExist: boolean): boole
 	}
 	return (
 		pathname !== '/setup' &&
+		// Health probes (SPEC-SERVER-INSTALL I14) must answer before setup too.
+		pathname !== '/healthz' &&
+		pathname !== '/readyz' &&
 		!pathname.startsWith('/api/') &&
 		!pathname.startsWith('/_app/') &&
 		!isAgentPath(pathname)

@@ -46,6 +46,22 @@ function firstAdmin(): FirstAdmin {
 	return { kind: 'set', name: name ?? 'Administrator', email, password };
 }
 
+/**
+ * BMUSTER_LOCAL_NETWORK_MODE=on (SPEC-SERVER-INSTALL I12): the installer's
+ * default, so a fresh server with no domain serves HTTPS with its own
+ * certificate. Applied only while the server has no users.
+ */
+function localNetworkModeAtFirstRun(): boolean {
+	const value = optional('BMUSTER_LOCAL_NETWORK_MODE');
+	if (value === undefined) {
+		return false;
+	}
+	if (value !== 'on') {
+		throw new Error(`BMUSTER_LOCAL_NETWORK_MODE must be on or left out, not ${value}`);
+	}
+	return true;
+}
+
 function secretsKey(): Buffer {
 	const key = Buffer.from(required('SECRETS_KEY'), 'base64');
 	if (key.length !== 32) {
@@ -62,5 +78,7 @@ export const env = {
 	/** Folder of agent builds: <version>/<target>/bmuster-agent[.exe] */
 	releasesPath: required('RELEASES_PATH'),
 	/** Optional: the admin to create on a server with no users (S18). */
-	firstAdmin: firstAdmin()
+	firstAdmin: firstAdmin(),
+	/** Optional: turn local network mode on for a server with no users (I12). */
+	localNetworkModeAtFirstRun: localNetworkModeAtFirstRun()
 };
