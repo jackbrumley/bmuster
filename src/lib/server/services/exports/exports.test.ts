@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
 import {
@@ -319,30 +320,27 @@ describe('Activity export (X5, X7)', () => {
 		expect(activityExportQuerySchema.safeParse({ from: 'yesterday' }).success).toBe(false);
 	});
 
-	it(`X7: stops at ${String(ACTIVITY_EXPORT_CAP)} rows and says so on the last line`, async () => {
-		const { database, admin } = await setUp();
-		const start = NOW - 2 * DAY;
-		database.transaction((tx) => {
-			for (let index = 0; index < ACTIVITY_EXPORT_CAP; index += 1) {
-				tx.insert(auditEntries)
-					.values({
-						id: crypto.randomUUID(),
-						at: new Date(start + index),
-						actorUserId: null,
-						kind: 'setting-changed',
-						target: `setting ${String(index)}`,
-						machineId: null,
-						detail: '{}'
-					})
-					.run();
-			}
-		});
-		const result = exportActivity(database, admin, activityQuery({}), NOW + 10);
-		expect(result.rows).toHaveLength(ACTIVITY_EXPORT_CAP + 1);
-		expect(String(result.rows.at(-1)?.[0])).toMatch(/^Cut off at 100000 rows: older entries than /);
-		expect(lastExportAudit(database)).toMatchObject({
-			target: 'Activity',
-			detail: { rows: String(ACTIVITY_EXPORT_CAP), cutOff: 'yes' }
-		});
-	});
+	// 100 000 rows take a few seconds to export; a busy test run needs more than the default 5.
+	it(
+		`X7: stops at ${String(ACTIVITY_EXPORT_CAP)} rows and says so on the last line`,
+		{ timeout: 30_000 },
+		async () => {
+			const { database, admin } = await setUp();
+			const start = NOW - 2 * DAY;
+			// One statement for the 100 000 rows, so seeding takes milliseconds.
+			database.run(sql`
+			with recursive n(i) as (select 0 union all select i + 1 from n where i < ${ACTIVITY_EXPORT_CAP - 1})
+			insert into ${auditEntries} (id, at, actor_user_id, kind, target, machine_id, detail)
+			select 'seed-' || i, ${start} + i, null, 'setting-changed', 'setting ' || i, null, '{}' from n`);
+			const result = exportActivity(database, admin, activityQuery({}), NOW + 10);
+			expect(result.rows).toHaveLength(ACTIVITY_EXPORT_CAP + 1);
+			expect(String(result.rows.at(-1)?.[0])).toMatch(
+				/^Cut off at 100000 rows: older entries than /
+			);
+			expect(lastExportAudit(database)).toMatchObject({
+				target: 'Activity',
+				detail: { rows: String(ACTIVITY_EXPORT_CAP), cutOff: 'yes' }
+			});
+		}
+	);
 });
