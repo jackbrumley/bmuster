@@ -1,7 +1,7 @@
 //! Names Windows gives that BMuster shows: the console user, and where the
 //! console is (sign-in screen, locked, a UAC prompt, someone's desktop).
 
-use crate::capture::{DesktopKind, DesktopState};
+use crate::capture::DesktopState;
 
 /// The console user as Overview shows it: `jack` for a local or Microsoft
 /// account (its domain is this computer), `CORP\jack` for a domain account.
@@ -19,38 +19,21 @@ pub fn account_label(user: &str, domain: &str, computer: &str) -> Option<String>
     }
 }
 
-/// The `state` message for the input desktop named `desktop` (Windows'
-/// own names: `Default`, `Winlogon`, …), the session's user, and whether the
-/// UAC prompt (`consent.exe`) runs in the session.
+/// What the screen shows, for the `state` message: the input desktop
+/// `desktop` (Windows' own names: `Default`, `Winlogon`, …), the session's
+/// user, and whether the UAC prompt (`consent.exe`) runs in the session.
 ///
 /// The lock screen, the sign-in screen and the UAC prompt all use the
 /// Winlogon desktop: nobody signed in means the sign-in screen; a UAC prompt
-/// means the secure desktop; otherwise the session is locked.
+/// sits over the user's own desktop; otherwise the session is locked.
 pub fn desktop_state(desktop: &str, user: Option<String>, consent_running: bool) -> DesktopState {
     if desktop.eq_ignore_ascii_case("Default") {
-        return DesktopState {
-            desktop: DesktopKind::Default,
-            locked: false,
-            signed_in_user: user,
-        };
+        return DesktopState::Desktop { user };
     }
-    let winlogon = desktop.eq_ignore_ascii_case("Winlogon");
-    match (&user, winlogon && !consent_running) {
-        (None, true) => DesktopState {
-            desktop: DesktopKind::Winlogon,
-            locked: false,
-            signed_in_user: None,
-        },
-        (Some(_), true) => DesktopState {
-            desktop: DesktopKind::Winlogon,
-            locked: true,
-            signed_in_user: user,
-        },
-        (_, false) => DesktopState {
-            desktop: DesktopKind::Secure,
-            locked: false,
-            signed_in_user: user,
-        },
+    match user {
+        None => DesktopState::SignIn,
+        Some(_) if consent_running => DesktopState::Desktop { user },
+        Some(_) => DesktopState::Locked { user },
     }
 }
 
@@ -79,45 +62,26 @@ mod tests {
     #[test]
     fn desktop_state_tells_sign_in_lock_uac_and_desktop_apart() {
         let jack = || Some("jack".to_string());
-        assert_eq!(
-            desktop_state("Winlogon", None, false),
-            DesktopState {
-                desktop: DesktopKind::Winlogon,
-                locked: false,
-                signed_in_user: None
-            }
-        );
+        assert_eq!(desktop_state("Winlogon", None, false), DesktopState::SignIn);
         assert_eq!(
             desktop_state("Winlogon", jack(), false),
-            DesktopState {
-                desktop: DesktopKind::Winlogon,
-                locked: true,
-                signed_in_user: jack()
-            }
+            DesktopState::Locked { user: jack() }
         );
         assert_eq!(
             desktop_state("Winlogon", jack(), true),
-            DesktopState {
-                desktop: DesktopKind::Secure,
-                locked: false,
-                signed_in_user: jack()
-            }
+            DesktopState::Desktop { user: jack() }
         );
         assert_eq!(
             desktop_state("Default", jack(), false),
-            DesktopState {
-                desktop: DesktopKind::Default,
-                locked: false,
-                signed_in_user: jack()
-            }
+            DesktopState::Desktop { user: jack() }
         );
         assert_eq!(
-            desktop_state("default", None, false).desktop,
-            DesktopKind::Default
+            desktop_state("default", None, false),
+            DesktopState::Desktop { user: None }
         );
         assert_eq!(
-            desktop_state("Screen-saver", jack(), false).desktop,
-            DesktopKind::Secure
+            desktop_state("Screen-saver", jack(), false),
+            DesktopState::Locked { user: jack() }
         );
     }
 }

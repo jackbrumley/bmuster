@@ -71,6 +71,18 @@ pub fn thread_desktop_name() -> Result<String, String> {
     name_of(current)
 }
 
+/// The input desktop's name, without moving this thread.
+pub fn input_desktop_name() -> Result<String, String> {
+    // SAFETY: the handle is closed before returning.
+    unsafe {
+        let input = OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, DESKTOP_READOBJECTS)
+            .map_err(|e| format!("OpenInputDesktop: {e}"))?;
+        let name = name_of(input);
+        let _ = CloseDesktop(input);
+        name
+    }
+}
+
 /// Moves this thread to the input desktop if it is elsewhere. Returns the
 /// input desktop's name and whether the thread moved.
 pub fn follow_input_desktop() -> Result<(String, bool), String> {

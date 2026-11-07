@@ -19,10 +19,8 @@ pub fn send_sas() -> Result<(), String> {
         let library = LoadLibraryW(w!("sas.dll")).map_err(|e| format!("loading sas.dll: {e}"))?;
         let result = match GetProcAddress(library, s!("SendSAS")) {
             Some(address) => {
-                let send: SendSas = std::mem::transmute::<
-                    unsafe extern "system" fn() -> isize,
-                    SendSas,
-                >(address);
+                let send: SendSas =
+                    std::mem::transmute::<unsafe extern "system" fn() -> isize, SendSas>(address);
                 send(0);
                 Ok(())
             }

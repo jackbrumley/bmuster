@@ -17,6 +17,8 @@ pub mod dxgi;
 pub mod gdi;
 #[cfg(windows)]
 pub mod windows;
+#[cfg(windows)]
+pub mod windows_follow;
 
 use serde::Serialize;
 
