@@ -17,3 +17,12 @@ pub mod follow;
 pub mod handoff;
 pub mod names;
 pub mod sas_policy;
+
+#[cfg(windows)]
+pub mod console;
+#[cfg(windows)]
+pub mod input_desktop;
+#[cfg(windows)]
+pub mod launch;
+#[cfg(windows)]
+pub mod pipe;
