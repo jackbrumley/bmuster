@@ -2,6 +2,8 @@
 	import { refreshAll } from '$app/navigation';
 	import { IconKey, IconPlus, IconShieldCheck } from '@tabler/icons-svelte-runes';
 	import Button from '#lib/ui/button.svelte';
+	import ListCard from '#lib/ui/list-card.svelte';
+	import ListRow from '#lib/ui/list-row.svelte';
 	import Modal from '#lib/ui/modal.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
@@ -169,51 +171,53 @@
 	{/snippet}
 </PageHeader>
 
-<ul class="list">
-	{#each data.users as user (user.id)}
-		<li>
-			<button
-				data-raw-button="list-row"
-				type="button"
-				class="row"
-				class:disabled={user.status.kind === 'disabled'}
-				onclick={() => (panel = { kind: 'view', id: user.id })}
-			>
-				<span class="avatar">{user.name.slice(0, 1)}</span>
-				<span class="body">
-					<span class="name">
-						{user.name}
-						{#if user.role === 'admin'}
-							<span class="badge"><IconShieldCheck size={14} /> Admin</span>
-						{/if}
-						{#if user.status.kind === 'disabled'}
-							<span class="badge off">Disabled</span>
-						{/if}
-					</span>
-					<span class="meta">{user.email}</span>
-					{#if groupsOf(user.id).length > 0}
-						<span class="groups">
-							{#each groupsOf(user.id) as group (group.id)}
-								<span class="group">{group.name}</span>
-							{/each}
-						</span>
-					{/if}
+{#snippet userRow(user: UserView)}
+	<ListRow
+		action={{ kind: 'button', onclick: () => (panel = { kind: 'view', id: user.id }) }}
+		align="start"
+		dimmed={user.status.kind === 'disabled'}
+	>
+		<span class="avatar">{user.name.slice(0, 1)}</span>
+		<span class="body">
+			<span class="name">
+				{user.name}
+				{#if user.role === 'admin'}
+					<span class="badge"><IconShieldCheck size={14} /> Admin</span>
+				{/if}
+				{#if user.status.kind === 'disabled'}
+					<span class="badge off">Disabled</span>
+				{/if}
+			</span>
+			<span class="meta">{user.email}</span>
+			{#if groupsOf(user.id).length > 0}
+				<span class="groups">
+					{#each groupsOf(user.id) as group (group.id)}
+						<span class="group">{group.name}</span>
+					{/each}
 				</span>
-				<span class="side">
-					<span class="method">
-						{#if user.hasPassword}<IconKey size={14} />{/if}
-						{signInSummary(user)}
-					</span>
-					<span class="meta">
-						{user.lastSignIn.kind === 'at'
-							? formatRelative(user.lastSignIn.iso, data.now)
-							: 'Never'}
-					</span>
-				</span>
-			</button>
-		</li>
-	{/each}
-</ul>
+			{/if}
+		</span>
+		<span class="side">
+			<span class="method">
+				{#if user.hasPassword}<IconKey size={14} />{/if}
+				{signInSummary(user)}
+			</span>
+			<span class="meta">
+				{user.lastSignIn.kind === 'at' ? formatRelative(user.lastSignIn.iso, data.now) : 'Never'}
+			</span>
+		</span>
+	</ListRow>
+{/snippet}
+
+<ListCard
+	heading={undefined}
+	actions={undefined}
+	label="Users"
+	items={data.users}
+	key={(user: UserView) => user.id}
+	row={userRow}
+	empty="Nobody yet."
+/>
 
 <Modal open={panel.kind === 'add'} title="Add a user" onclose={close}>
 	<UserForm
@@ -358,42 +362,6 @@
 </Modal>
 
 <style>
-	.list {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		overflow: hidden;
-	}
-
-	li + li {
-		border-top: 1px solid var(--border);
-	}
-
-	.row {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--space-3);
-		width: 100%;
-		padding: var(--space-4);
-		border: none;
-		background: transparent;
-		color: var(--text);
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.row:hover {
-		background: var(--surface-muted);
-	}
-
-	.row.disabled {
-		opacity: 0.6;
-	}
-
 	.avatar {
 		display: inline-flex;
 		align-items: center;

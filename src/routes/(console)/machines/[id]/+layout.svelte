@@ -12,6 +12,7 @@
 	} from '@tabler/icons-svelte-runes';
 	import OsIcon from '#lib/ui/os-icon.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
+	import TabNav from '#lib/ui/tab-nav.svelte';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
@@ -45,66 +46,50 @@
 	]);
 </script>
 
-<a class="back" href={resolve('/(console)')}><IconChevronLeft size={18} /> Machines</a>
-
-<div class="identity">
-	<header class="head">
+<!-- The machine's own page header: every machine tab shares it, so its pages render no PageHeader. -->
+<header class="machine-header">
+	<a class="back" href={resolve('/(console)')}><IconChevronLeft size={18} /> Machines</a>
+	<div class="identity">
 		<OsIcon family={data.machine.osFamily} size={36} />
 		<div class="names">
 			<h1>{data.machine.name}</h1>
 			<p>{data.machine.hostname}</p>
 		</div>
 		<StatusBadge status={data.machine.status} now={data.now} />
-	</header>
+	</div>
 	{#if data.machine.description !== ''}
 		<p class="description">{data.machine.description}</p>
 	{/if}
-</div>
+</header>
 
-<nav class="tabs" aria-label="Machine">
-	{#each tabs as tab (tab.href)}
-		<a
-			class="tab"
-			href={tab.href}
-			aria-current={page.url.pathname === tab.href ? 'page' : undefined}
-		>
-			<tab.icon size={18} stroke={1.75} />
-			{tab.label}
-		</a>
-	{/each}
-</nav>
+<TabNav label="Machine" {tabs} current={page.url.pathname} />
 
 {@render children()}
 
 <style>
+	.machine-header {
+		display: grid;
+		gap: var(--space-3);
+	}
+
 	.back {
 		display: inline-flex;
 		align-items: center;
+		justify-self: start;
 		gap: var(--space-1);
-		margin-bottom: var(--space-3);
 		color: var(--muted);
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
 	}
 
-	.identity {
-		display: grid;
-		gap: var(--space-2);
-		margin-bottom: var(--space-4);
+	.back:hover {
+		color: var(--text);
 	}
 
-	.head {
+	.identity {
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
-	}
-
-	/* Plain text from the admins: line breaks kept, long words wrapped (D2). */
-	.description {
-		color: var(--text-soft);
-		font-size: var(--text-sm);
-		white-space: pre-line;
-		overflow-wrap: anywhere;
 	}
 
 	.names {
@@ -112,8 +97,9 @@
 		min-width: 0;
 	}
 
+	/* The same size as PageHeader's title on the other pages. */
 	h1 {
-		font-size: var(--text-xl);
+		font-size: var(--text-2xl);
 		font-weight: var(--weight-bold);
 		white-space: nowrap;
 		overflow: hidden;
@@ -125,34 +111,11 @@
 		font-size: var(--text-sm);
 	}
 
-	.tabs {
-		display: flex;
-		gap: var(--space-1);
-		margin-bottom: var(--space-4);
-		padding: var(--space-1);
-		border-radius: var(--radius-pill);
-		background: var(--surface-muted);
-		overflow-x: auto;
-		scrollbar-width: none;
-	}
-
-	.tab {
-		display: inline-flex;
-		flex: 1;
-		align-items: center;
-		justify-content: center;
-		gap: var(--space-2);
-		padding: var(--space-2) var(--space-3);
-		border-radius: var(--radius-pill);
+	/* Plain text from the admins: line breaks kept, long words wrapped (D2). */
+	.description {
 		color: var(--text-soft);
 		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		white-space: nowrap;
-	}
-
-	.tab[aria-current='page'] {
-		background: var(--surface-elevated);
-		color: var(--text);
-		box-shadow: var(--shadow-card);
+		white-space: pre-line;
+		overflow-wrap: anywhere;
 	}
 </style>

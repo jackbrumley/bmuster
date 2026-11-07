@@ -8,6 +8,8 @@
 	} from '#lib/schemas/access/access.ts';
 	import Button from '#lib/ui/button.svelte';
 	import Checkbox from '#lib/ui/checkbox.svelte';
+	import ListCard from '#lib/ui/list-card.svelte';
+	import ListRow from '#lib/ui/list-row.svelte';
 	import Modal from '#lib/ui/modal.svelte';
 	import TextField from '#lib/ui/text-field.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
@@ -190,45 +192,44 @@
 	}
 </script>
 
-<section class="section" aria-labelledby="{kind}-groups-heading">
-	<div class="head">
-		<h2 id="{kind}-groups-heading">{title}</h2>
-		<Button
-			variant="secondary"
-			size="compact"
-			type="button"
-			onclick={() => {
-				openDetails(undefined);
-			}}
-		>
-			<IconPlus size={18} /> New group
-		</Button>
-	</div>
-	{#if groups.length === 0}
-		<p class="empty">No groups of {nouns.many} yet.</p>
-	{:else}
-		<ul class="list">
-			{#each groups as group (group.id)}
-				<li>
-					<button
-						data-raw-button="list-row"
-						type="button"
-						class="row"
-						onclick={() => (panel = { kind: 'view', id: group.id })}
-					>
-						<span class="body">
-							<span class="name">{group.name}</span>
-							{#if group.description !== ''}
-								<span class="meta">{group.description}</span>
-							{/if}
-						</span>
-						<span class="count">{count(group)}</span>
-					</button>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</section>
+{#snippet newGroup()}
+	<Button
+		variant="secondary"
+		size="compact"
+		type="button"
+		onclick={() => {
+			openDetails(undefined);
+		}}
+	>
+		<IconPlus size={18} /> New group
+	</Button>
+{/snippet}
+
+{#snippet groupRow(group: Group)}
+	<ListRow
+		action={{ kind: 'button', onclick: () => (panel = { kind: 'view', id: group.id }) }}
+		align="center"
+		dimmed={false}
+	>
+		<span class="body">
+			<span class="name">{group.name}</span>
+			{#if group.description !== ''}
+				<span class="meta">{group.description}</span>
+			{/if}
+		</span>
+		<span class="count">{count(group)}</span>
+	</ListRow>
+{/snippet}
+
+<ListCard
+	heading={title}
+	actions={newGroup}
+	label="Groups of {nouns.many}"
+	items={groups}
+	key={(group: Group) => group.id}
+	row={groupRow}
+	empty="No groups of {nouns.many} yet."
+/>
 
 <Modal
 	open={panel.kind === 'view' && selected !== undefined}
@@ -383,58 +384,6 @@
 </Modal>
 
 <style>
-	.section {
-		display: grid;
-		gap: var(--space-3);
-		min-width: 0;
-	}
-
-	.head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-2);
-	}
-
-	h2 {
-		font-size: var(--text-lg);
-		font-weight: var(--weight-semibold);
-	}
-
-	.list {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		overflow: hidden;
-	}
-
-	li + li {
-		border-top: 1px solid var(--border);
-	}
-
-	.row {
-		display: flex;
-		align-items: center;
-		gap: var(--space-3);
-		width: 100%;
-		min-height: 56px;
-		padding: var(--space-3) var(--space-4);
-		border: none;
-		background: transparent;
-		color: var(--text);
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.row:hover {
-		background: var(--surface-muted);
-	}
-
 	.body {
 		display: grid;
 		flex: 1;

@@ -5,6 +5,7 @@
 import { verifyInputFontSize } from '../../../../scripts/hygiene/input-font-size.ts';
 import { verifyBorderRadius } from '../../../../scripts/hygiene/border-radius.ts';
 import { verifyPageFrames } from '../../../../scripts/hygiene/page-frames.ts';
+import { verifyPageStructure } from '../../../../scripts/hygiene/page-structure.ts';
 import { verifyClientFetch } from '../../../../scripts/hygiene/client-fetch.ts';
 import { verifyEnvVars } from '../../../../scripts/hygiene/env-vars.ts';
 import { verifyNoDoubleCasts } from '../../../../scripts/hygiene/double-cast.ts';
@@ -105,6 +106,47 @@ export const projectRuleFixtures: readonly RuleFixture[] = [
 				CONSOLE_LAYOUT,
 				'<script lang="ts">\n\timport ShellFrame from \'#lib/shell/shell-frame.svelte\';\n\tlet { children } = $props();\n</script>\n\n<ShellFrame>{@render children()}</ShellFrame>'
 			)
+		])
+	},
+	{
+		rule: 'route-card-look-forbidden',
+		bad: over(verifyPageStructure, [
+			file(
+				PANEL,
+				'<section class="panel"></section>\n<style>\n\t.panel { border: 1px solid var(--border); border-radius: var(--radius-card); }\n</style>'
+			)
+		]),
+		good: over(verifyPageStructure, [
+			file(
+				PANEL,
+				'<div class="screen"></div>\n<style>\n\t.screen { border-radius: var(--radius-card); background: var(--screen-bg); }\n</style>'
+			)
+		])
+	},
+	{
+		rule: 'route-card-look-forbidden',
+		bad: over(verifyPageStructure, [
+			file(
+				PANEL,
+				'<div class="tile"></div>\n<style>\n\t.tile { box-shadow: var(--shadow-card); }\n</style>'
+			)
+		]),
+		good: over(verifyPageStructure, [
+			file(
+				'src/lib/ui/panel.svelte',
+				'<div class="panel"></div>\n<style>\n\t.panel { border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }\n</style>'
+			)
+		])
+	},
+	{
+		rule: 'page-header-required',
+		bad: over(verifyPageStructure, [file(MACHINES_PAGE, '<h1>Machines</h1>')]),
+		good: over(verifyPageStructure, [
+			file(
+				MACHINES_PAGE,
+				'<script lang="ts">\n\timport PageHeader from \'#lib/ui/page-header.svelte\';\n</script>\n\n<PageHeader title="Machines" summary="All of them." actions={undefined} />'
+			),
+			file('src/routes/(console)/machines/[id]/notes/+page.svelte', '<p>Notes</p>')
 		])
 	},
 	{

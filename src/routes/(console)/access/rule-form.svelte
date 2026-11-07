@@ -49,30 +49,27 @@
 	value: string | null,
 	choose: (id: string) => void
 )}
-	<div class="field">
-		<span class="label">{label}</span>
-		{#if groups.length === 0}
+	{#if groups.length === 0}
+		<div class="field">
+			<span class="label">{label}</span>
 			<p class="hint">
 				No groups yet. <a href={resolve('/(console)/groups')}>Make one on the Groups page</a>.
 			</p>
-		{:else}
-			<div class="chips" role="group" aria-label={label}>
-				{#each groups as group (group.id)}
-					<button
-						data-raw-button="chip"
-						type="button"
-						class="chip"
-						aria-pressed={value === group.id}
-						onclick={() => {
-							choose(group.id);
-						}}
-					>
-						{group.name}
-					</button>
-				{/each}
-			</div>
-		{/if}
-	</div>
+		</div>
+	{:else}
+		<SegmentedControl
+			{label}
+			options={groups.map((group) => ({ value: group.id, label: group.name }))}
+			bind:value={
+				() => value,
+				(picked: string | null) => {
+					if (picked !== null) {
+						choose(picked);
+					}
+				}
+			}
+		/>
+	{/if}
 {/snippet}
 
 {@render choices('People in', userGroups, userGroupId, (id) => (userGroupId = id))}
@@ -124,30 +121,6 @@
 		color: var(--text-soft);
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
-	}
-
-	.chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-	}
-
-	.chip {
-		min-height: 40px;
-		padding: var(--space-1) var(--space-3);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--surface-elevated);
-		color: var(--text-soft);
-		font-size: var(--text-sm);
-		overflow-wrap: anywhere;
-		cursor: pointer;
-	}
-
-	.chip[aria-pressed='true'] {
-		border-color: var(--brand);
-		background: var(--brand-tint);
-		color: var(--brand);
 	}
 
 	.hint {

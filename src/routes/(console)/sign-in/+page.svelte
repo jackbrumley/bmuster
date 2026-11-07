@@ -4,8 +4,11 @@
 	import { IconBrandWindows, IconKey, IconPlus, IconShieldLock } from '@tabler/icons-svelte-runes';
 	import Button from '#lib/ui/button.svelte';
 	import CopyField from '#lib/ui/copy-field.svelte';
+	import ListCard from '#lib/ui/list-card.svelte';
+	import ListRow from '#lib/ui/list-row.svelte';
 	import Modal from '#lib/ui/modal.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
+	import Panel from '#lib/ui/panel.svelte';
 	import SegmentedControl from '#lib/ui/segmented-control.svelte';
 	import TextField from '#lib/ui/text-field.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
@@ -173,56 +176,55 @@
 	actions={undefined}
 />
 
-<section class="panel">
-	<div class="panel-head">
-		<h2>Identity providers</h2>
-		<Button variant="secondary" size="compact" type="button" onclick={openAdd}>
-			<IconPlus size={18} /> Add provider
-		</Button>
-	</div>
-	{#if data.providers.length === 0}
-		<p class="row-text">No providers yet. People sign in with a password.</p>
-	{:else}
-		<ul class="list">
-			{#each data.providers as provider (provider.id)}
-				<li>
-					<button
-						data-raw-button="list-row"
-						type="button"
-						class="row"
-						onclick={() => {
-							openEdit(provider);
-						}}
-					>
-						<span class="icon">
-							{#if provider.kind === 'microsoft-entra'}
-								<IconBrandWindows size={20} />
-							{:else}
-								<IconShieldLock size={20} />
-							{/if}
-						</span>
-						<span class="body">
-							<span class="name">{provider.name}</span>
-							<span class="meta">{newPeopleLabel(provider.newPeople)}</span>
-						</span>
-						<span class="state" class:on={provider.enabled}>{provider.enabled ? 'On' : 'Off'}</span>
-					</button>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</section>
+{#snippet addProvider()}
+	<Button variant="secondary" size="compact" type="button" onclick={openAdd}>
+		<IconPlus size={18} /> Add provider
+	</Button>
+{/snippet}
 
-<section class="panel">
-	<div class="panel-head">
-		<h2>Password sign-in</h2>
-	</div>
+{#snippet providerRow(provider: IdentityProviderView)}
+	<ListRow
+		action={{
+			kind: 'button',
+			onclick: () => {
+				openEdit(provider);
+			}
+		}}
+		align="center"
+		dimmed={false}
+	>
+		<span class="icon">
+			{#if provider.kind === 'microsoft-entra'}
+				<IconBrandWindows size={20} />
+			{:else}
+				<IconShieldLock size={20} />
+			{/if}
+		</span>
+		<span class="body">
+			<span class="name">{provider.name}</span>
+			<span class="meta">{newPeopleLabel(provider.newPeople)}</span>
+		</span>
+		<span class="state" class:on={provider.enabled}>{provider.enabled ? 'On' : 'Off'}</span>
+	</ListRow>
+{/snippet}
+
+<ListCard
+	heading="Identity providers"
+	actions={addProvider}
+	label="Identity providers"
+	items={data.providers}
+	key={(provider: IdentityProviderView) => provider.id}
+	row={providerRow}
+	empty="No providers yet. People sign in with a password."
+/>
+
+<Panel heading="Password sign-in" actions={undefined} tone="normal" padding="normal">
 	<p class="row-text">
 		<IconKey size={18} />
 		Admins can always sign in with a password, so a broken provider never locks you out. Other people
 		use a password only if an admin gives them one.
 	</p>
-</section>
+</Panel>
 
 <Modal
 	open={panel.kind !== 'closed'}
@@ -321,57 +323,6 @@
 </Modal>
 
 <style>
-	.panel {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-3);
-		margin-bottom: var(--space-4);
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
-	}
-
-	.panel-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-3);
-	}
-
-	h2 {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		color: var(--muted);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-caps);
-	}
-
-	.list {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	li + li {
-		border-top: 1px solid var(--border);
-	}
-
-	.row {
-		display: flex;
-		align-items: center;
-		gap: var(--space-3);
-		width: 100%;
-		padding: var(--space-3) 0;
-		border: none;
-		background: transparent;
-		color: var(--text);
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-
 	.icon {
 		display: inline-flex;
 		color: var(--text-soft);

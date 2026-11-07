@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="232" height="232" viewBox="12 12 232 232">
+	<title>BMuster</title>
+	<rect x="12" y="12" width="232" height="232" rx="44" fill="#1b221d"/>
+	<g fill="none" stroke="#3f4a43" stroke-width="8"><circle cx="128" cy="128" r="88"/><circle cx="128" cy="128" r="56"/></g>
+	<path d="M128 128 L128 40 A88 88 0 0 1 204 84 Z" fill="#a3e635" opacity="0.35"/>
+	<path d="M128 128 L204 84" stroke="#a3e635" stroke-width="12" stroke-linecap="round"/>
+	<circle cx="128" cy="128" r="12" fill="#a3e635"/>
+	<rect x="160" y="148" width="40" height="30" rx="6" fill="#f4f7f2"/>
+	<circle cx="84" cy="96" r="9" fill="#a3e635"/>
+	<circle cx="92" cy="176" r="9" fill="#a3e635"/>
+</svg>

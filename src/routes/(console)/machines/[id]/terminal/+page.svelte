@@ -3,6 +3,8 @@
 	import NoPermission from '../no-permission.svelte';
 	import { IconPlugConnected } from '@tabler/icons-svelte-runes';
 	import { shellsFor, signedInUserOf } from '#lib/domain/machines/machine.ts';
+	import ChipGroup from '#lib/ui/chip-group.svelte';
+	import EmptyState from '#lib/ui/empty-state.svelte';
 	import type { PageProps } from './$types';
 
 	/**
@@ -41,59 +43,56 @@
 {#if !hasPermission(data.grants, 'terminal')}
 	<NoPermission />
 {:else if machine.status.kind === 'offline'}
-	<div class="offline">
-		<IconPlugConnected size={32} />
-		<p>This machine is offline. A terminal opens when it checks in again.</p>
-	</div>
+	<EmptyState
+		icon={IconPlugConnected}
+		title="This machine is offline."
+		detail="A terminal opens when it checks in again."
+		children={undefined}
+	/>
 {:else}
-	<div class="bar">
-		<div class="shells" role="group" aria-label="Shell">
-			{#each shells as shell (shell.id)}
-				<button
-					data-raw-button="chip"
-					type="button"
-					class="chip"
-					aria-pressed={activeShell?.id === shell.id}
-					onclick={() => (shellId = shell.id)}>{shell.label}</button
-				>
-			{/each}
+	<div class="session">
+		<div class="bar">
+			<ChipGroup
+				label="Shell"
+				options={shells.map((shell) => ({ value: shell.id, label: shell.label, count: undefined }))}
+				bind:value={
+					() => activeShell?.id ?? null, (picked: string | null) => (shellId = picked ?? '')
+				}
+			/>
+			<span class="session">Session · 00:00</span>
 		</div>
-		<span class="session">Session · 00:00</span>
-	</div>
 
-	<div class="terminal">
-		<pre>{activeShell?.label} on {machine.hostname}
+		<div class="terminal">
+			<pre>{activeShell?.label} on {machine.hostname}
 Connected through BMuster relay.
 {#each lines as line, index (index)}{line}
-			{/each}</pre>
-		<form class="input-line" onsubmit={run}>
-			<span class="prompt">{prompt}</span>
-			<input
-				data-raw-input="terminal-command"
-				aria-label="Command"
-				autocomplete="off"
-				autocapitalize="off"
-				spellcheck="false"
-				bind:value={input}
-			/>
-		</form>
-	</div>
+				{/each}</pre>
+			<form class="input-line" onsubmit={run}>
+				<span class="prompt">{prompt}</span>
+				<input
+					data-raw-input="terminal-command"
+					aria-label="Command"
+					autocomplete="off"
+					autocapitalize="off"
+					spellcheck="false"
+					bind:value={input}
+				/>
+			</form>
+		</div>
 
-	<div class="keys" role="toolbar" aria-label="Extra keys">
-		{#each extraKeys as key (key)}
-			<button data-raw-button="key" type="button" class="key">{key}</button>
-		{/each}
+		<div class="keys" role="toolbar" aria-label="Extra keys">
+			{#each extraKeys as key (key)}
+				<button data-raw-button="key" type="button" class="key">{key}</button>
+			{/each}
+		</div>
 	</div>
 {/if}
 
 <style>
-	.offline {
+	.session {
 		display: grid;
-		justify-items: center;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-3);
-		padding: var(--space-12) var(--space-4);
-		color: var(--muted);
-		text-align: center;
 	}
 
 	.bar {
@@ -101,28 +100,6 @@ Connected through BMuster relay.
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-3);
-		margin-bottom: var(--space-3);
-	}
-
-	.shells {
-		display: flex;
-		gap: var(--space-2);
-	}
-
-	.chip {
-		padding: var(--space-1) var(--space-3);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--surface-elevated);
-		color: var(--text-soft);
-		font-size: var(--text-sm);
-		cursor: pointer;
-	}
-
-	.chip[aria-pressed='true'] {
-		border-color: var(--brand);
-		background: var(--brand-tint);
-		color: var(--brand);
 	}
 
 	.session {
@@ -176,7 +153,6 @@ Connected through BMuster relay.
 	.keys {
 		display: flex;
 		gap: var(--space-2);
-		margin-top: var(--space-3);
 		overflow-x: auto;
 		scrollbar-width: none;
 	}

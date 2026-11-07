@@ -20,6 +20,7 @@ import { checkUiComponents } from './hygiene/ui-components.ts';
 import { GLOBAL_STYLESHEETS, verifyInputFontSize } from './hygiene/input-font-size.ts';
 import { radiusRoles, RADIUS_VARIABLES_FILE, verifyBorderRadius } from './hygiene/border-radius.ts';
 import { verifyPageFrames } from './hygiene/page-frames.ts';
+import { verifyPageStructure } from './hygiene/page-structure.ts';
 import { verifyClientFetch } from './hygiene/client-fetch.ts';
 import { listedEnvVars, verifyEnvVars } from './hygiene/env-vars.ts';
 import { verifyNoDoubleCasts } from './hygiene/double-cast.ts';
@@ -63,6 +64,7 @@ async function run(): Promise<void> {
 	verifyInputFontSize(parsable, globalStylesheets, reporter.violation);
 	verifyBorderRadius(parsable, radiusRoles(byPath.get(RADIUS_VARIABLES_FILE)), reporter.violation);
 	verifyPageFrames(parsable, reporter.violation);
+	verifyPageStructure(parsable, reporter.violation);
 	verifyClientFetch(parsable, reporter.violation);
 	verifyEnvVars(parsable, await listedEnvVars(workspaceRoot), reporter.violation);
 

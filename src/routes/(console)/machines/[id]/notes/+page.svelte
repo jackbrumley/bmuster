@@ -8,6 +8,9 @@
 		type NoteView
 	} from '#lib/schemas/machines/machine-notes.ts';
 	import Button from '#lib/ui/button.svelte';
+	import ListCard from '#lib/ui/list-card.svelte';
+	import ListRow from '#lib/ui/list-row.svelte';
+	import Panel from '#lib/ui/panel.svelte';
 	import Modal from '#lib/ui/modal.svelte';
 	import TextField from '#lib/ui/text-field.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
@@ -113,86 +116,89 @@
 	}
 </script>
 
-<div class="sections">
-	<section class="panel">
-		<h2>Add a note</h2>
-		<form
-			class="add"
-			onsubmit={(event) => {
-				event.preventDefault();
-				void addNote();
-			}}
-		>
-			<TextField
-				label="Note"
-				name="note"
-				type="multiline"
-				autocomplete="off"
-				autocapitalize="sentences"
-				required={false}
-				error={draftError}
-				bind:value={draft}
-			/>
-			<div class="add-actions">
-				<Button variant="primary" size="compact" type="submit" onclick={undefined}>
-					<IconPlus size={18} />
-					{adding ? 'Adding…' : 'Add note'}
-				</Button>
-			</div>
-		</form>
-	</section>
+<Panel heading="Add a note" actions={undefined} tone="normal" padding="normal">
+	<form
+		class="add"
+		onsubmit={(event) => {
+			event.preventDefault();
+			void addNote();
+		}}
+	>
+		<TextField
+			label="Note"
+			name="note"
+			type="multiline"
+			autocomplete="off"
+			autocapitalize="sentences"
+			required={false}
+			error={draftError}
+			bind:value={draft}
+		/>
+		<div class="add-actions">
+			<Button variant="primary" size="compact" type="submit" onclick={undefined}>
+				<IconPlus size={18} />
+				{adding ? 'Adding…' : 'Add note'}
+			</Button>
+		</div>
+	</form>
+</Panel>
 
-	{#if data.notes.length === 0}
-		<p class="empty">No notes yet. Write down what this machine is for or what was done to it.</p>
-	{:else}
-		<ul class="notes" aria-label="Notes, newest first">
-			{#each data.notes as note (note.id)}
-				<li class="note">
-					<div class="note-head">
-						<p class="meta">
-							<strong>{note.authorName}</strong>
-							<time datetime={note.createdIso} title={when(note.createdIso)}>
-								{formatRelative(note.createdIso, data.now)}
-							</time>
-							{#if note.edited.kind === 'yes'}
-								<span class="edited" title="Edited {when(note.edited.editedIso)}">edited</span>
-							{/if}
-						</p>
-						<div class="note-actions">
-							{#if note.canEdit}
-								<button
-									data-raw-button="icon"
-									type="button"
-									class="icon"
-									aria-label="Edit note"
-									onclick={() => {
-										openEdit(note);
-									}}
-								>
-									<IconEdit size={18} />
-								</button>
-							{/if}
-							{#if note.canDelete}
-								<button
-									data-raw-button="icon"
-									type="button"
-									class="icon danger"
-									aria-label="Delete note"
-									onclick={() => {
-										void deleteNote(note);
-									}}
-								>
-									<IconTrash size={18} />
-								</button>
-							{/if}
-						</div>
-					</div>
-					<p class="body">{note.body}</p>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</div>
+{#snippet noteRow(note: NoteView)}
+	<ListRow action={{ kind: 'static' }} align="start" dimmed={false}>
+		<div class="note">
+			<div class="note-head">
+				<p class="meta">
+					<strong>{note.authorName}</strong>
+					<time datetime={note.createdIso} title={when(note.createdIso)}>
+						{formatRelative(note.createdIso, data.now)}
+					</time>
+					{#if note.edited.kind === 'yes'}
+						<span class="edited" title="Edited {when(note.edited.editedIso)}">edited</span>
+					{/if}
+				</p>
+				<div class="note-actions">
+					{#if note.canEdit}
+						<button
+							data-raw-button="icon"
+							type="button"
+							class="icon"
+							aria-label="Edit note"
+							onclick={() => {
+								openEdit(note);
+							}}
+						>
+							<IconEdit size={18} />
+						</button>
+					{/if}
+					{#if note.canDelete}
+						<button
+							data-raw-button="icon"
+							type="button"
+							class="icon danger"
+							aria-label="Delete note"
+							onclick={() => {
+								void deleteNote(note);
+							}}
+						>
+							<IconTrash size={18} />
+						</button>
+					{/if}
+				</div>
+			</div>
+			<p class="body">{note.body}</p>
+		</div>
+	</ListRow>
+{/snippet}
+
+<ListCard
+	heading="Notes"
+	actions={undefined}
+	label="Notes, newest first"
+	items={data.notes}
+	key={(note: NoteView) => note.id}
+	row={noteRow}
+	empty="No notes yet. Write down what this machine is for or what was done to it."
+/>
 
 <Modal open={editing.kind === 'open'} title="Edit note" onclose={closeEdit}>
 	<TextField
@@ -221,31 +227,6 @@
 </Modal>
 
 <style>
-	.sections {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-4);
-	}
-
-	.panel {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-3);
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
-	}
-
-	h2 {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		color: var(--muted);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-caps);
-	}
-
 	.add {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
@@ -257,30 +238,12 @@
 		justify-content: flex-end;
 	}
 
-	.empty {
-		padding: var(--space-8) 0;
-		color: var(--muted);
-		font-size: var(--text-sm);
-		text-align: center;
-	}
-
-	.notes {
-		display: grid;
-		gap: var(--space-3);
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
 	.note {
 		display: grid;
+		flex: 1;
 		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-2);
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
+		min-width: 0;
 	}
 
 	.note-head {

@@ -8,6 +8,7 @@
 		machineNameSchema
 	} from '#lib/schemas/machines/machine-details.ts';
 	import Button from '#lib/ui/button.svelte';
+	import Panel from '#lib/ui/panel.svelte';
 	import Modal from '#lib/ui/modal.svelte';
 	import TextField from '#lib/ui/text-field.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
@@ -59,13 +60,13 @@
 	}
 </script>
 
-<section class="panel" aria-labelledby="details-heading">
-	<div class="head">
-		<h2 id="details-heading">Details</h2>
-		<Button variant="secondary" size="compact" type="button" onclick={openEdit}>
-			<IconEdit size={18} /> Edit details
-		</Button>
-	</div>
+{#snippet actions()}
+	<Button variant="secondary" size="compact" type="button" onclick={openEdit}>
+		<IconEdit size={18} /> Edit details
+	</Button>
+{/snippet}
+
+<Panel heading="Details" {actions} tone="normal" padding="normal">
 	<dl>
 		<div>
 			<dt>Name</dt>
@@ -76,7 +77,7 @@
 			<dd class="description">{machine.description === '' ? 'None' : machine.description}</dd>
 		</div>
 	</dl>
-</section>
+</Panel>
 
 <Modal {open} title="Edit details" onclose={() => (open = false)}>
 	<div class="fields">
@@ -117,33 +118,6 @@
 </Modal>
 
 <style>
-	.panel {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-3);
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
-	}
-
-	.head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-3);
-	}
-
-	h2 {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		color: var(--muted);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-caps);
-	}
-
 	dl {
 		display: grid;
 		gap: var(--space-3);

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import Logo from '#lib/ui/logo.svelte';
 
 	/** Frame for pages outside the console (sign-in, setup): centred card, safe areas padded. */
 	let { children }: { children: Snippet } = $props();
@@ -7,7 +8,7 @@
 
 <div class="public">
 	<div class="brand">
-		<span class="logo">B</span>
+		<Logo size={48} />
 		<span class="wordmark">BMuster</span>
 	</div>
 	<div class="card">
@@ -30,19 +31,6 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
-	}
-
-	.logo {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 40px;
-		height: 40px;
-		border-radius: var(--radius-control);
-		background: var(--brand);
-		color: var(--brand-contrast);
-		font-size: var(--text-xl);
-		font-weight: var(--weight-bold);
 	}
 
 	.wordmark {

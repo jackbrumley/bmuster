@@ -55,22 +55,41 @@
 	--sidebar-width: 15rem;
 	--tabbar-height: 4rem;
 	--content-max: 72rem;
+	/* The one gap between the blocks of a page: header, panels, lists. */
+	--gap-section: var(--space-6);
 
 	/* Colours: light-dark(light, dark) */
-	--bg: light-dark(#f4f6f5, #0e1412);
-	--surface: light-dark(#f4f6f5, #0e1412);
-	--surface-muted: light-dark(#e9eeec, #1d2724);
-	--surface-elevated: light-dark(#ffffff, #161e1b);
-	--surface-overlay: light-dark(#ffffff, #1b2421);
-	--text: light-dark(#14201c, #e6ece9);
-	--text-soft: light-dark(#34433e, #c2ccc8);
-	--muted: light-dark(#66756f, #8b9792);
-	--border: light-dark(rgba(20, 32, 28, 0.12), rgba(230, 236, 233, 0.1));
-	--border-strong: light-dark(rgba(20, 32, 28, 0.24), rgba(230, 236, 233, 0.2));
-	--brand: light-dark(#1f7a5c, #3fb98c);
-	--brand-hover: light-dark(#18624a, #5ccb9f);
-	--brand-contrast: light-dark(#ffffff, #0b1310);
-	--brand-tint: light-dark(rgba(31, 122, 92, 0.12), rgba(63, 185, 140, 0.14));
+	/*
+	 * Neutrals lean slightly towards the lime of the brand (the logo's white is
+	 * #f4f7f2, its body #1b221d), so greys and brand sit together.
+	 */
+	--bg: light-dark(#f4f7f2, #0f1411);
+	--surface: light-dark(#f4f7f2, #0f1411);
+	--surface-muted: light-dark(#e9eee5, #1e2620);
+	--surface-elevated: light-dark(#ffffff, #171e19);
+	--surface-overlay: light-dark(#ffffff, #1c241e);
+	--text: light-dark(#161d14, #e7ece6);
+	--text-soft: light-dark(#364232, #c4ccc2);
+	--muted: light-dark(#657061, #8c978a);
+	--border: light-dark(rgba(22, 29, 20, 0.12), rgba(231, 236, 230, 0.1));
+	--border-strong: light-dark(rgba(22, 29, 20, 0.24), rgba(231, 236, 230, 0.2));
+	/*
+	 * Brand: lime. The decided lime is #65a30d (light) and #a3e635 (dark).
+	 * Dark mode uses #a3e635 everywhere: 12.3:1 on --bg, 11.3:1 on
+	 * --surface-elevated, 8.1:1 on --brand-tint; text on it is near-black
+	 * #14180f (11.9:1). In light mode #65a30d is only 3.09:1 with white and
+	 * 2.86:1 on --bg, so it fails WCAG AA both as a fill under white text and
+	 * as link or active-nav text. Light mode therefore uses the darker lime
+	 * #46720e for --brand (fills, links, current item, focus ring): white on it
+	 * 5.72:1, it on --bg 4.90:1, on --surface-elevated 5.72:1, on
+	 * --surface-muted 4.85:1, on --brand-tint at least 4.73:1. #65a30d stays
+	 * the tint's base colour and the light-mode accent in the logo files.
+	 */
+	--brand: light-dark(#46720e, #a3e635);
+	--brand-hover: light-dark(#3f6212, #bef264);
+	--brand-contrast: light-dark(#ffffff, #14180f);
+	--brand-tint: light-dark(rgba(101, 163, 13, 0.12), rgba(163, 230, 53, 0.14));
+	--focus-ring: var(--brand);
 	--success: light-dark(#16a34a, #4ade80);
 	--success-bg: light-dark(#dcfce7, rgba(74, 222, 128, 0.14));
 	--warning: light-dark(#b45309, #fbbf24);
@@ -80,9 +99,15 @@
 	--offline: light-dark(#8a958f, #6b7772);
 	--terminal-bg: light-dark(#0d1311, #070b0a);
 	--terminal-text: #d6e2dc;
-	--terminal-prompt: #4cc497;
+	--terminal-prompt: #a3e635;
 	--screen-bg: light-dark(#1b2522, #121a17);
-	--shadow-tint: light-dark(rgba(20, 32, 28, 0.08), rgba(0, 0, 0, 0.45));
+	--shadow-tint: light-dark(rgba(22, 29, 20, 0.08), rgba(0, 0, 0, 0.45));
+
+	/* The logo is the same in both themes (static/brand/bmuster-logo.svg). */
+	--logo-body: #1b221d;
+	--logo-ring: #3f4a43;
+	--logo-lime: #a3e635;
+	--logo-screen: #f4f7f2;
 
 	/* Shadows (built from the themed tint) */
 	--shadow-card: 0 1px 2px var(--shadow-tint);

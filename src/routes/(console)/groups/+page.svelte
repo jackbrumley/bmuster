@@ -41,29 +41,19 @@
 	actions={undefined}
 />
 
-<div class="sections">
-	<GroupSection
-		kind="user"
-		title="People"
-		nouns={{ one: 'person', many: 'people' }}
-		groups={userGroups}
-		candidates={data.people}
-		{rulesUsing}
-	/>
-	<GroupSection
-		kind="machine"
-		title="Machines"
-		nouns={{ one: 'machine', many: 'machines' }}
-		groups={machineGroups}
-		candidates={data.machines}
-		{rulesUsing}
-	/>
-</div>
-
-<style>
-	.sections {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-8);
-	}
-</style>
+<GroupSection
+	kind="user"
+	title="People"
+	nouns={{ one: 'person', many: 'people' }}
+	groups={userGroups}
+	candidates={data.people}
+	{rulesUsing}
+/>
+<GroupSection
+	kind="machine"
+	title="Machines"
+	nouns={{ one: 'machine', many: 'machines' }}
+	groups={machineGroups}
+	candidates={data.machines}
+	{rulesUsing}
+/>

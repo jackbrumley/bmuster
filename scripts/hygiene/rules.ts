@@ -247,6 +247,19 @@ export const HYGIENE_RULES = {
 		why: 'A full-screen-height container outside the two frames is a page building a frame of its own, without the safe-area insets.',
 		fix: 'Drop the container; only ShellFrame and PublicPage size themselves to the screen.'
 	},
+	// Page structure (scripts/hygiene/page-structure.ts)
+	'route-card-look-forbidden': {
+		severity: 'violation',
+		section: '4',
+		why: 'A page that draws its own card (card radius with a border or shadow, or the card shadow) drifts from every other card in the console.',
+		fix: 'Use `<Panel>` or `<ListCard>` from src/lib/ui; change the shared component if every card needs the change.'
+	},
+	'page-header-required': {
+		severity: 'violation',
+		section: '4',
+		why: 'A console page without PageHeader puts its title somewhere else, so pages jump about when moving between them.',
+		fix: 'Start the page with `<PageHeader>` (#lib/ui/page-header.svelte), or list its folder in PAGE_HEADER_FROM_LAYOUT with the reason.'
+	},
 	'fixed-edge-safe-area': {
 		severity: 'violation',
 		section: '4',

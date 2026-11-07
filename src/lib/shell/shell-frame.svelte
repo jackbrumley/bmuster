@@ -5,6 +5,7 @@
 	import { IconCertificate, IconDots } from '@tabler/icons-svelte-runes';
 	import type { ConsoleUser } from '#lib/domain/users/user.ts';
 	import ConfirmDialog from '#lib/ui/confirm-dialog.svelte';
+	import Logo from '#lib/ui/logo.svelte';
 	import ToastHost from '#lib/ui/toast-host.svelte';
 	import { adminNav, isCurrent, mainNav } from './console-nav.ts';
 	import SignedInUser from './signed-in-user.svelte';
@@ -33,7 +34,7 @@
 <div class="frame">
 	<aside class="sidebar">
 		<a class="brand" href={resolve('/(console)')}>
-			<span class="logo">B</span>
+			<Logo size={32} />
 			<span class="wordmark">BMuster</span>
 		</a>
 		<nav aria-label="Main">
@@ -111,7 +112,17 @@
 		display: none;
 	}
 
+	/*
+	 * Every console page is the same width and lays its blocks (header,
+	 * panels, lists) out with the same gap, so a page adds no outer margins
+	 * of its own.
+	 */
 	.content {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		align-content: start;
+		gap: var(--gap-section);
+		width: 100%;
 		max-width: var(--content-max);
 		margin: 0 auto;
 		padding: var(--space-4) var(--space-4)
@@ -122,7 +133,6 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-2);
-		margin-bottom: var(--space-4);
 		padding: var(--space-1) var(--space-3);
 		border-radius: var(--radius-pill);
 		background: var(--warning-bg);
@@ -180,7 +190,6 @@
 		}
 
 		.content {
-			width: 100%;
 			padding: var(--space-8);
 		}
 
@@ -194,18 +203,6 @@
 		align-items: center;
 		gap: var(--space-3);
 		padding: 0 var(--space-2);
-	}
-
-	.logo {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 32px;
-		height: 32px;
-		border-radius: var(--radius-control);
-		background: var(--brand);
-		color: var(--brand-contrast);
-		font-weight: var(--weight-bold);
 	}
 
 	.wordmark {

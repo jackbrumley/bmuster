@@ -2,11 +2,16 @@
 	import { resolve } from '$app/paths';
 	import {
 		IconDeviceDesktop,
+		IconDevices,
 		IconLockAccess,
 		IconSearch,
 		IconTerminal2
 	} from '@tabler/icons-svelte-runes';
+	import ChipGroup from '#lib/ui/chip-group.svelte';
+	import EmptyState from '#lib/ui/empty-state.svelte';
 	import OsIcon from '#lib/ui/os-icon.svelte';
+	import PageHeader from '#lib/ui/page-header.svelte';
+	import Panel from '#lib/ui/panel.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
 	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
@@ -20,7 +25,7 @@
 	type Filter = 'all' | 'online' | 'offline' | 'attention';
 
 	let query = $state('');
-	let filter = $state<Filter>('all');
+	let filter = $state<Filter | null>('all');
 
 	type DiskSummary = { mount: string; percent: number; detail: string };
 
@@ -52,7 +57,7 @@
 	}
 
 	function matchesFilter(machine: Machine): boolean {
-		switch (filter) {
+		switch (filter ?? 'all') {
 			case 'all':
 				return true;
 			case 'online':
@@ -75,34 +80,37 @@
 		attention: machines.filter(needsAttention).length
 	});
 
-	const filters: { id: Filter; label: string }[] = [
-		{ id: 'all', label: 'All' },
-		{ id: 'online', label: 'Online' },
-		{ id: 'offline', label: 'Offline' },
-		{ id: 'attention', label: 'Needs attention' }
-	];
+	const filters = $derived(
+		(
+			[
+				{ value: 'all', label: 'All' },
+				{ value: 'online', label: 'Online' },
+				{ value: 'offline', label: 'Offline' },
+				{ value: 'attention', label: 'Needs attention' }
+			] as const
+		).map((option) => ({ ...option, count: counts[option.value] }))
+	);
+
+	const summary = $derived(
+		data.view.kind === 'machines'
+			? `${counts.online} of ${counts.all} online`
+			: 'Machines appear here once you have access to them.'
+	);
 </script>
 
-<header class="page-head">
-	<div>
-		<h1>Machines</h1>
-		{#if data.view.kind === 'machines'}
-			<p class="sub">{counts.online} of {counts.all} online</p>
-		{/if}
-	</div>
-</header>
+<PageHeader title="Machines" {summary} actions={undefined} />
 
 {#if data.view.kind === 'awaiting-access'}
-	<div class="first-run">
-		<IconLockAccess size={32} />
-		<p class="awaiting">Your access hasn't been set up yet.</p>
-		<p>An admin will add you to a group that can see machines. Check back later.</p>
-	</div>
+	<EmptyState
+		icon={IconLockAccess}
+		title="Your access hasn't been set up yet."
+		detail="An admin will add you to a group that can see machines. Check back later."
+		children={undefined}
+	/>
 {:else if machines.length === 0}
-	<div class="first-run">
-		<p>No machines yet.</p>
+	<EmptyState icon={IconDevices} title="No machines yet." detail={undefined}>
 		<a class="first-link" href={resolve('/(console)/add')}>Add your first machine</a>
-	</div>
+	</EmptyState>
 {:else}
 	<div class="toolbar">
 		<label class="search">
@@ -114,99 +122,93 @@
 				bind:value={query}
 			/>
 		</label>
-		<div class="chips" role="group" aria-label="Filter machines">
-			{#each filters as item (item.id)}
-				<button
-					data-raw-button="chip"
-					type="button"
-					class="chip"
-					aria-pressed={filter === item.id}
-					onclick={() => (filter = item.id)}
-				>
-					{item.label}
-					<span class="count">{counts[item.id]}</span>
-				</button>
-			{/each}
-		</div>
+		<ChipGroup label="Filter machines" options={filters} bind:value={filter} />
 	</div>
 
 	{#if visible.length === 0}
-		<p class="empty">No machines match.</p>
+		<EmptyState
+			icon={IconSearch}
+			title="No machines match."
+			detail={undefined}
+			children={undefined}
+		/>
 	{:else}
 		<ul class="grid">
 			{#each visible as machine (machine.id)}
 				{@const disk = fullestDisk(machine)}
 				{@const updates = pendingUpdates(machine)}
-				<li class="card">
-					<a class="card-link" href={resolve('/(console)/machines/[id]', { id: machine.id })}>
-						<div class="card-head">
-							<OsIcon family={machine.osFamily} size={28} />
-							<div class="names">
-								<h2>{machine.name}</h2>
-								<p>{osLabel(machine)}</p>
+				<li>
+					<Panel heading={undefined} actions={undefined} tone="normal" padding="none">
+						<a class="card-link" href={resolve('/(console)/machines/[id]', { id: machine.id })}>
+							<div class="card-head">
+								<OsIcon family={machine.osFamily} size={28} />
+								<div class="names">
+									<h2>{machine.name}</h2>
+									<p>{osLabel(machine)}</p>
+								</div>
+								<StatusBadge status={machine.status} now={data.now} />
 							</div>
-							<StatusBadge status={machine.status} now={data.now} />
-						</div>
 
-						<div class="meters">
-							{#if machine.status.kind === 'online' && machine.live.kind === 'known'}
-								<UsageBar
-									label="CPU"
-									percent={Math.round(machine.live.cpuPercent)}
-									detail="{Math.round(machine.live.cpuPercent)}%"
-								/>
-								{#if machine.inventory.kind === 'known'}
+							<div class="meters">
+								{#if machine.status.kind === 'online' && machine.live.kind === 'known'}
 									<UsageBar
-										label="Memory"
-										percent={percentOf(
-											machine.live.memoryUsedBytes,
-											machine.inventory.memoryTotalBytes
-										)}
-										detail="{formatBytes(machine.live.memoryUsedBytes)} of {formatBytes(
-											machine.inventory.memoryTotalBytes
-										)}"
+										label="CPU"
+										percent={Math.round(machine.live.cpuPercent)}
+										detail="{Math.round(machine.live.cpuPercent)}%"
 									/>
+									{#if machine.inventory.kind === 'known'}
+										<UsageBar
+											label="Memory"
+											percent={percentOf(
+												machine.live.memoryUsedBytes,
+												machine.inventory.memoryTotalBytes
+											)}
+											detail="{formatBytes(machine.live.memoryUsedBytes)} of {formatBytes(
+												machine.inventory.memoryTotalBytes
+											)}"
+										/>
+									{/if}
 								{/if}
-							{/if}
-							{#if disk !== undefined}
-								<UsageBar label="Disk {disk.mount}" percent={disk.percent} detail={disk.detail} />
-							{:else}
-								<p class="pending">Waiting for the first inventory.</p>
-							{/if}
-						</div>
-
-						{#if machine.lastUser.kind === 'user'}
-							<p class="last-user">
-								Last user: {machine.lastUser.name}, {formatRelative(
-									machine.lastUser.seenIso,
-									data.now
-								)}
-							</p>
-						{/if}
-
-						{#if updates > 0}
-							<div class="tags">
-								<span class="tag warn">{updates} updates</span>
+								{#if disk !== undefined}
+									<UsageBar label="Disk {disk.mount}" percent={disk.percent} detail={disk.detail} />
+								{:else}
+									<p class="pending">Waiting for the first inventory.</p>
+								{/if}
 							</div>
-						{/if}
-					</a>
 
-					<div class="actions">
-						<a
-							class="action"
-							class:disabled={machine.status.kind === 'offline'}
-							href={resolve('/(console)/machines/[id]/terminal', { id: machine.id })}
-						>
-							<IconTerminal2 size={18} /> Terminal
+							{#if machine.lastUser.kind === 'user'}
+								<p class="last-user">
+									Last user: {machine.lastUser.name}, {formatRelative(
+										machine.lastUser.seenIso,
+										data.now
+									)}
+								</p>
+							{/if}
+
+							{#if updates > 0}
+								<div class="tags">
+									<span class="tag warn">{updates} updates</span>
+								</div>
+							{/if}
 						</a>
-						<a
-							class="action"
-							class:disabled={machine.status.kind === 'offline'}
-							href={resolve('/(console)/machines/[id]/desktop', { id: machine.id })}
-						>
-							<IconDeviceDesktop size={18} /> Desktop
-						</a>
-					</div>
+
+						<div class="actions">
+							<a
+								class="action"
+								class:disabled={machine.status.kind === 'offline'}
+								href={resolve('/(console)/machines/[id]/terminal', { id: machine.id })}
+							>
+								<IconTerminal2 size={18} /> Terminal
+							</a>
+							<a
+								class="action"
+								class:disabled={machine.status.kind === 'offline'}
+								href={resolve('/(console)/machines/[id]/desktop', { id: machine.id })}
+							>
+								<IconDeviceDesktop size={18} /> Desktop
+							</a>
+						</div>
+					</Panel>
 				</li>
 			{/each}
 		</ul>
@@ -214,27 +216,9 @@
 {/if}
 
 <style>
-	.page-head {
-		display: flex;
-		align-items: flex-end;
-		justify-content: space-between;
-		margin-bottom: var(--space-4);
-	}
-
-	h1 {
-		font-size: var(--text-2xl);
-		font-weight: var(--weight-bold);
-	}
-
-	.sub {
-		color: var(--muted);
-		font-size: var(--text-sm);
-	}
-
 	.toolbar {
 		display: grid;
 		gap: var(--space-3);
-		margin-bottom: var(--space-4);
 	}
 
 	.search {
@@ -259,53 +243,6 @@
 		outline: none;
 	}
 
-	.chips {
-		display: flex;
-		gap: var(--space-2);
-		overflow-x: auto;
-		scrollbar-width: none;
-	}
-
-	.chip {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-2);
-		padding: var(--space-2) var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--surface-elevated);
-		color: var(--text-soft);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		white-space: nowrap;
-		cursor: pointer;
-	}
-
-	.chip[aria-pressed='true'] {
-		border-color: var(--brand);
-		background: var(--brand-tint);
-		color: var(--brand);
-	}
-
-	.count {
-		color: var(--muted);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.first-run {
-		display: grid;
-		justify-items: center;
-		gap: var(--space-3);
-		padding: var(--space-12) 0;
-		color: var(--muted);
-		text-align: center;
-	}
-
-	.awaiting {
-		color: var(--text);
-		font-weight: var(--weight-semibold);
-	}
-
 	.first-link {
 		color: var(--brand);
 		font-weight: var(--weight-semibold);
@@ -314,12 +251,6 @@
 	.pending {
 		color: var(--muted);
 		font-size: var(--text-xs);
-	}
-
-	.empty {
-		padding: var(--space-12) 0;
-		color: var(--muted);
-		text-align: center;
 	}
 
 	.grid {
@@ -331,21 +262,16 @@
 		list-style: none;
 	}
 
-	.card {
-		display: flex;
-		flex-direction: column;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
-		overflow: hidden;
+	/* The card fills its grid cell, so every card in a row is the same height. */
+	li {
+		display: grid;
 	}
 
 	.card-link {
 		display: grid;
+		align-content: start;
 		gap: var(--space-4);
 		padding: var(--space-4);
-		flex: 1;
 	}
 
 	.card-head {

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
+	import ListCard from '#lib/ui/list-card.svelte';
+	import ListRow from '#lib/ui/list-row.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import SegmentedControl from '#lib/ui/segmented-control.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
@@ -92,79 +94,55 @@
 	actions={undefined}
 />
 
+{#snippet settingRow(setting: SettingView)}
+	{@const definition = SETTING_DEFINITIONS[setting.key]}
+	<ListRow action={{ kind: 'static' }} align="start" dimmed={false}>
+		{#if definition.control.kind === 'local-network-mode'}
+			<LocalNetworkMode
+				localTls={data.localTls}
+				save={(on: boolean) =>
+					save(
+						setting,
+						on,
+						`Local network mode is ${on ? 'on' : 'off'}. Restart BMuster to apply.`
+					)}
+				renew={renewCertificate}
+			/>
+		{:else}
+			<div class="setting">
+				<div class="text">
+					<h3>{definition.label}</h3>
+					<p>{definition.description}</p>
+				</div>
+				<SegmentedControl
+					label={definition.label}
+					options={options(setting)}
+					bind:value={() => shown(setting), (picked: string) => void change(setting, picked)}
+				/>
+			</div>
+		{/if}
+	</ListRow>
+{/snippet}
+
 {#each sections as section (section.id)}
-	<section class="section" aria-labelledby="section-{section.id}">
-		<h2 id="section-{section.id}">{section.title}</h2>
-		<ul class="list">
-			{#each section.settings as setting (setting.key)}
-				{@const definition = SETTING_DEFINITIONS[setting.key]}
-				<li>
-					{#if definition.control.kind === 'local-network-mode'}
-						<LocalNetworkMode
-							localTls={data.localTls}
-							save={(on: boolean) =>
-								save(
-									setting,
-									on,
-									`Local network mode is ${on ? 'on' : 'off'}. Restart BMuster to apply.`
-								)}
-							renew={renewCertificate}
-						/>
-					{:else}
-						<div class="setting">
-							<div class="text">
-								<h3>{definition.label}</h3>
-								<p>{definition.description}</p>
-							</div>
-							<SegmentedControl
-								label={definition.label}
-								options={options(setting)}
-								bind:value={() => shown(setting), (picked: string) => void change(setting, picked)}
-							/>
-						</div>
-					{/if}
-				</li>
-			{/each}
-		</ul>
-	</section>
+	<ListCard
+		heading={section.title}
+		actions={undefined}
+		label={section.title}
+		items={section.settings}
+		key={(setting: SettingView) => setting.key}
+		row={settingRow}
+		empty="No settings here."
+	/>
 {/each}
 
 <style>
-	.section {
-		display: grid;
-		gap: var(--space-2);
-	}
-
-	.section + .section {
-		margin-top: var(--space-6);
-	}
-
-	h2 {
-		color: var(--muted);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-semibold);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-caps);
-	}
-
-	.list {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		overflow: hidden;
-	}
-
 	.setting {
 		display: grid;
+		flex: 1;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-3);
-		padding: var(--space-4);
-	}
-
-	li + li {
-		border-top: 1px solid var(--border);
+		min-width: 0;
 	}
 
 	h3 {

@@ -5,6 +5,7 @@
 	import { IconTrash } from '@tabler/icons-svelte-runes';
 	import Button from '#lib/ui/button.svelte';
 	import CopyField from '#lib/ui/copy-field.svelte';
+	import Panel from '#lib/ui/panel.svelte';
 	import { confirmByTyping } from '#lib/ui/confirm-action.svelte.ts';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
@@ -51,97 +52,68 @@
 	}
 </script>
 
-<div class="sections">
-	<MachineDetails {machine} />
+<MachineDetails {machine} />
 
-	<MachineGroups machineId={machine.id} groups={data.machineGroups} />
+<MachineGroups machineId={machine.id} groups={data.machineGroups} />
 
-	<section class="panel">
-		<h2>Agent</h2>
-		<p class="muted">
-			Version {machine.agentVersion}. Run these on the machine itself ({commands.shell.toLowerCase()}).
+<Panel heading="Agent" actions={undefined} tone="normal" padding="normal">
+	<p class="muted">
+		Version {machine.agentVersion}. Run these on the machine itself ({commands.shell.toLowerCase()}).
+	</p>
+	<div class="command">
+		<p class="command-label">Check its status</p>
+		<CopyField value={commands.status} label="status command" />
+	</div>
+	<div class="command">
+		<p class="command-label">Uninstall (keeps its identity and logs)</p>
+		<CopyField value={commands.uninstall} label="uninstall command" />
+	</div>
+	<div class="command">
+		<p class="command-label">Uninstall and delete everything</p>
+		<CopyField value={commands.purge} label="purge command" />
+	</div>
+	<div class="command">
+		<p class="command-label">
+			Move to another BMuster server (make a join code on its Add machine page first)
 		</p>
-		<div class="command">
-			<p class="command-label">Check its status</p>
-			<CopyField value={commands.status} label="status command" />
-		</div>
-		<div class="command">
-			<p class="command-label">Uninstall (keeps its identity and logs)</p>
-			<CopyField value={commands.uninstall} label="uninstall command" />
-		</div>
-		<div class="command">
-			<p class="command-label">Uninstall and delete everything</p>
-			<CopyField value={commands.purge} label="purge command" />
-		</div>
-		<div class="command">
-			<p class="command-label">
-				Move to another BMuster server (make a join code on its Add machine page first)
+		<CopyField value={commands.rejoin} label="rejoin command" />
+	</div>
+	<p class="muted">
+		The agent joins the other server first and only then leaves this one, which then shows it as
+		moved. The local page below can do the same.
+	</p>
+</Panel>
+
+<LocalPage machineId={machine.id} localPage={data.localPage} />
+
+<ReinstallAgent
+	{machine}
+	origin={page.url.origin}
+	downloads={data.downloads}
+	localTls={data.localTls}
+/>
+
+<Panel heading="Danger zone" actions={undefined} tone="danger" padding="normal">
+	<div class="danger-row">
+		<div>
+			<p class="danger-title">Remove this machine</p>
+			<p class="muted">
+				BMuster stops trusting its agent at once. This cannot be undone; adding it again needs a new
+				join code.
 			</p>
-			<CopyField value={commands.rejoin} label="rejoin command" />
 		</div>
-		<p class="muted">
-			The agent joins the other server first and only then leaves this one, which then shows it as
-			moved. The local page below can do the same.
-		</p>
-	</section>
-
-	<LocalPage machineId={machine.id} localPage={data.localPage} />
-
-	<ReinstallAgent
-		{machine}
-		origin={page.url.origin}
-		downloads={data.downloads}
-		localTls={data.localTls}
-	/>
-
-	<section class="panel danger-zone">
-		<h2>Danger zone</h2>
-		<div class="danger-row">
-			<div>
-				<p class="danger-title">Remove this machine</p>
-				<p class="muted">
-					BMuster stops trusting its agent at once. This cannot be undone; adding it again needs a
-					new join code.
-				</p>
-			</div>
-			<Button
-				variant="danger"
-				size="compact"
-				type="button"
-				onclick={() => {
-					void removeMachine();
-				}}><IconTrash size={18} /> Remove machine</Button
-			>
-		</div>
-	</section>
-</div>
+		<Button
+			variant="danger"
+			size="compact"
+			type="button"
+			onclick={() => {
+				void removeMachine();
+			}}><IconTrash size={18} /> Remove machine</Button
+		>
+	</div>
+</Panel>
 
 <style>
-	.sections {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-4);
-	}
-
-	.panel {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-3);
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
-	}
-
-	h2 {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		color: var(--muted);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-caps);
-	}
-
 	.muted {
 		color: var(--muted);
 		font-size: var(--text-sm);
@@ -157,14 +129,6 @@
 		color: var(--text-soft);
 		font-size: var(--text-xs);
 		font-weight: var(--weight-medium);
-	}
-
-	.danger-zone {
-		border-color: var(--danger);
-	}
-
-	.danger-zone h2 {
-		color: var(--danger);
 	}
 
 	.danger-row {

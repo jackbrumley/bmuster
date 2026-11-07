@@ -5,17 +5,20 @@
 use std::fmt::Write as _;
 use std::time::SystemTime;
 
+/// The console's palette (src/lib/ui/design-tokens.css): lime brand, with
+/// the darker #46720e in light mode so white text on it and it on the page
+/// pass WCAG AA (#65a30d is only 3.1:1 with white).
 pub const STYLE: &str = r#":root {
   color-scheme: light dark;
-  --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #d9dde5;
-  --brand: #2456c9; --brand-text: #ffffff; --ok: #1d7a46; --bad: #b42318; --warn: #9a6200;
-  --tint: #eef1f6;
+  --bg: #f4f7f2; --card: #ffffff; --text: #161d14; --muted: #657061; --line: #d6ddd2;
+  --brand: #46720e; --brand-text: #ffffff; --ok: #1d7a46; --bad: #b42318; --warn: #9a6200;
+  --tint: #e9eee5;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #12151b; --card: #1b2029; --text: #e7eaf0; --muted: #9aa3b2; --line: #2c3340;
-    --brand: #6f9bff; --brand-text: #0d1220; --ok: #4cc283; --bad: #ff7a6b; --warn: #f0b44c;
-    --tint: #232a35;
+    --bg: #0f1411; --card: #171e19; --text: #e7ece6; --muted: #8c978a; --line: #2a332c;
+    --brand: #a3e635; --brand-text: #14180f; --ok: #4cc283; --bad: #ff7a6b; --warn: #f0b44c;
+    --tint: #1e2620;
   }
 }
 * { box-sizing: border-box; }
@@ -23,6 +26,8 @@ body { margin: 0; background: var(--bg); color: var(--text);
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 main { max-width: 760px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
 header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand svg { flex-shrink: 0; }
 h1 { font-size: 1.35rem; margin: 0; }
 h2 { font-size: 0.8rem; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
 p { margin: 0 0 8px; }
@@ -59,6 +64,10 @@ pre.log { margin: 0; max-height: 26rem; overflow: auto; white-space: pre-wrap; o
 .bar span { display: block; height: 100%; background: var(--brand); }
 "#;
 
+/// The BMuster logo's small version (static/favicon.svg in the server),
+/// inline so the page loads nothing else. Decorative: the heading names it.
+const LOGO: &str = r##"<svg width="32" height="32" viewBox="8 8 240 240" aria-hidden="true"><rect x="8" y="8" width="240" height="240" rx="48" fill="#1b221d"/><circle cx="128" cy="128" r="88" fill="none" stroke="#3f4a43" stroke-width="14"/><path d="M128 128 L128 40 A88 88 0 0 1 204 84 Z" fill="#a3e635" opacity="0.35"/><path d="M128 128 L204 84" stroke="#a3e635" stroke-width="20" stroke-linecap="round"/><circle cx="128" cy="128" r="18" fill="#a3e635"/><rect x="150" y="144" width="56" height="42" rx="8" fill="#f4f7f2"/></svg>"##;
+
 /// Escapes text for HTML content and quoted attributes.
 pub fn esc(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -93,7 +102,7 @@ pub fn layout(title: &str, signed_in: bool, body: &str) -> String {
 </head>
 <body>
 <main>
-<header><h1>BMuster agent</h1>{sign_out}</header>
+<header><div class="brand">{LOGO}<h1>BMuster agent</h1></div>{sign_out}</header>
 {body}
 </main>
 </body>

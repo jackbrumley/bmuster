@@ -169,11 +169,13 @@
 </Modal>
 
 <style>
+	/* Fills its settings row, which owns the padding. */
 	.setting {
 		display: grid;
+		flex: 1;
 		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-3);
-		padding: var(--space-4);
+		min-width: 0;
 	}
 
 	h3 {

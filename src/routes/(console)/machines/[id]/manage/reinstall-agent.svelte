@@ -10,6 +10,7 @@
 	import { installPin, type LocalTlsStatus } from '#lib/domain/settings/local-tls.ts';
 	import { createJoinCodeReplySchema } from '#lib/schemas/machines/join-codes.ts';
 	import Button from '#lib/ui/button.svelte';
+	import Panel from '#lib/ui/panel.svelte';
 	import CopyField from '#lib/ui/copy-field.svelte';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
@@ -64,8 +65,7 @@
 	}
 </script>
 
-<section class="panel" aria-labelledby="reinstall-heading">
-	<h2 id="reinstall-heading">Reinstall agent</h2>
+<Panel heading="Reinstall agent" actions={undefined} tone="normal" padding="normal">
 	<p class="muted">
 		For a rebuilt machine or a broken agent. Install with this code and the new agent takes over
 		this entry: same name, description, notes and history. The old agent is refused from then on.
@@ -158,28 +158,9 @@
 			/>
 		</div>
 	{/if}
-</section>
+</Panel>
 
 <style>
-	.panel {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-3);
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
-	}
-
-	h2 {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		color: var(--muted);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-caps);
-	}
-
 	.muted {
 		color: var(--muted);
 		font-size: var(--text-sm);

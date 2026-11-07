@@ -1,7 +1,12 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	/** Title and one-line summary at the top of a console page, with optional actions on the right. */
+	/**
+	 * Title and one-line summary at the top of every top-level console page,
+	 * with optional actions on the right. ShellFrame spaces it from what
+	 * follows, so a page adds no margin of its own (hygiene rule
+	 * `page-header-required`).
+	 */
 	let {
 		title,
 		summary,
@@ -26,7 +31,6 @@
 		align-items: flex-end;
 		justify-content: space-between;
 		gap: var(--space-3);
-		margin-bottom: var(--space-4);
 	}
 
 	h1 {
@@ -41,6 +45,7 @@
 
 	.actions {
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-2);
 	}
 </style>

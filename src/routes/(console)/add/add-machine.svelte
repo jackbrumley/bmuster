@@ -9,6 +9,7 @@
 		IconRefresh
 	} from '@tabler/icons-svelte-runes';
 	import CopyField from '#lib/ui/copy-field.svelte';
+	import Panel from '#lib/ui/panel.svelte';
 	import { oneLineInstallCommand, type AgentDownload } from '#lib/domain/machines/agent-release.ts';
 	import type { OsFamily } from '#lib/domain/machines/machine.ts';
 	import { installPin, type LocalTlsStatus } from '#lib/domain/settings/local-tls.ts';
@@ -73,14 +74,7 @@
 	}
 </script>
 
-<header class="page-head">
-	<h1>Add a machine</h1>
-	<p class="sub">
-		Run one command on the machine. It joins this server and shows up under Machines.
-	</p>
-</header>
-
-<section class="panel">
+<Panel heading={undefined} actions={undefined} tone="normal" padding="normal">
 	<MachineGroupPicker groups={machineGroups} selected={groupIds} onchange={chooseGroups} />
 
 	<div class="code-row">
@@ -154,37 +148,9 @@
 	{/if}
 
 	<InstallManually os={target} {origin} {joinCode} {downloads} {devServer} {pin} {machineGroups} />
-</section>
+</Panel>
 
 <style>
-	.page-head {
-		display: grid;
-		gap: var(--space-1);
-		margin-bottom: var(--space-4);
-	}
-
-	h1 {
-		font-size: var(--text-2xl);
-		font-weight: var(--weight-bold);
-	}
-
-	.sub {
-		color: var(--muted);
-		font-size: var(--text-sm);
-	}
-
-	.panel {
-		display: grid;
-		/* minmax(0, …): the long install command scrolls inside its field instead of widening the card. */
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-6);
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
-	}
-
 	.code-row {
 		display: flex;
 		flex-wrap: wrap;

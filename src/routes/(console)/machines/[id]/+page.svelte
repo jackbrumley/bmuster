@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { refreshAll } from '$app/navigation';
+	import Panel from '#lib/ui/panel.svelte';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
 	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
 	import { osLabel, signedInUserOf, type Gpu } from '#lib/domain/machines/machine.ts';
@@ -84,8 +85,7 @@
 </script>
 
 <div class="sections">
-	<section class="panel">
-		<h2>Health</h2>
+	<Panel heading="Health" actions={undefined} tone="normal" padding="normal">
 		{#if machine.status.kind === 'online' && machine.live.kind === 'known'}
 			<div class="meters">
 				<UsageBar
@@ -106,10 +106,9 @@
 		{:else}
 			<p class="muted">Live figures show when the machine is online.</p>
 		{/if}
-	</section>
+	</Panel>
 
-	<section class="panel">
-		<h2>Disks</h2>
+	<Panel heading="Disks" actions={undefined} tone="normal" padding="normal">
 		{#if machine.inventory.kind === 'known'}
 			<div class="meters">
 				{#each machine.inventory.disks as disk (disk.mount)}
@@ -123,26 +122,27 @@
 		{:else}
 			<p class="muted">Waiting for the first inventory.</p>
 		{/if}
-	</section>
+	</Panel>
 
-	<section class="panel wide">
-		<h2>System</h2>
-		<dl>
-			{#each facts as fact (fact.label)}
-				<div class="fact">
-					<dt>{fact.label}</dt>
-					<dd>{fact.value}</dd>
-				</div>
-			{/each}
-		</dl>
-	</section>
+	<div class="wide">
+		<Panel heading="System" actions={undefined} tone="normal" padding="normal">
+			<dl>
+				{#each facts as fact (fact.label)}
+					<div class="fact">
+						<dt>{fact.label}</dt>
+						<dd>{fact.value}</dd>
+					</div>
+				{/each}
+			</dl>
+		</Panel>
+	</div>
 </div>
 
 <style>
 	.sections {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-4);
+		gap: var(--gap-section);
 	}
 
 	@media (min-width: 900px) {
@@ -153,26 +153,6 @@
 		.wide {
 			grid-column: 1 / -1;
 		}
-	}
-
-	.panel {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-4);
-		align-content: start;
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
-	}
-
-	h2 {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		color: var(--muted);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-caps);
 	}
 
 	.meters {
@@ -201,5 +181,6 @@
 		margin: 0;
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
+		overflow-wrap: anywhere;
 	}
 </style>

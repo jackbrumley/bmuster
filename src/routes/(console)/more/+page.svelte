@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { IconChevronRight } from '@tabler/icons-svelte-runes';
-	import { adminNav } from '#lib/shell/console-nav.ts';
+	import { adminNav, type NavItem } from '#lib/shell/console-nav.ts';
 	import SignedInUser from '#lib/shell/signed-in-user.svelte';
+	import ListCard from '#lib/ui/list-card.svelte';
+	import ListRow from '#lib/ui/list-row.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
+	import Panel from '#lib/ui/panel.svelte';
 	import type { PageProps } from './$types';
 
 	/** Phones only: what the sidebar shows below the main links. The layout proved who this is. */
@@ -14,58 +17,38 @@
 
 <PageHeader title="More" summary="Administration and your account." actions={undefined} />
 
+{#snippet navRow(item: NavItem)}
+	<ListRow action={{ kind: 'link', href: resolve(item.route) }} align="center" dimmed={false}>
+		<span class="icon"><item.icon size={22} stroke={1.75} /></span>
+		<span class="label">{item.label}</span>
+		<IconChevronRight size={18} />
+	</ListRow>
+{/snippet}
+
 {#if admin.length > 0}
-	<ul class="list">
-		{#each admin as item (item.route)}
-			<li>
-				<a class="row" href={resolve(item.route)}>
-					<item.icon size={22} stroke={1.75} />
-					<span class="label">{item.label}</span>
-					<IconChevronRight size={18} />
-				</a>
-			</li>
-		{/each}
-	</ul>
+	<ListCard
+		heading="Administration"
+		actions={undefined}
+		label="Administration"
+		items={admin}
+		key={(item: NavItem) => item.route}
+		row={navRow}
+		empty="Nothing to administer."
+	/>
 {/if}
 
-<section class="account">
+<Panel heading="Your account" actions={undefined} tone="normal" padding="normal">
 	<SignedInUser user={data.user} />
-</section>
+</Panel>
 
 <style>
-	.list {
-		margin: 0 0 var(--space-4);
-		padding: 0;
-		list-style: none;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		overflow: hidden;
-	}
-
-	li + li {
-		border-top: 1px solid var(--border);
-	}
-
-	.row {
-		display: flex;
-		align-items: center;
-		gap: var(--space-3);
-		min-height: 56px;
-		padding: 0 var(--space-4);
+	.icon {
+		display: inline-flex;
 		color: var(--text-soft);
 	}
 
 	.label {
 		flex: 1;
-		color: var(--text);
 		font-weight: var(--weight-medium);
-	}
-
-	.account {
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
 	}
 </style>

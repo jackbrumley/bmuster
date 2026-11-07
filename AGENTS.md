@@ -122,6 +122,7 @@ docs/                   concept, plans, specs
 - **Surfaces:** page `--surface`; card, panel, bar `--surface-elevated`; modal and popover `--surface-overlay`; small tints `--surface-muted`.
 - **Colour meaning:** `--brand` for actions and the current item; `--success`, `--warning`, `--danger` for status only.
 - **Radius roles:** things you click are pills (`--radius-pill`); things you type into are boxes (`--radius-control`); cards `--radius-card`; modals `--radius-modal`; dots and avatars `--radius-round`.
+- **Shared page blocks:** pages are built from `src/lib/ui`, never their own copies. Every console page starts with `PageHeader` (machine tabs take the machine layout's header); cards are `Panel`, bordered lists are `ListCard` with `ListRow`, link tabs are `TabNav`, pick-one pills are `ChipGroup` / `SegmentedControl`, empty and offline states are `EmptyState`, small uppercase headings are `SectionHeading`. `ShellFrame` spaces a page's blocks with `--gap-section`, so a page adds no outer margins. A route file never declares a card look (hygiene rules `route-card-look-forbidden`, `page-header-required`).
 - **Page frames:** every console page renders inside `ShellFrame`, every other page inside `PublicPage`. Frames own the safe-area padding; a page never adds its own full-height root container. Anything `position: fixed` against an edge adds the matching `--safe-*` inset.
 - **Mobile first:** design at phone width, then widen. Breakpoint for the sidebar layout: 900px. Inputs use at least `--text-base` (16px) so iOS does not zoom. Touch targets are at least 40px.
 - No `!important`.
@@ -343,6 +344,10 @@ The design is in `docs/access-and-sign-in.md`.
   PublicPage lays out its own edges, so on phones it can sit under the status
   bar, notch or home bar. **Fix:** Put the page under the (console) layout
   (ShellFrame), or render it in `<PublicPage>` (#lib/shell/public-page.svelte).
+- `page-header-required` (violation, §4): A console page without PageHeader puts
+  its title somewhere else, so pages jump about when moving between them.
+  **Fix:** Start the page with `<PageHeader>` (#lib/ui/page-header.svelte), or
+  list its folder in PAGE_HEADER_FROM_LAYOUT with the reason.
 - `page-root-container-forbidden` (violation, §4): A full-screen-height
   container outside the two frames is a page building a frame of its own,
   without the safe-area insets. **Fix:** Drop the container; only ShellFrame and
@@ -371,6 +376,10 @@ The design is in `docs/access-and-sign-in.md`.
 - `relative-dynamic-import-forbidden` (violation, §7): Relative dynamic imports
   make the server build evaluate the module graph at runtime. **Fix:** Use a
   static top-level import (`#lib/…`).
+- `route-card-look-forbidden` (violation, §4): A page that draws its own card
+  (card radius with a border or shadow, or the card shadow) drifts from every
+  other card in the console. **Fix:** Use `<Panel>` or `<ListCard>` from
+  src/lib/ui; change the shared component if every card needs the change.
 - `route-guard-required` (violation, §11): A route handler not built by a guard
   runs without checking who is asking. **Fix:** Export it as
   `route.<public|user|admin|agent>(…)` or `page.<public|user|admin>(…)` from

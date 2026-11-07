@@ -2,6 +2,9 @@
 	import { hasPermission } from '#lib/domain/access/access.ts';
 	import NoPermission from '../no-permission.svelte';
 	import Button from '#lib/ui/button.svelte';
+	import EmptyState from '#lib/ui/empty-state.svelte';
+	import ListCard from '#lib/ui/list-card.svelte';
+	import ListRow from '#lib/ui/list-row.svelte';
 	import {
 		IconFile,
 		IconFileUpload,
@@ -29,41 +32,52 @@
 {#if !hasPermission(data.grants, 'files')}
 	<NoPermission />
 {:else if machine.status.kind === 'offline'}
-	<div class="notice">
-		<IconPlugConnected size={32} />
-		<p>This machine is offline. Files open when it checks in again.</p>
-	</div>
+	<EmptyState
+		icon={IconPlugConnected}
+		title="This machine is offline."
+		detail="Files open when it checks in again."
+		children={undefined}
+	/>
 {:else}
-	<div class="bar">
-		<code class="path">{path}</code>
-		<Button variant="primary" size="compact" type="button" onclick={undefined}
-			><IconFileUpload size={18} /> Send a file</Button
-		>
-	</div>
+	<div class="browser">
+		<div class="bar">
+			<code class="path">{path}</code>
+			<Button variant="primary" size="compact" type="button" onclick={undefined}
+				><IconFileUpload size={18} /> Send a file</Button
+			>
+		</div>
 
-	<ul class="list">
-		{#each entries as entry (entry.name)}
-			<li class="entry">
-				{#if entry.kind === 'folder'}
-					<IconFolder size={20} />
-				{:else}
-					<IconFile size={20} />
-				{/if}
+		{#snippet entryRow(entry: (typeof entries)[number])}
+			<ListRow action={{ kind: 'static' }} align="center" dimmed={false}>
+				<span class="icon">
+					{#if entry.kind === 'folder'}
+						<IconFolder size={20} />
+					{:else}
+						<IconFile size={20} />
+					{/if}
+				</span>
 				<span class="name">{entry.name}</span>
 				<span class="size">{entry.size}</span>
-			</li>
-		{/each}
-	</ul>
+			</ListRow>
+		{/snippet}
+
+		<ListCard
+			heading={undefined}
+			actions={undefined}
+			label="Files in {path}"
+			items={entries}
+			key={(entry: (typeof entries)[number]) => entry.name}
+			row={entryRow}
+			empty="This folder is empty."
+		/>
+	</div>
 {/if}
 
 <style>
-	.notice {
+	.browser {
 		display: grid;
-		justify-items: center;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-3);
-		padding: var(--space-12) var(--space-4);
-		color: var(--muted);
-		text-align: center;
 	}
 
 	.bar {
@@ -71,7 +85,11 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-3);
-		margin-bottom: var(--space-3);
+	}
+
+	.icon {
+		display: inline-flex;
+		color: var(--text-soft);
 	}
 
 	.path {
@@ -82,29 +100,6 @@
 		color: var(--text-soft);
 		font-family: var(--font-mono);
 		font-size: var(--text-sm);
-	}
-
-	.list {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		overflow: hidden;
-	}
-
-	.entry {
-		display: flex;
-		align-items: center;
-		gap: var(--space-3);
-		min-height: 52px;
-		padding: 0 var(--space-4);
-		color: var(--text-soft);
-	}
-
-	.entry + .entry {
-		border-top: 1px solid var(--border);
 	}
 
 	.name {

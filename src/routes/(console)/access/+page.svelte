@@ -9,6 +9,8 @@
 	} from '#lib/domain/access/access.ts';
 	import { accessRuleRequestSchema, changedReplySchema } from '#lib/schemas/access/access.ts';
 	import Button from '#lib/ui/button.svelte';
+	import ListCard from '#lib/ui/list-card.svelte';
+	import ListRow from '#lib/ui/list-row.svelte';
 	import Modal from '#lib/ui/modal.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import PermissionChips from '#lib/ui/permission-chips.svelte';
@@ -135,33 +137,33 @@
 	{/snippet}
 </PageHeader>
 
-{#if data.rules.length === 0}
-	<p class="empty">
-		No rules yet, so members see no machines. Add a rule to give a group of people access to a group
-		of machines.
-	</p>
-{:else}
-	<ul class="list">
-		{#each data.rules as rule (rule.id)}
-			<li>
-				<button
-					data-raw-button="list-row"
-					type="button"
-					class="rule"
-					onclick={() => (panel = { kind: 'view', id: rule.id })}
-				>
-					<span class="pair">
-						<span class="name">{groupName(data.userGroups, rule.userGroupId)}</span>
-						<IconArrowRight size={16} />
-						<span class="name">{groupName(data.machineGroups, rule.machineGroupId)}</span>
-					</span>
-					<PermissionChips permissions={rule.permissions} />
-					<span class="consent">{consentLabel(rule.consent)}</span>
-				</button>
-			</li>
-		{/each}
-	</ul>
-{/if}
+{#snippet ruleRow(rule: AccessRuleView)}
+	<ListRow
+		action={{ kind: 'button', onclick: () => (panel = { kind: 'view', id: rule.id }) }}
+		align="start"
+		dimmed={false}
+	>
+		<span class="rule">
+			<span class="pair">
+				<span class="name">{groupName(data.userGroups, rule.userGroupId)}</span>
+				<IconArrowRight size={16} />
+				<span class="name">{groupName(data.machineGroups, rule.machineGroupId)}</span>
+			</span>
+			<PermissionChips permissions={rule.permissions} />
+			<span class="consent">{consentLabel(rule.consent)}</span>
+		</span>
+	</ListRow>
+{/snippet}
+
+<ListCard
+	heading={undefined}
+	actions={undefined}
+	label="Access rules"
+	items={data.rules}
+	key={(rule: AccessRuleView) => rule.id}
+	row={ruleRow}
+	empty="No rules yet, so members see no machines. Add a rule to give a group of people access to a group of machines."
+/>
 
 <Modal
 	open={panel.kind === 'view' && selected !== undefined}
@@ -236,41 +238,11 @@
 </Modal>
 
 <style>
-	.empty {
-		padding: var(--space-8) 0;
-		color: var(--muted);
-		text-align: center;
-	}
-
-	.list {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		overflow: hidden;
-	}
-
-	li + li {
-		border-top: 1px solid var(--border);
-	}
-
 	.rule {
 		display: grid;
+		flex: 1;
 		gap: var(--space-2);
-		width: 100%;
-		padding: var(--space-4);
-		border: none;
-		background: transparent;
-		color: var(--text);
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.rule:hover {
-		background: var(--surface-muted);
+		min-width: 0;
 	}
 
 	.pair {

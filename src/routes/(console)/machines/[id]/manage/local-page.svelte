@@ -4,6 +4,7 @@
 	import type { LocalPageInfo } from '#lib/domain/machines/local-page.ts';
 	import { localCodeReplySchema } from '#lib/schemas/machines/local-page.ts';
 	import Button from '#lib/ui/button.svelte';
+	import Panel from '#lib/ui/panel.svelte';
 	import CopyField from '#lib/ui/copy-field.svelte';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 
@@ -92,8 +93,7 @@
 	}
 </script>
 
-<section class="panel" aria-labelledby="local-page-heading">
-	<h2 id="local-page-heading">Local page</h2>
+<Panel heading="Local page" actions={undefined} tone="normal" padding="normal">
 	{#if localPage.kind === 'none'}
 		<p class="muted">
 			Update the agent to get a local page. Newer agents serve a page on the machine itself for
@@ -144,28 +144,9 @@
 			{/if}
 		</div>
 	{/if}
-</section>
+</Panel>
 
 <style>
-	.panel {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-3);
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
-	}
-
-	h2 {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		color: var(--muted);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-caps);
-	}
-
 	.muted {
 		color: var(--muted);
 		font-size: var(--text-sm);

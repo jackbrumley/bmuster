@@ -19,7 +19,13 @@
 		IconUser,
 		IconUsersGroup
 	} from '@tabler/icons-svelte-runes';
-	import { activityLabel, type AuditKind } from '#lib/domain/activity/activity.ts';
+	import {
+		activityLabel,
+		type ActivityEntry,
+		type AuditKind
+	} from '#lib/domain/activity/activity.ts';
+	import ListCard from '#lib/ui/list-card.svelte';
+	import ListRow from '#lib/ui/list-row.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import { formatRelative } from '#lib/utils/format.ts';
 	import type { PageProps } from './$types';
@@ -101,60 +107,39 @@
 	actions={undefined}
 />
 
-{#if data.entries.length === 0}
-	<p class="empty">Nothing yet.</p>
-{:else}
-	<ul class="list">
-		{#each data.entries as entry (entry.id)}
-			{@const Icon = iconFor(entry.kind)}
-			<li class="entry" class:refused={entry.kind === 'sign-in-failed'}>
-				<span class="icon"><Icon size={20} stroke={1.75} /></span>
-				<div class="body">
-					<p class="what">
-						<strong>{entry.actor.kind === 'user' ? entry.actor.name : 'System'}</strong>
-						{activityLabel(entry.kind).toLowerCase()} ·
-						<span class="target">{entry.target}</span>
-					</p>
-					{#if entry.detail.length > 0}
-						<p class="detail">
-							{entry.detail.map((item) => `${item.label}: ${item.value}`).join(' · ')}
-						</p>
-					{/if}
-				</div>
-				<time datetime={entry.atIso}>{formatRelative(entry.atIso, data.now)}</time>
-			</li>
-		{/each}
-	</ul>
-{/if}
+{#snippet entryRow(entry: ActivityEntry)}
+	{@const Icon = iconFor(entry.kind)}
+	<ListRow action={{ kind: 'static' }} align="start" dimmed={false}>
+		<span class="icon" class:refused={entry.kind === 'sign-in-failed'}>
+			<Icon size={20} stroke={1.75} />
+		</span>
+		<div class="body">
+			<p class="what">
+				<strong>{entry.actor.kind === 'user' ? entry.actor.name : 'System'}</strong>
+				{activityLabel(entry.kind).toLowerCase()} ·
+				<span class="target">{entry.target}</span>
+			</p>
+			{#if entry.detail.length > 0}
+				<p class="detail">
+					{entry.detail.map((item) => `${item.label}: ${item.value}`).join(' · ')}
+				</p>
+			{/if}
+		</div>
+		<time datetime={entry.atIso}>{formatRelative(entry.atIso, data.now)}</time>
+	</ListRow>
+{/snippet}
+
+<ListCard
+	heading={undefined}
+	actions={undefined}
+	label="Activity, newest first"
+	items={data.entries}
+	key={(entry: ActivityEntry) => entry.id}
+	row={entryRow}
+	empty="Nothing yet."
+/>
 
 <style>
-	.empty {
-		padding: var(--space-12) 0;
-		color: var(--muted);
-		text-align: center;
-	}
-
-	.list {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		overflow: hidden;
-	}
-
-	.entry {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--space-3);
-		padding: var(--space-4);
-	}
-
-	.entry + .entry {
-		border-top: 1px solid var(--border);
-	}
-
 	.icon {
 		display: inline-flex;
 		align-items: center;
@@ -167,7 +152,7 @@
 		color: var(--text-soft);
 	}
 
-	.refused .icon {
+	.icon.refused {
 		background: var(--danger-bg);
 		color: var(--danger);
 	}

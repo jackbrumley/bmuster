@@ -10,6 +10,8 @@
 		IconHandFinger
 	} from '@tabler/icons-svelte-runes';
 	import { signedInUserOf } from '#lib/domain/machines/machine.ts';
+	import ChipGroup from '#lib/ui/chip-group.svelte';
+	import EmptyState from '#lib/ui/empty-state.svelte';
 	import type { PageProps } from './$types';
 
 	/**
@@ -21,7 +23,7 @@
 	const machine = $derived(data.machine);
 	const user = $derived(signedInUserOf(machine));
 
-	let display = $state(0);
+	let display = $state<string | null>('0');
 	let inputMode = $state<'trackpad' | 'touch'>('trackpad');
 
 	const displays = $derived(
@@ -30,8 +32,9 @@
 				length: Math.max(1, machine.inventory.kind === 'known' ? machine.inventory.displayCount : 1)
 			},
 			(_, index) => ({
-				index,
-				label: `Display ${index + 1}`
+				value: String(index),
+				label: `Display ${index + 1}`,
+				count: undefined
 			})
 		)
 	);
@@ -40,78 +43,71 @@
 {#if !hasPermission(data.grants, 'desktop-view')}
 	<NoPermission />
 {:else if machine.status.kind === 'offline'}
-	<div class="notice">
-		<IconPlugConnected size={32} />
-		<p>This machine is offline. The desktop opens when it checks in again.</p>
-	</div>
+	<EmptyState
+		icon={IconPlugConnected}
+		title="This machine is offline."
+		detail="The desktop opens when it checks in again."
+		children={undefined}
+	/>
 {:else if machine.inventory.kind === 'known' && machine.inventory.displayCount === 0 && machine.osFamily === 'windows'}
-	<div class="notice">
-		<IconDeviceDesktop size={32} />
-		<p>This machine has no display. Use the terminal instead.</p>
-	</div>
+	<EmptyState
+		icon={IconDeviceDesktop}
+		title="This machine has no display."
+		detail="Use the terminal instead."
+		children={undefined}
+	/>
 {:else}
-	<div class="bar">
-		<div class="group" role="group" aria-label="Display">
-			{#each displays as item (item.index)}
+	<div class="session">
+		<div class="bar">
+			<ChipGroup label="Display" options={displays} bind:value={display} />
+			<div class="group">
 				<button
-					data-raw-button="chip"
+					data-raw-button="icon"
 					type="button"
-					class="chip"
-					aria-pressed={display === item.index}
-					onclick={() => (display = item.index)}>{item.label}</button
+					class="icon-button"
+					aria-label="Input: {inputMode}"
+					onclick={() => (inputMode = inputMode === 'trackpad' ? 'touch' : 'trackpad')}
 				>
-			{/each}
+					{#if inputMode === 'trackpad'}
+						<IconPointer size={20} />
+					{:else}
+						<IconHandFinger size={20} />
+					{/if}
+				</button>
+				<button data-raw-button="icon" type="button" class="icon-button" aria-label="Keyboard"
+					><IconKeyboard size={20} /></button
+				>
+				<button data-raw-button="icon" type="button" class="icon-button" aria-label="Full screen"
+					><IconArrowsMaximize size={20} /></button
+				>
+			</div>
 		</div>
-		<div class="group">
-			<button
-				data-raw-button="icon"
-				type="button"
-				class="icon-button"
-				aria-label="Input: {inputMode}"
-				onclick={() => (inputMode = inputMode === 'trackpad' ? 'touch' : 'trackpad')}
-			>
-				{#if inputMode === 'trackpad'}
-					<IconPointer size={20} />
-				{:else}
-					<IconHandFinger size={20} />
-				{/if}
-			</button>
-			<button data-raw-button="icon" type="button" class="icon-button" aria-label="Keyboard"
-				><IconKeyboard size={20} /></button
-			>
-			<button data-raw-button="icon" type="button" class="icon-button" aria-label="Full screen"
-				><IconArrowsMaximize size={20} /></button
-			>
-		</div>
-	</div>
 
-	<div class="screen">
-		<div class="placeholder">
-			<IconDeviceDesktop size={48} stroke={1.25} />
-			<p>{machine.name} · Display {display + 1}</p>
-			<p class="hint">
-				{user.kind === 'user'
-					? `Connects straight away. ${user.name} sees a notice while you are connected.`
-					: 'Nobody is signed in. The session starts at the sign-in screen.'}
-			</p>
+		<div class="screen">
+			<div class="placeholder">
+				<IconDeviceDesktop size={48} stroke={1.25} />
+				<p>{machine.name} · Display {Number(display ?? '0') + 1}</p>
+				<p class="hint">
+					{user.kind === 'user'
+						? `Connects straight away. ${user.name} sees a notice while you are connected.`
+						: 'Nobody is signed in. The session starts at the sign-in screen.'}
+				</p>
+			</div>
 		</div>
-	</div>
 
-	<p class="mode">
-		{inputMode === 'trackpad'
-			? 'Trackpad mode: drag to move the pointer, tap to click, two fingers to scroll.'
-			: 'Touch mode: tap where you want to click.'}
-	</p>
+		<p class="mode">
+			{inputMode === 'trackpad'
+				? 'Trackpad mode: drag to move the pointer, tap to click, two fingers to scroll.'
+				: 'Touch mode: tap where you want to click.'}
+		</p>
+	</div>
 {/if}
 
 <style>
-	.notice {
+	.session {
 		display: grid;
-		justify-items: center;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-3);
-		padding: var(--space-12) var(--space-4);
-		color: var(--muted);
-		text-align: center;
 	}
 
 	.bar {
@@ -120,28 +116,11 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-3);
-		margin-bottom: var(--space-3);
 	}
 
 	.group {
 		display: flex;
 		gap: var(--space-2);
-	}
-
-	.chip {
-		padding: var(--space-1) var(--space-3);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--surface-elevated);
-		color: var(--text-soft);
-		font-size: var(--text-sm);
-		cursor: pointer;
-	}
-
-	.chip[aria-pressed='true'] {
-		border-color: var(--brand);
-		background: var(--brand-tint);
-		color: var(--brand);
 	}
 
 	.icon-button {
@@ -182,7 +161,6 @@
 	}
 
 	.mode {
-		margin-top: var(--space-3);
 		color: var(--muted);
 		font-size: var(--text-xs);
 	}
