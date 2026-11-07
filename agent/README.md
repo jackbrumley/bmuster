@@ -10,6 +10,7 @@ agent/
   crates/protocol/        wire types, request signing, shared test vectors (tests/vectors.json)
   crates/service/         systemd and Windows service plumbing shared by the agent and the server launcher
   crates/server/          the `bmuster-server` launcher (runs and installs the server, SPEC-SERVER-INSTALL)
+  crates/desktop/         remote desktop (SPEC-DESKTOP): X11 and Windows capture and input, JPEG tiles, pacing; licences in NOTICE.md
   crates/agent/           the `bmuster-agent` binary
     src/client.rs         server URL, HTTP and socket channels, signed requests, clock-drift correction
     src/tls.rs            rustls set-up: trust store, pinned key (--pin-cert) or --insecure-dev-tls
@@ -97,8 +98,25 @@ To type-check the Windows code from Linux without a mingw toolchain, run this. I
 CC_x86_64_pc_windows_gnu=gcc AR_x86_64_pc_windows_gnu=ar cargo check --target x86_64-pc-windows-gnu
 ```
 
-The same with clippy, for the Windows-only code (service, WMI graphics cards):
+The same with clippy, for the Windows-only code (service, WMI graphics cards, desktop capture and input):
 
 ```bash
 CC_x86_64_pc_windows_gnu=gcc AR_x86_64_pc_windows_gnu=ar cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings
 ```
+
+### Desktop tests on a nested X server
+
+`cargo test -p bmuster-desktop --test x11` captures from and types into a nested X server, never the real desktop. Each test starts its own server on a free display from `:90`, with its own cookie in its own Xauthority file, and refuses to run on your own `DISPLAY`, `:0` or `:1`. The server is headless, so `npm run verify` never opens a window:
+
+- `BMUSTER_XVFB=<path to Xvfb>` runs that binary; otherwise `Xvfb` on `PATH` is used.
+- With neither, the tests pass after one line, "X11 tests skipped: no headless X server".
+- `BMUSTER_X_TESTS=xephyr` runs them on `Xephyr` instead, which opens a window on your desktop so you can watch. Only when you ask for it.
+- `BMUSTER_SKIP_X_TESTS=1` skips them even when Xvfb is installed.
+- `BMUSTER_TEST_X_DIR=<folder>` keeps each server's Xauthority and log there instead of in a temporary folder.
+- To get Xvfb without installing it (no sudo): `apt download xvfb`, unpack it with `dpkg-deb -x <deb> <folder>`, and set `BMUSTER_XVFB=<folder>/usr/bin/Xvfb`.
+
+The AltGr test also needs `setxkbmap`.
+
+`BMUSTER_DESKTOP_DISPLAY` and `BMUSTER_DESKTOP_XAUTHORITY` point a debug build's desktop sessions at a nested server; release builds ignore both.
+
+Encoder timing for one 1920×1080 frame (full, and with 5% changed): `cargo bench -p bmuster-desktop --bench tiles`.

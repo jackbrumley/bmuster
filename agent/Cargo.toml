@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/protocol", "crates/service", "crates/agent", "crates/server"]
+members = ["crates/protocol", "crates/service", "crates/agent", "crates/server", "crates/desktop"]
 
 [workspace.package]
 version = "0.1.0"
@@ -32,3 +32,10 @@ codegen-units = 1
 strip = true
 opt-level = "z"
 panic = "abort"
+
+# The desktop encoder runs per frame: optimise it for speed, not size.
+[profile.release.package.bmuster-desktop]
+opt-level = 3
+
+[profile.release.package.jpeg-encoder]
+opt-level = 3
