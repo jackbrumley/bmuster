@@ -40,7 +40,7 @@ pub struct WindowsCapturer {
     grabber: Grabber,
     /// The next capture must be full (new grabber).
     fresh: bool,
-    /// The desktop this capturer's thread was on when it opened.
+    /// The desktop this capturer opened on (the input desktop then).
     desktop: String,
 }
 
@@ -56,7 +56,7 @@ pub fn open() -> CaptureResult<Box<dyn Capturer>> {
         current,
         grabber,
         fresh: true,
-        desktop: input_desktop::thread_desktop_name().unwrap_or_default(),
+        desktop: input_desktop::input_desktop_name().unwrap_or_default(),
     }))
 }
 
@@ -170,8 +170,12 @@ impl Capturer for WindowsCapturer {
     }
 
     fn poll_layout(&mut self) -> CaptureResult<bool> {
-        // Lock, sign-in, a UAC prompt: the screen is another desktop now.
-        if let Ok(input) = input_desktop::input_desktop_name() {
+        // Capture and SendInput reach only the desktop the calling thread is
+        // on, and the session may poll from another thread than the one that
+        // opened this capturer: move this thread to the input desktop. If
+        // that is another desktop (lock, sign-in, a UAC prompt), the screen
+        // changed and the following session reopens on it.
+        if let Ok((input, _)) = input_desktop::follow_input_desktop() {
             if !self.desktop.is_empty() && input != self.desktop {
                 return Err(CaptureError::new(format!(
                     "the screen switched from the {} desktop to {input}",
