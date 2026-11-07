@@ -28,7 +28,7 @@ export type Screen = {
 export type ScreenEvents = {
 	onData(data: string): void;
 	onResize(cols: number, rows: number): void;
-	/** Ctrl+Shift+C with a selection (desktop copy). */
+	/** Ctrl+C or Ctrl+Shift+C with a selection (desktop copy). */
 	onCopy(text: string): void;
 };
 
@@ -94,18 +94,21 @@ export async function createScreen(
 	terminal.loadAddon(new Unicode11Addon());
 	terminal.unicode.activeVersion = '11';
 	terminal.open(host);
+	// Copy and paste like Windows Terminal: Ctrl+C (or Ctrl+Shift+C) copies when
+	// text is selected and sends ^C only when nothing is; Ctrl+V (or
+	// Ctrl+Shift+V) is left to the browser, whose paste event xterm.js turns
+	// into input, instead of sending ^V.
 	terminal.attachCustomKeyEventHandler((event) => {
-		if (
-			event.type === 'keydown' &&
-			event.ctrlKey &&
-			event.shiftKey &&
-			event.key.toLowerCase() === 'c' &&
-			terminal.hasSelection()
-		) {
+		if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) {
+			return true;
+		}
+		const key = event.key.toLowerCase();
+		if (key === 'c' && terminal.hasSelection()) {
 			events.onCopy(terminal.getSelection());
+			terminal.clearSelection();
 			return false;
 		}
-		return true;
+		return key !== 'v';
 	});
 	const dataListener = terminal.onData((data) => {
 		events.onData(data);
