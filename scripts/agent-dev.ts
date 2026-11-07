@@ -10,6 +10,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { hostname } from 'node:os';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { openDatabase } from '../src/lib/server/database/connection.ts';
 import { env } from '../src/lib/server/env.ts';
@@ -24,7 +25,12 @@ const { values } = parseArgs({
 });
 
 const DATA_DIR = values['data-dir'];
-const BINARY = 'agent/target/debug/bmuster-agent';
+// Where cargo builds it: CARGO_TARGET_DIR when set (as cargo itself reads it), else agent/target.
+const BINARY = join(
+	process.env['CARGO_TARGET_DIR'] ?? join('agent', 'target'),
+	'debug',
+	'bmuster-agent'
+);
 
 function run(command: string, args: string[]): void {
 	const result = spawnSync(command, args, { stdio: 'inherit' });

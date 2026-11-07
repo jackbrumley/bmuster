@@ -53,4 +53,4 @@ Who is connected, and the grace timers, live in memory (`services/agents/presenc
 - Audit kinds `machine-offline` (warning tint, Wi-Fi off icon) and `machine-online` (Wi-Fi icon), actor System; worded by `activitySentence`.
 - Notification events `machine-offline` and `machine-online` (detail: machine name, host name, offline since), in the rule editor's event list from the catalogue.
 - Machines a socket-less agent moves between online and offline by the check-in rule are not pushed; the page shows them on its next load.
-- E2E: a scratch built server and the debug agent on a spare port; killing the agent shows Offline in the list and the header within about 60 s, restarting it shows Online again, with no reload.
+- E2E (2026-11-08, Playwright, not in the repo): a scratch built server (`node server.ts`, port 47730) and the debug agent from `agent-dev.ts` (which now honours `CARGO_TARGET_DIR`). Killing the agent showed Offline on its card after 60.5 s and in the header on the Terminal tab after 60.4 s; restarting it showed Online again within a second; no reload either time. Activity read "mint-e2e went offline" and "mint-e2e came back online".
