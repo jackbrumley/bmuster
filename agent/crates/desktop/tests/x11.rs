@@ -1,7 +1,8 @@
 //! X11 capture and input against a nested X server (SPEC-DESKTOP 11.2):
 //! `x11_capture`, `x11_input` and `displays` tests, plus one session end to
-//! end. Each test starts its own Xvfb or Xephyr and skips when neither is
-//! installed. Run them with `cargo test -p bmuster-desktop --test x11`.
+//! end. Each test starts its own headless Xvfb (Xephyr only when asked for
+//! with `BMUSTER_X_TESTS=xephyr`) and skips without one; see
+//! `support/mod.rs`. Run them with `cargo test -p bmuster-desktop --test x11`.
 
 #![cfg(target_os = "linux")]
 

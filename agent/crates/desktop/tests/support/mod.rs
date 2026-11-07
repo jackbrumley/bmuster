@@ -1,22 +1,27 @@
 //! A nested X server for the X11 tests (SPEC-DESKTOP 11.2).
 //!
-//! Starts `Xvfb` when installed, otherwise `Xephyr` (which opens a window on
-//! the current desktop, so a person can watch). The server gets its own
-//! cookie in its own Xauthority file, so the tests go through the same
-//! Xauthority path as a real greeter. It never runs on the test's own
-//! `DISPLAY`, nor on `:0` or `:1`, so no test can capture or inject into
-//! the real session.
+//! The server is headless by default, so `npm run verify` never opens a
+//! window on the developer's screen:
 //!
-//! Without either server (or with `BMUSTER_SKIP_X_TESTS` set) the tests
-//! skip with a message. `BMUSTER_TEST_X_DIR` keeps the Xauthority and the
-//! server's log in a folder of your choice instead of a temporary one.
+//! - `BMUSTER_XVFB=<path>` runs that Xvfb binary;
+//! - otherwise `Xvfb` on `PATH`;
+//! - `Xephyr` (a window on the current desktop) only when
+//!   `BMUSTER_X_TESTS=xephyr` asks for it;
+//! - otherwise, or with `BMUSTER_SKIP_X_TESTS` set, the tests pass after one
+//!   "skipped: no headless X server" line.
+//!
+//! The server gets its own cookie in its own Xauthority file, so the tests
+//! go through the same Xauthority path as a real greeter. It never runs on
+//! the test's own `DISPLAY`, nor on `:0` or `:1`, so no test can capture or
+//! inject into the real session. `BMUSTER_TEST_X_DIR` keeps the Xauthority
+//! and the server's log in a folder of your choice instead of a temporary one.
 
 use bmuster_desktop::capture::x11_session::{write_xauth_entry, X11Target, XauthEntry};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, Once};
 use std::time::Duration;
 
 /// First display number tried.
@@ -25,6 +30,38 @@ static NEXT_DISPLAY: AtomicU16 = AtomicU16::new(FIRST_DISPLAY);
 /// One nested server at a time: kinder to the desktop, and keyboard-map
 /// changes in one test cannot reach another.
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+static SKIP_NOTICE: Once = Once::new();
+
+/// Which X server the tests run.
+enum Server {
+    Xvfb(PathBuf),
+    Xephyr,
+}
+
+/// Picks the server from the environment (see the module notes), or `None`
+/// to skip. A setting that names a server that cannot run fails loudly.
+fn choose_server() -> Option<Server> {
+    if std::env::var_os("BMUSTER_SKIP_X_TESTS").is_some() {
+        return None;
+    }
+    if std::env::var("BMUSTER_X_TESTS").as_deref() == Ok("xephyr") {
+        assert!(
+            in_path("Xephyr") && std::env::var_os("DISPLAY").is_some(),
+            "BMUSTER_X_TESTS=xephyr needs Xephyr on PATH and a DISPLAY to open its window on"
+        );
+        return Some(Server::Xephyr);
+    }
+    if let Some(path) = std::env::var_os("BMUSTER_XVFB") {
+        let path = PathBuf::from(path);
+        assert!(
+            path.is_file(),
+            "BMUSTER_XVFB={} is not a file",
+            path.display()
+        );
+        return Some(Server::Xvfb(path));
+    }
+    find_in_path("Xvfb").map(Server::Xvfb)
+}
 
 pub struct NestedX {
     pub target: X11Target,
@@ -34,9 +71,15 @@ pub struct NestedX {
     _turn: MutexGuard<'static, ()>,
 }
 
+fn find_in_path(program: &str) -> Option<PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    std::env::split_paths(&paths)
+        .map(|dir| dir.join(program))
+        .find(|path| path.is_file())
+}
+
 fn in_path(program: &str) -> bool {
-    std::env::var_os("PATH")
-        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
+    find_in_path(program).is_some()
 }
 
 fn display_number(display: &str) -> Option<u16> {
@@ -72,17 +115,22 @@ fn hostname() -> Vec<u8> {
 impl NestedX {
     /// Starts a nested server, or returns `None` (and says why) to skip.
     pub fn start() -> Option<NestedX> {
-        if std::env::var_os("BMUSTER_SKIP_X_TESTS").is_some() {
-            eprintln!("skipping X11 test: BMUSTER_SKIP_X_TESTS is set");
+        let Some(server) = choose_server() else {
+            SKIP_NOTICE.call_once(|| {
+                // Straight to stderr: the test harness hides eprintln! output
+                // of passing tests, and this line should be seen once.
+                use std::io::Write as _;
+                let _ = writeln!(
+                    std::io::stderr().lock(),
+                    "X11 tests skipped: no headless X server (install Xvfb, set BMUSTER_XVFB, \
+                     or set BMUSTER_X_TESTS=xephyr)"
+                );
+            });
             return None;
-        }
-        let server = if in_path("Xvfb") {
-            "Xvfb"
-        } else if in_path("Xephyr") && std::env::var_os("DISPLAY").is_some() {
-            "Xephyr"
-        } else {
-            eprintln!("skipping X11 test: neither Xvfb nor Xephyr (with a DISPLAY) is available");
-            return None;
+        };
+        let name = match &server {
+            Server::Xvfb(_) => "Xvfb",
+            Server::Xephyr => "Xephyr",
         };
         let turn = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
 
@@ -131,15 +179,26 @@ impl NestedX {
                     .and_then(|mut f| f.write_all(&file))
                     .expect("writing the Xauthority");
             }
-            let log = std::fs::File::create(base.join(format!("{server}-{number}.log")))
+            let log = std::fs::File::create(base.join(format!("{name}-{number}.log")))
                 .expect("server log");
 
             let display = format!(":{number}");
-            let mut command = Command::new(server);
-            command.arg(&display);
-            match server {
-                "Xvfb" => command.args(["-screen", "0", "1280x800x24"]),
-                _ => command.args(["-screen", "1280x800x24", "-title", "BMuster desktop test"]),
+            let mut command = match &server {
+                Server::Xvfb(path) => {
+                    let mut command = Command::new(path);
+                    command.arg(&display).args(["-screen", "0", "1280x800x24"]);
+                    command
+                }
+                Server::Xephyr => {
+                    let mut command = Command::new("Xephyr");
+                    command.arg(&display).args([
+                        "-screen",
+                        "1280x800x24",
+                        "-title",
+                        "BMuster desktop test",
+                    ]);
+                    command
+                }
             };
             command
                 // -noreset: without it the server resets (and forgets a
@@ -178,7 +237,7 @@ impl NestedX {
                 _ => stop(&mut child),
             }
         }
-        panic!("could not start {server} on any display from :{FIRST_DISPLAY}");
+        panic!("could not start {name} on any display from :{FIRST_DISPLAY}");
     }
 
     /// Runs an X client (setxkbmap, xclip) against the nested server only.

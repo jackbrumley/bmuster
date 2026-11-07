@@ -106,11 +106,16 @@ CC_x86_64_pc_windows_gnu=gcc AR_x86_64_pc_windows_gnu=ar cargo clippy --target x
 
 ### Desktop tests on a nested X server
 
-`cargo test -p bmuster-desktop --test x11` captures from and types into a nested X server, never the real desktop. Each test starts its own `Xvfb` (preferred) or `Xephyr` (needs a `DISPLAY`; it opens a window you can watch) on a free display from `:90`, with its own cookie in its own Xauthority file. It refuses to run on your own `DISPLAY`, `:0` or `:1`. Without either server the tests print a message and pass, so `npm run verify` and CI work without one. `setxkbmap` and `xinput` are used by the AltGr test.
+`cargo test -p bmuster-desktop --test x11` captures from and types into a nested X server, never the real desktop. Each test starts its own server on a free display from `:90`, with its own cookie in its own Xauthority file, and refuses to run on your own `DISPLAY`, `:0` or `:1`. The server is headless, so `npm run verify` never opens a window:
 
-- `BMUSTER_SKIP_X_TESTS=1` skips them even when a server is installed.
+- `BMUSTER_XVFB=<path to Xvfb>` runs that binary; otherwise `Xvfb` on `PATH` is used.
+- With neither, the tests pass after one line, "X11 tests skipped: no headless X server".
+- `BMUSTER_X_TESTS=xephyr` runs them on `Xephyr` instead, which opens a window on your desktop so you can watch. Only when you ask for it.
+- `BMUSTER_SKIP_X_TESTS=1` skips them even when Xvfb is installed.
 - `BMUSTER_TEST_X_DIR=<folder>` keeps each server's Xauthority and log there instead of in a temporary folder.
-- To use Xvfb without installing it: `apt download xvfb`, unpack it with `dpkg-deb -x <deb> <folder>`, and put `<folder>/usr/bin` first on `PATH`.
+- To get Xvfb without installing it (no sudo): `apt download xvfb`, unpack it with `dpkg-deb -x <deb> <folder>`, and set `BMUSTER_XVFB=<folder>/usr/bin/Xvfb`.
+
+The AltGr test also needs `setxkbmap`.
 
 `BMUSTER_DESKTOP_DISPLAY` and `BMUSTER_DESKTOP_XAUTHORITY` point a debug build's desktop sessions at a nested server; release builds ignore both.
 
