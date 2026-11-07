@@ -119,6 +119,26 @@ jobs:
             fi
           done
 
+      # Release signature for automatic agent updates (SPEC-AGENT-UPDATES).
+      # After the glibc check, so its objdump loop never meets the .sig file.
+      # Without the secret (a fork, or before it is set) the build stays
+      # unsigned: it installs, but agents will not take it as an update.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: Sign the agent
+        env:
+          BMUSTER_RELEASE_SIGNING_KEY: ${{ secrets.BMUSTER_RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$BMUSTER_RELEASE_SIGNING_KEY" ]; then
+            echo "::warning::BMUSTER_RELEASE_SIGNING_KEY is not set; the agent is not signed"
+            exit 0
+          fi
+          ext=""
+          if [ "$RUNNER_OS" = "Windows" ]; then ext=".exe"; fi
+          node scripts/agent-sign.ts --target "${{ matrix.target }}" "binaries/${{ matrix.target }}/bmuster-agent${ext}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.target }}
