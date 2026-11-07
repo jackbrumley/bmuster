@@ -146,7 +146,11 @@ describe('every route is guarded (S7, hygiene route-guard-required)', () => {
 			'src/routes/api/access-rules/+server.ts',
 			'src/routes/api/access-rules/[id=uuid]/+server.ts',
 			'src/routes/api/users/[id=uuid]/groups/+server.ts',
-			'src/routes/api/machines/[id]/groups/+server.ts'
+			'src/routes/api/machines/[id]/groups/+server.ts',
+			// SPEC-CSV-EXPORT X5
+			'src/routes/api/exports/users/+server.ts',
+			'src/routes/api/exports/groups/+server.ts',
+			'src/routes/api/exports/access-rules/+server.ts'
 		]) {
 			expect(text(path), path).toMatch(/route\.admin\(/);
 			expect(text(path), path).not.toMatch(/route\.user\(/);
@@ -168,6 +172,16 @@ describe('every route is guarded (S7, hygiene route-guard-required)', () => {
 			expect(text(path), path).toMatch(/page\.user\(/);
 			expect(text(path), path).toMatch(/services\/access\/access\.ts/);
 		}
+		// Open to members; the exports service narrows them with the access service (X5).
+		for (const path of [
+			'src/routes/api/exports/machines/+server.ts',
+			'src/routes/api/exports/activity/+server.ts'
+		]) {
+			expect(text(path), path).toMatch(/route\.user\(/);
+		}
+		expect(text('src/lib/server/services/exports/exports.ts')).toMatch(
+			/visibleMachineIds[\s\S]*activityScopeFor/
+		);
 	});
 
 	it('leaves agent routes on their own checks', () => {

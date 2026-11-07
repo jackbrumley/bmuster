@@ -8,6 +8,7 @@
 		IconDeviceDesktopMinus,
 		IconDeviceDesktopPlus,
 		IconDevices,
+		IconDownload,
 		IconEdit,
 		IconNoteOff,
 		IconRefresh,
@@ -143,6 +144,8 @@
 			case 'notification-rule-changed':
 			case 'notification-rule-deleted':
 				return IconBell;
+			case 'list-exported':
+				return IconDownload;
 		}
 	}
 </script>

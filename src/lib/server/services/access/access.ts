@@ -130,6 +130,19 @@ export function visibleMachineIds(database: Queryable, user: ConsoleUser): Set<s
 }
 
 /**
+ * True when the person may see group names and members: the Groups page is
+ * admins only (A1–A3), so a member's Machines export leaves the column out.
+ */
+export function canSeeGroups(user: ConsoleUser): boolean {
+	switch (user.role) {
+		case 'admin':
+			return true;
+		case 'member':
+			return false;
+	}
+}
+
+/**
  * Which audit entries the person may read on Activity: every entry for an
  * admin; for a member only those about machines they can see (A6).
  */

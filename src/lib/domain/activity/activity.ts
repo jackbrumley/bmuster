@@ -62,7 +62,9 @@ const AUDIT_KINDS = [
 	'invitation-accepted',
 	'notification-rule-added',
 	'notification-rule-changed',
-	'notification-rule-deleted'
+	'notification-rule-deleted',
+	// SPEC-CSV-EXPORT
+	'list-exported'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -205,5 +207,7 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Changed a notification rule';
 		case 'notification-rule-deleted':
 			return 'Deleted a notification rule';
+		case 'list-exported':
+			return 'Exported a list';
 	}
 }

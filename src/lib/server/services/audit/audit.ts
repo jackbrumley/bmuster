@@ -1,4 +1,4 @@
-import { desc, inArray } from 'drizzle-orm';
+import { and, between, desc, inArray } from 'drizzle-orm';
 import { isAuditKind, type AuditKind } from '#lib/domain/activity/activity.ts';
 import { auditEntries } from '../../database/schema.ts';
 import type { Queryable } from '../../database/connection.ts';
@@ -71,6 +71,45 @@ export function listAuditForMachines(
 		.limit(limit)
 		.all()
 		.map(toRecord);
+}
+
+/**
+ * Whose entries: every one, or only those about these machines (what a
+ * member may read, SPEC-ACCESS A6).
+ */
+export type AuditScope = { kind: 'all' } | { kind: 'machines'; machineIds: readonly string[] };
+
+/** The newest entries in the scope between two times (inclusive): the Activity export. */
+export function listAuditBetween(
+	database: Queryable,
+	scope: AuditScope,
+	range: { fromMs: number; toMs: number },
+	limit: number
+): AuditRecord[] {
+	const inRange = between(auditEntries.at, new Date(range.fromMs), new Date(range.toMs));
+	switch (scope.kind) {
+		case 'all':
+			return database
+				.select()
+				.from(auditEntries)
+				.where(inRange)
+				.orderBy(desc(auditEntries.at))
+				.limit(limit)
+				.all()
+				.map(toRecord);
+		case 'machines':
+			if (scope.machineIds.length === 0) {
+				return [];
+			}
+			return database
+				.select()
+				.from(auditEntries)
+				.where(and(inRange, inArray(auditEntries.machineId, [...scope.machineIds])))
+				.orderBy(desc(auditEntries.at))
+				.limit(limit)
+				.all()
+				.map(toRecord);
+	}
 }
 
 function toRecord(row: typeof auditEntries.$inferSelect): AuditRecord {
