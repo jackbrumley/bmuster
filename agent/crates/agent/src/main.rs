@@ -139,6 +139,24 @@ enum Command {
     #[cfg(target_os = "linux")]
     #[command(hide = true)]
     FilesHelper,
+    /// Run desktop sessions in this console session for the service (started
+    /// by the Windows service as SYSTEM; not for use by hand)
+    #[cfg(windows)]
+    #[command(hide = true)]
+    DesktopHelper {
+        /// The service's pipe name (without -in or -out)
+        #[arg(long)]
+        pipe: String,
+        /// The service's process id, checked against the pipe's server
+        #[arg(long)]
+        service_pid: u32,
+        /// Data folder (identity, key and server key)
+        #[arg(long)]
+        data_dir: PathBuf,
+        /// DEVELOPMENT ONLY: accept any TLS certificate from the server
+        #[arg(long)]
+        insecure_dev_tls: bool,
+    },
     /// Move this machine to another BMuster server: enrol there first, then
     /// leave this one (needs root or Administrator when installed)
     Rejoin {
@@ -182,11 +200,15 @@ fn main() -> ExitCode {
     }
 
     // A worker under the Windows service has no console: it logs to the file.
+    // So does the desktop helper, to its own file beside it.
     #[cfg(windows)]
-    let logged = match cli.command {
+    let logged = match &cli.command {
         Command::Run { launched: true, .. } => service_windows::log_path()
             .map_err(|e| format!("{e:#}"))
             .and_then(|path| logging::init_file(&path)),
+        Command::DesktopHelper { data_dir, .. } => {
+            logging::init_file(&data_dir.join("desktop-helper.log"))
+        }
         _ => logging::init_stderr(),
     };
     #[cfg(not(windows))]
@@ -307,6 +329,21 @@ fn dispatch(command: Command) -> Result<ExitCode> {
         #[cfg(target_os = "linux")]
         Command::FilesHelper => {
             sessions::files_helper::serve(std::io::stdin(), std::io::stdout())?;
+            Ok(ExitCode::SUCCESS)
+        }
+        #[cfg(windows)]
+        Command::DesktopHelper {
+            pipe,
+            service_pid,
+            data_dir,
+            insecure_dev_tls,
+        } => {
+            sessions::windows_desktop::helper::run(&sessions::windows_desktop::helper::Args {
+                pipe,
+                service_pid,
+                data_dir,
+                insecure_dev_tls,
+            })?;
             Ok(ExitCode::SUCCESS)
         }
     }

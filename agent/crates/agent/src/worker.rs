@@ -156,6 +156,14 @@ pub fn run(
         launched: options.launched,
     });
 
+    // Desktop sessions run in a helper in the console session (SPEC-DESKTOP 6.2).
+    #[cfg(windows)]
+    crate::sessions::windows_desktop::supervisor::configure(
+        crate::sessions::windows_desktop::supervisor::Options {
+            data_dir: options.data_dir.clone(),
+            insecure_dev_tls: options.insecure_dev_tls,
+        },
+    );
     let stop = Arc::new(AtomicBool::new(false));
     let server_key = decode_public_key(&identity.server_public_key)
         .context("identity.json holds an unreadable server key")?;
