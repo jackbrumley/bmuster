@@ -11,6 +11,7 @@
 	import EmptyState from '#lib/ui/empty-state.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import NoPermission from '../no-permission.svelte';
+	import { copyText } from '#lib/utils/clipboard.ts';
 	import ExtraKeys from './extra-keys.svelte';
 	import { keySequence, NO_MODIFIERS, withModifiers, type ExtraKeyId } from './extra-keys.ts';
 	import { createScreen, type Screen } from './terminal-screen.ts';
@@ -157,11 +158,11 @@
 			showToast('Select some text in the terminal first.', 'error');
 			return;
 		}
-		try {
-			await navigator.clipboard.writeText(text);
+		const result = await copyText(text);
+		if (result.ok) {
 			showToast('Copied.', 'success');
-		} catch {
-			showToast('This browser did not allow copying.', 'error');
+		} else {
+			showToast(`This browser did not allow copying (${result.reason}).`, 'error');
 		}
 	}
 

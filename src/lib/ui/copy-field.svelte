@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { IconCheck, IconCopy } from '@tabler/icons-svelte-runes';
+	import { showToast } from '#lib/ui/toast.svelte.ts';
+	import { copyText } from '#lib/utils/clipboard.ts';
 
 	/** A read-only line of text (a command or a code) with a copy button. */
 	let { value, label }: { value: string; label: string } = $props();
@@ -7,7 +9,11 @@
 	let copied = $state(false);
 
 	async function copy(): Promise<void> {
-		await navigator.clipboard.writeText(value);
+		const result = await copyText(value);
+		if (!result.ok) {
+			showToast(`This browser did not allow copying (${result.reason}).`, 'error');
+			return;
+		}
 		copied = true;
 		setTimeout(() => {
 			copied = false;

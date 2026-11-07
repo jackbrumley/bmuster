@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { showToast } from '#lib/ui/toast.svelte.ts';
+	import { copyText } from '#lib/utils/clipboard.ts';
 	import { IconCheck, IconCopy, IconEye, IconEyeOff } from '@tabler/icons-svelte-runes';
 	import type { LocalPageInfo } from '#lib/domain/machines/local-page.ts';
 	import { localCodeReplySchema } from '#lib/schemas/machines/local-page.ts';
@@ -30,7 +32,11 @@
 	let copied = $state(false);
 
 	async function copyCode(code: string): Promise<void> {
-		await navigator.clipboard.writeText(code);
+		const result = await copyText(code);
+		if (!result.ok) {
+			showToast(`This browser did not allow copying (${result.reason}).`, 'error');
+			return;
+		}
 		copied = true;
 		setTimeout(() => {
 			copied = false;
