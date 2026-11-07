@@ -12,7 +12,8 @@ describe('environment (S15)', () => {
 			'secretsKey',
 			'releasesPath',
 			'firstAdmin',
-			'localNetworkModeAtFirstRun'
+			'localNetworkModeAtFirstRun',
+			'backupSchedule'
 		]);
 		expect(env.firstAdmin).toEqual({ kind: 'none' });
 	});
@@ -48,6 +49,43 @@ describe('environment (S15)', () => {
 		vi.resetModules();
 		await expect(import('#lib/server/env.ts')).rejects.toThrow(
 			'BMUSTER_LOCAL_NETWORK_MODE must be on or left out, not yes'
+		);
+	});
+
+	it('reads the nightly snapshot settings (SPEC-HOSTING H3)', async () => {
+		vi.resetModules();
+		expect((await import('#lib/server/env.ts')).env.backupSchedule).toEqual({
+			kind: 'daily',
+			hour: 3,
+			minute: 0,
+			keep: 14
+		});
+
+		vi.stubEnv('BMUSTER_BACKUP_TIME', '23:45');
+		vi.stubEnv('BMUSTER_BACKUP_KEEP', '7');
+		vi.resetModules();
+		expect((await import('#lib/server/env.ts')).env.backupSchedule).toEqual({
+			kind: 'daily',
+			hour: 23,
+			minute: 45,
+			keep: 7
+		});
+
+		vi.stubEnv('BMUSTER_BACKUP_KEEP', '0');
+		vi.resetModules();
+		expect((await import('#lib/server/env.ts')).env.backupSchedule).toEqual({ kind: 'off' });
+
+		vi.stubEnv('BMUSTER_BACKUP_TIME', '3am');
+		vi.resetModules();
+		await expect(import('#lib/server/env.ts')).rejects.toThrow(
+			'BMUSTER_BACKUP_TIME must be HH:MM (24-hour), not 3am'
+		);
+
+		vi.stubEnv('BMUSTER_BACKUP_TIME', '03:00');
+		vi.stubEnv('BMUSTER_BACKUP_KEEP', 'all');
+		vi.resetModules();
+		await expect(import('#lib/server/env.ts')).rejects.toThrow(
+			'BMUSTER_BACKUP_KEEP must be a whole number (0 turns snapshots off), not all'
 		);
 	});
 
