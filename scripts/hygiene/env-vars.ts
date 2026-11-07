@@ -102,11 +102,14 @@ function scanEnvAccess(relPath: string, text: string): EnvAccess {
 	return { reads, direct };
 }
 
-/** The keys `.env.example` lists (`KEY=value` lines; comments skipped). */
-function parseEnvExample(text: string): ReadonlySet<string> {
+/**
+ * The keys `.env.example` lists: `KEY=value` lines, and `# KEY=value` lines
+ * for optional variables an installer may switch on. Other comments are skipped.
+ */
+export function parseEnvExample(text: string): ReadonlySet<string> {
 	const keys = new Set<string>();
 	for (const line of text.split('\n')) {
-		const match = /^\s*([A-Z][A-Z0-9_]*)\s*=/.exec(line);
+		const match = /^\s*(?:#\s?)?([A-Z][A-Z0-9_]*)\s*=/.exec(line);
 		if (match?.[1] !== undefined) keys.add(match[1]);
 	}
 	return keys;

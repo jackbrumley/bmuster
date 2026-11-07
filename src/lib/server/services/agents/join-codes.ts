@@ -1,12 +1,9 @@
-import { randomInt } from 'node:crypto';
 import { eq } from 'drizzle-orm';
+import { groupCode, normaliseCode, randomCode } from '../../crypto/random-code.ts';
 import { joinCodes } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { sha256Hex } from './signing.ts';
 import { refuse, type AgentRefusal } from './agent-refusal.ts';
-
-/** No 0/O, 1/I: easy to read aloud and type. */
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const JOIN_CODE_LIMITS = { maxUses: 100, maxMinutes: 7 * 24 * 60 } as const;
 
@@ -30,7 +27,7 @@ export function createJoinCode(
 	if (options.minutes < 1 || options.minutes > JOIN_CODE_LIMITS.maxMinutes) {
 		throw new Error('A join code lasts between 1 minute and 7 days');
 	}
-	const raw = Array.from({ length: 9 }, () => ALPHABET.charAt(randomInt(ALPHABET.length))).join('');
+	const raw = randomCode(9);
 	const expiresAt = new Date(now + options.minutes * 60_000);
 	database
 		.insert(joinCodes)
@@ -46,7 +43,7 @@ export function createJoinCode(
 		})
 		.run();
 	return {
-		code: `${raw.slice(0, 3)}-${raw.slice(3, 6)}-${raw.slice(6)}`,
+		code: groupCode(raw, 3),
 		expiresAt,
 		maxUses: options.maxUses
 	};
@@ -61,7 +58,7 @@ export function redeemJoinCode(
 	const row = database
 		.select()
 		.from(joinCodes)
-		.where(eq(joinCodes.codeHash, hashCode(normalise(typed))))
+		.where(eq(joinCodes.codeHash, hashCode(normaliseCode(typed))))
 		.get();
 	if (row === undefined) {
 		return refuse('invalid-code', 'That join code is not known to this server.');
@@ -82,10 +79,6 @@ export function redeemJoinCode(
 		throw new Error(`Join code ${row.id} has malformed machine group ids`);
 	}
 	return { machineGroupIds: groups };
-}
-
-function normalise(typed: string): string {
-	return typed.toUpperCase().replace(/[\s-]/g, '');
 }
 
 function hashCode(raw: string): string {

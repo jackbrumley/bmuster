@@ -1,6 +1,6 @@
 # SPEC-INSTALL-OPTIONS: Manual install and local network mode
 
-**Status:** `APPROVED` (2026-11-07) · Build after SPEC-SIGN-IN, part 1 first.
+**Status:** `IN PROGRESS` · approved 2026-11-07 · Part 1 (M1–M5) built; Part 2 (local network mode) not built.
 
 ## Part 1: Manual install (always available)
 
@@ -17,6 +17,16 @@ The one-line `curl … | sudo sh` (or `irm … | iex`) does not suit every machi
 | M3  | It shows the one command to run beside the downloaded file, with the server address and join code filled in (and the certificate pin in local network mode). Linux: `chmod +x bmuster-agent && sudo ./bmuster-agent install --url … --code …`. Windows: `.\bmuster-agent.exe install --url … --code …` in PowerShell as Administrator. | `add-machine.svelte.test.ts` |
 | M4  | A "For deployment tools" note explains using one download and a roll-out join code (up to 100 machines, 7 days), with a control to make one.                                                                                                                                                                                           | `add-machine.svelte.test.ts` |
 | M5  | `npm run agent:release-local` builds the agent in release mode for this computer's target and copies it to `RELEASES_PATH/<version>/<target>/`, so a dev server can offer downloads.                                                                                                                                                   | manual                       |
+
+### As built (Part 1)
+
+- Add machine is split into `add-machine.svelte` (join code, OS tabs, one-line command), `install-manually.svelte` (a native `<details>`, collapsed) and `rollout-code.svelte`; `+page.svelte` only passes the origin, the downloads and whether this is the dev server.
+- `+page.server.ts` (admin guard) loads the newest build for each target with `agentDownload` (`services/agents/releases.ts`). The agent targets and the manual command moved to `src/lib/domain/machines/agent-release.ts`, so the page and the server share them.
+- Linux offers x86_64 by default and aarch64 as an option; Windows offers `x86_64-pc-windows-msvc`. The **Download agent** link goes to `/agent/v1/releases/<version>/<target>` and shows the version and size; the SHA-256 is in a copy field. With no build it says "This server has no agent build for <target> yet." and, on the dev server only, to run `npm run agent:release-local`.
+- The command beside the file appears once the page's join code exists; until then the section says to make one. macOS shows the section with "The macOS agent is not built yet."
+- **For deployment tools:** the roll-out control offers 10, 25, 50 or 100 machines and 1 hour, 1 day or 7 days (presets inside the 1–100 uses and 1 minute–7 days limits of `POST /api/join-codes`, so no free-number field is needed), then shows the code, its expiry and the command with it.
+- `npm run agent:release-local` (`scripts/agent-release-local.ts`) reads the version from `[workspace.package]` (or `[package]`) in `agent/Cargo.toml`, maps this computer to `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` or `x86_64-pc-windows-msvc`, runs `cargo build --release`, copies the binary to `RELEASES_PATH/<version>/<target>/` and prints the path and SHA-256.
+- Tests: `src/routes/(console)/add/add-machine.svelte.test.ts` (M1–M4). M5 was checked by hand against a scratch `RELEASES_PATH`.
 
 ## Part 2: Local network mode (self-signed certificate)
 

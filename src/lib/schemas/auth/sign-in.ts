@@ -16,11 +16,16 @@ export const emailSchema = z
 
 export const personNameSchema = z.string().trim().min(1, 'Enter a name.').max(120);
 
-/** POST /setup: the first admin. */
-export const setupRequestSchema = z.object({
+/** The first admin, from /setup or the BMUSTER_ADMIN_* variables. */
+export const firstAdminSchema = z.object({
 	name: personNameSchema,
 	email: emailSchema,
 	password: passwordSchema
+});
+
+/** POST /setup: the first admin, with the setup code from the server's log (S17). */
+export const setupRequestSchema = firstAdminSchema.extend({
+	setupCode: z.string().trim().min(1, "Enter the setup code from the server's log.").max(64)
 });
 
 /** POST /login. Only presence is checked: the reply never says which part was wrong. */

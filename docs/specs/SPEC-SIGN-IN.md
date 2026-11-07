@@ -1,6 +1,6 @@
 # SPEC-SIGN-IN: Accounts, sign-in and identity providers
 
-**Status:** `IN PROGRESS` (S1–S16 built; S17–S19 to do) · approved 2026-11-07 · **Date:** 2026-11-07 · **Version target:** 0.3.0
+**Status:** `IMPLEMENTED` (S1–S19 built; version bump and changelog left for the release step) · approved 2026-11-07 · **Date:** 2026-11-07 · **Version target:** 0.3.0
 
 ## 1. Problem
 
@@ -93,9 +93,9 @@ Guards follow the portal's pattern: `route.public`, `route.user`, `route.admin`,
 3. **Session lengths:** 12 hours idle, 30 days at most.
 4. **Notice while connected:** on by default, with a server setting to turn it off (audited).
 
-## 9. As built (S1–S16)
+## 9. As built (S1–S19)
 
-Built as specified unless listed here. S17–S19 (setup code, admin environment variables, `admin:reset`) are not built yet.
+Built as specified unless listed here.
 
 **Different from the spec**
 
@@ -113,6 +113,14 @@ Built as specified unless listed here. S17–S19 (setup code, admin environment 
 - Discovery runs on every start and callback (no cache); fine at sign-in volumes.
 - The origin check (S8) also refuses a state-changing request with no `Origin` header. Agent paths (`/agent/*`, `/install.sh`, `/install.ps1`) skip the session and origin hooks; `/agent/v1/check-in` uses `route.agent` (the signed-request check), enrolment and downloads use `route.public`.
 - Universal `+page.ts` loads are gone; the `route-guard-required` hygiene rule also refuses a universal `load`.
+
+**S17–S19 (first run and break-glass)**
+
+- **Setup code (S17).** 16 characters from the join-code alphabet, shown as `XXXX-XXXX-XXXX-XXXX` (about 80 bits). Only its SHA-256 is kept, in memory (`services/auth/setup-code.ts`), not in the database: the code is needed only until the first admin exists, and a restart prints a new one. It is printed to standard output by the `init` hook (`hooks.server.ts`) inside a banner: `BMuster first-run setup code: XXXX-XXXX-XXXX-XXXX — open /setup`. Under `npm run dev` that is the Vite terminal (SvelteKit runs `init` before the first request); under `node server.ts` it is the service log (journald, Docker). Loading `/setup` prints one if none is waiting (after a dev reload of the module). `/setup` has a **Setup code** field; spaces, hyphens and case do not matter. A wrong code is refused with a plain message under the field; after 5 wrong codes the code is replaced and the new one printed, so guessing needs the log. The comparison is constant-time.
+- **Admin from the environment (S18).** `BMUSTER_ADMIN_EMAIL`, `BMUSTER_ADMIN_PASSWORD` and optional `BMUSTER_ADMIN_NAME` (default "Administrator") are read by `env.ts` and listed, commented out, in `.env.example`. Setting only one of email and password, or the name alone, stops start-up; so does an email or password `/setup` would refuse. With no users the admin is created at start-up, audited as `setup` with actor _system_ and `source: BMUSTER_ADMIN_EMAIL and BMUSTER_ADMIN_PASSWORD`, and no setup code is printed; `/setup` then redirects to `/login`. With users already there, nothing changes. Either way the log says to remove the variables.
+- **`npm run admin:reset -- --email <email>` (S19).** `scripts/admin-reset.ts` over `services/auth/admin-reset.ts`. Only for an existing, enabled admin; a provider-only admin gets a password too (admins can always use a password). The new password is 24 characters of base64url (144 bits), printed once. All their sessions end, the email's failed-attempt pause is cleared, and the change is audited as `user-password-set` with actor _system_ and `how: reset from the server command line`. Members, disabled admins and unknown emails are refused with a plain message and exit code 1.
+- The env-var hygiene rule (`env-var-registered`) counts a commented-out `# KEY=` line in `.env.example` as listed, so optional variables can be documented without being switched on.
+- Tests: `setup.test.ts` (S1, S17, S18), `admin-reset.test.ts` (S19), `env.test.ts` (the variables), `tests/unit/hygiene/env-example.test.ts`.
 
 **Tests**
 

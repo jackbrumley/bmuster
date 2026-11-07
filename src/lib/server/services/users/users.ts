@@ -48,6 +48,10 @@ export function insertUser(database: Queryable, user: NewUser, now: number): Use
 	return row;
 }
 
+export function setPasswordHash(database: Queryable, userId: string, passwordHash: string): void {
+	database.update(users).set({ passwordHash }).where(eq(users.id, userId)).run();
+}
+
 export function markSignedIn(database: Queryable, userId: string, now: number): void {
 	database
 		.update(users)
@@ -357,7 +361,7 @@ export async function setPassword(
 	}
 	const passwordHash = await hashPassword(password);
 	return database.transaction((transaction) => {
-		transaction.update(users).set({ passwordHash }).where(eq(users.id, userId)).run();
+		setPasswordHash(transaction, userId, passwordHash);
 		if (userId !== actorUserId) {
 			endSessionsForUser(transaction, userId);
 		}

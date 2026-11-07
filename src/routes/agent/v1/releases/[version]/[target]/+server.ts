@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { env } from '#lib/server/env.ts';
-import { isAgentTarget, releaseFile } from '#lib/server/services/agents/releases.ts';
+import { isAgentTarget } from '#lib/domain/machines/agent-release.ts';
+import { releaseFile } from '#lib/server/services/agents/releases.ts';
 import { route } from '#lib/server/guards/route.ts';
 import type { RequestHandler } from './$types';
 

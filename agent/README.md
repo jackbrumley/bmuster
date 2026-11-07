@@ -53,6 +53,14 @@ cargo run -p bmuster-agent -- run --data-dir ./dev-data --insecure-dev-tls
 
 The dev server uses a self-signed certificate. Without the `--insecure-dev-tls` flag the agent refuses it. With the flag, the agent accepts any certificate and logs a loud warning. Never use it against a real server. Plain `http://` works only for `localhost` and loopback addresses. `./dev-data` is git-ignored. To enrol again, delete it.
 
+## Offer a release build from a local server
+
+```bash
+npm run agent:release-local
+```
+
+Builds the agent in release mode for this computer and copies it to `RELEASES_PATH/<version>/<target>/` (from `.env`), so the dev server's install scripts and the **Install manually** download on Add machine can serve it. It prints the path and SHA-256.
+
 ## Checks
 
 ```bash

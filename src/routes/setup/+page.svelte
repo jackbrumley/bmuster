@@ -6,14 +6,15 @@
 	import { MIN_PASSWORD_LENGTH } from '#lib/schemas/auth/sign-in.ts';
 	import type { PageProps } from './$types';
 
-	/** First run: make the first admin (SPEC-SIGN-IN S1). */
+	/** First run: make the first admin, with the setup code from the server's log (SPEC-SIGN-IN S1, S17). */
 	let { form }: PageProps = $props();
 
+	let setupCode = $state('');
 	let name = $state('');
 	let email = $state('');
 	let password = $state('');
 
-	function errorFor(field: 'name' | 'email' | 'password'): string | undefined {
+	function errorFor(field: 'setupCode' | 'name' | 'email' | 'password'): string | undefined {
 		return form?.field === field ? form.message : undefined;
 	}
 </script>
@@ -25,10 +26,21 @@
 <PublicPage>
 	<h1>Set up BMuster</h1>
 	<p class="intro">
-		Make the first admin account. You can add other people and sign-in providers once you are in.
+		Enter the setup code BMuster printed in its log when it started, then make the first admin
+		account. You can add other people and sign-in providers once you are in.
 	</p>
 
 	<form class="form" method="POST" use:enhance>
+		<TextField
+			label="Setup code"
+			name="setupCode"
+			type="text"
+			autocomplete="off"
+			autocapitalize="off"
+			required={true}
+			error={errorFor('setupCode')}
+			bind:value={setupCode}
+		/>
 		<TextField
 			label="Your name"
 			name="name"

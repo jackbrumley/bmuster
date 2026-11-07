@@ -8,20 +8,21 @@ A machine's name comes from enrolment and cannot be changed, and there is nowher
 
 ## 2. Acceptance criteria
 
-| #   | Criterion                                                                                                                                                            | Test                           |
-| :-- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------- |
-| D1  | An admin renames a machine (1–80 characters) from its page; the new name shows everywhere at once.                                                                   | `machine-details.test.ts`      |
-| D2  | An admin sets a description (up to 500 characters, plain text), shown under the name on the machine page and searchable on Machines.                                 | `machine-details.test.ts`      |
-| D3  | The machine page has a Notes tab: a list of notes, newest first, each with its author, time and text (up to 10 000 characters, plain text, line breaks kept).        | `machine-notes.test.ts`        |
-| D4  | Anyone who can see the machine can add a note. The author can edit their note; the author or an admin can delete it (with confirmation). Edited notes show "edited". | `machine-notes.test.ts`        |
-| D5  | Renames, description changes and note deletions go to the audit log.                                                                                                 | `audit.test.ts`                |
-| D6  | The Machines list search covers name, hostname, description and operating system.                                                                                    | `machines-page.svelte.test.ts` |
+| #   | Criterion                                                                                                                                                                                                    | Test                           |
+| :-- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------- |
+| D1  | An admin renames a machine (1–80 characters) from its page; the new name shows everywhere at once.                                                                                                           | `machine-details.test.ts`      |
+| D2  | An admin sets a description (up to 500 characters, plain text), shown under the name on the machine page and searchable on Machines.                                                                         | `machine-details.test.ts`      |
+| D3  | The machine page has a Notes tab: a list of notes, newest first, each with its author, time and text (up to 10 000 characters, plain text, line breaks kept).                                                | `machine-notes.test.ts`        |
+| D4  | Anyone who can see the machine can add a note. The author can edit their note; the author or an admin can delete it (with confirmation). Edited notes show "edited".                                         | `machine-notes.test.ts`        |
+| D5  | Renames, description changes and note deletions go to the audit log.                                                                                                                                         | `audit.test.ts`                |
+| D6  | The Machines list search covers name, hostname, description and operating system.                                                                                                                            | `machines-page.svelte.test.ts` |
+| D7  | The machine keeps its **last signed-in user** and when they were last seen, even after they sign out or the machine goes offline; Overview and the Machines list show it ("Last user: sarah.k, 2 days ago"). | `machine-details.test.ts`      |
 
 ## 3. Schema (additive)
 
 | Table           | Columns                                                                                       |
 | :-------------- | :-------------------------------------------------------------------------------------------- |
-| `machines`      | + `description` (text, default '')                                                            |
+| `machines`      | + `description` (text, default ''), + `last_user_name`, + `last_user_seen_at` (nullable)      |
 | `machine_notes` | id, machine_id, author_user_id, body, created_at, edited_at (nullable), deleted_at (nullable) |
 
 ## 4. Routes

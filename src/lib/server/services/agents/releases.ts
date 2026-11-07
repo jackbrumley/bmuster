@@ -1,27 +1,16 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import type { AgentDownload, AgentTarget } from '#lib/domain/machines/agent-release.ts';
 import { sha256Hex } from './signing.ts';
 
 /** Builds the server serves (SPEC-ENROLMENT 6.1). Signing arrives with SPEC-AGENT-UPDATES. */
-const AGENT_TARGETS = [
-	'x86_64-unknown-linux-gnu',
-	'aarch64-unknown-linux-gnu',
-	'x86_64-pc-windows-msvc'
-] as const;
-
-export type AgentTarget = (typeof AGENT_TARGETS)[number];
-
-export type ReleaseManifest = {
+type ReleaseManifest = {
 	version: string;
 	target: AgentTarget;
 	size: number;
 	sha256: string;
 	url: string;
 };
-
-export function isAgentTarget(value: string): value is AgentTarget {
-	return AGENT_TARGETS.some((target) => target === value);
-}
 
 function binaryName(target: AgentTarget): string {
 	return target.includes('windows') ? 'bmuster-agent.exe' : 'bmuster-agent';
@@ -56,6 +45,24 @@ export function latestRelease(
 		sha256: sha256Hex(readFileSync(path)),
 		url: `${origin}/agent/v1/releases/${version}/${target}`
 	};
+}
+
+/** What Add machine offers for `target` (SPEC-INSTALL-OPTIONS M2). */
+export function agentDownload(
+	releasesPath: string,
+	target: AgentTarget,
+	origin: string
+): AgentDownload {
+	const manifest = latestRelease(releasesPath, target, origin);
+	return manifest === undefined
+		? { kind: 'none', target }
+		: {
+				kind: 'ready',
+				target,
+				version: manifest.version,
+				size: manifest.size,
+				sha256: manifest.sha256
+			};
 }
 
 /** A release binary (a few MB), or undefined if there is no such build. */
