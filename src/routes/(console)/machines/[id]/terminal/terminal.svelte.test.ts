@@ -128,7 +128,7 @@ describe('the terminal tab (T1)', () => {
 	it('remembers the running session in this tab, so a reload comes back to it', async () => {
 		await openTerminal();
 		const saved = sessionStorage.getItem(`bmuster.terminal.${MACHINE.id}`) ?? '';
-		expect(JSON.parse(saved)).toMatchObject({ sessionId: SESSION_ID, shell: 'bash' });
+		expect(JSON.parse(saved)).toMatchObject({ sessionId: SESSION_ID, tag: 'bash' });
 	});
 
 	it('says how the session ended and offers a new one', async () => {
