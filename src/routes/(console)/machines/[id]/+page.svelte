@@ -6,6 +6,8 @@
 	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
 	import { osLabel, signedInUserOf, type Gpu } from '#lib/domain/machines/machine.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
+	import { canSendUserMessage } from '#lib/domain/machines/user-message.ts';
+	import SendMessage from './send-message.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -88,6 +90,10 @@
 	});
 </script>
 
+{#snippet messageAction()}
+	<SendMessage {machine} />
+{/snippet}
+
 <div class="sections">
 	<Panel heading="Health" actions={undefined} tone="normal" padding="normal">
 		{#if machine.status.kind === 'online' && machine.live.kind === 'known'}
@@ -129,7 +135,12 @@
 	</Panel>
 
 	<div class="wide">
-		<Panel heading="System" actions={undefined} tone="normal" padding="normal">
+		<Panel
+			heading="System"
+			actions={canSendUserMessage(data.grants, machine.osFamily) ? messageAction : undefined}
+			tone="normal"
+			padding="normal"
+		>
 			<dl>
 				{#each facts as fact (fact.label)}
 					<div class="fact">

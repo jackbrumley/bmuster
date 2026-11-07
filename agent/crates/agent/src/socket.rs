@@ -198,6 +198,33 @@ fn connect_with(session: &Session, channel: &Channel, path: &str) -> Result<Conn
     Ok(Connect::Open(Box::new(socket)))
 }
 
+/// A message box on the console's screen (Windows), on its own thread so the
+/// live socket never waits for it.
+fn show_user_message(from: String, text: String) {
+    log::info!("{from} sent a message to the person at this machine");
+    #[cfg(windows)]
+    {
+        let shown = std::thread::Builder::new()
+            .name("user-message".into())
+            .spawn(move || {
+                let title = format!("Message from {from} (BMuster)");
+                if let Err(error) =
+                    bmuster_desktop::winsession::console::send_message(&title, &text)
+                {
+                    log::warn!("Could not show the message: {error}");
+                }
+            });
+        if let Err(error) = shown {
+            log::warn!("Could not show the message: {error}");
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = text;
+        log::warn!("Messages to the screen are shown on Windows only; this one was dropped");
+    }
+}
+
 fn date_of(headers: &tungstenite::http::HeaderMap) -> Option<&str> {
     headers.get("date").and_then(|value| value.to_str().ok())
 }
@@ -284,6 +311,7 @@ fn serve(
                     watch = None;
                 }
                 Ok(ServerMessage::PinUpdate { next }) => session.transport.announce(next),
+                Ok(ServerMessage::UserMessage { from, text }) => show_user_message(from, text),
                 Ok(ServerMessage::SessionOpen { ticket, signature }) => {
                     if let Err(refused) = sessions.open(&ticket, &signature) {
                         log::warn!("{}", refused.message);

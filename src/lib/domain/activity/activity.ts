@@ -55,6 +55,7 @@ const AUDIT_KINDS = [
 	'session-ended',
 	// SPEC-DESKTOP
 	'session-disconnected-at-machine',
+	'machine-message-sent',
 	// SPEC-EMAIL
 	'email-sent',
 	'email-failed',
@@ -211,6 +212,8 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Closed a session';
 		case 'session-disconnected-at-machine':
 			return 'Disconnected at the machine';
+		case 'machine-message-sent':
+			return 'Sent a message to the screen';
 		case 'email-sent':
 			return 'Sent an email';
 		case 'email-failed':
