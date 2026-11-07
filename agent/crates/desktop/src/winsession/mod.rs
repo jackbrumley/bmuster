@@ -13,6 +13,7 @@
 //! Ctrl+Alt+Del policy values ([`sas_policy`]) and the names shown in the
 //! console ([`names`]). The Win32 parts are Windows only.
 
+pub mod command_line;
 pub mod follow;
 pub mod handoff;
 pub mod names;
@@ -26,6 +27,8 @@ pub mod input_desktop;
 pub mod launch;
 #[cfg(windows)]
 pub mod pipe;
+#[cfg(windows)]
+pub mod sas;
 
 /// Called once when the helper starts: per-monitor DPI awareness, so the
 /// display rectangles, the cursor position and `SendInput` all use real
