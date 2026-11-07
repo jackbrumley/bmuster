@@ -112,8 +112,10 @@
 						value={manualInstallCommand(os, origin, joinCode.code, pin)}
 						label="manual install command"
 					/>
+				{:else if joinCode.kind === 'failed'}
+					<p class="hint">No join code: {joinCode.message}</p>
 				{:else}
-					<p class="hint">Make a join code above to see the command.</p>
+					<p class="hint">Making a join code…</p>
 				{/if}
 			</div>
 

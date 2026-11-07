@@ -90,8 +90,11 @@ fn systemctl(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-fn copy_binary() -> Result<()> {
-    let current = std::env::current_exe().context("could not find this program's path")?;
+fn copy_binary(source: Option<&Path>) -> Result<()> {
+    let current = match source {
+        Some(path) => path.to_path_buf(),
+        None => std::env::current_exe().context("could not find this program's path")?,
+    };
     fs::create_dir_all(INSTALL_DIR).with_context(|| format!("could not create {INSTALL_DIR}"))?;
     fs::set_permissions(INSTALL_DIR, fs::Permissions::from_mode(0o755))?;
     if current.canonicalize().ok() == Path::new(BINARY).canonicalize().ok() {
@@ -108,11 +111,35 @@ fn copy_binary() -> Result<()> {
 pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) -> Result<()> {
     require_root()?;
     require_systemd()?;
-    if Path::new(UNIT_PATH).exists() {
-        bail!("BMuster is already installed ({UNIT_PATH} exists); run `bmuster-agent uninstall` first");
-    }
     let data_dir = paths::default_data_dir()?;
-    copy_binary()?;
+    // A fresh install replaces any earlier agent completely (service, program,
+    // identity), so a half-finished or old install never gets in the way.
+    let staged =
+        if Path::new(UNIT_PATH).exists() || Path::new(INSTALL_DIR).exists() || data_dir.exists() {
+            log::info!(
+                "Found an earlier BMuster agent on this machine; removing it before installing."
+            );
+            // This program may itself live in INSTALL_DIR, which uninstall deletes.
+            let staged =
+                std::env::temp_dir().join(format!("bmuster-agent-install-{}", std::process::id()));
+            let current = std::env::current_exe().context("could not find this program's path")?;
+            fs::copy(&current, &staged).with_context(|| {
+                format!(
+                    "could not copy {} to {}",
+                    current.display(),
+                    staged.display()
+                )
+            })?;
+            uninstall(true)?;
+            Some(staged)
+        } else {
+            None
+        };
+    let copied = copy_binary(staged.as_deref());
+    if let Some(path) = &staged {
+        let _ = fs::remove_file(path);
+    }
+    copied?;
     log::info!("Copied the agent to {BINARY}");
     identity::enrol(
         &data_dir,

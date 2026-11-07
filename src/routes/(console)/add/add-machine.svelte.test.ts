@@ -130,15 +130,10 @@ describe('Add machine: install manually', () => {
 		expect(production.container.textContent).not.toContain('agent:release-local');
 	});
 
-	it('M3: the command beside the file, with the server and join code, once a code exists', async () => {
+	it('M3: the command beside the file, with the server and a join code made when the page opens', async () => {
 		stubJoinCodes();
 		const screen = await renderPage(DOWNLOADS, false);
 		await screen.getByText('Install manually').click();
-		await expect
-			.element(screen.getByText('Make a join code above to see the command.'))
-			.toBeVisible();
-
-		await screen.getByRole('button', { name: 'Make a join code' }).click();
 		await expect
 			.element(
 				screen.getByText(
@@ -171,7 +166,11 @@ describe('Add machine: install manually', () => {
 		await screen.getByRole('button', { name: '7 days' }).click();
 		await screen.getByRole('button', { name: 'Make a roll-out code' }).click();
 		await expect.element(screen.getByText('RLL-OUT-234')).toBeVisible();
-		expect(bodies).toEqual([{ maxUses: 100, minutes: 10080 }]);
+		// The first request is the code made when the page opens; the second is the roll-out code.
+		expect(bodies).toEqual([
+			{ maxUses: 1, minutes: 60 },
+			{ maxUses: 100, minutes: 10080 }
+		]);
 		await expect
 			.element(
 				screen.getByText(
@@ -192,7 +191,6 @@ describe('Add machine: local network mode', () => {
 			.element(screen.getByText(/against your browser's certificate details/))
 			.toBeVisible();
 
-		await screen.getByRole('button', { name: 'Make a join code' }).click();
 		// L6: the download itself is pinned (curl --pinnedpubkey), and the agent gets --pin-cert.
 		await expect
 			.element(
@@ -239,7 +237,6 @@ describe('Add machine: local network mode', () => {
 	it('L5: without local network mode no command carries a pin', async () => {
 		stubJoinCodes();
 		const screen = await renderPage(DOWNLOADS, false);
-		await screen.getByRole('button', { name: 'Make a join code' }).click();
 		await expect
 			.element(
 				screen.getByText(`curl -fsSL ${ORIGIN}/install.sh | sudo sh -s -- --code ABC-DEF-GHJ`)
@@ -256,7 +253,6 @@ describe('Add machine: local network mode', () => {
 			served: { kind: 'none' }
 		});
 		await expect.element(screen.getByText(/Restart\s+BMuster to apply it/)).toBeVisible();
-		await screen.getByRole('button', { name: 'Make a join code' }).click();
 		await expect
 			.element(
 				screen.getByText(`curl -fsSL ${ORIGIN}/install.sh | sudo sh -s -- --code ABC-DEF-GHJ`)

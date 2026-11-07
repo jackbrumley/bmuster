@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import Button from '#lib/ui/button.svelte';
 	import {
 		IconBrandApple,
@@ -49,6 +50,12 @@
 		joinCode = await makeJoinCode(1, 60);
 	}
 
+	// A code is ready as soon as the page opens, so the commands below are
+	// complete straight away; New code makes another.
+	onMount(() => {
+		void makeCode();
+	});
+
 	function expiryTime(iso: string): string {
 		return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 	}
@@ -71,21 +78,21 @@
 			{:else if joinCode.kind === 'failed'}
 				<p class="error">{joinCode.message}</p>
 			{:else}
-				<p class="hint">A code lets one machine join, once, within 60 minutes.</p>
+				<p class="hint">Making a join code…</p>
 			{/if}
 		</div>
 		<Button
-			variant={joinCode.kind === 'ready' ? 'secondary' : 'primary'}
+			variant="secondary"
 			size="compact"
 			type="button"
 			onclick={() => {
 				void makeCode();
 			}}
 		>
-			{#if joinCode.kind === 'ready'}
-				<IconRefresh size={18} /> New code
+			{#if joinCode.kind === 'failed'}
+				<IconKey size={18} /> Try again
 			{:else}
-				<IconKey size={18} /> {joinCode.kind === 'making' ? 'Making…' : 'Make a join code'}
+				<IconRefresh size={18} /> New code
 			{/if}
 		</Button>
 	</div>
@@ -148,7 +155,6 @@
 		/* minmax(0, …): the long install command scrolls inside its field instead of widening the card. */
 		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-6);
-		max-width: 44rem;
 		padding: var(--space-4);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-card);

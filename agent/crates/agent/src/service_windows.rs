@@ -68,11 +68,18 @@ fn restrict_data_dir(dir: &std::path::Path) -> Result<()> {
 
 pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) -> Result<()> {
     let manager = manager(ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE)?;
+    // A fresh install replaces any earlier agent completely (service, program,
+    // identity), so a half-finished or old install never gets in the way.
     if manager
         .open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS)
         .is_ok()
+        || install_dir()?.exists()
+        || paths::default_data_dir()?.exists()
     {
-        bail!("BMuster is already installed; run `bmuster-agent uninstall` first");
+        log::info!(
+            "Found an earlier BMuster agent on this machine; removing it before installing."
+        );
+        uninstall(true)?;
     }
 
     let binary = binary_path()?;
