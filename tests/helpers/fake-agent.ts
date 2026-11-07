@@ -3,7 +3,7 @@ import type { AppDatabase } from '#lib/server/database/connection.ts';
 import { openDatabase } from '#lib/server/database/connection.ts';
 import { createJoinCode } from '#lib/server/services/agents/join-codes.ts';
 import { enrolMachine } from '#lib/server/services/agents/enrolment.ts';
-import { isRefusal } from '#lib/server/services/agents/agent-refusal.ts';
+import { isRefusal, type AgentRefusal } from '#lib/server/services/agents/agent-refusal.ts';
 import { requestMessage } from '#lib/server/services/agents/signing.ts';
 import type { SignedRequest } from '#lib/server/services/agents/agent-auth.ts';
 import type { InventoryWire } from '#lib/schemas/agents/agent-protocol.ts';
@@ -24,22 +24,36 @@ export type FakeAgent = {
 
 /** Enrols a machine the way the Rust agent does, and can sign requests as it. */
 export function enrolFakeAgent(database: AppDatabase, now: number): FakeAgent {
-	const pair = generateKeyPairSync('ed25519');
-	const publicKeyBase64 = pair.publicKey
-		.export({ format: 'der', type: 'spki' })
-		.subarray(-32)
-		.toString('base64');
 	const { code } = createJoinCode(
 		database,
 		{ maxUses: 1, minutes: 60, machineGroupIds: [], createdBy: null },
 		now
 	);
+	const agent = enrolWithCode(database, code, 'test-host', now);
+	if (isRefusal(agent)) {
+		throw new Error(`Enrolment refused: ${agent.message}`);
+	}
+	return agent;
+}
+
+/** Enrols with a given code and a fresh key, as `hostname`; the refusal if the server says no. */
+export function enrolWithCode(
+	database: AppDatabase,
+	code: string,
+	hostname: string,
+	now: number
+): FakeAgent | AgentRefusal {
+	const pair = generateKeyPairSync('ed25519');
+	const publicKeyBase64 = pair.publicKey
+		.export({ format: 'der', type: 'spki' })
+		.subarray(-32)
+		.toString('base64');
 	const reply = enrolMachine(
 		database,
 		{
 			code,
 			publicKey: publicKeyBase64,
-			hostname: 'test-host',
+			hostname,
 			name: 'Test machine',
 			osFamily: 'linux',
 			target: 'x86_64-unknown-linux-gnu',
@@ -49,7 +63,7 @@ export function enrolFakeAgent(database: AppDatabase, now: number): FakeAgent {
 		now
 	);
 	if (isRefusal(reply)) {
-		throw new Error(`Enrolment refused: ${reply.message}`);
+		return reply;
 	}
 	return {
 		machineId: reply.machineId,
@@ -85,5 +99,19 @@ export const SAMPLE_INVENTORY: InventoryWire = {
 	memoryTotalBytes: 16 * 1024 ** 3,
 	disks: [{ mount: '/', sizeBytes: 500 * 1024 ** 3, usedBytes: 200 * 1024 ** 3 }],
 	displays: [],
-	network: [{ name: 'eth0', mac: '00:11:22:33:44:55', addresses: ['10.0.0.5'] }]
+	network: [{ name: 'eth0', mac: '00:11:22:33:44:55', addresses: ['10.0.0.5'] }],
+	gpus: [
+		{
+			name: 'NVIDIA GeForce RTX 4070',
+			vendor: 'NVIDIA Corporation',
+			memoryBytes: { kind: 'known', bytes: 12 * 1024 ** 3 },
+			driver: 'nvidia 550.54'
+		},
+		{
+			name: 'Intel UHD Graphics 770',
+			vendor: 'Intel Corporation',
+			memoryBytes: { kind: 'unknown' },
+			driver: 'i915'
+		}
+	]
 };

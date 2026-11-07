@@ -103,9 +103,19 @@ function toMachine(
 	return {
 		id: machine.id,
 		name: machine.name,
+		description: machine.description,
 		hostname: machine.hostname,
 		osFamily: machine.osFamily,
+		target: machine.target,
 		agentVersion: machine.agentVersion,
+		lastUser:
+			machine.lastUserName !== null && machine.lastUserSeenAt !== null
+				? {
+						kind: 'user',
+						name: machine.lastUserName,
+						seenIso: machine.lastUserSeenAt.toISOString()
+					}
+				: { kind: 'none' },
 		status:
 			connected || recent
 				? { kind: 'online' }
@@ -162,6 +172,7 @@ function toInventory(row: InventoryRow | null): MachineInventory {
 		memoryTotalBytes: data.memoryTotalBytes,
 		disks: data.disks,
 		displayCount: data.displays.length,
-		addresses: data.network.flatMap((network) => network.addresses)
+		addresses: data.network.flatMap((network) => network.addresses),
+		gpus: data.gpus
 	};
 }

@@ -4,7 +4,8 @@
 	/**
 	 * The standard single-line field (AGENTS.md §4, §12): a label above a box
 	 * with 16px text, so iPhones do not zoom in when it is tapped, and the
-	 * field's error underneath it.
+	 * field's error underneath it. `multiline` is a box several lines tall
+	 * for plain text that keeps its line breaks (notes, descriptions).
 	 */
 	let {
 		label,
@@ -19,7 +20,7 @@
 		label: string;
 		/** The form field name, for forms that post without JavaScript. */
 		name: string;
-		type: 'text' | 'password' | 'email' | 'url';
+		type: 'text' | 'password' | 'email' | 'url' | 'multiline';
 		autocomplete: HTMLInputAttributes['autocomplete'];
 		autocapitalize: 'off' | 'sentences' | 'words';
 		required: boolean;
@@ -32,16 +33,28 @@
 
 <label class="field">
 	<span>{label}</span>
-	<input
-		{name}
-		{type}
-		{autocomplete}
-		{autocapitalize}
-		{required}
-		aria-invalid={error !== undefined}
-		aria-describedby={error !== undefined ? errorId : undefined}
-		bind:value
-	/>
+	{#if type === 'multiline'}
+		<textarea
+			{name}
+			{autocomplete}
+			{autocapitalize}
+			{required}
+			rows="5"
+			aria-invalid={error !== undefined}
+			aria-describedby={error !== undefined ? errorId : undefined}
+			bind:value></textarea>
+	{:else}
+		<input
+			{name}
+			{type}
+			{autocomplete}
+			{autocapitalize}
+			{required}
+			aria-invalid={error !== undefined}
+			aria-describedby={error !== undefined ? errorId : undefined}
+			bind:value
+		/>
+	{/if}
 	{#if error !== undefined}
 		<span class="error" id={errorId}>{error}</span>
 	{/if}
@@ -66,7 +79,21 @@
 		font-size: var(--text-base);
 	}
 
-	input[aria-invalid='true'] {
+	textarea {
+		min-height: 120px;
+		padding: var(--space-3);
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-control);
+		background: var(--surface);
+		color: var(--text);
+		font-family: inherit;
+		font-size: var(--text-base);
+		line-height: 1.5;
+		resize: vertical;
+	}
+
+	input[aria-invalid='true'],
+	textarea[aria-invalid='true'] {
 		border-color: var(--danger);
 	}
 

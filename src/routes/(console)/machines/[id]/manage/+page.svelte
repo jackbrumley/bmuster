@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { IconTrash } from '@tabler/icons-svelte-runes';
 	import Button from '#lib/ui/button.svelte';
 	import CopyField from '#lib/ui/copy-field.svelte';
@@ -9,9 +10,14 @@
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import { removeMachineReplySchema } from '#lib/schemas/machines/remove-machine.ts';
 	import { agentCommands } from '#lib/domain/machines/agent-commands.ts';
+	import MachineDetails from './machine-details.svelte';
+	import ReinstallAgent from './reinstall-agent.svelte';
 	import type { PageProps } from './$types';
 
-	/** The rarely needed things: the agent's commands and removing the machine. */
+	/**
+	 * The rarely needed things: the name and description, the agent's commands,
+	 * reinstalling the agent, and removing the machine.
+	 */
 	let { data }: PageProps = $props();
 
 	const machine = $derived(data.machine);
@@ -44,6 +50,8 @@
 </script>
 
 <div class="sections">
+	<MachineDetails {machine} />
+
 	<section class="panel">
 		<h2>Agent</h2>
 		<p class="muted">
@@ -66,6 +74,13 @@
 			command from the other server's Add machine page.
 		</p>
 	</section>
+
+	<ReinstallAgent
+		{machine}
+		origin={page.url.origin}
+		downloads={data.downloads}
+		localTls={data.localTls}
+	/>
 
 	<section class="panel danger-zone">
 		<h2>Danger zone</h2>

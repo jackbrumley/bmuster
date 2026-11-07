@@ -6,6 +6,7 @@
 		IconDeviceDesktop,
 		IconFolder,
 		IconInfoCircle,
+		IconNotes,
 		IconSettings,
 		IconTerminal2
 	} from '@tabler/icons-svelte-runes';
@@ -30,6 +31,7 @@
 			icon: IconDeviceDesktop
 		},
 		{ href: resolve('/(console)/machines/[id]/files', params), label: 'Files', icon: IconFolder },
+		{ href: resolve('/(console)/machines/[id]/notes', params), label: 'Notes', icon: IconNotes },
 		{
 			href: resolve('/(console)/machines/[id]/manage', params),
 			label: 'Manage',
@@ -40,14 +42,19 @@
 
 <a class="back" href={resolve('/(console)')}><IconChevronLeft size={18} /> Machines</a>
 
-<header class="head">
-	<OsIcon family={data.machine.osFamily} size={36} />
-	<div class="names">
-		<h1>{data.machine.name}</h1>
-		<p>{data.machine.hostname}</p>
-	</div>
-	<StatusBadge status={data.machine.status} now={data.now} />
-</header>
+<div class="identity">
+	<header class="head">
+		<OsIcon family={data.machine.osFamily} size={36} />
+		<div class="names">
+			<h1>{data.machine.name}</h1>
+			<p>{data.machine.hostname}</p>
+		</div>
+		<StatusBadge status={data.machine.status} now={data.now} />
+	</header>
+	{#if data.machine.description !== ''}
+		<p class="description">{data.machine.description}</p>
+	{/if}
+</div>
 
 <nav class="tabs" aria-label="Machine">
 	{#each tabs as tab (tab.href)}
@@ -75,11 +82,24 @@
 		font-weight: var(--weight-medium);
 	}
 
+	.identity {
+		display: grid;
+		gap: var(--space-2);
+		margin-bottom: var(--space-4);
+	}
+
 	.head {
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
-		margin-bottom: var(--space-4);
+	}
+
+	/* Plain text from the admins: line breaks kept, long words wrapped (D2). */
+	.description {
+		color: var(--text-soft);
+		font-size: var(--text-sm);
+		white-space: pre-line;
+		overflow-wrap: anywhere;
 	}
 
 	.names {

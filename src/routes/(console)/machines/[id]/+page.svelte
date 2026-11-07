@@ -3,7 +3,7 @@
 	import { refreshAll } from '$app/navigation';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
 	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
-	import { osLabel, signedInUserOf } from '#lib/domain/machines/machine.ts';
+	import { osLabel, signedInUserOf, type Gpu } from '#lib/domain/machines/machine.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -23,10 +23,28 @@
 		};
 	});
 
+	/** "NVIDIA GeForce RTX 4070 (12 GB)": the card, with its video memory when known (D8). */
+	function gpuLabel(gpu: Gpu): string {
+		if (gpu.memoryBytes.kind === 'unknown') {
+			return gpu.name;
+		}
+		// Video memory comes in whole gigabytes on any card that has that much.
+		const bytes = gpu.memoryBytes.bytes;
+		const gigabytes = bytes / 1024 ** 3;
+		return `${gpu.name} (${gigabytes >= 1 ? `${Math.round(gigabytes)} GB` : formatBytes(bytes)})`;
+	}
+
 	const facts = $derived.by(() => {
 		const list = [
 			{ label: 'Operating system', value: osLabel(machine) },
 			{ label: 'Signed in', value: user.kind === 'user' ? user.name : 'Nobody' },
+			{
+				label: 'Last user',
+				value:
+					machine.lastUser.kind === 'user'
+						? `${machine.lastUser.name}, ${formatRelative(machine.lastUser.seenIso, data.now)}`
+						: 'None seen yet'
+			},
 			{ label: 'Agent', value: `v${machine.agentVersion}` },
 			{
 				label: 'Last seen',
@@ -49,6 +67,11 @@
 				},
 				{ label: 'Processor', value: `${inventory.cpuModel} · ${inventory.cpuCores} cores` },
 				{ label: 'Memory', value: formatBytes(inventory.memoryTotalBytes) },
+				{
+					label: 'Graphics',
+					value:
+						inventory.gpus.length === 0 ? 'None reported' : inventory.gpus.map(gpuLabel).join(', ')
+				},
 				{ label: 'Build', value: inventory.osBuild === '' ? 'Not reported' : inventory.osBuild },
 				{
 					label: 'Addresses',

@@ -1,5 +1,5 @@
 //! What the agent reports about its machine: inventory, load and the
-//! signed-in user. Values the system does not give are reported honestly
+//! signed-in user. Graphics cards are in `gpus.rs`. Values the system does not give are reported honestly
 //! (`unknown`, an empty list or `{ kind: 'none' }`), never invented.
 
 use anyhow::{anyhow, Result};
@@ -98,6 +98,7 @@ impl Probe {
             // and a Windows service runs in session 0. SPEC-SESSIONS adds this.
             displays: Vec::new(),
             network: network(),
+            gpus: crate::gpus::gpus(),
         })
     }
 }

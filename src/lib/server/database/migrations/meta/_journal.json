@@ -29,6 +29,13 @@
       "when": 1794017295246,
       "tag": "0003_stale_vin_gonzales",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794018291147,
+      "tag": "0004_lumpy_ego",
+      "breakpoints": true
     }
   ]
 }

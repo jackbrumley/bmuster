@@ -17,7 +17,11 @@ const AUDIT_KINDS = [
 	'setting-changed',
 	'local-certificate-renewed',
 	'machine-enrolled',
-	'machine-removed'
+	'machine-removed',
+	'machine-renamed',
+	'machine-description-changed',
+	'machine-note-deleted',
+	'machine-reinstalled'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -72,5 +76,13 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Enrolled a machine';
 		case 'machine-removed':
 			return 'Removed a machine';
+		case 'machine-renamed':
+			return 'Renamed a machine';
+		case 'machine-description-changed':
+			return "Changed a machine's description";
+		case 'machine-note-deleted':
+			return 'Deleted a note on a machine';
+		case 'machine-reinstalled':
+			return "Reinstalled a machine's agent";
 	}
 }

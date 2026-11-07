@@ -4,6 +4,9 @@
 		IconCertificate,
 		IconDeviceDesktopMinus,
 		IconDeviceDesktopPlus,
+		IconEdit,
+		IconNoteOff,
+		IconRefresh,
 		IconKey,
 		IconLogin2,
 		IconLogout,
@@ -50,6 +53,13 @@
 				return IconDeviceDesktopPlus;
 			case 'machine-removed':
 				return IconDeviceDesktopMinus;
+			case 'machine-renamed':
+			case 'machine-description-changed':
+				return IconEdit;
+			case 'machine-note-deleted':
+				return IconNoteOff;
+			case 'machine-reinstalled':
+				return IconRefresh;
 		}
 	}
 </script>

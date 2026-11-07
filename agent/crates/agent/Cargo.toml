@@ -36,6 +36,10 @@ libc = "=0.2.191"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "=0.8.1"
+# Graphics cards (SPEC-MACHINE-DETAILS D8): Win32_VideoController over COM, no child process.
+wmi = { version = "=0.18.4", default-features = false }
+# Video memory over 4 GB, which Win32_VideoController's 32-bit AdapterRAM cannot hold.
+windows-registry = "=0.6.1"
 
 [dev-dependencies]
 tempfile = "=3.27.0"

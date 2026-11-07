@@ -38,5 +38,7 @@ To add:
 
 ## 5. Decisions (2026-11-07)
 
+3. **Moving servers:** the old server marks the machine _moved_ (kept in history, refused from then on).
+
 1. **Where it listens:** localhost only by default; the local network is an opt-in server setting.
-2. **Who sees the code:** admins only for now.
+1. **Who sees the code:** admins only for now.

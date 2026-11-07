@@ -311,6 +311,8 @@ pub struct Inventory {
     pub disks: Vec<DiskInfo>,
     pub displays: Vec<DisplayInfo>,
     pub network: Vec<NetworkInterface>,
+    /// Every graphics card, integrated and discrete (SPEC-MACHINE-DETAILS D8).
+    pub gpus: Vec<GpuInfo>,
 }
 
 impl Inventory {
@@ -376,6 +378,26 @@ pub struct NetworkInterface {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GpuInfo {
+    /// What people call it, e.g. `NVIDIA GeForce RTX 4070`.
+    pub name: String,
+    /// The maker, e.g. `NVIDIA Corporation`.
+    pub vendor: String,
+    pub memory_bytes: GpuMemory,
+    /// Driver name and version where known; empty when the system does not say.
+    pub driver: String,
+}
+
+/// Dedicated video memory. Integrated graphics share main memory: `Unknown`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum GpuMemory {
+    Unknown,
+    Known { bytes: u64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CheckInReply {
     pub check_in_seconds: u32,
     /// The server has no inventory for this machine; send it in full next time.
@@ -432,6 +454,25 @@ mod tests {
         assert_eq!(
             serde_json::to_value(UpdatesPending::Known { count: 3 }).unwrap(),
             json!({ "kind": "known", "count": 3 })
+        );
+        assert_eq!(
+            serde_json::to_value(GpuInfo {
+                name: "NVIDIA GeForce RTX 4070".into(),
+                vendor: "NVIDIA Corporation".into(),
+                memory_bytes: GpuMemory::Known { bytes: 12 << 30 },
+                driver: "nvidia 550.54".into(),
+            })
+            .unwrap(),
+            json!({
+                "name": "NVIDIA GeForce RTX 4070",
+                "vendor": "NVIDIA Corporation",
+                "memoryBytes": { "kind": "known", "bytes": 12_u64 << 30 },
+                "driver": "nvidia 550.54"
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(GpuMemory::Unknown).unwrap(),
+            json!({ "kind": "unknown" })
         );
         assert_eq!(
             serde_json::to_value(InventoryReport::Unchanged { hash: "ab".into() }).unwrap(),

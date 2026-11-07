@@ -108,7 +108,8 @@ Inventory = {
   hostname, cpu: { model, cores }, memoryTotalBytes,
   disks: [{ mount, sizeBytes, usedBytes }],
   displays: [{ index, width, height, primary }],
-  network: [{ name, mac, addresses }]
+  network: [{ name, mac, addresses }],
+  gpus: [{ name, vendor, memoryBytes: { kind: 'unknown' } | { kind: 'known', bytes }, driver }]
 }
 ```
 
@@ -201,3 +202,5 @@ Differences from the text above:
 - `machines.join_code_id` records the code each machine enrolled with (null for machines enrolled before it was added).
 - Every enrolment is audited (`machine-enrolled`, actor System, with hostname, system and single use or roll-out), and so is every removal (`machine-removed`, actor the admin), each in the same transaction as the change.
 - The console has no accounts yet: the server refuses to start unless `CONSOLE_AUTH=none-development`. Never expose such a build.
+- Inventory `gpus` (SPEC-MACHINE-DETAILS D8) is sent by every agent from this version on. The server's schema defaults a missing `gpus` to `[]`, so an older agent's inventory is accepted and shows "None reported". `driver` is '' when unknown.
+- A join code can be a reinstall code (`join_codes.reinstall_machine_id`, SPEC-MACHINE-DETAILS D9): enrolment then takes over that machine's row and replies with its existing `machineId`. Plain codes always make a new machine.

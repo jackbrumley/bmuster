@@ -12,5 +12,12 @@ export const joinCodes = sqliteTable('join_codes', {
 	/** Who made the code; null for codes made before sign-in existed. */
 	createdBy: text().references(() => users.id),
 	createdAt: integer({ mode: 'timestamp_ms' }).notNull(),
-	expiresAt: integer({ mode: 'timestamp_ms' }).notNull()
+	expiresAt: integer({ mode: 'timestamp_ms' }).notNull(),
+	/**
+	 * A reinstall code (SPEC-MACHINE-DETAILS D9): enrolling with it takes over
+	 * this machine's row instead of making a new one. Null for plain codes. No
+	 * foreign key: machines already references join_codes, and machine rows
+	 * are never deleted.
+	 */
+	reinstallMachineId: text()
 });

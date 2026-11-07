@@ -22,7 +22,7 @@ export type JoinCodeStatus = {
 
 /** Makes a join code (SPEC-ENROLMENT 5). The code itself is returned once and never stored. */
 export function createJoinCode(
-	database: AppDatabase,
+	database: Queryable,
 	options: {
 		maxUses: number;
 		minutes: number;
@@ -38,6 +38,48 @@ export function createJoinCode(
 	if (options.minutes < 1 || options.minutes > JOIN_CODE_LIMITS.maxMinutes) {
 		throw new Error('A join code lasts between 1 minute and 7 days');
 	}
+	return insertCode(database, { ...options, reinstallMachineId: null }, now);
+}
+
+/**
+ * Makes a reinstall code for one machine (SPEC-MACHINE-DETAILS D9): single
+ * use, 60 minutes. Enrolling with it takes over that machine's entry.
+ * Undefined when the machine is unknown or removed.
+ */
+export function createReinstallCode(
+	database: AppDatabase,
+	machineId: string,
+	createdBy: string,
+	now: number
+): NewJoinCode | undefined {
+	return database.transaction((tx) => {
+		const machine = tx
+			.select({ removedAt: machines.removedAt })
+			.from(machines)
+			.where(eq(machines.id, machineId))
+			.get();
+		if (machine?.removedAt !== null) {
+			return undefined;
+		}
+		return insertCode(
+			tx,
+			{ maxUses: 1, minutes: 60, machineGroupIds: [], createdBy, reinstallMachineId: machineId },
+			now
+		);
+	});
+}
+
+function insertCode(
+	database: Queryable,
+	options: {
+		maxUses: number;
+		minutes: number;
+		machineGroupIds: string[];
+		createdBy: string | null;
+		reinstallMachineId: string | null;
+	},
+	now: number
+): NewJoinCode {
 	const raw = randomCode(9);
 	const id = crypto.randomUUID();
 	const expiresAt = new Date(now + options.minutes * 60_000);
@@ -51,7 +93,8 @@ export function createJoinCode(
 			uses: 0,
 			createdBy: options.createdBy,
 			createdAt: new Date(now),
-			expiresAt
+			expiresAt,
+			reinstallMachineId: options.reinstallMachineId
 		})
 		.run();
 	return {
@@ -62,12 +105,20 @@ export function createJoinCode(
 	};
 }
 
+/** What a redeemed code allows: a new machine, or taking over an existing one's entry (D9). */
+export type RedeemedCode = {
+	joinCodeId: string;
+	maxUses: number;
+	machineGroupIds: string[];
+	purpose: { kind: 'new-machine' } | { kind: 'reinstall'; machineId: string };
+};
+
 /** Uses one use of a code. Call inside the enrolment transaction. */
 export function redeemJoinCode(
 	database: Queryable,
 	typed: string,
 	now: number
-): { joinCodeId: string; maxUses: number; machineGroupIds: string[] } | AgentRefusal {
+): RedeemedCode | AgentRefusal {
 	const row = database
 		.select()
 		.from(joinCodes)
@@ -82,6 +133,19 @@ export function redeemJoinCode(
 	if (row.uses >= row.maxUses) {
 		return refuse('used-code', 'That join code has already been used.');
 	}
+	if (row.reinstallMachineId !== null) {
+		const target = database
+			.select({ removedAt: machines.removedAt })
+			.from(machines)
+			.where(eq(machines.id, row.reinstallMachineId))
+			.get();
+		if (target?.removedAt !== null) {
+			return refuse(
+				'invalid-code',
+				'The machine this reinstall code was made for has been removed from the server. Add it again with a new join code.'
+			);
+		}
+	}
 	database
 		.update(joinCodes)
 		.set({ uses: row.uses + 1 })
@@ -91,7 +155,15 @@ export function redeemJoinCode(
 	if (!Array.isArray(groups) || !groups.every((group) => typeof group === 'string')) {
 		throw new Error(`Join code ${row.id} has malformed machine group ids`);
 	}
-	return { joinCodeId: row.id, maxUses: row.maxUses, machineGroupIds: groups };
+	return {
+		joinCodeId: row.id,
+		maxUses: row.maxUses,
+		machineGroupIds: groups,
+		purpose:
+			row.reinstallMachineId === null
+				? { kind: 'new-machine' }
+				: { kind: 'reinstall', machineId: row.reinstallMachineId }
+	};
 }
 
 /** A join code's uses and the machines that joined with it; undefined for an unknown id. */

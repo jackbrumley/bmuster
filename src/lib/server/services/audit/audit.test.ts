@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { testDatabase } from '#tests/helpers/fake-agent.ts';
+import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, CLIENT, NOW, PASSWORD } from '#tests/helpers/people.ts';
 import { addProvider, deleteProvider, updateProvider } from '../auth/identity-providers.ts';
 import { signInWithPassword } from '../auth/password-sign-in.ts';
 import { signOut } from '../auth/sessions.ts';
 import { updateSetting } from '../settings/settings.ts';
 import { activityFeed } from '../users/activity-feed.ts';
-import { addUser, disableUser, setRole } from '../users/users.ts';
+import { addNote, deleteNote, editNote } from '../machines/machine-notes.ts';
+import { updateMachineDetails } from '../machines/machine-details.ts';
+import { addUser, disableUser, setRole, toConsoleUser } from '../users/users.ts';
 import { listAudit } from './audit.ts';
 
 const KEY = Buffer.alloc(32, 5);
@@ -141,5 +143,68 @@ describe('audit log (S13)', () => {
 				detail: { from: 'false', to: 'true' }
 			})
 		]);
+	});
+});
+
+describe('machine details in the audit log (D5)', () => {
+	it('records renames, description changes and note deletions with who did them', async () => {
+		const database = testDatabase();
+		const admin = toConsoleUser(
+			await addTestUser(database, { email: 'ada@example.com', role: 'admin', password: null })
+		);
+		const { machineId } = enrolFakeAgent(database, NOW);
+		updateMachineDetails(
+			database,
+			machineId,
+			{ name: 'Reception PC', description: '' },
+			admin.id,
+			NOW + 1
+		);
+		updateMachineDetails(
+			database,
+			machineId,
+			{ name: 'Reception PC', description: 'Front desk' },
+			admin.id,
+			NOW + 2
+		);
+		// Saving the same values again records nothing.
+		updateMachineDetails(
+			database,
+			machineId,
+			{ name: 'Reception PC', description: 'Front desk' },
+			admin.id,
+			NOW + 3
+		);
+		const note = addNote(database, machineId, admin, 'Spare key in the top drawer', NOW + 4);
+		if (note === undefined) throw new Error('note not added');
+		// Adding and editing notes are not audited; deleting is.
+		editNote(database, machineId, note.id, admin, 'Spare key in the second drawer', NOW + 5);
+		deleteNote(database, machineId, note.id, admin, NOW + 6);
+
+		expect(listAudit(database, 10)).toMatchObject([
+			{
+				actorUserId: admin.id,
+				kind: 'machine-note-deleted',
+				target: 'Reception PC',
+				detail: { author: 'ada', note: 'Spare key in the second drawer' }
+			},
+			{
+				actorUserId: admin.id,
+				kind: 'machine-description-changed',
+				target: 'Reception PC',
+				detail: { description: 'Front desk' }
+			},
+			{
+				actorUserId: admin.id,
+				kind: 'machine-renamed',
+				target: 'Reception PC',
+				detail: { from: 'Test machine' }
+			},
+			{ kind: 'machine-enrolled' }
+		]);
+		expect(activityFeed(database, 1)[0]).toMatchObject({
+			kind: 'machine-note-deleted',
+			actor: { kind: 'user', name: 'ada' }
+		});
 	});
 });

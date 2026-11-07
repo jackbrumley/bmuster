@@ -21,7 +21,8 @@ describe('join codes (A1, A2)', () => {
 		expect(redeemJoinCode(database, code.replaceAll('-', '').toLowerCase(), NOW)).toEqual({
 			joinCodeId: id,
 			maxUses: 1,
-			machineGroupIds: ['g1']
+			machineGroupIds: ['g1'],
+			purpose: { kind: 'new-machine' }
 		});
 		expect(redeemJoinCode(database, code, NOW)).toMatchObject({ reason: 'used-code', status: 409 });
 	});
@@ -53,7 +54,8 @@ describe('join codes (A1, A2)', () => {
 			expect(redeemJoinCode(database, code, NOW)).toEqual({
 				joinCodeId: id,
 				maxUses: 3,
-				machineGroupIds: []
+				machineGroupIds: [],
+				purpose: { kind: 'new-machine' }
 			});
 		}
 		expect(redeemJoinCode(database, code, NOW)).toMatchObject({ reason: 'used-code' });

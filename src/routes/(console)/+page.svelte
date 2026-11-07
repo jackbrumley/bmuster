@@ -9,8 +9,8 @@
 	import OsIcon from '#lib/ui/os-icon.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
-	import { formatBytes, percentOf } from '#lib/utils/format.ts';
-	import { osLabel, type Machine } from '#lib/domain/machines/machine.ts';
+	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
+	import { matchesSearch, osLabel, type Machine } from '#lib/domain/machines/machine.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -65,10 +65,7 @@
 	}
 
 	const visible = $derived(
-		machines.filter((machine) => {
-			const text = `${machine.name} ${machine.hostname} ${osLabel(machine)}`.toLowerCase();
-			return matchesFilter(machine) && text.includes(query.trim().toLowerCase());
-		})
+		machines.filter((machine) => matchesFilter(machine) && matchesSearch(machine, query))
 	);
 
 	const counts = $derived({
@@ -113,7 +110,7 @@
 			<input
 				data-raw-input="list-search"
 				type="search"
-				placeholder="Search name, host or system"
+				placeholder="Search name, host, description or system"
 				bind:value={query}
 			/>
 		</label>
@@ -177,6 +174,15 @@
 								<p class="pending">Waiting for the first inventory.</p>
 							{/if}
 						</div>
+
+						{#if machine.lastUser.kind === 'user'}
+							<p class="last-user">
+								Last user: {machine.lastUser.name}, {formatRelative(
+									machine.lastUser.seenIso,
+									data.now
+								)}
+							</p>
+						{/if}
 
 						{#if updates > 0}
 							<div class="tags">
@@ -369,6 +375,12 @@
 	.meters {
 		display: grid;
 		gap: var(--space-3);
+	}
+
+	.last-user {
+		color: var(--muted);
+		font-size: var(--text-xs);
+		overflow-wrap: anywhere;
 	}
 
 	.tags {

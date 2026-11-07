@@ -39,3 +39,5 @@ BMuster cannot send email, so a person with a password account who forgets it ne
 1. SMTP only at first; email is the only channel for now.
 2. No machine-offline alerts; last-known information is kept instead.
 3. Rules list email addresses until user groups exist (SPEC-ACCESS); then they can name a user group.
+4. First events: machine enrolled, machine removed, test notification. Share-link events come with share links.
+5. Invitation links set a password and last 7 days; provider accounts are told to sign in with their provider.

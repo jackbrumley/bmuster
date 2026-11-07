@@ -37,6 +37,17 @@ const updatesPendingSchema = z.discriminatedUnion('kind', [
 
 const byteCount = z.number().int().min(0);
 
+/** One graphics card (SPEC-MACHINE-DETAILS D8). `driver` is '' when the system does not say. */
+const gpuSchema = z.object({
+	name: z.string().max(255),
+	vendor: z.string().max(255),
+	memoryBytes: z.discriminatedUnion('kind', [
+		z.object({ kind: z.literal('unknown') }),
+		z.object({ kind: z.literal('known'), bytes: byteCount })
+	]),
+	driver: z.string().max(255)
+});
+
 export const inventorySchema = z.object({
 	os: z.object({
 		family: osFamilySchema,
@@ -69,7 +80,9 @@ export const inventorySchema = z.object({
 				addresses: z.array(z.string().max(64)).max(64)
 			})
 		)
-		.max(256)
+		.max(256),
+	/** Agents before 0.2 sent no `gpus`; their inventories read as none reported. */
+	gpus: z.array(gpuSchema).max(32).default([])
 });
 
 export type InventoryWire = z.infer<typeof inventorySchema>;

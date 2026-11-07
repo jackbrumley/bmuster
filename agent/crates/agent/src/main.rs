@@ -2,6 +2,7 @@
 //! keeps a live socket open. See `docs/specs/SPEC-ENROLMENT.md`.
 
 mod client;
+mod gpus;
 mod identity;
 mod inventory;
 mod logging;

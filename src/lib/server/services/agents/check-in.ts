@@ -13,8 +13,13 @@ export function recordCheckIn(
 ): CheckInReply {
 	const at = new Date(now);
 	return database.transaction((tx) => {
+		// The last user is kept when nobody is signed in (SPEC-MACHINE-DETAILS D7).
+		const lastUser =
+			checkIn.signedInUser.kind === 'user'
+				? { lastUserName: checkIn.signedInUser.name, lastUserSeenAt: at }
+				: {};
 		tx.update(machines)
-			.set({ agentVersion: checkIn.agentVersion, lastSeenAt: at })
+			.set({ agentVersion: checkIn.agentVersion, lastSeenAt: at, ...lastUser })
 			.where(eq(machines.id, agent.machineId))
 			.run();
 

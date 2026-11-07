@@ -14,6 +14,7 @@ agent/
     src/trust.rs          the current and announced certificate check (pin rollover)
     src/identity.rs       Ed25519 key, identity.json, enrolment
     src/inventory.rs      inventory, load and signed-in user (sysinfo)
+    src/gpus.rs           graphics cards: /sys/class/drm and pci.ids on Linux, WMI on Windows
     src/worker.rs         `run`: the check-in loop
     src/socket.rs         the live socket (own thread)
     src/service_linux.rs  systemd install and uninstall
@@ -79,4 +80,10 @@ To type-check the Windows code from Linux without a mingw toolchain, run this. I
 
 ```bash
 CC_x86_64_pc_windows_gnu=gcc AR_x86_64_pc_windows_gnu=ar cargo check --target x86_64-pc-windows-gnu
+```
+
+The same with clippy, for the Windows-only code (service, WMI graphics cards):
+
+```bash
+CC_x86_64_pc_windows_gnu=gcc AR_x86_64_pc_windows_gnu=ar cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings
 ```

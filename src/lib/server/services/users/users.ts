@@ -105,7 +105,7 @@ function userView(database: Queryable, id: string): UserView {
 	return toUserView(row, links);
 }
 
-/** Names for the Activity page, by id. */
+/** Names by id: actors on the Activity page, note authors on a machine. */
 export function userNames(database: Queryable, ids: string[]): Map<string, string> {
 	if (ids.length === 0) {
 		return new Map();
