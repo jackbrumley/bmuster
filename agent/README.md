@@ -10,7 +10,7 @@ agent/
   crates/protocol/        wire types, request signing, shared test vectors (tests/vectors.json)
   crates/service/         systemd and Windows service plumbing shared by the agent and the server launcher
   crates/server/          the `bmuster-server` launcher (runs and installs the server, SPEC-SERVER-INSTALL)
-  crates/desktop/         remote desktop (SPEC-DESKTOP): X11 and Windows capture and input, JPEG tiles, pacing; licences in NOTICE.md
+  crates/desktop/         remote desktop (SPEC-DESKTOP): X11 and Windows capture and input, JPEG tiles, pacing, the notice bar; licences in NOTICE.md
   crates/agent/           the `bmuster-agent` binary
     src/client.rs         server URL, HTTP and socket channels, signed requests, clock-drift correction
     src/tls.rs            rustls set-up: trust store, pinned key (--pin-cert) or --insecure-dev-tls
@@ -132,3 +132,7 @@ The AltGr test also needs `setxkbmap`.
 `BMUSTER_DESKTOP_DISPLAY` and `BMUSTER_DESKTOP_XAUTHORITY` point a debug build's desktop sessions at a nested server; release builds ignore both.
 
 Encoder timing for one 1920×1080 frame (full, and with 5% changed): `cargo bench -p bmuster-desktop --bench tiles`.
+
+The golden frames the browser's `frame.test.ts` reads live in `tests/fixtures/desktop-frames/` at the repository root; `cargo test -p bmuster-desktop --test frame_fixtures` checks them, and `BMUSTER_WRITE_FIXTURES=1` rewrites them after a deliberate format change.
+
+A debug build encodes slowly. For frame-rate checks against a nested server, build the desktop crate optimised while keeping the overrides: `cargo build --config 'profile.dev.package.bmuster-desktop.opt-level=3' --config 'profile.dev.package.jpeg-encoder.opt-level=3'`.
