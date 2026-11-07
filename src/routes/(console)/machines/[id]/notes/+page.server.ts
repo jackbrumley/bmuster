@@ -7,7 +7,7 @@ import type { PageServerLoad } from './$types';
 
 /** The Notes tab (SPEC-MACHINE-DETAILS D3): the machine's notes, newest first. */
 export const load: PageServerLoad = page.user(({ params }, { user }) => {
-	if (!canSeeMachine(user, params.id)) {
+	if (!canSeeMachine(database, user, params.id)) {
 		error(404, 'No machine with this id');
 	}
 	return { notes: listNotes(database, params.id, user) };

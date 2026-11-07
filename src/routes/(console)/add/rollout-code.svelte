@@ -6,6 +6,7 @@
 	import CopyField from '#lib/ui/copy-field.svelte';
 	import SegmentedControl from '#lib/ui/segmented-control.svelte';
 	import JoinCodeStatus from './join-code-status.svelte';
+	import MachineGroupPicker from './machine-group-picker.svelte';
 	import { makeJoinCode, type CodeState } from './join-code.ts';
 
 	/**
@@ -13,7 +14,17 @@
 	 * many machines, each running the same command with one roll-out code
 	 * (up to 100 machines, up to 7 days; SPEC-ENROLMENT decision 13.2).
 	 */
-	let { os, origin, pin }: { os: 'linux' | 'windows'; origin: string; pin: ServedPin } = $props();
+	let {
+		os,
+		origin,
+		pin,
+		machineGroups
+	}: {
+		os: 'linux' | 'windows';
+		origin: string;
+		pin: ServedPin;
+		machineGroups: { id: string; name: string }[];
+	} = $props();
 
 	const useOptions = [
 		{ value: '10', label: '10' },
@@ -30,10 +41,11 @@
 	let uses = $state<(typeof useOptions)[number]['value']>('25');
 	let minutes = $state<(typeof lifeOptions)[number]['value']>('1440');
 	let rollout = $state<CodeState>({ kind: 'none' });
+	let groupIds = $state<string[]>([]);
 
 	async function makeRollout(): Promise<void> {
 		rollout = { kind: 'making' };
-		rollout = await makeJoinCode(Number(uses), Number(minutes));
+		rollout = await makeJoinCode(Number(uses), Number(minutes), groupIds);
 	}
 
 	function expiry(iso: string): string {
@@ -50,6 +62,13 @@
 	</p>
 	<SegmentedControl label="Machines" options={useOptions} bind:value={uses} />
 	<SegmentedControl label="Valid for" options={lifeOptions} bind:value={minutes} />
+	<MachineGroupPicker
+		groups={machineGroups}
+		selected={groupIds}
+		onchange={(ids: string[]) => {
+			groupIds = ids;
+		}}
+	/>
 	<div>
 		<Button
 			variant="secondary"

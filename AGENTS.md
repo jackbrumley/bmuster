@@ -89,7 +89,6 @@ src/
     shell/              console frame, public page, navigation
     runes/              *.svelte.ts state helpers
     utils/              formatting, the one API client
-    prototype/          made-up data for the UI prototype; deleted once real data lands
 scripts/                hygiene, verify, migrate
 tests/                  unit/, ui/, hygiene fixtures
 agent/                  Rust workspace: the program installed on each machine (Section 14)
@@ -333,7 +332,7 @@ The design is in `docs/access-and-sign-in.md`.
 - `lib-root-file-forbidden` (violation, §2): src/lib/ holds only the area
   folders, so loose modules or new top-level folders leave nobody sure where a
   file belongs. **Fix:** Move the file into its folder (server/, domain/,
-  schemas/, ui/, shell/, runes/, utils/ or prototype/) and update its imports.
+  schemas/, ui/, shell/, runes/ or utils/) and update its imports.
 - `lint-bypass-forbidden` (violation, §7): Bypass pragmas (eslint, TypeScript,
   Svelte) hide real problems from the checks. **Fix:** Delete the pragma and fix
   the code so it passes natively.

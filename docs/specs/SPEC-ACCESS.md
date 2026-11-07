@@ -1,6 +1,6 @@
 # SPEC-ACCESS: User groups, machine groups and access rules
 
-**Status:** `APPROVED` (2026-11-07) · Design: `docs/access-and-sign-in.md` section 1.
+**Status:** `IMPLEMENTED` (A1–A10 built; version bump and changelog left for the release step) · approved 2026-11-07 · Design: `docs/access-and-sign-in.md` section 1.
 
 ## 1. Problem
 
@@ -34,3 +34,41 @@ Groups and access rules are prototype pages with made-up data, so members see no
 ## 4. Out of scope
 
 Provider group sync; share links; notifications naming user groups arrive with SPEC-EMAIL's rules once this exists.
+
+## 5. As built (2026-11-07)
+
+Built as specified unless listed here. Tested end to end against a scratch dev server with two debug agents (see the end of this section).
+
+| #      | Where                                                                                                                                                                                                                                                                                                                                                                                                                               | Tests                                                                   |
+| :----- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------- |
+| A1, A2 | **Groups** page: a People section and a Machines section, each a list → view modal (description, members, rules that use it) → Edit (name, description), People / Machines (tick boxes), Delete. The Users page shows each person's groups under their email, in the view modal, and as tick boxes in the edit modal. A machine's **Manage** tab has a Groups panel with Change groups.                                             | `user-groups.test.ts`, `machine-groups.test.ts`                         |
+| A3     | The All machines row is seeded by the migration; its view says "Every machine on this server, now and later" and offers only Close. The service refuses renaming, describing, deleting or changing its members (409).                                                                                                                                                                                                               | `machine-groups.test.ts`                                                |
+| A4     | **Access rules** page: list → view → edit. The form picks one group of people and one group of machines (chips), ticks permissions and picks consent (Connect straight away / Ask first), starting from _Default for new access rules_.                                                                                                                                                                                             | `access-rules.test.ts`                                                  |
+| A5     | `services/access/access.ts`: `permissionsFor(database, user, machineId)` returns `Grant[]` (`{ permission, consent }` in `PERMISSIONS` order); `canSeeMachine`, `visibleMachineIds` and `activityScopeFor` are built on the same rules.                                                                                                                                                                                             | `access.test.ts`                                                        |
+| A6     | Machines list, machine pages (layout `page.user` + `permissionsFor`, 404 without `view`), notes page and API, Activity (members see entries whose `machine_id` they can see), join-code status (lists only machines the person can see, plus removed ones). Terminal, Desktop and Files say "You don't have permission for this" without `terminal`, `desktop-view`, `files`. Manage is hidden from members (and stays admin-only). | `access.test.ts`, `guards.test.ts`, `no-permission.svelte.test.ts`      |
+| A7     | Add machine: a "Machine groups it joins" picker above the code; changing it makes a new single-use code at once (a code carries its groups). The roll-out section has its own picker. `POST /api/join-codes` now requires `machineGroupIds` and refuses unknown groups and All machines (404).                                                                                                                                      | `join-codes.test.ts`, `add-machine.svelte.test.ts`                      |
+| A8     | Deleting a group asks with `confirmAction`, naming every rule that goes with it ("IT → Office"). Rules, then memberships, then the group are deleted in one transaction; people and machines stay.                                                                                                                                                                                                                                  | `access-rules.test.ts`, `user-groups.test.ts`, `machine-groups.test.ts` |
+| A9     | New audit kinds with Activity labels and icons: `user-group-added/-changed/-deleted/-member-added/-member-removed`, the same five for `machine-group-…`, and `access-rule-added/-changed/-deleted`. A machine's enrolment entry gains `groups`.                                                                                                                                                                                     | `audit.test.ts`                                                         |
+| A10    | `src/lib/prototype/` is deleted (nothing used it any more); `prototype` is no longer an allowed `src/lib/` folder in the hygiene layout rule, and AGENTS.md section 2 no longer lists it.                                                                                                                                                                                                                                           | `npm run deadcode`, hygiene                                             |
+
+**Different from the spec or decided while building**
+
+- **The All machines row** is inserted by DML appended to the generated migration (`0006`), with the fixed id `00000000-0000-4000-8000-00000000a11a`, as AGENTS.md section 3 allows for data. It runs exactly once per database, inside the migration, so there is no "create on first use" write during a read. `built_in` has a unique index, so there can only be one.
+- **`audit_entries.machine_id`** (nullable, indexed with `at`) is new: it is how Activity shows members only entries about their machines. Every `recordAudit` call now names its machine or `null`; entries written before this change have none, so members never see them.
+- **One rule per pair of groups.** A second rule for the same user group and machine group is refused (409, "Change that one instead"); with union semantics a duplicate could only confuse.
+- **Group names** are 1–80 characters, one line, unique ignoring case; descriptions up to 500 characters.
+- **Permission sets are complete or refused.** The request schema refuses a set without `view`, with `desktop-control` but not `desktop-view`, or with duplicates. The form keeps the set complete: ticking adds what a permission includes, unticking removes what needs it (`togglePermission` in `domain/access/access.ts`).
+- **Routes.** `POST /api/user-groups`, `PATCH|DELETE /api/user-groups/[id=uuid]` (`set-details` or `set-members`), the same for `/api/machine-groups`, `POST /api/access-rules`, `PATCH|DELETE /api/access-rules/[id=uuid]`, `PATCH /api/users/[id=uuid]/groups`, `PATCH /api/machines/[id]/groups`; all `route.admin`. The group handlers are written once in `routes/api/groups.server.ts`.
+- **Activity is now open to members** (`page.user`), and in their navigation.
+- **Members' Machines page:** the "Your access hasn't been set up yet" message shows only when they can see no machine.
+- **Enrolment** skips groups deleted since the code was made; reinstall codes carry no groups (the machine keeps its own).
+- **Audit details.** Membership entries target the group and name the person (`pat (pat@example.com)`) or machine; machine membership entries carry the machine id. Deleting a group records one `access-rule-deleted` per rule (reason "its group was deleted") and then the group, with its member count and rules.
+
+**Smoke test (scratch dev server, debug agents)**
+
+Admin made user group IT and machine group Office, added member pat (password set by the admin) and put pat in IT from the Users edit modal; ticked Office on Add machine (a new code was made at once) and enrolled agent A with it; enrolled agent B with a plain code. Pat saw "Your access hasn't been set up yet". After the rule IT → Office (See inventory, Terminal; consent defaulted to unattended) pat saw only agent A, got 404 on agent B's page and notes API, could open Terminal, saw "You don't have permission for this" on Desktop, had no Manage tab, saw only agent A's entries on Activity, and got 403 on Groups. Groups and Access rules at 390px wide (lists, rule form, group view) had no horizontal overflow. Deleting Office asked first and named "IT → Office".
+
+**Not done**
+
+- Version bump and changelog (no `src/lib/changelog.ts` yet), left for the release step as with the earlier specs.
+- Sessions do not exist yet, so the "check twice" half of A5 (permissions named in the session ticket, consent prompts) arrives with the session spec; `permissionsFor` already returns the consent per permission it will need.

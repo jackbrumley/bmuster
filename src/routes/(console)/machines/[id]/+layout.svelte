@@ -32,11 +32,16 @@
 		},
 		{ href: resolve('/(console)/machines/[id]/files', params), label: 'Files', icon: IconFolder },
 		{ href: resolve('/(console)/machines/[id]/notes', params), label: 'Notes', icon: IconNotes },
-		{
-			href: resolve('/(console)/machines/[id]/manage', params),
-			label: 'Manage',
-			icon: IconSettings
-		}
+		// Manage is for admins (its page refuses members anyway).
+		...(data.user.role === 'admin'
+			? [
+					{
+						href: resolve('/(console)/machines/[id]/manage', params),
+						label: 'Manage',
+						icon: IconSettings
+					}
+				]
+			: [])
 	]);
 </script>
 

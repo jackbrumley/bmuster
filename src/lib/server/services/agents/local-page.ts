@@ -111,6 +111,7 @@ export function viewLocalCode(
 				actor: { kind: 'user', userId: viewerId },
 				kind: 'local-code-viewed',
 				target: row.name,
+				machineId,
 				detail: { hostname: row.hostname }
 			},
 			now

@@ -24,7 +24,20 @@ const AUDIT_KINDS = [
 	'machine-reinstalled',
 	'machine-moved',
 	'machine-uninstalled',
-	'local-code-viewed'
+	'local-code-viewed',
+	'user-group-added',
+	'user-group-changed',
+	'user-group-deleted',
+	'user-group-member-added',
+	'user-group-member-removed',
+	'machine-group-added',
+	'machine-group-changed',
+	'machine-group-deleted',
+	'machine-group-member-added',
+	'machine-group-member-removed',
+	'access-rule-added',
+	'access-rule-changed',
+	'access-rule-deleted'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -93,5 +106,31 @@ export function activityLabel(kind: AuditKind): string {
 			return "Recorded that a machine's agent was uninstalled";
 		case 'local-code-viewed':
 			return "Viewed a machine's local page code";
+		case 'user-group-added':
+			return 'Added a group of people';
+		case 'user-group-changed':
+			return 'Changed a group of people';
+		case 'user-group-deleted':
+			return 'Deleted a group of people';
+		case 'user-group-member-added':
+			return 'Added someone to a group';
+		case 'user-group-member-removed':
+			return 'Took someone out of a group';
+		case 'machine-group-added':
+			return 'Added a group of machines';
+		case 'machine-group-changed':
+			return 'Changed a group of machines';
+		case 'machine-group-deleted':
+			return 'Deleted a group of machines';
+		case 'machine-group-member-added':
+			return 'Added a machine to a group';
+		case 'machine-group-member-removed':
+			return 'Took a machine out of a group';
+		case 'access-rule-added':
+			return 'Added an access rule';
+		case 'access-rule-changed':
+			return 'Changed an access rule';
+		case 'access-rule-deleted':
+			return 'Deleted an access rule';
 	}
 }

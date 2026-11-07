@@ -36,7 +36,6 @@ const GLOBAL_CSS_FILES: ReadonlySet<string> = new Set([
 const LIB_AREA_FOLDERS: ReadonlySet<string> = new Set([
 	'assets',
 	'domain',
-	'prototype',
 	'runes',
 	'schemas',
 	'server',
@@ -135,7 +134,7 @@ export function checkFilePath(relPath: string, { violation }: Reporter): void {
 		violation(
 			'lib-root-file-forbidden',
 			relPath,
-			'src/lib/ holds only its area folders: move the module into server/, domain/<area>/, schemas/<area>/, ui/, shell/, runes/, utils/ or prototype/.'
+			'src/lib/ holds only its area folders: move the module into server/, domain/<area>/, schemas/<area>/, ui/, shell/, runes/ or utils/.'
 		);
 	}
 

@@ -15,6 +15,7 @@
 	import CertificatePin from './certificate-pin.svelte';
 	import InstallManually from './install-manually.svelte';
 	import JoinCodeStatus from './join-code-status.svelte';
+	import MachineGroupPicker from './machine-group-picker.svelte';
 	import { makeJoinCode, type CodeState } from './join-code.ts';
 
 	/**
@@ -26,7 +27,8 @@
 		origin,
 		downloads,
 		devServer,
-		localTls
+		localTls,
+		machineGroups
 	}: {
 		/** This server's address, as the machine will reach it. */
 		origin: string;
@@ -34,9 +36,12 @@
 		/** Running under `npm run dev`: hints name the developer's commands. */
 		devServer: boolean;
 		localTls: LocalTlsStatus;
+		/** Groups a join code can put the machine in (not All machines). */
+		machineGroups: { id: string; name: string }[];
 	} = $props();
 
 	let joinCode = $state<CodeState>({ kind: 'none' });
+	let groupIds = $state<string[]>([]);
 	let target = $state<OsFamily>('linux');
 	const pin = $derived(installPin(localTls));
 
@@ -48,7 +53,13 @@
 
 	async function makeCode(): Promise<void> {
 		joinCode = { kind: 'making' };
-		joinCode = await makeJoinCode(1, 60);
+		joinCode = await makeJoinCode(1, 60, groupIds);
+	}
+
+	/** A code carries its groups, so choosing other groups makes a new code. */
+	function chooseGroups(ids: string[]): void {
+		groupIds = ids;
+		void makeCode();
 	}
 
 	// A code is ready as soon as the page opens, so the commands below are
@@ -70,6 +81,8 @@
 </header>
 
 <section class="panel">
+	<MachineGroupPicker groups={machineGroups} selected={groupIds} onchange={chooseGroups} />
+
 	<div class="code-row">
 		<div>
 			<p class="label">Join code</p>
@@ -140,7 +153,7 @@
 		</div>
 	{/if}
 
-	<InstallManually os={target} {origin} {joinCode} {downloads} {devServer} {pin} />
+	<InstallManually os={target} {origin} {joinCode} {downloads} {devServer} {pin} {machineGroups} />
 </section>
 
 <style>

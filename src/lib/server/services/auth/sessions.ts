@@ -131,7 +131,13 @@ export function signOut(
 	endSession(database, token);
 	recordAudit(
 		database,
-		{ actor: { kind: 'user', userId }, kind: 'sign-out', target: email, detail: {} },
+		{
+			actor: { kind: 'user', userId },
+			kind: 'sign-out',
+			target: email,
+			machineId: null,
+			detail: {}
+		},
 		now
 	);
 }

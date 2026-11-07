@@ -6,7 +6,9 @@ export const createJoinCodeRequestSchema = z.object({
 	minutes: z
 		.int()
 		.min(1)
-		.max(7 * 24 * 60)
+		.max(7 * 24 * 60),
+	/** Machine groups the machine joins when it enrols (SPEC-ACCESS A7). */
+	machineGroupIds: z.array(z.uuid()).max(100)
 });
 
 export const createJoinCodeReplySchema = z.object({

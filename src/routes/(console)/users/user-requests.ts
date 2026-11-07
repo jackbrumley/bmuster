@@ -1,4 +1,5 @@
 import { apiRequest, type ApiResult } from '#lib/utils/api-client.ts';
+import { changedReplySchema } from '#lib/schemas/access/access.ts';
 import { userReplySchema } from '#lib/schemas/users/users.ts';
 import type { ConsoleRole, UserView } from '#lib/domain/users/user.ts';
 
@@ -33,4 +34,15 @@ export async function addUser(input: {
 		reply: userReplySchema
 	});
 	return result.ok ? { ok: true, data: result.data.user } : result;
+}
+
+/** Puts the person in exactly these user groups (SPEC-ACCESS A1). */
+export async function setUserGroups(id: string, userGroupIds: string[]): Promise<ApiResult<null>> {
+	const result = await apiRequest({
+		method: 'PATCH',
+		url: `/api/users/${id}/groups`,
+		body: { userGroupIds },
+		reply: changedReplySchema
+	});
+	return result.ok ? { ok: true, data: null } : result;
 }

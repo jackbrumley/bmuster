@@ -1,11 +1,24 @@
 import type { ActivityEntry } from '#lib/domain/activity/activity.ts';
 import type { Queryable } from '../../database/connection.ts';
-import { listAudit } from '../audit/audit.ts';
+import { listAudit, listAuditForMachines } from '../audit/audit.ts';
 import { userNames } from './users.ts';
 
+/**
+ * Whose Activity page: an admin's shows everything; a member's shows only
+ * entries about the machines they can see (SPEC-ACCESS A6).
+ */
+type ActivityScope = { kind: 'all' } | { kind: 'machines'; machineIds: readonly string[] };
+
 /** The Activity page: the newest audit entries with the actor's name. */
-export function activityFeed(database: Queryable, limit: number): ActivityEntry[] {
-	const records = listAudit(database, limit);
+export function activityFeed(
+	database: Queryable,
+	scope: ActivityScope,
+	limit: number
+): ActivityEntry[] {
+	const records =
+		scope.kind === 'all'
+			? listAudit(database, limit)
+			: listAuditForMachines(database, scope.machineIds, limit);
 	const actorIds = [
 		...new Set(
 			records.flatMap((record) => (record.actorUserId === null ? [] : [record.actorUserId]))

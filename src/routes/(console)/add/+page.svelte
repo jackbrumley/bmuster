@@ -12,4 +12,5 @@
 	downloads={data.downloads}
 	devServer={dev}
 	localTls={data.localTls}
+	machineGroups={data.machineGroups}
 />

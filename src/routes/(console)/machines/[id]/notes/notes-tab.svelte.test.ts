@@ -53,6 +53,7 @@ function renderTab(notes: NoteView[]) {
 			localNetworkMode: false,
 			now: NOW,
 			machine: MACHINE,
+			grants: [{ permission: 'view', consent: 'unattended' }],
 			notes
 		}
 	});

@@ -98,12 +98,25 @@ const LOCAL_TLS: LocalTlsStatus = {
 	served: { kind: 'pin', pin: PIN, fingerprint: FINGERPRINT }
 };
 
+const OFFICE = '33333333-3333-4333-8333-333333333333';
+const LAB = '44444444-4444-4444-8444-444444444444';
+const MACHINE_GROUPS = [
+	{ id: OFFICE, name: 'Office' },
+	{ id: LAB, name: 'Lab' }
+];
+
 async function renderPage(
 	downloads: AgentDownload[],
 	devServer: boolean,
 	localTls: LocalTlsStatus = PUBLIC_TLS
 ) {
-	return render(AddMachine, { origin: ORIGIN, downloads, devServer, localTls });
+	return render(AddMachine, {
+		origin: ORIGIN,
+		downloads,
+		devServer,
+		localTls,
+		machineGroups: MACHINE_GROUPS
+	});
 }
 
 function manualSection(container: HTMLElement): HTMLDetailsElement {
@@ -244,8 +257,8 @@ describe('Add machine: install manually', () => {
 		await expect.element(screen.getByText('RLL-OUT-234')).toBeVisible();
 		// The first request is the code made when the page opens; the second is the roll-out code.
 		expect(bodies).toEqual([
-			{ maxUses: 1, minutes: 60 },
-			{ maxUses: 100, minutes: 10080 }
+			{ maxUses: 1, minutes: 60, machineGroupIds: [] },
+			{ maxUses: 100, minutes: 10080, machineGroupIds: [] }
 		]);
 		await expect
 			.element(
@@ -254,6 +267,24 @@ describe('Add machine: install manually', () => {
 				)
 			)
 			.toBeVisible();
+	});
+});
+
+describe('Add machine: machine groups (SPEC-ACCESS A7)', () => {
+	it('A7: picking groups makes a code that puts the machine in them; roll-out codes too', async () => {
+		const { bodies } = stubJoinCodes();
+		const screen = await renderPage(DOWNLOADS, false);
+		await expect.poll(() => bodies).toHaveLength(1);
+		await screen.getByRole('checkbox', { name: 'Office' }).first().click();
+		// The code carries its groups, so a new one is made at once.
+		await expect.poll(() => bodies).toHaveLength(2);
+		expect(bodies[1]).toEqual({ maxUses: 1, minutes: 60, machineGroupIds: [OFFICE] });
+
+		await screen.getByText('Install manually').click();
+		await screen.getByRole('checkbox', { name: 'Lab' }).last().click();
+		await screen.getByRole('button', { name: 'Make a roll-out code' }).click();
+		await expect.poll(() => bodies).toHaveLength(3);
+		expect(bodies[2]).toEqual({ maxUses: 25, minutes: 1440, machineGroupIds: [LAB] });
 	});
 });
 

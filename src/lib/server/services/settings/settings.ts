@@ -96,6 +96,7 @@ export function updateSetting(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'setting-changed',
 				target: definition.label,
+				machineId: null,
 				detail: { from: String(before), to: String(parsed.data) }
 			},
 			now

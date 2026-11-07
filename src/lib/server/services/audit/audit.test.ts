@@ -9,6 +9,17 @@ import { activityFeed } from '../users/activity-feed.ts';
 import { addNote, deleteNote, editNote } from '../machines/machine-notes.ts';
 import { updateMachineDetails } from '../machines/machine-details.ts';
 import { addUser, disableUser, setRole, toConsoleUser } from '../users/users.ts';
+import { activityLabel } from '#lib/domain/activity/activity.ts';
+import { done } from '#tests/helpers/access.ts';
+import {
+	createGroup,
+	deleteGroup,
+	listMachineGroups,
+	setGroupMembers,
+	setGroupsOfMember,
+	updateGroupDetails
+} from '../access/groups.ts';
+import { createRule, deleteRule, updateRule } from '../access/rules.ts';
 import { listAudit } from './audit.ts';
 
 const KEY = Buffer.alloc(32, 5);
@@ -112,7 +123,7 @@ describe('audit log (S13)', () => {
 			CLIENT,
 			NOW + 1
 		);
-		const feed = activityFeed(database, 10);
+		const feed = activityFeed(database, { kind: 'all' }, 10);
 		expect(feed.map((entry) => [entry.kind, entry.actor])).toEqual([
 			['sign-in', { kind: 'user', name: 'jack' }],
 			['sign-in-failed', { kind: 'system' }]
@@ -202,9 +213,122 @@ describe('machine details in the audit log (D5)', () => {
 			},
 			{ kind: 'machine-enrolled' }
 		]);
-		expect(activityFeed(database, 1)[0]).toMatchObject({
+		expect(activityFeed(database, { kind: 'all' }, 1)[0]).toMatchObject({
 			kind: 'machine-note-deleted',
 			actor: { kind: 'user', name: 'ada' }
 		});
+	});
+});
+
+describe('groups and rules in the audit log (SPEC-ACCESS A9)', () => {
+	it('A9: records every change to groups, memberships and rules, with who made it', async () => {
+		const database = testDatabase();
+		const admin = await addTestUser(database, {
+			email: 'ada@example.com',
+			role: 'admin',
+			password: null
+		});
+		const pat = await addTestUser(database, {
+			email: 'pat@example.com',
+			role: 'member',
+			password: null
+		});
+		const { machineId } = enrolFakeAgent(database, NOW);
+		const it = done(createGroup(database, 'user', admin.id, { name: 'IT', description: '' }, NOW));
+		const office = done(
+			createGroup(database, 'machine', admin.id, { name: 'Office', description: 'Front' }, NOW)
+		);
+		done(
+			updateGroupDetails(database, 'user', admin.id, it, { name: 'IT', description: 'Fixers' }, NOW)
+		);
+		done(setGroupMembers(database, 'user', admin.id, it, [pat.id], NOW));
+		done(setGroupsOfMember(database, 'machine', admin.id, machineId, [office], NOW));
+		const rule = done(
+			createRule(
+				database,
+				admin.id,
+				{ userGroupId: it, machineGroupId: office, permissions: ['view'], consent: 'ask' },
+				NOW
+			)
+		);
+		done(
+			updateRule(
+				database,
+				admin.id,
+				rule,
+				{
+					userGroupId: it,
+					machineGroupId: office,
+					permissions: ['view', 'terminal'],
+					consent: 'unattended'
+				},
+				NOW
+			)
+		);
+		done(setGroupsOfMember(database, 'user', admin.id, pat.id, [], NOW));
+		done(setGroupMembers(database, 'machine', admin.id, office, [], NOW));
+		done(deleteGroup(database, 'machine', admin.id, office, NOW));
+		const later = done(
+			createRule(
+				database,
+				admin.id,
+				{
+					userGroupId: it,
+					machineGroupId: listMachineGroups(database)[0]?.id ?? '',
+					permissions: ['view'],
+					consent: 'ask'
+				},
+				NOW
+			)
+		);
+		done(deleteRule(database, admin.id, later, NOW));
+		done(deleteGroup(database, 'user', admin.id, it, NOW));
+
+		const entries = listAudit(database, 50)
+			.filter((entry) => entry.kind !== 'machine-enrolled')
+			.toReversed();
+		expect(entries.every((entry) => entry.actorUserId === admin.id)).toBe(true);
+		expect(entries.map((entry) => [entry.kind, entry.target, entry.detail])).toEqual([
+			['user-group-added', 'IT', {}],
+			['machine-group-added', 'Office', { description: 'Front' }],
+			['user-group-changed', 'IT', { description: 'Fixers' }],
+			['user-group-member-added', 'IT', { person: 'pat (pat@example.com)' }],
+			['machine-group-member-added', 'Office', { machine: 'Test machine' }],
+			['access-rule-added', 'IT → Office', { permissions: 'See inventory', consent: 'ask' }],
+			[
+				'access-rule-changed',
+				'IT → Office',
+				{ permissions: 'See inventory → See inventory, Terminal', consent: 'ask → unattended' }
+			],
+			['user-group-member-removed', 'IT', { person: 'pat (pat@example.com)' }],
+			['machine-group-member-removed', 'Office', { machine: 'Test machine' }],
+			[
+				'access-rule-deleted',
+				'IT → Office',
+				{ permissions: 'See inventory, Terminal', reason: 'its group was deleted' }
+			],
+			['machine-group-deleted', 'Office', { members: '0', rules: 'IT → Office' }],
+			['access-rule-added', 'IT → All machines', { permissions: 'See inventory', consent: 'ask' }],
+			[
+				'access-rule-deleted',
+				'IT → All machines',
+				{ permissions: 'See inventory', reason: 'deleted' }
+			],
+			['user-group-deleted', 'IT', { members: '0', rules: 'none' }]
+		]);
+	});
+
+	it('A9: shows the new entries on Activity with a label', async () => {
+		const database = testDatabase();
+		const admin = await addTestUser(database, {
+			email: 'ada@example.com',
+			role: 'admin',
+			password: null
+		});
+		done(createGroup(database, 'user', admin.id, { name: 'IT', description: '' }, NOW));
+		const entry = activityFeed(database, { kind: 'all' }, 1)[0];
+		expect(entry).toMatchObject({ kind: 'user-group-added', actor: { kind: 'user', name: 'ada' } });
+		expect(activityLabel('user-group-added')).toBe('Added a group of people');
+		expect(activityLabel('access-rule-changed')).toBe('Changed an access rule');
 	});
 });

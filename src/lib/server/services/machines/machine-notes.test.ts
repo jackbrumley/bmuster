@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { toConsoleUser } from '#lib/server/services/users/users.ts';
 import { noteBodySchema } from '#lib/schemas/machines/machine-notes.ts';
+import { grantAccess } from '#tests/helpers/access.ts';
 import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import type { AppDatabase } from '../../database/connection.ts';
@@ -63,11 +64,23 @@ describe('notes (D3)', () => {
 });
 
 describe('who may add, edit and delete notes (D4)', () => {
-	it('lets anyone who can see the machine add one (admins until SPEC-ACCESS)', async () => {
+	it('lets anyone who can see the machine add one (admins, and members through a rule)', async () => {
 		const database = testDatabase();
 		const { machineId, ada, mo } = await setUp(database);
-		expect(canSeeMachine(ada, machineId)).toBe(true);
-		expect(canSeeMachine(mo, machineId)).toBe(false);
+		expect(canSeeMachine(database, ada, machineId)).toBe(true);
+		expect(canSeeMachine(database, mo, machineId)).toBe(false);
+		grantAccess(database, {
+			adminId: ada.id,
+			name: 'Helpdesk',
+			memberIds: [mo.id],
+			machineIds: [machineId],
+			permissions: ['view'],
+			consent: 'ask'
+		});
+		expect(canSeeMachine(database, mo, machineId)).toBe(true);
+		expect(addNote(database, machineId, mo, 'Checked the printer.', NOW + 1)).toMatchObject({
+			authorName: 'mo'
+		});
 	});
 
 	it('lets only the author edit, and marks the note edited', async () => {

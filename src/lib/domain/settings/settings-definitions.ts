@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CONSENTS } from '../access/access.ts';
 
 /**
  * Every server setting, declared once (SPEC-SIGN-IN S16): its key, type,
@@ -32,7 +33,7 @@ type SettingDefinition<T> = {
 	control: SettingControl;
 };
 
-const consentSchema = z.enum(['unattended', 'ask']);
+const consentSchema = z.enum(CONSENTS);
 
 export const SETTING_DEFINITIONS = {
 	defaultConsent: {

@@ -111,6 +111,7 @@ export function deleteNote(
 				actor: { kind: 'user', userId: deleter.id },
 				kind: 'machine-note-deleted',
 				target: found.machineName,
+				machineId,
 				detail: { author: found.authorName, note: preview(found.note.body) }
 			},
 			now

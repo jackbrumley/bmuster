@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { hasPermission } from '#lib/domain/access/access.ts';
+	import NoPermission from '../no-permission.svelte';
 	import Button from '#lib/ui/button.svelte';
 	import {
 		IconFile,
@@ -24,7 +26,9 @@
 	] as const;
 </script>
 
-{#if machine.status.kind === 'offline'}
+{#if !hasPermission(data.grants, 'files')}
+	<NoPermission />
+{:else if machine.status.kind === 'offline'}
 	<div class="notice">
 		<IconPlugConnected size={32} />
 		<p>This machine is offline. Files open when it checks in again.</p>

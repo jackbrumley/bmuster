@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { hasPermission } from '#lib/domain/access/access.ts';
+	import NoPermission from '../no-permission.svelte';
 	import {
 		IconArrowsMaximize,
 		IconDeviceDesktop,
@@ -35,7 +37,9 @@
 	);
 </script>
 
-{#if machine.status.kind === 'offline'}
+{#if !hasPermission(data.grants, 'desktop-view')}
+	<NoPermission />
+{:else if machine.status.kind === 'offline'}
 	<div class="notice">
 		<IconPlugConnected size={32} />
 		<p>This machine is offline. The desktop opens when it checks in again.</p>

@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { AppDatabase } from '#lib/server/database/connection.ts';
-import { SERVER_PUBLIC_KEY, testDatabase } from '#tests/helpers/fake-agent.ts';
+import { createJoinCodeRequestSchema } from '#lib/schemas/machines/join-codes.ts';
+import { done } from '#tests/helpers/access.ts';
+import { enrolWithCode, SERVER_PUBLIC_KEY, testDatabase } from '#tests/helpers/fake-agent.ts';
+import { addTestUser } from '#tests/helpers/people.ts';
+import {
+	areChosenMachineGroups,
+	createGroup,
+	deleteGroup,
+	listMachineGroups
+} from '../access/groups.ts';
+import { listAudit } from '../audit/audit.ts';
 import { removeMachine } from '../machines/machine-views.ts';
 import { enrolMachine } from './enrolment.ts';
 import { isRefusal } from './agent-refusal.ts';
@@ -168,5 +178,75 @@ describe('join code status (Add machine shows what happened to the code)', () =>
 			machines: []
 		});
 		expect(joinCodeStatus(database, crypto.randomUUID(), NOW)).toBeUndefined();
+	});
+});
+
+describe('join codes name machine groups (SPEC-ACCESS A7)', () => {
+	it('A7: a machine joins the groups its join code names when it enrols, single-use or roll-out', async () => {
+		const database = testDatabase();
+		const admin = await addTestUser(database, {
+			email: 'ada@example.com',
+			role: 'admin',
+			password: null
+		});
+		const office = done(
+			createGroup(database, 'machine', admin.id, { name: 'Office', description: '' }, NOW)
+		);
+		const lab = done(
+			createGroup(database, 'machine', admin.id, { name: 'Lab', description: '' }, NOW)
+		);
+		const single = createJoinCode(
+			database,
+			{ maxUses: 1, minutes: 60, machineGroupIds: [office], createdBy: admin.id },
+			NOW
+		);
+		const rollout = createJoinCode(
+			database,
+			{ maxUses: 10, minutes: 60, machineGroupIds: [office, lab], createdBy: admin.id },
+			NOW
+		);
+		const first = enrolWithCode(database, single.code, 'reception', NOW);
+		const second = enrolWithCode(database, rollout.code, 'lab-1', NOW);
+		if (isRefusal(first) || isRefusal(second)) throw new Error('enrolment refused');
+		const members = (id: string) => {
+			const group = listMachineGroups(database).find((candidate) => candidate.id === id);
+			return group?.membership.kind === 'chosen' ? group.membership.machineIds.toSorted() : [];
+		};
+		expect(members(office)).toEqual([first.machineId, second.machineId].toSorted());
+		expect(members(lab)).toEqual([second.machineId]);
+		expect(listAudit(database, 1)[0]).toMatchObject({
+			kind: 'machine-enrolled',
+			detail: { groups: 'Office, Lab' }
+		});
+	});
+
+	it('A7: skips a group deleted since the code was made; the code request must name its groups', async () => {
+		const database = testDatabase();
+		const admin = await addTestUser(database, {
+			email: 'ada@example.com',
+			role: 'admin',
+			password: null
+		});
+		const office = done(
+			createGroup(database, 'machine', admin.id, { name: 'Office', description: '' }, NOW)
+		);
+		const { code } = createJoinCode(
+			database,
+			{ maxUses: 1, minutes: 60, machineGroupIds: [office], createdBy: admin.id },
+			NOW
+		);
+		done(deleteGroup(database, 'machine', admin.id, office, NOW));
+		expect(isRefusal(enrolWithCode(database, code, 'host', NOW))).toBe(false);
+		expect(listAudit(database, 1)[0]?.detail).toMatchObject({ groups: 'none' });
+
+		expect(createJoinCodeRequestSchema.safeParse({ maxUses: 1, minutes: 60 }).success).toBe(false);
+		expect(
+			createJoinCodeRequestSchema.safeParse({ maxUses: 1, minutes: 60, machineGroupIds: ['x'] })
+				.success
+		).toBe(false);
+		const all = listMachineGroups(database)[0]?.id ?? '';
+		expect(areChosenMachineGroups(database, [])).toBe(true);
+		expect(areChosenMachineGroups(database, [all])).toBe(false);
+		expect(areChosenMachineGroups(database, [office])).toBe(false);
 	});
 });

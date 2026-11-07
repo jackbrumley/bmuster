@@ -9,7 +9,7 @@ import type { RequestHandler } from './$types';
 
 /** GET /api/machines/<id>/notes: the machine's notes, newest first (SPEC-MACHINE-DETAILS D3). */
 export const GET: RequestHandler = route.user(({ params }, { user }) => {
-	if (!canSeeMachine(user, params.id)) {
+	if (!canSeeMachine(database, user, params.id)) {
 		error(404, 'No machine with this id');
 	}
 	return Response.json({ notes: listNotes(database, params.id, user) });
@@ -17,7 +17,7 @@ export const GET: RequestHandler = route.user(({ params }, { user }) => {
 
 /** POST /api/machines/<id>/notes: anyone who can see the machine adds a note (D4). */
 export const POST: RequestHandler = route.user(async ({ params, request }, { user }) => {
-	if (!canSeeMachine(user, params.id)) {
+	if (!canSeeMachine(database, user, params.id)) {
 		error(404, 'No machine with this id');
 	}
 	const parsed = noteRequestSchema.safeParse(await readJson(request));

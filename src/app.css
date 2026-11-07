@@ -19,6 +19,14 @@ body {
 	-webkit-text-size-adjust: 100%;
 }
 
+/*
+ * Always keep room for the vertical scrollbar, so a short page and a long one
+ * have the same width and nothing shifts sideways when moving between them.
+ */
+html {
+	scrollbar-gutter: stable;
+}
+
 h1,
 h2,
 h3,

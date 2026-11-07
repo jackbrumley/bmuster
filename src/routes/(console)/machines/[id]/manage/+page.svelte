@@ -12,6 +12,7 @@
 	import { agentCommands } from '#lib/domain/machines/agent-commands.ts';
 	import LocalPage from './local-page.svelte';
 	import MachineDetails from './machine-details.svelte';
+	import MachineGroups from './machine-groups.svelte';
 	import ReinstallAgent from './reinstall-agent.svelte';
 	import type { PageProps } from './$types';
 
@@ -52,6 +53,8 @@
 
 <div class="sections">
 	<MachineDetails {machine} />
+
+	<MachineGroups machineId={machine.id} groups={data.machineGroups} />
 
 	<section class="panel">
 		<h2>Agent</h2>

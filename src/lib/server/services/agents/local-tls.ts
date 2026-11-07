@@ -195,6 +195,7 @@ export function renewLocalCertificate(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'local-certificate-renewed',
 				target: 'Local network certificate',
+				machineId: null,
 				detail: { pin: made.pin }
 			},
 			now

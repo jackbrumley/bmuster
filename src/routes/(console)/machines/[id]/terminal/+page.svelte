@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { hasPermission } from '#lib/domain/access/access.ts';
+	import NoPermission from '../no-permission.svelte';
 	import { IconPlugConnected } from '@tabler/icons-svelte-runes';
 	import { shellsFor, signedInUserOf } from '#lib/domain/machines/machine.ts';
 	import type { PageProps } from './$types';
@@ -36,7 +38,9 @@
 	const extraKeys = ['Esc', 'Tab', 'Ctrl', 'Alt', '↑', '↓', '←', '→', '|', '~', '/'];
 </script>
 
-{#if machine.status.kind === 'offline'}
+{#if !hasPermission(data.grants, 'terminal')}
+	<NoPermission />
+{:else if machine.status.kind === 'offline'}
 	<div class="offline">
 		<IconPlugConnected size={32} />
 		<p>This machine is offline. A terminal opens when it checks in again.</p>

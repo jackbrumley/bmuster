@@ -9,7 +9,7 @@ import type { RequestHandler } from './$types';
 
 /** PATCH /api/machines/<id>/notes/<noteId>: the author edits their note (SPEC-MACHINE-DETAILS D4). */
 export const PATCH: RequestHandler = route.user(async ({ params, request }, { user }) => {
-	if (!canSeeMachine(user, params.id)) {
+	if (!canSeeMachine(database, user, params.id)) {
 		error(404, 'No note with this id');
 	}
 	const parsed = noteRequestSchema.safeParse(await readJson(request));
@@ -28,7 +28,7 @@ export const PATCH: RequestHandler = route.user(async ({ params, request }, { us
 
 /** DELETE /api/machines/<id>/notes/<noteId>: the author or an admin deletes a note; audited (D4, D5). */
 export const DELETE: RequestHandler = route.user(({ params }, { user }) => {
-	if (!canSeeMachine(user, params.id)) {
+	if (!canSeeMachine(database, user, params.id)) {
 		error(404, 'No note with this id');
 	}
 	const result = deleteNote(database, params.id, params.noteId, user, Date.now());

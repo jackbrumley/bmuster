@@ -31,15 +31,16 @@ export type NavItem = { route: NavRoute; label: string; icon: typeof IconDevices
 
 export function mainNav(role: ConsoleRole): NavItem[] {
 	const machines: NavItem = { route: '/(console)', label: 'Machines', icon: IconDevices };
+	const activity: NavItem = { route: '/(console)/activity', label: 'Activity', icon: IconActivity };
 	switch (role) {
 		case 'admin':
 			return [
 				machines,
-				{ route: '/(console)/activity', label: 'Activity', icon: IconActivity },
+				activity,
 				{ route: '/(console)/add', label: 'Add machine', icon: IconPlus }
 			];
 		case 'member':
-			return [machines];
+			return [machines, activity];
 	}
 }
 

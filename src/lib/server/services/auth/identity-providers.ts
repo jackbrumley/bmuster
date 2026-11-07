@@ -135,6 +135,7 @@ export function addProvider(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'provider-added',
 				target: row.name,
+				machineId: null,
 				detail: auditDetail(fields)
 			},
 			now
@@ -186,6 +187,7 @@ export function updateProvider(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'provider-changed',
 				target: fields.name,
+				machineId: null,
 				detail: {
 					...auditDetail(fields),
 					clientSecret: fields.clientSecret.kind === 'replace' ? 'replaced' : 'kept'
@@ -225,6 +227,7 @@ export function deleteProvider(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'provider-deleted',
 				target: existing.name,
+				machineId: null,
 				detail: { kind: existing.kind, issuer: existing.issuer }
 			},
 			now

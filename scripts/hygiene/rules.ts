@@ -53,7 +53,7 @@ export const HYGIENE_RULES = {
 		severity: 'violation',
 		section: '2',
 		why: 'src/lib/ holds only the area folders, so loose modules or new top-level folders leave nobody sure where a file belongs.',
-		fix: 'Move the file into its folder (server/, domain/, schemas/, ui/, shell/, runes/, utils/ or prototype/) and update its imports.'
+		fix: 'Move the file into its folder (server/, domain/, schemas/, ui/, shell/, runes/ or utils/) and update its imports.'
 	},
 	'file-size': {
 		severity: 'violation',

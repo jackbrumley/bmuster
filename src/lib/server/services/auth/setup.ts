@@ -51,6 +51,7 @@ export async function setupFirstAdmin(
 				actor: { kind: 'user', userId: user.id },
 				kind: 'setup',
 				target: user.email,
+				machineId: null,
 				detail: { ip: client.ip }
 			},
 			now
@@ -119,6 +120,7 @@ async function createAdminFromEnvironment(
 				actor: { kind: 'system' },
 				kind: 'setup',
 				target: user.email,
+				machineId: null,
 				detail: { source: 'BMUSTER_ADMIN_EMAIL and BMUSTER_ADMIN_PASSWORD' }
 			},
 			now

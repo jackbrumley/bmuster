@@ -9,7 +9,8 @@
 	import { formatRelative } from '#lib/utils/format.ts';
 	import { roleLabel, type ConsoleRole, type UserView } from '#lib/domain/users/user.ts';
 	import UserForm from './user-form.svelte';
-	import { addUser, updateUser } from './user-requests.ts';
+	import Checkbox from '#lib/ui/checkbox.svelte';
+	import { addUser, setUserGroups, updateUser } from './user-requests.ts';
 	import type { PageProps } from './$types';
 
 	/** People who can sign in (SPEC-SIGN-IN S12): list → view → edit. */
@@ -29,6 +30,7 @@
 	let email = $state('');
 	let role = $state<ConsoleRole>('member');
 	let password = $state('');
+	let groupIds = $state<string[]>([]);
 
 	const selectedId = $derived(
 		panel.kind === 'view' || panel.kind === 'edit' ? panel.id : undefined
@@ -50,7 +52,19 @@
 		panel = { kind: 'add' };
 	}
 
+	/** The user groups someone is in, by name. */
+	function groupsOf(userId: string): { id: string; name: string }[] {
+		return data.userGroups.filter((group) => group.memberIds.includes(userId));
+	}
+
+	function toggleGroup(id: string, on: boolean): void {
+		groupIds = data.userGroups
+			.map((group) => group.id)
+			.filter((candidate) => (candidate === id ? on : groupIds.includes(candidate)));
+	}
+
 	function openEdit(user: UserView): void {
+		groupIds = groupsOf(user.id).map((group) => group.id);
 		name = user.name;
 		email = user.email;
 		role = user.role;
@@ -84,7 +98,7 @@
 	/** Sends only what changed, one step at a time; stops at the first refusal. */
 	async function saveEdit(user: UserView): Promise<void> {
 		busy = true;
-		const steps: (() => ReturnType<typeof updateUser>)[] = [];
+		const steps: (() => Promise<{ ok: true } | { ok: false; message: string }>)[] = [];
 		if (name.trim() !== user.name || email.trim().toLowerCase() !== user.email) {
 			steps.push(() => updateUser(user.id, { action: 'set-details', name, email }));
 		}
@@ -93,6 +107,10 @@
 		}
 		if (password !== '') {
 			steps.push(() => updateUser(user.id, { action: 'set-password', password }));
+		}
+		const before = groupsOf(user.id).map((group) => group.id);
+		if (before.length !== groupIds.length || before.some((id) => !groupIds.includes(id))) {
+			steps.push(() => setUserGroups(user.id, groupIds));
 		}
 		for (const step of steps) {
 			const result = await step();
@@ -173,6 +191,13 @@
 						{/if}
 					</span>
 					<span class="meta">{user.email}</span>
+					{#if groupsOf(user.id).length > 0}
+						<span class="groups">
+							{#each groupsOf(user.id) as group (group.id)}
+								<span class="group">{group.name}</span>
+							{/each}
+						</span>
+					{/if}
 				</span>
 				<span class="side">
 					<span class="method">
@@ -221,6 +246,14 @@
 			<dd>{roleLabel(selected.role)}</dd>
 			<dt>Status</dt>
 			<dd>{selected.status.kind === 'active' ? 'Can sign in' : 'Disabled'}</dd>
+			<dt>Groups</dt>
+			<dd>
+				{groupsOf(selected.id).length === 0
+					? 'None, so no machines unless they are an admin'
+					: groupsOf(selected.id)
+							.map((group) => group.name)
+							.join(', ')}
+			</dd>
 			<dt>Signs in with</dt>
 			<dd>{signInSummary(selected)}</dd>
 			<dt>Last sign-in</dt>
@@ -285,6 +318,25 @@
 						reason: "Only a member's password can be reset. Admins change their own."
 					}}
 		/>
+		<fieldset class="group-picker">
+			<legend>Groups</legend>
+			{#if data.userGroups.length === 0}
+				<p class="hint">No groups yet. Make them on the Groups page.</p>
+			{:else}
+				{#each data.userGroups as group (group.id)}
+					<Checkbox
+						label={group.name}
+						error={undefined}
+						bind:checked={
+							() => groupIds.includes(group.id),
+							(on: boolean) => {
+								toggleGroup(group.id, on);
+							}
+						}
+					/>
+				{/each}
+			{/if}
+		</fieldset>
 		{#if problem !== undefined}<p class="problem" role="alert">{problem}</p>{/if}
 	{/if}
 	{#snippet footer()}
@@ -425,6 +477,40 @@
 	dd {
 		margin: 0;
 		overflow-wrap: anywhere;
+	}
+
+	.groups {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-1);
+		margin-top: var(--space-1);
+	}
+
+	.group {
+		padding: 0 var(--space-2);
+		border-radius: var(--radius-pill);
+		background: var(--brand-tint);
+		color: var(--brand);
+		font-size: var(--text-xs);
+	}
+
+	.group-picker {
+		display: grid;
+		margin: 0;
+		padding: 0;
+		border: none;
+	}
+
+	legend {
+		padding: 0;
+		color: var(--text-soft);
+		font-size: var(--text-sm);
+		font-weight: var(--weight-medium);
+	}
+
+	.hint {
+		color: var(--muted);
+		font-size: var(--text-xs);
 	}
 
 	.problem {

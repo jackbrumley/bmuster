@@ -148,6 +148,7 @@ export async function addUser(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'user-added',
 				target: row.email,
+				machineId: null,
 				detail: { role: row.role, password: passwordHash === null ? 'none' : 'set' }
 			},
 			now
@@ -222,6 +223,7 @@ export function setDetails(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'user-details-changed',
 				target: email,
+				machineId: null,
 				detail
 			},
 			now
@@ -262,6 +264,7 @@ export function setRole(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'user-role-changed',
 				target: row.email,
+				machineId: null,
 				detail: { from: row.role, to: role }
 			},
 			now
@@ -300,6 +303,7 @@ export function disableUser(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'user-disabled',
 				target: row.email,
+				machineId: null,
 				detail: {}
 			},
 			now
@@ -329,6 +333,7 @@ export function enableUser(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'user-enabled',
 				target: row.email,
+				machineId: null,
 				detail: {}
 			},
 			now
@@ -371,6 +376,7 @@ export async function setPassword(
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'user-password-set',
 				target: target.email,
+				machineId: null,
 				detail: {}
 			},
 			now

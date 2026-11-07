@@ -1,4 +1,11 @@
 /** Every table, for Drizzle and drizzle-kit. Each area's tables live in schema/<area>.ts. */
+export {
+	accessRules,
+	machineGroupMembers,
+	machineGroups,
+	userGroupMembers,
+	userGroups
+} from './schema/access.ts';
 export { auditEntries } from './schema/audit.ts';
 export { identityProviders } from './schema/identity-providers.ts';
 export { joinCodes } from './schema/join-codes.ts';

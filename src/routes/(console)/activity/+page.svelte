@@ -5,23 +5,29 @@
 		IconCertificate,
 		IconDeviceDesktopMinus,
 		IconDeviceDesktopPlus,
+		IconDevices,
 		IconEdit,
 		IconNoteOff,
 		IconRefresh,
 		IconKey,
+		IconLock,
 		IconLogin2,
 		IconLogout,
 		IconRocket,
 		IconShieldLock,
 		IconShieldX,
-		IconUser
+		IconUser,
+		IconUsersGroup
 	} from '@tabler/icons-svelte-runes';
 	import { activityLabel, type AuditKind } from '#lib/domain/activity/activity.ts';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import { formatRelative } from '#lib/utils/format.ts';
 	import type { PageProps } from './$types';
 
-	/** The audit log (SPEC-SIGN-IN S13): sign-ins, sign-outs and admin changes, newest first. */
+	/**
+	 * The audit log (SPEC-SIGN-IN S13), newest first. Members see only entries
+	 * about machines they can see (SPEC-ACCESS A6).
+	 */
 	let { data }: PageProps = $props();
 
 	function iconFor(kind: AuditKind): typeof IconUser {
@@ -67,13 +73,31 @@
 				return IconDeviceDesktopMinus;
 			case 'local-code-viewed':
 				return IconKey;
+			case 'user-group-added':
+			case 'user-group-changed':
+			case 'user-group-deleted':
+			case 'user-group-member-added':
+			case 'user-group-member-removed':
+				return IconUsersGroup;
+			case 'machine-group-added':
+			case 'machine-group-changed':
+			case 'machine-group-deleted':
+			case 'machine-group-member-added':
+			case 'machine-group-member-removed':
+				return IconDevices;
+			case 'access-rule-added':
+			case 'access-rule-changed':
+			case 'access-rule-deleted':
+				return IconLock;
 		}
 	}
 </script>
 
 <PageHeader
 	title="Activity"
-	summary="Sign-ins, machines joining and leaving, and changes to people, providers and settings."
+	summary={data.user.role === 'admin'
+		? 'Sign-ins, machines joining and leaving, and changes to people, groups, access rules, providers and settings.'
+		: 'What has happened on the machines you can see.'}
 	actions={undefined}
 />
 

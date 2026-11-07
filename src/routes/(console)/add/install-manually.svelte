@@ -25,7 +25,8 @@
 		joinCode,
 		downloads,
 		devServer,
-		pin
+		pin,
+		machineGroups
 	}: {
 		os: OsFamily;
 		origin: string;
@@ -35,6 +36,8 @@
 		devServer: boolean;
 		/** The certificate pin the command carries in local network mode. */
 		pin: ServedPin;
+		/** For the roll-out code's group picker (SPEC-ACCESS A7). */
+		machineGroups: { id: string; name: string }[];
 	} = $props();
 
 	/** The processor is the admin's choice: nothing is picked until they pick it. */
@@ -141,7 +144,7 @@
 				{/if}
 			</div>
 
-			<RolloutCode {os} {origin} {pin} />
+			<RolloutCode {os} {origin} {pin} {machineGroups} />
 		{/if}
 	</div>
 </details>

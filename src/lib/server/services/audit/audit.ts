@@ -1,4 +1,4 @@
-import { desc } from 'drizzle-orm';
+import { desc, inArray } from 'drizzle-orm';
 import { isAuditKind, type AuditKind } from '#lib/domain/activity/activity.ts';
 import { auditEntries } from '../../database/schema.ts';
 import type { Queryable } from '../../database/connection.ts';
@@ -14,6 +14,8 @@ export type NewAuditEntry = {
 	actor: AuditActor;
 	kind: AuditKind;
 	target: string;
+	/** The machine the entry is about, so members see it when they can see the machine (SPEC-ACCESS A6). */
+	machineId: string | null;
 	detail: Record<string, string>;
 };
 
@@ -35,6 +37,7 @@ export function recordAudit(database: Queryable, entry: NewAuditEntry, now: numb
 			actorUserId: entry.actor.kind === 'user' ? entry.actor.userId : null,
 			kind: entry.kind,
 			target: entry.target,
+			machineId: entry.machineId,
 			detail: JSON.stringify(entry.detail)
 		})
 		.run();
@@ -48,19 +51,40 @@ export function listAudit(database: Queryable, limit: number): AuditRecord[] {
 		.orderBy(desc(auditEntries.at))
 		.limit(limit)
 		.all()
-		.map((row) => {
-			if (!isAuditKind(row.kind)) {
-				throw new Error(`audit_entries ${row.id} has an unknown kind '${row.kind}'`);
-			}
-			return {
-				id: row.id,
-				at: row.at,
-				actorUserId: row.actorUserId,
-				kind: row.kind,
-				target: row.target,
-				detail: parseDetail(row.id, row.detail)
-			};
-		});
+		.map(toRecord);
+}
+
+/** The newest entries about these machines: what a member sees on Activity (SPEC-ACCESS A6). */
+export function listAuditForMachines(
+	database: Queryable,
+	machineIds: readonly string[],
+	limit: number
+): AuditRecord[] {
+	if (machineIds.length === 0) {
+		return [];
+	}
+	return database
+		.select()
+		.from(auditEntries)
+		.where(inArray(auditEntries.machineId, [...machineIds]))
+		.orderBy(desc(auditEntries.at))
+		.limit(limit)
+		.all()
+		.map(toRecord);
+}
+
+function toRecord(row: typeof auditEntries.$inferSelect): AuditRecord {
+	if (!isAuditKind(row.kind)) {
+		throw new Error(`audit_entries ${row.id} has an unknown kind '${row.kind}'`);
+	}
+	return {
+		id: row.id,
+		at: row.at,
+		actorUserId: row.actorUserId,
+		kind: row.kind,
+		target: row.target,
+		detail: parseDetail(row.id, row.detail)
+	};
 }
 
 function parseDetail(id: string, json: string): Record<string, string> {

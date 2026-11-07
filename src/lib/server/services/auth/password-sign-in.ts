@@ -36,6 +36,7 @@ export async function signInWithPassword(
 				actor: { kind: 'system' },
 				kind: 'sign-in-failed',
 				target: email,
+				machineId: null,
 				detail: { method: 'password', reason: `paused-${pause.by}`, ip: client.ip }
 			},
 			now
@@ -65,6 +66,7 @@ export async function signInWithPassword(
 				actor: user === undefined ? { kind: 'system' } : { kind: 'user', userId: user.id },
 				kind: 'sign-in-failed',
 				target: email,
+				machineId: null,
 				detail: { method: 'password', reason, ip: client.ip }
 			},
 			now
@@ -82,6 +84,7 @@ export async function signInWithPassword(
 				actor: { kind: 'user', userId: user.id },
 				kind: 'sign-in',
 				target: email,
+				machineId: null,
 				detail: { method: 'password', ip: client.ip }
 			},
 			now

@@ -129,6 +129,7 @@ export async function completeOidcSignIn(
 				actor: { kind: 'system' },
 				kind: 'sign-in-failed',
 				target,
+				machineId: null,
 				detail: { method: provider.name, reason, ip: options.client.ip }
 			},
 			now
@@ -185,6 +186,7 @@ export async function completeOidcSignIn(
 				actor: { kind: 'user', userId: user.id },
 				kind: 'sign-in',
 				target: user.email,
+				machineId: null,
 				detail: { method: provider.name, ip: options.client.ip }
 			},
 			now
@@ -287,6 +289,7 @@ function resolveUser(
 						actor: { kind: 'system' },
 						kind: 'user-added',
 						target: created.email,
+						machineId: null,
 						detail: { role: 'member', provider: provider.name, password: 'none' }
 					},
 					now

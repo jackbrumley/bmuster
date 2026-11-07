@@ -7,6 +7,7 @@ import {
 	machines
 } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
+import { joinGroupsAtEnrolment } from '../access/groups.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { isRefusal, type AgentRefusal } from './agent-refusal.ts';
 import { redeemJoinCode, type RedeemedCode } from './join-codes.ts';
@@ -76,21 +77,23 @@ function enrolNew(
 			joinCodeId: redeemed.joinCodeId
 		})
 		.run();
+	const groups = joinGroupsAtEnrolment(tx, machineId, redeemed.machineGroupIds);
 	recordAudit(
 		tx,
 		{
 			actor: { kind: 'system' },
 			kind: 'machine-enrolled',
 			target: request.name,
+			machineId,
 			detail: {
 				hostname: request.hostname,
 				system: `${request.osFamily} (${request.target})`,
-				code: redeemed.maxUses === 1 ? 'single use' : 'roll-out'
+				code: redeemed.maxUses === 1 ? 'single use' : 'roll-out',
+				groups: groups.length === 0 ? 'none' : groups.join(', ')
 			}
 		},
 		now
 	);
-	// Machine groups arrive with the access model; redeemed.machineGroupIds is kept for then.
 	return machineId;
 }
 
@@ -140,6 +143,7 @@ function takeOver(
 			actor: { kind: 'system' },
 			kind: 'machine-reinstalled',
 			target: machine.name,
+			machineId,
 			detail: {
 				hostname: request.hostname,
 				system: `${request.osFamily} (${request.target})`

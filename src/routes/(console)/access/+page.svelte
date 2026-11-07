@@ -1,18 +1,119 @@
 <script lang="ts">
-	import Button from '#lib/ui/button.svelte';
+	import { refreshAll } from '$app/navigation';
 	import { IconArrowRight, IconPlus } from '@tabler/icons-svelte-runes';
+	import {
+		consentLabel,
+		type AccessRuleView,
+		type Consent,
+		type Permission
+	} from '#lib/domain/access/access.ts';
+	import { accessRuleRequestSchema, changedReplySchema } from '#lib/schemas/access/access.ts';
+	import Button from '#lib/ui/button.svelte';
+	import Modal from '#lib/ui/modal.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import PermissionChips from '#lib/ui/permission-chips.svelte';
+	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
+	import { showToast } from '#lib/ui/toast.svelte.ts';
+	import { apiRequest } from '#lib/utils/api-client.ts';
+	import RuleForm from './rule-form.svelte';
+	import { describeRule, groupName } from './rule-names.ts';
 	import type { PageProps } from './$types';
 
+	/** Access rules (SPEC-ACCESS A4): list → view → edit. */
 	let { data }: PageProps = $props();
 
-	function nameOf(groups: { id: string; name: string }[], id: string): string {
-		const group = groups.find((candidate) => candidate.id === id);
-		if (group === undefined) {
-			throw new Error(`Access rule points at a missing group: ${id}`);
+	type Panel =
+		| { kind: 'closed' }
+		| { kind: 'view'; id: string }
+		| { kind: 'edit'; id: string }
+		| { kind: 'add' };
+
+	let panel = $state<Panel>({ kind: 'closed' });
+	let userGroupId = $state<string | null>(null);
+	let machineGroupId = $state<string | null>(null);
+	let permissions = $state<Permission[]>([]);
+	let consent = $state<Consent>('unattended');
+	let problem = $state<string | undefined>(undefined);
+	let busy = $state(false);
+
+	const selectedId = $derived(
+		panel.kind === 'view' || panel.kind === 'edit' ? panel.id : undefined
+	);
+	const selected = $derived(data.rules.find((rule) => rule.id === selectedId));
+
+	function close(): void {
+		panel = { kind: 'closed' };
+		problem = undefined;
+	}
+
+	function openForm(rule: AccessRuleView | undefined): void {
+		userGroupId = rule?.userGroupId ?? null;
+		machineGroupId = rule?.machineGroupId ?? null;
+		permissions = [...(rule?.permissions ?? data.defaults.permissions)];
+		consent = rule?.consent ?? data.defaults.consent;
+		problem = undefined;
+		panel = rule === undefined ? { kind: 'add' } : { kind: 'edit', id: rule.id };
+	}
+
+	function describe(rule: AccessRuleView): string {
+		return describeRule(rule, data.userGroups, data.machineGroups);
+	}
+
+	async function save(): Promise<void> {
+		if (userGroupId === null || machineGroupId === null) {
+			problem = 'Pick a group of people and a group of machines.';
+			return;
 		}
-		return group.name;
+		const checked = accessRuleRequestSchema.safeParse({
+			userGroupId,
+			machineGroupId,
+			permissions,
+			consent
+		});
+		if (!checked.success) {
+			problem = checked.error.issues[0]?.message;
+			return;
+		}
+		busy = true;
+		const result = await apiRequest({
+			method: panel.kind === 'edit' ? 'PATCH' : 'POST',
+			url: panel.kind === 'edit' ? `/api/access-rules/${panel.id}` : '/api/access-rules',
+			body: checked.data,
+			reply: changedReplySchema
+		});
+		busy = false;
+		if (!result.ok) {
+			problem = result.message;
+			return;
+		}
+		showToast(panel.kind === 'edit' ? 'Saved.' : 'Rule added.', 'success');
+		panel = { kind: 'view', id: result.data.id };
+		await refreshAll();
+	}
+
+	async function remove(rule: AccessRuleView): Promise<void> {
+		const yes = await confirmAction({
+			title: `Delete the rule ${describe(rule)}?`,
+			message:
+				'People in the group lose what this rule gave them on those machines at once, unless another rule gives it too.',
+			confirmLabel: 'Delete rule'
+		});
+		if (!yes) {
+			return;
+		}
+		const result = await apiRequest({
+			method: 'DELETE',
+			url: `/api/access-rules/${rule.id}`,
+			body: undefined,
+			reply: changedReplySchema
+		});
+		if (!result.ok) {
+			showToast(result.message, 'error');
+			return;
+		}
+		showToast('Rule deleted.', 'success');
+		close();
+		await refreshAll();
 	}
 </script>
 
@@ -21,31 +122,126 @@
 	summary="Each rule lets one group of people do certain things on one group of machines. Rules add up; nothing is denied."
 >
 	{#snippet actions()}
-		<Button variant="primary" size="compact" type="button" onclick={undefined}
-			><IconPlus size={18} /> New rule</Button
+		<Button
+			variant="primary"
+			size="compact"
+			type="button"
+			onclick={() => {
+				openForm(undefined);
+			}}
 		>
+			<IconPlus size={18} /> New rule
+		</Button>
 	{/snippet}
 </PageHeader>
 
-<ul class="list">
-	{#each data.rules as rule (rule.id)}
-		<li class="rule">
-			<p class="pair">
-				<span class="who">{nameOf(data.userGroups, rule.userGroupId)}</span>
-				<IconArrowRight size={16} />
-				<span class="what">{nameOf(data.machineGroups, rule.machineGroupId)}</span>
-			</p>
-			<PermissionChips permissions={rule.permissions} />
-			<p class="consent">
-				{rule.consent === 'ask'
-					? 'Asks the person at the screen first'
-					: 'Connects without asking (unattended)'}
-			</p>
-		</li>
-	{/each}
-</ul>
+{#if data.rules.length === 0}
+	<p class="empty">
+		No rules yet, so members see no machines. Add a rule to give a group of people access to a group
+		of machines.
+	</p>
+{:else}
+	<ul class="list">
+		{#each data.rules as rule (rule.id)}
+			<li>
+				<button
+					data-raw-button="list-row"
+					type="button"
+					class="rule"
+					onclick={() => (panel = { kind: 'view', id: rule.id })}
+				>
+					<span class="pair">
+						<span class="name">{groupName(data.userGroups, rule.userGroupId)}</span>
+						<IconArrowRight size={16} />
+						<span class="name">{groupName(data.machineGroups, rule.machineGroupId)}</span>
+					</span>
+					<PermissionChips permissions={rule.permissions} />
+					<span class="consent">{consentLabel(rule.consent)}</span>
+				</button>
+			</li>
+		{/each}
+	</ul>
+{/if}
+
+<Modal
+	open={panel.kind === 'view' && selected !== undefined}
+	title={selected === undefined ? '' : describe(selected)}
+	onclose={close}
+>
+	{#if selected !== undefined}
+		<dl class="facts">
+			<dt>People in</dt>
+			<dd>{groupName(data.userGroups, selected.userGroupId)}</dd>
+			<dt>Machines in</dt>
+			<dd>{groupName(data.machineGroups, selected.machineGroupId)}</dd>
+			<dt>May</dt>
+			<dd><PermissionChips permissions={selected.permissions} /></dd>
+			<dt>Consent</dt>
+			<dd>{consentLabel(selected.consent)}</dd>
+		</dl>
+	{/if}
+	{#snippet footer()}
+		{#if selected !== undefined}
+			{@const rule = selected}
+			<Button variant="danger" size="compact" type="button" onclick={() => void remove(rule)}>
+				Delete
+			</Button>
+			<Button
+				variant="primary"
+				size="compact"
+				type="button"
+				onclick={() => {
+					openForm(rule);
+				}}
+			>
+				Edit
+			</Button>
+		{/if}
+	{/snippet}
+</Modal>
+
+<Modal
+	open={panel.kind === 'add' || (panel.kind === 'edit' && selected !== undefined)}
+	title={panel.kind === 'add' ? 'New access rule' : 'Edit access rule'}
+	onclose={close}
+>
+	<RuleForm
+		userGroups={data.userGroups}
+		machineGroups={data.machineGroups}
+		bind:userGroupId
+		bind:machineGroupId
+		bind:permissions
+		bind:consent
+		error={problem}
+	/>
+	{#snippet footer()}
+		<Button
+			variant="secondary"
+			size="compact"
+			type="button"
+			onclick={() => {
+				if (panel.kind === 'edit') {
+					panel = { kind: 'view', id: panel.id };
+				} else {
+					close();
+				}
+			}}
+		>
+			Cancel
+		</Button>
+		<Button variant="primary" size="compact" type="button" onclick={() => void save()}>
+			{busy ? 'Saving…' : panel.kind === 'add' ? 'Add rule' : 'Save'}
+		</Button>
+	{/snippet}
+</Modal>
 
 <style>
+	.empty {
+		padding: var(--space-8) 0;
+		color: var(--muted);
+		text-align: center;
+	}
+
 	.list {
 		margin: 0;
 		padding: 0;
@@ -56,14 +252,25 @@
 		overflow: hidden;
 	}
 
+	li + li {
+		border-top: 1px solid var(--border);
+	}
+
 	.rule {
 		display: grid;
 		gap: var(--space-2);
+		width: 100%;
 		padding: var(--space-4);
+		border: none;
+		background: transparent;
+		color: var(--text);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
 	}
 
-	.rule + .rule {
-		border-top: 1px solid var(--border);
+	.rule:hover {
+		background: var(--surface-muted);
 	}
 
 	.pair {
@@ -74,14 +281,31 @@
 		color: var(--muted);
 	}
 
-	.who,
-	.what {
+	.name {
 		color: var(--text);
 		font-weight: var(--weight-semibold);
+		overflow-wrap: anywhere;
 	}
 
 	.consent {
 		color: var(--muted);
 		font-size: var(--text-xs);
+	}
+
+	.facts {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: var(--space-2) var(--space-4);
+		margin: 0;
+		font-size: var(--text-sm);
+	}
+
+	dt {
+		color: var(--muted);
+	}
+
+	dd {
+		margin: 0;
+		overflow-wrap: anywhere;
 	}
 </style>

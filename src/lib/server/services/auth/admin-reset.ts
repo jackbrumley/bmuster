@@ -49,6 +49,7 @@ export async function resetAdminPassword(
 				actor: { kind: 'system' },
 				kind: 'user-password-set',
 				target: user.email,
+				machineId: null,
 				detail: { how: 'reset from the server command line' }
 			},
 			now

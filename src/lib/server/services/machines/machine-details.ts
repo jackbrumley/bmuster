@@ -39,7 +39,13 @@ export function updateMachineDetails(
 		if (row.name !== details.name) {
 			recordAudit(
 				tx,
-				{ actor, kind: 'machine-renamed', target: details.name, detail: { from: row.name } },
+				{
+					actor,
+					kind: 'machine-renamed',
+					target: details.name,
+					machineId: id,
+					detail: { from: row.name }
+				},
 				now
 			);
 		}
@@ -50,6 +56,7 @@ export function updateMachineDetails(
 					actor,
 					kind: 'machine-description-changed',
 					target: details.name,
+					machineId: id,
 					detail: { description: details.description === '' ? '(none)' : details.description }
 				},
 				now

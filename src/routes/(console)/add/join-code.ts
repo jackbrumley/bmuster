@@ -8,11 +8,16 @@ export type CodeState =
 	| { kind: 'ready'; id: string; code: string; expiresAtIso: string; maxUses: number }
 	| { kind: 'failed'; message: string };
 
-export async function makeJoinCode(maxUses: number, minutes: number): Promise<CodeState> {
+/** Makes a code; machines that join with it go into `machineGroupIds` (SPEC-ACCESS A7). */
+export async function makeJoinCode(
+	maxUses: number,
+	minutes: number,
+	machineGroupIds: readonly string[]
+): Promise<CodeState> {
 	const result = await apiRequest({
 		method: 'POST',
 		url: '/api/join-codes',
-		body: { maxUses, minutes },
+		body: { maxUses, minutes, machineGroupIds },
 		reply: createJoinCodeReplySchema
 	});
 	return result.ok

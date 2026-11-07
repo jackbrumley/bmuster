@@ -31,6 +31,7 @@ export function recordLeave(
 				actor: { kind: 'system' },
 				kind: reason === 'moved' ? 'machine-moved' : 'machine-uninstalled',
 				target: machine.name,
+				machineId: agent.machineId,
 				detail: { hostname: machine.hostname }
 			},
 			now
