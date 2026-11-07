@@ -3,6 +3,7 @@
 		IconAdjustments,
 		IconAlertTriangle,
 		IconArrowsExchange,
+		IconBell,
 		IconCertificate,
 		IconDeviceDesktopMinus,
 		IconDeviceDesktopPlus,
@@ -12,6 +13,8 @@
 		IconRefresh,
 		IconKey,
 		IconLock,
+		IconMail,
+		IconMailOff,
 		IconLogin2,
 		IconLogout,
 		IconPlugConnected,
@@ -123,6 +126,19 @@
 			case 'access-rule-changed':
 			case 'access-rule-deleted':
 				return IconLock;
+			case 'email-sent':
+			case 'invitation-created':
+			case 'invitation-accepted':
+				return IconMail;
+			case 'email-failed':
+				return IconMailOff;
+			case 'password-reset-requested':
+			case 'password-reset':
+				return IconKey;
+			case 'notification-rule-added':
+			case 'notification-rule-changed':
+			case 'notification-rule-deleted':
+				return IconBell;
 		}
 	}
 </script>
