@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { agentConnected, agentDisconnected } from '../agents/live-agents.ts';
 import { listAudit } from '../audit/audit.ts';
+import { sessionRelay } from '../sessions/relay.ts';
 import { findMachine, listMachines, removeMachine } from './machine-views.ts';
 
 const NOW = 1_794_000_000_000;
@@ -58,5 +59,32 @@ describe('machine status (A7, A8)', () => {
 		expect(removeMachine(database, agent.machineId, ADMIN_ID, NOW + 3)).toBe(false);
 		// Enrolment and the one removal; the second attempt writes nothing.
 		expect(listAudit(database, 10)).toHaveLength(2);
+	});
+});
+
+describe('in use (SPEC-SESSIONS T8)', () => {
+	it('shows who has a session open on the machine, until it ends', () => {
+		const database = testDatabase();
+		const agent = enrolFakeAgent(database, NOW);
+		const sessionId = crypto.randomUUID();
+		sessionRelay().start(
+			{
+				id: sessionId,
+				machineId: agent.machineId,
+				userId: ADMIN_ID,
+				userName: 'Kim',
+				kind: 'terminal',
+				shell: 'bash',
+				ip: '192.0.2.1',
+				openedAt: NOW
+			},
+			() => undefined
+		);
+		expect(findMachine(database, agent.machineId, NOW)?.inUse).toEqual([
+			{ kind: 'terminal', userName: 'Kim' }
+		]);
+		expect(listMachines(database, NOW)[0]?.inUse).toEqual([{ kind: 'terminal', userName: 'Kim' }]);
+		sessionRelay().end(sessionId, 'closed', 'done');
+		expect(findMachine(database, agent.machineId, NOW)?.inUse).toEqual([]);
 	});
 });

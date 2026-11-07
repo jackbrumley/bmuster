@@ -46,6 +46,7 @@ function machine(overrides: Partial<Machine>): Machine {
 		inventory: inventory([{ mount: '/', sizeBytes: 100 * GB, usedBytes: 50 * GB }], 0),
 		enrolledIso: '2026-11-01T00:00:00.000Z',
 		lastSeenIso: '2026-11-07T12:00:00.000Z',
+		inUse: [],
 		...overrides
 	};
 }

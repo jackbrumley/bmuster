@@ -70,7 +70,7 @@ export function isAgentConnected(machineId: string): boolean {
 }
 
 /** Sends a message if the agent is connected; returns whether it was sent. */
-function sendToAgent(machineId: string, message: ServerSocketMessage): boolean {
+export function sendToAgent(machineId: string, message: ServerSocketMessage): boolean {
 	const peer = peers.get(machineId);
 	if (peer === undefined) {
 		return false;

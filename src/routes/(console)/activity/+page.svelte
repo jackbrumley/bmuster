@@ -19,6 +19,7 @@
 		IconRocket,
 		IconShieldLock,
 		IconShieldX,
+		IconTerminal2,
 		IconUser,
 		IconUsersGroup
 	} from '@tabler/icons-svelte-runes';
@@ -123,6 +124,9 @@
 			case 'access-rule-changed':
 			case 'access-rule-deleted':
 				return IconLock;
+			case 'session-opened':
+			case 'session-ended':
+				return IconTerminal2;
 		}
 	}
 </script>

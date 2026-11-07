@@ -1,10 +1,13 @@
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { isSocketRefusal, type SocketRoute } from './socket-route.ts';
+import { isSocketRefusal, matchSocketPath, type SocketRoute } from './socket-route.ts';
 
 /** Every connection is pinged this often; one that misses a pong is dropped. */
 const PING_MS = 30_000;
+
+/** The largest message any socket accepts (a big paste into a terminal fits). */
+const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 
 /**
  * Attaches socket routes to a Node HTTP server. `routes` is read on every
@@ -24,7 +27,7 @@ export function attachSocketRoutes(
 	routes: () => Promise<readonly SocketRoute[]>,
 	unmatched: 'refuse' | 'ignore'
 ): void {
-	const sockets = new WebSocketServer({ noServer: true });
+	const sockets = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
 	const alive = new WeakMap<WebSocket, boolean>();
 
 	const pinger = setInterval(() => {
@@ -52,16 +55,30 @@ export function attachSocketRoutes(
 	async function upgrade(incoming: IncomingMessage, stream: Duplex, head: Buffer): Promise<void> {
 		const request = toRequest(incoming);
 		const pathname = new URL(request.url).pathname;
-		const route = (await routes()).find((candidate) => candidate.path === pathname);
-		if (route === undefined) {
+		const matched = (await routes())
+			.map((route) => ({ route, params: matchSocketPath(route.path, pathname) }))
+			.find((candidate) => candidate.params !== undefined);
+		if (matched?.params === undefined) {
 			if (unmatched === 'refuse') {
 				reject(stream, 404, { reason: 'not-found', message: 'Not Found' });
 			}
 			return;
 		}
 		let socket: WebSocket | undefined;
-		const session = await route.accept(request, {
+		const session = await matched.route.accept(request, matched.params, {
 			send: (data) => socket?.send(data),
+			sendBinary: (data, sent) => {
+				if (socket === undefined) {
+					sent();
+					return;
+				}
+				// The callback runs once the bytes are written (or the socket failed).
+				socket.send(data, { binary: true }, () => {
+					sent();
+				});
+			},
+			pause: () => socket?.pause(),
+			resume: () => socket?.resume(),
 			close: (code, reason) => socket?.close(code, reason)
 		});
 		if (isSocketRefusal(session)) {
@@ -73,8 +90,10 @@ export function attachSocketRoutes(
 			alive.set(accepted, true);
 			accepted.on('pong', () => alive.set(accepted, true));
 			accepted.on('message', (data, isBinary) => {
-				if (!isBinary) {
-					session.message(textOf(data));
+				if (isBinary) {
+					session.binary(bytesOf(data));
+				} else {
+					session.message(bytesOf(data).toString('utf8'));
 				}
 			});
 			accepted.on('close', () => {
@@ -113,9 +132,9 @@ function reject(stream: Duplex, status: number, body: { reason: string; message:
 	}
 }
 
-function textOf(data: Buffer | ArrayBuffer | Buffer[]): string {
+function bytesOf(data: Buffer | ArrayBuffer | Buffer[]): Buffer {
 	if (Array.isArray(data)) {
-		return Buffer.concat(data).toString('utf8');
+		return Buffer.concat(data);
 	}
-	return Buffer.isBuffer(data) ? data.toString('utf8') : Buffer.from(data).toString('utf8');
+	return Buffer.isBuffer(data) ? data : Buffer.from(data);
 }

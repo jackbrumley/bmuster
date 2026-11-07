@@ -10,6 +10,7 @@ import { machineInventory, machineStatus, machines } from '../../database/schema
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { disconnectAgent, isAgentConnected, liveFigures } from '../agents/live-agents.ts';
+import { sessionRelay } from '../sessions/relay.ts';
 
 /** A machine with no socket and no check-in for this many intervals shows Offline. */
 const OFFLINE_AFTER_INTERVALS = 3;
@@ -148,7 +149,8 @@ function toMachine(
 		live: toLive(machine.id, status),
 		inventory: toInventory(inventory),
 		enrolledIso: machine.enrolledAt.toISOString(),
-		lastSeenIso: machine.lastSeenAt.toISOString()
+		lastSeenIso: machine.lastSeenAt.toISOString(),
+		inUse: sessionRelay().inUse(machine.id)
 	};
 }
 

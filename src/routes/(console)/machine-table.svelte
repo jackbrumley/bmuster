@@ -7,6 +7,7 @@
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import { formatBytes, formatRelative } from '#lib/utils/format.ts';
 	import { osLabel } from '#lib/domain/machines/machine.ts';
+	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import type { MachineRow } from './machine-row.ts';
 
 	/** The Table view of the Machines page: sortable columns, one line per machine on phones. */
@@ -152,6 +153,9 @@
 
 {#snippet statusCell({ machine }: MachineRow)}
 	<StatusBadge status={machine.status} {now} since="hidden" />
+	{#if machine.inUse.length > 0}
+		<span class="in-use">In use: {inUseLabel(machine.inUse)}</span>
+	{/if}
 {/snippet}
 
 {#snippet percentText(percent: number | null, detail: string)}
@@ -216,6 +220,14 @@
 />
 
 <style>
+	.in-use {
+		display: block;
+		margin-top: var(--space-1);
+		color: var(--brand);
+		font-size: var(--text-xs);
+		white-space: nowrap;
+	}
+
 	/* Names keep room to be read; a table too wide for the screen scrolls sideways. */
 	.name {
 		display: flex;

@@ -1,4 +1,5 @@
 /** What the console knows about one enrolled machine. Browser-safe: no server imports. */
+import type { SessionInUse, TerminalShell } from '../sessions/session.ts';
 
 export type OsFamily = 'windows' | 'linux' | 'macos';
 
@@ -64,9 +65,11 @@ export type Machine = {
 	inventory: MachineInventory;
 	enrolledIso: string;
 	lastSeenIso: string;
+	/** Sessions open on it right now (SPEC-SESSIONS T8). */
+	inUse: SessionInUse[];
 };
 
-export type ShellChoice = { id: string; label: string };
+export type ShellChoice = { id: TerminalShell; label: string };
 
 /** The shells a terminal session can start, per operating system. */
 export function shellsFor(family: OsFamily): ShellChoice[] {
