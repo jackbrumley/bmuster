@@ -198,3 +198,62 @@ describe('Machines views: cards and table', () => {
 			.toHaveTextContent('Machine 002 machine-002 Offline');
 	});
 });
+
+describe('Machines export (SPEC-CSV-EXPORT X1, X6)', () => {
+	/** The links the Export button downloads, caught before the browser follows them. */
+	function catchDownloads(): string[] {
+		const links: string[] = [];
+		vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+			this: HTMLAnchorElement
+		) {
+			links.push(this.getAttribute('href') ?? '');
+		});
+		return links;
+	}
+
+	it('X1: sits next to the Cards / Table switch in the header', async () => {
+		const screen = await renderPage();
+		const header = screen.container.querySelector('header .actions');
+		expect(
+			[...(header?.querySelectorAll('button') ?? [])].map((button) => button.textContent.trim())
+		).toEqual(['Cards', 'Table', 'Export']);
+	});
+
+	it('X6: Cards view exports the search and filter, in list order', async () => {
+		const links = catchDownloads();
+		const screen = await renderPage(fleet(130));
+		await screen.getByRole('button', { name: 'Cards' }).click();
+		await screen.getByRole('button', { name: 'Export' }).click();
+		await screen.getByRole('button', { name: /^Offline/ }).click();
+		await screen.getByPlaceholder('Search name, host, description or system').fill(' machine 1 ');
+		await screen.getByRole('button', { name: 'Export' }).click();
+		expect(links).toEqual([
+			'/api/exports/machines',
+			'/api/exports/machines?search=machine+1&filter=offline'
+		]);
+	});
+
+	it("X6: Table view adds the table's sort, following the heading clicked", async () => {
+		const links = catchDownloads();
+		localStorage.setItem('bmuster-machines-view', 'table');
+		const screen = await renderPage(fleet(4));
+		await screen.getByRole('button', { name: 'Export' }).click();
+		await screen.getByRole('button', { name: 'Status' }).click();
+		await screen.getByRole('button', { name: 'Status' }).click();
+		await screen.getByRole('button', { name: 'Export' }).click();
+		expect(links).toEqual([
+			'/api/exports/machines?sort=name&direction=asc',
+			'/api/exports/machines?sort=status&direction=desc'
+		]);
+	});
+
+	it('X1: the header wraps on a phone with Export still on screen', async () => {
+		await page.viewport(390, 844);
+		const screen = await renderPage();
+		const exportButton = screen.getByRole('button', { name: 'Export' });
+		await expect.element(exportButton).toBeVisible();
+		const box = exportButton.element().getBoundingClientRect();
+		expect(box.right).toBeLessThanOrEqual(390);
+		expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
+	});
+});

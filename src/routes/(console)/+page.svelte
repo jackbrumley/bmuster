@@ -5,6 +5,7 @@
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import type { DataTableSort } from '#lib/ui/data-table/data-table-types.ts';
 	import EmptyState from '#lib/ui/empty-state.svelte';
+	import ExportButton from '#lib/ui/export-button.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import {
 		machinesMatching,
@@ -49,8 +50,22 @@
 
 	const visible = $derived(machinesMatching(rows, query, filter ?? 'all'));
 
-	// The Table view's sort, kept here so the page knows the order on screen.
+	// The Table view's sort, kept here so the export lists machines in the same order.
 	let sort = $state<DataTableSort>({ column: 'name', direction: 'asc' });
+
+	/**
+	 * Every machine matching the search and filter, not just the batches drawn
+	 * (X6): the server applies them again behind the access check. Cards view
+	 * keeps the list order, so it sends no sort.
+	 */
+	const exportHref = $derived.by(() => {
+		const search = new URLSearchParams({
+			...(query.trim() === '' ? {} : { search: query.trim() }),
+			...(filter === null || filter === 'all' ? {} : { filter }),
+			...(view === 'table' ? { sort: sort.column, direction: sort.direction } : {})
+		}).toString();
+		return `${resolve('/api/exports/machines')}${search === '' ? '' : `?${search}`}`;
+	});
 
 	// A new search or filter starts the list again from the first batch.
 	const resetKey = $derived(`${filter ?? 'all'}|${query}`);
@@ -82,6 +97,7 @@
 
 {#snippet headerActions()}
 	<ChipGroup label="View" options={viewOptions} bind:value={() => view, pickView} />
+	<ExportButton href={exportHref} />
 {/snippet}
 
 <PageHeader

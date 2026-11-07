@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import {
 		IconAdjustments,
 		IconAlertTriangle,
@@ -35,6 +36,7 @@
 	import { activitySentence } from '#lib/domain/activity/local-page-activity.ts';
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
+	import ExportButton from '#lib/ui/export-button.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import { formatRelative } from '#lib/utils/format.ts';
 	import type { PageProps } from './$types';
@@ -44,6 +46,13 @@
 	 * about machines they can see (SPEC-ACCESS A6).
 	 */
 	let { data }: PageProps = $props();
+
+	/** Everything the person may read, with local times in this browser's time zone (X7). */
+	const exportHref = $derived(
+		`${resolve('/api/exports/activity')}?${new URLSearchParams({
+			timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+		}).toString()}`
+	);
 
 	/** A local page event that reached the server this much later happened while it was away. */
 	const REPORTED_LATE_MS = 2 * 60_000;
@@ -155,8 +164,11 @@
 	summary={data.user.role === 'admin'
 		? 'Sign-ins, machines joining and leaving, and changes to people, groups, access rules, providers and settings.'
 		: 'What has happened on the machines you can see.'}
-	actions={undefined}
-/>
+>
+	{#snippet actions()}
+		<ExportButton href={exportHref} />
+	{/snippet}
+</PageHeader>
 
 {#snippet entryRow(entry: ActivityEntry)}
 	{@const Icon = iconFor(entry.kind)}

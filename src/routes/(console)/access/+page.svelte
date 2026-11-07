@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { refreshAll } from '$app/navigation';
 	import { IconArrowRight, IconPlus } from '@tabler/icons-svelte-runes';
 	import {
@@ -12,6 +13,7 @@
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
 	import Modal from '#lib/ui/modal.svelte';
+	import ExportButton from '#lib/ui/export-button.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import PermissionChips from '#lib/ui/permission-chips.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
@@ -124,6 +126,7 @@
 	summary="Each rule lets one group of people do certain things on one group of machines. Rules add up; nothing is denied."
 >
 	{#snippet actions()}
+		<ExportButton href={resolve('/api/exports/access-rules')} />
 		<Button
 			variant="primary"
 			size="compact"

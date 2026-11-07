@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import ExportButton from '#lib/ui/export-button.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import { describeRule } from '../access/rule-names.ts';
 	import GroupSection from './group-section.svelte';
@@ -38,8 +40,11 @@
 <PageHeader
 	title="Groups"
 	summary="Put people and machines into groups, then give groups access with access rules."
-	actions={undefined}
-/>
+>
+	{#snippet actions()}
+		<ExportButton href={resolve('/api/exports/groups')} />
+	{/snippet}
+</PageHeader>
 
 <GroupSection
 	kind="user"

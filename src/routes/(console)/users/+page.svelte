@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { refreshAll } from '$app/navigation';
 	import { IconKey, IconPlus, IconShieldCheck } from '@tabler/icons-svelte-runes';
 	import Button from '#lib/ui/button.svelte';
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
 	import Modal from '#lib/ui/modal.svelte';
+	import ExportButton from '#lib/ui/export-button.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
@@ -208,6 +210,7 @@
 
 <PageHeader title="Users" summary="People who can sign in to this console.">
 	{#snippet actions()}
+		<ExportButton href={resolve('/api/exports/users')} />
 		<Button variant="primary" size="compact" type="button" onclick={openAdd}>
 			<IconPlus size={18} /> Add user
 		</Button>
