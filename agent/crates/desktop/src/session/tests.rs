@@ -1,7 +1,6 @@
 use super::*;
 use crate::capture::{
-    CaptureResult, CursorImage, CursorState, Damage, DesktopKind, DesktopState, DisplayInfo, Frame,
-    Rect,
+    CaptureResult, CursorImage, CursorState, Damage, DesktopState, DisplayInfo, Frame, Rect,
 };
 use crate::frame::{FLAG_KEYFRAME, FLAG_LAST_PART, HEADER_LEN};
 use crate::input::recording::{Call, Recorder};
@@ -95,10 +94,8 @@ impl Capturer for FakeCapturer {
         }))
     }
     fn state(&self) -> DesktopState {
-        DesktopState {
-            desktop: DesktopKind::Default,
-            locked: false,
-            signed_in_user: Some("jack".to_string()),
+        DesktopState::Desktop {
+            user: Some("jack".to_string()),
         }
     }
 }
@@ -201,7 +198,7 @@ fn session_hello_sends_displays_and_state_then_a_keyframe_with_stream() {
     assert_eq!(messages[0]["current"], "A");
     assert_eq!(messages[0]["list"][1]["x"], 128);
     assert_eq!(messages[1]["type"], "state");
-    assert_eq!(messages[1]["signedInUser"], "jack");
+    assert_eq!(messages[1]["screen"]["user"], "jack");
 
     let out = h.tick();
     assert_eq!(types(&out)[..2], ["stream", "bin2"]);

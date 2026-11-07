@@ -7,6 +7,8 @@
 #[cfg(target_os = "linux")]
 pub mod x11;
 #[cfg(target_os = "linux")]
+pub mod x11_follow;
+#[cfg(target_os = "linux")]
 pub mod x11_session;
 
 #[cfg(windows)]
@@ -183,22 +185,22 @@ pub struct CursorState {
     pub visible: bool,
 }
 
-/// Where the session is: the sign-in screen or someone's desktop.
+/// What the screen at the machine shows (the `state` message). Generic
+/// across platforms: Linux follows seat0 through logind, Windows the input
+/// desktop.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DesktopState {
-    pub desktop: DesktopKind,
-    pub locked: bool,
-    pub signed_in_user: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum DesktopKind {
-    Default,
-    Winlogon,
-    Secure,
-    Greeter,
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum DesktopState {
+    /// The sign-in screen (a display manager's greeter, Windows' Winlogon
+    /// with nobody signed in).
+    SignIn,
+    /// Someone's session, locked. `user` is the account name when known.
+    Locked { user: Option<String> },
+    /// Someone's desktop. `user` is the account name when known.
+    Desktop { user: Option<String> },
+    /// Nothing BMuster can show: a Wayland or text session, or no session
+    /// at all. The session stays open and resumes when a screen comes back.
+    Unavailable { reason: String },
 }
 
 /// A failure that ends capture; the message is for the admin.

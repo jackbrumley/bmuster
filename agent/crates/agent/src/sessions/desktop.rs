@@ -14,7 +14,7 @@ use crate::socket::Socket;
 use anyhow::{anyhow, bail, Context as _, Result};
 use bmuster_desktop::control::{AgentMessage, ErrorCode};
 use bmuster_desktop::{
-    notice, DesktopSession, EndReason, Incoming, Mode, Outgoing, Platform, SessionSlot,
+    notice, Console, DesktopSession, EndReason, Incoming, Mode, Outgoing, Platform, SessionSlot,
 };
 use bmuster_protocol::session::Consent;
 use std::sync::atomic::AtomicBool;
@@ -43,7 +43,9 @@ pub enum Prepared {
 
 pub struct Ready {
     session: DesktopSession,
-    notice_target: Option<notice::Target>,
+    /// `Some` when the ticket asks for the notice bar: on this target, or
+    /// with `None` on the screen a following session placed it on.
+    notice: Option<Option<notice::Target>>,
     slot: SessionSlot,
 }
 
@@ -51,7 +53,7 @@ pub struct Ready {
 /// the console as `failed`.
 pub fn prepare(
     request: &Request<'_>,
-    open: impl FnOnce() -> Result<Platform, String>,
+    open: impl FnOnce() -> Result<Console, String>,
 ) -> Result<Prepared> {
     if request.consent == Consent::Ask {
         // The server refuses these until the consent prompt exists; refuse
@@ -64,16 +66,25 @@ pub fn prepare(
     let Some(slot) = SessionSlot::try_acquire() else {
         return Ok(Prepared::Busy);
     };
-    let Platform {
-        capturer,
-        make_input,
-        notice_target,
-    } = open().map_err(|e| anyhow!("Cannot open the screen: {e}"))?;
-    let session = DesktopSession::new(mode, capturer, make_input, Instant::now())
-        .map_err(|e| anyhow!("Cannot control the screen: {e}"))?;
+    let now = Instant::now();
+    let (session, notice_target) =
+        match open().map_err(|e| anyhow!("Cannot open the screen: {e}"))? {
+            Console::Fixed(Platform {
+                capturer,
+                make_input,
+                notice_target,
+            }) => (
+                DesktopSession::new(mode, capturer, make_input, now)
+                    .map_err(|e| anyhow!("Cannot control the screen: {e}"))?,
+                Some(notice_target),
+            ),
+            // Opens what the screen shows now; waits with a reason when it
+            // shows nothing BMuster can capture.
+            Console::Following(watch) => (DesktopSession::following(mode, watch, now), None),
+        };
     Ok(Prepared::Ready(Box::new(Ready {
         session,
-        notice_target: request.notice.then_some(notice_target),
+        notice: request.notice.then_some(notice_target),
         slot,
     })))
 }
@@ -112,12 +123,12 @@ pub fn run(
 ) -> Result<Ended> {
     let Ready {
         mut session,
-        notice_target,
+        notice,
         slot,
     } = ready;
     let (output, outgoing) = mpsc::sync_channel::<ToServer>(OUTPUT_QUEUE);
     let (to_session, incoming) = mpsc::channel::<Incoming>();
-    let shown = notice_target.map(|target| notice::show(&target, viewer, to_session.clone()));
+    let shown = notice.map(|target| notice::show(target.as_ref(), viewer, to_session.clone()));
     let worker = {
         let stop = Arc::clone(stop);
         std::thread::Builder::new()
@@ -174,10 +185,10 @@ mod tests {
     use super::super::testing::{socket_pair, Server};
     use super::*;
     use bmuster_desktop::capture::{
-        CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopKind, DesktopState,
-        DisplayInfo, Frame,
+        CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState, DisplayInfo, Frame,
     };
     use bmuster_desktop::input::{InputBackend, InputResult};
+    use bmuster_desktop::{Look, ScreenWatch};
     use serde_json::Value;
 
     /// A still 128×64 screen.
@@ -235,22 +246,35 @@ mod tests {
             Ok(None)
         }
         fn state(&self) -> DesktopState {
-            DesktopState {
-                desktop: DesktopKind::Default,
-                locked: false,
-                signed_in_user: None,
-            }
+            DesktopState::Desktop { user: None }
         }
     }
 
-    fn still_platform() -> Result<Platform, String> {
-        Ok(Platform {
+    fn still_platform() -> Result<Console, String> {
+        Ok(Console::Fixed(Platform {
             capturer: Box::new(Still::new()),
             make_input: Box::new(|| -> InputResult<Box<dyn InputBackend>> {
                 panic!("a watch-only session never builds an injector")
             }),
             notice_target: test_notice_target(),
-        })
+        }))
+    }
+
+    /// A screen that shows a text console the whole time.
+    struct TextConsole;
+
+    impl ScreenWatch for TextConsole {
+        fn look(&mut self) -> Look {
+            Look {
+                key: "1:tty".into(),
+                state: DesktopState::Unavailable {
+                    reason: "Text console".into(),
+                },
+            }
+        }
+        fn open(&mut self) -> Result<Platform, String> {
+            panic!("a text console is never opened")
+        }
     }
 
     fn test_notice_target() -> notice::Target {
@@ -324,6 +348,44 @@ mod tests {
         let output = server.output();
         assert_eq!(output[0], 2);
         assert_eq!(output[2] & 0b101, 0b101);
+        server.close();
+        assert_eq!(agent.join().unwrap(), Ended::Finished);
+    }
+
+    #[test]
+    fn a_following_session_with_nothing_to_show_stays_open_with_the_reason() {
+        let permissions = vec!["desktop-view".to_string(), "desktop-control".to_string()];
+        let Ok(Prepared::Ready(ready)) =
+            prepare(&request(&permissions, Consent::Unattended), || {
+                Ok(Console::Following(Box::new(TextConsole)))
+            })
+        else {
+            panic!("the session did not start");
+        };
+        let (mut client, server) = socket_pair();
+        let agent = std::thread::spawn(move || {
+            let stop = Arc::new(AtomicBool::new(false));
+            run(&mut client, *ready, "Jack", &stop).unwrap()
+        });
+        let mut server = Server::new(server);
+        server.send_text(
+            r#"{"type":"hello","codecs":["jpeg"],"viewport":{"width":800,"height":600,"pixelRatio":1}}"#,
+        );
+        assert_eq!(
+            server.wait_for_text(),
+            r#"{"type":"displays","list":[],"current":""}"#
+        );
+        assert_eq!(
+            server.wait_for_text(),
+            r#"{"type":"state","screen":{"kind":"unavailable","reason":"Text console"}}"#
+        );
+        server.send_text(r#"{"type":"pointer","x":1,"y":1,"buttons":1}"#);
+        server.send_text(r#"{"type":"disconnect"}"#);
+        assert_eq!(
+            server.wait_for_text(),
+            r#"{"type":"ended","reason":"closed"}"#
+        );
+        assert!(server.output().is_empty(), "no frames without a screen");
         server.close();
         assert_eq!(agent.join().unwrap(), Ended::Finished);
     }

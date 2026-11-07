@@ -104,13 +104,12 @@ pub struct X11Capturer {
     randr_monitors: bool,
     layout_dirty: bool,
     cursor_serial: u32,
-    state: DesktopState,
 }
 
 impl X11Capturer {
     /// Connects to the target display and sets up damage tracking, RandR
     /// and cursor events.
-    pub fn open(target: &X11Target, state: DesktopState) -> CaptureResult<X11Capturer> {
+    pub fn open(target: &X11Target) -> CaptureResult<X11Capturer> {
         let (connection, screen_number) = connect(target).map_err(CaptureError)?;
         let setup = connection.setup();
         let screen = setup
@@ -223,7 +222,6 @@ impl X11Capturer {
             randr_monitors,
             layout_dirty: false,
             cursor_serial,
-            state,
         };
         capturer.displays = capturer.read_displays()?;
         capturer.current = capturer
@@ -528,8 +526,10 @@ impl Capturer for X11Capturer {
         }))
     }
 
+    /// The session that follows seat0 reports the state from logind; the
+    /// X connection cannot tell a greeter from a desktop.
     fn state(&self) -> DesktopState {
-        self.state.clone()
+        DesktopState::Desktop { user: None }
     }
 }
 

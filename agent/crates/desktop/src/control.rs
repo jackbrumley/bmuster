@@ -274,7 +274,11 @@ pub enum AgentMessage {
         height: u32,
         scale: f64,
     },
-    State(DesktopState),
+    /// What the screen at the machine shows; sent after `hello` and
+    /// whenever it changes.
+    State {
+        screen: DesktopState,
+    },
     Stalled,
     Error {
         code: ErrorCode,
@@ -297,7 +301,6 @@ impl AgentMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::capture::DesktopKind;
 
     #[test]
     fn permissions_watch_and_control_from_the_ticket() {
@@ -375,14 +378,26 @@ mod tests {
 
     #[test]
     fn control_agent_messages_serialise_as_the_spec_says() {
-        let state = AgentMessage::State(DesktopState {
-            desktop: DesktopKind::Greeter,
-            locked: false,
-            signed_in_user: None,
-        });
+        let state = |screen| AgentMessage::State { screen }.to_json();
         assert_eq!(
-            state.to_json(),
-            r#"{"type":"state","desktop":"greeter","locked":false,"signedInUser":null}"#
+            state(DesktopState::SignIn),
+            r#"{"type":"state","screen":{"kind":"sign-in"}}"#
+        );
+        assert_eq!(
+            state(DesktopState::Locked {
+                user: Some("jack".into())
+            }),
+            r#"{"type":"state","screen":{"kind":"locked","user":"jack"}}"#
+        );
+        assert_eq!(
+            state(DesktopState::Desktop { user: None }),
+            r#"{"type":"state","screen":{"kind":"desktop","user":null}}"#
+        );
+        assert_eq!(
+            state(DesktopState::Unavailable {
+                reason: "Text console".into()
+            }),
+            r#"{"type":"state","screen":{"kind":"unavailable","reason":"Text console"}}"#
         );
         assert_eq!(
             AgentMessage::Error {

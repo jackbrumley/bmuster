@@ -290,7 +290,7 @@ impl Bar {
                     log::info!("Notice bar closed");
                     return Ok(());
                 }
-                Err(RecvTimeoutError::Timeout) => {}
+                Ok(BarCommand::Check) | Err(RecvTimeoutError::Timeout) => {}
             }
             if raised.elapsed() >= RAISE_EVERY {
                 raised = Instant::now();

@@ -234,7 +234,7 @@ fn serve(inner: &Inner, ticket: &SessionTicket) -> Result<Ended> {
                 consent: *consent,
                 notice: *notice,
             };
-            match desktop::prepare(&request, bmuster_desktop::open_platform) {
+            match desktop::prepare(&request, bmuster_desktop::open_console) {
                 Ok(desktop::Prepared::Ready(ready)) => {
                     desktop::run(&mut socket, *ready, &ticket.user.name, &inner.stop)
                 }

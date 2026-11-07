@@ -157,7 +157,7 @@ CC_x86_64_pc_windows_gnu=gcc AR_x86_64_pc_windows_gnu=ar cargo clippy --target x
 
 The AltGr test also needs `setxkbmap`.
 
-`BMUSTER_DESKTOP_DISPLAY` and `BMUSTER_DESKTOP_XAUTHORITY` point a debug build's desktop sessions at a nested server; release builds ignore both.
+`BMUSTER_DESKTOP_DISPLAY` and `BMUSTER_DESKTOP_XAUTHORITY` point a debug build's desktop sessions at a nested server. `BMUSTER_DESKTOP_SCREEN_FILE` instead names a file of `key=value` lines read once a second (`display`, `xauthority`, `screen` = `sign-in`, `locked`, `desktop` or `unavailable`, `user`, `reason`), so a test can switch the screen a running session follows. Release builds ignore all three.
 
 Encoder timing for one 1920×1080 frame (full, and with 5% changed): `cargo bench -p bmuster-desktop --bench tiles`.
 

@@ -1,6 +1,6 @@
 //! X11 capture and input against a nested X server (SPEC-DESKTOP 11.2):
 //! `x11_capture`, `x11_input`, `displays` and `notice` tests, plus one
-//! session end to end. Each test starts its own headless Xvfb (Xephyr only when asked for
+//! session end to end and one that follows a switch between two servers. Each test starts its own headless Xvfb (Xephyr only when asked for
 //! with `BMUSTER_X_TESTS=xephyr`) and skips without one; see
 //! `support/mod.rs`. Run them with `cargo test -p bmuster-desktop --test x11`.
 
@@ -10,11 +10,15 @@ mod support;
 
 use bmuster_desktop::capture::x11::X11Capturer;
 use bmuster_desktop::capture::x11_session::connect;
-use bmuster_desktop::capture::{Capturer, Damage, DesktopKind, DesktopState, Rect};
+use bmuster_desktop::capture::x11_session::X11Target;
+use bmuster_desktop::capture::{Capturer, Damage, DesktopState, Rect};
 use bmuster_desktop::encode::tiles::TileEncoder;
 use bmuster_desktop::input::x11::XTestInput;
 use bmuster_desktop::input::{InputBackend, InputController};
-use bmuster_desktop::{notice, DesktopSession, EndReason, Incoming, Mode, Outgoing};
+use bmuster_desktop::{
+    notice, DesktopSession, EndReason, Incoming, Look, Mode, Outgoing, Platform, ScreenWatch,
+};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use support::NestedX;
 use x11rb::connection::Connection;
@@ -24,14 +28,6 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
-
-fn state() -> DesktopState {
-    DesktopState {
-        desktop: DesktopKind::Default,
-        locked: false,
-        signed_in_user: None,
-    }
-}
 
 /// The test's own X client on the nested server.
 struct Client {
@@ -185,7 +181,7 @@ fn x11_capture_reads_drawn_pixels_through_the_xauthority_cookie() {
     client.fill_root(Rect::new(100, 50, 200, 100), 0xFF_00_00);
     client.fill_root(Rect::new(700, 400, 64, 64), 0x00_80_FF);
 
-    let mut capturer = X11Capturer::open(&x.target, state()).unwrap();
+    let mut capturer = X11Capturer::open(&x.target).unwrap();
     assert_eq!(capturer.displays().len(), 1);
     let display = &capturer.displays()[0];
     assert_eq!(
@@ -204,7 +200,7 @@ fn x11_capture_damage_yields_only_the_touching_tiles() {
     let Some(x) = NestedX::start() else { return };
     let client = Client::new(&x);
     client.fill_root(Rect::new(0, 0, 1280, 800), 0x10_10_10);
-    let mut capturer = X11Capturer::open(&x.target, state()).unwrap();
+    let mut capturer = X11Capturer::open(&x.target).unwrap();
     let mut encoder = TileEncoder::new();
     capturer.capture(true).unwrap();
     let key = encoder
@@ -235,7 +231,7 @@ fn x11_capture_damage_yields_only_the_touching_tiles() {
 #[test]
 fn displays_randr_lists_the_nested_monitor() {
     let Some(x) = NestedX::start() else { return };
-    let mut capturer = X11Capturer::open(&x.target, state()).unwrap();
+    let mut capturer = X11Capturer::open(&x.target).unwrap();
     let displays = capturer.displays().to_vec();
     assert_eq!(displays.len(), 1);
     assert!(!displays[0].id.is_empty());
@@ -246,7 +242,7 @@ fn displays_randr_lists_the_nested_monitor() {
 #[test]
 fn x11_cursor_position_and_shape() {
     let Some(x) = NestedX::start() else { return };
-    let mut capturer = X11Capturer::open(&x.target, state()).unwrap();
+    let mut capturer = X11Capturer::open(&x.target).unwrap();
     let mut input = controller(&x);
     input
         .pointer(Rect::new(0, 0, 1280, 800), 300.0, 200.0, 0)
@@ -419,7 +415,7 @@ fn x11_session_end_to_end_frames_and_pointer() {
     let Some(x) = NestedX::start() else { return };
     let client = Client::new(&x);
     client.fill_root(Rect::new(0, 0, 1280, 800), 0x33_66_99);
-    let capturer = X11Capturer::open(&x.target, state()).unwrap();
+    let capturer = X11Capturer::open(&x.target).unwrap();
     let target = x.target.clone();
     let now = Instant::now();
     let mut session = DesktopSession::new(
@@ -480,7 +476,7 @@ fn notice_bar_disconnect_through_xtest_ends_the_session() {
     let Some(x) = NestedX::start() else { return };
     let client = Client::new(&x);
     let (end, inbox) = std::sync::mpsc::channel();
-    let shown = notice::show(&x.target, "Kim", end);
+    let shown = notice::show(Some(&x.target), "Kim", end);
     client.sync();
     let window = notice_window(&client).expect("the bar is mapped on the nested server");
     let geometry = client
@@ -526,4 +522,127 @@ fn notice_bar_disconnect_through_xtest_ends_the_session() {
         );
         std::thread::sleep(Duration::from_millis(50));
     }
+}
+
+/// The screen the test says the seat shows: one of two nested servers.
+struct TestSeat(Arc<Mutex<(Look, X11Target)>>);
+
+impl ScreenWatch for TestSeat {
+    fn look(&mut self) -> Look {
+        self.0.lock().unwrap().0.clone()
+    }
+    fn open(&mut self) -> Result<Platform, String> {
+        let target = self.0.lock().unwrap().1.clone();
+        bmuster_desktop::x11_platform(target)
+    }
+}
+
+/// The colour of the first tile of a keyframe, when `out` has one and that
+/// tile is solid.
+fn keyframe_colour(out: &[Outgoing]) -> Option<[u8; 3]> {
+    out.iter().find_map(|m| match m {
+        // Header (20), tile count (2), then x, y, w, h, format, length, data.
+        Outgoing::Binary(b) if b[0] == 2 && b[2] & 1 != 0 && b[30] == 3 => {
+            Some([b[35], b[36], b[37]])
+        }
+        _ => None,
+    })
+}
+
+fn ack_all(session: &mut DesktopSession, out: &[Outgoing], now: Instant) {
+    for message in out {
+        if let Outgoing::Binary(b) = message {
+            if b[0] == 2 && b[2] & 0b100 != 0 {
+                let seq = u32::from_le_bytes([b[4], b[5], b[6], b[7]]);
+                session.handle_text(&format!(r#"{{"type":"ack","seq":{seq}}}"#), now);
+            }
+        }
+    }
+}
+
+fn pointer_at(client: &Client) -> (i16, i16) {
+    let reply = client
+        .connection
+        .query_pointer(client.root)
+        .unwrap()
+        .reply()
+        .unwrap();
+    (reply.root_x, reply.root_y)
+}
+
+#[test]
+fn follow_switch_between_two_x_servers_keeps_the_stream_and_moves_input_and_bar() {
+    let Some((a, b)) = NestedX::start_two() else {
+        return;
+    };
+    let full = Rect::new(0, 0, 1280, 800);
+    let client_a = Client::new(&a);
+    client_a.fill_root(full, 0x33_66_99);
+    let client_b = Client::new(&b);
+    client_b.fill_root(full, 0x99_33_33);
+    let desktop = Look {
+        key: "a".into(),
+        state: DesktopState::Desktop {
+            user: Some("jack".into()),
+        },
+    };
+    let seat = Arc::new(Mutex::new((desktop, a.target.clone())));
+    let mut now = Instant::now();
+    let mut session =
+        DesktopSession::following(Mode::Control, Box::new(TestSeat(seat.clone())), now);
+    let (end, _inbox) = std::sync::mpsc::channel();
+    let shown = notice::show(None, "Kim", end);
+    client_a.sync();
+    assert!(notice_window(&client_a).is_some(), "the bar is on A");
+
+    let hello = session.handle_text(
+        r#"{"type":"hello","codecs":["jpeg"],"viewport":{"width":1280,"height":800,"pixelRatio":1}}"#,
+        now,
+    );
+    assert_eq!(hello.len(), 2);
+    let out = session.tick(now);
+    assert_eq!(keyframe_colour(&out), Some([0x33, 0x66, 0x99]));
+    ack_all(&mut session, &out, now);
+    session.handle_text(r#"{"type":"pointer","x":640,"y":400,"buttons":0}"#, now);
+    assert_eq!(pointer_at(&client_a), (640, 400));
+
+    // The sign-in screen on the other server.
+    *seat.lock().unwrap() = (
+        Look {
+            key: "b".into(),
+            state: DesktopState::SignIn,
+        },
+        b.target.clone(),
+    );
+    now += Duration::from_secs(1);
+    let out = session.tick(now);
+    assert!(session.ended().is_none());
+    let texts: Vec<String> = out
+        .iter()
+        .filter_map(|m| match m {
+            Outgoing::Text(t) => Some(t.clone()),
+            Outgoing::Binary(_) => None,
+        })
+        .collect();
+    assert!(
+        texts.iter().any(|t| t.contains(r#""kind":"sign-in""#)),
+        "{texts:?}"
+    );
+    assert_eq!(
+        keyframe_colour(&out),
+        Some([0x99, 0x33, 0x33]),
+        "the stream goes on with a keyframe from B"
+    );
+    session.handle_text(r#"{"type":"pointer","x":100,"y":200,"buttons":0}"#, now);
+    assert_eq!(pointer_at(&client_b), (100, 200), "input goes to B");
+    assert_eq!(pointer_at(&client_a), (640, 400), "and not to A");
+
+    client_b.sync();
+    assert!(notice_window(&client_b).is_some(), "the bar moved to B");
+    let until = Instant::now() + Duration::from_secs(5);
+    while notice_window(&client_a).is_some() {
+        assert!(Instant::now() < until, "the bar left A");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    drop(shown);
 }
