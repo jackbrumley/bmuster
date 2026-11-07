@@ -7,6 +7,7 @@
 //! it started is ended too, and the exit code is the last message.
 
 use super::pump::{pump, Ended, Incoming, Outgoing};
+use crate::exec::placement::Placement;
 use crate::exec::pty::{is_hangup, Pty, Spawned};
 use crate::exec::spawn::{agent_account, environment, interactive, Launch};
 use crate::exec::PtySize;
@@ -37,8 +38,9 @@ pub struct Request<'a> {
     pub console_user: &'a str,
 }
 
-/// Starts the shell. Errors here are reported to the console as `failed`.
-pub fn start(request: &Request<'_>) -> Result<Spawned> {
+/// Starts the shell where `placement` says. Errors here are reported to the
+/// console as `failed`.
+pub fn start(request: &Request<'_>, placement: Placement) -> Result<Spawned> {
     let account = agent_account();
     let program = interactive(request.shell)?;
     let env = environment(&account, &program, request.console_user, true);
@@ -47,7 +49,7 @@ pub fn start(request: &Request<'_>) -> Result<Spawned> {
         env,
         cwd: account.home,
     };
-    Pty::spawn(&launch, request.size)
+    Pty::spawn(&launch, placement, request.size)
 }
 
 /// Runs a started shell over `socket` until it exits, the server ends the
@@ -173,11 +175,14 @@ mod tests {
     use std::time::Instant;
 
     fn start_sh(cols: u16, rows: u16) -> Spawned {
-        start(&Request {
-            shell: Shell::Sh,
-            size: PtySize { cols, rows },
-            console_user: "tester",
-        })
+        start(
+            &Request {
+                shell: Shell::Sh,
+                size: PtySize { cols, rows },
+                console_user: "tester",
+            },
+            Placement::InProcess,
+        )
         .unwrap()
     }
 

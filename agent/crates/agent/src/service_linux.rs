@@ -41,9 +41,13 @@ Restart=always
 RestartSec=10
 RestartPreventExitStatus={REVOKED_EXIT_CODE}
 UMask=0077
+# Terminal, command and files sessions run as their own transient services
+# (systemd-run), outside this sandbox (SPEC-SESSION-UNITS). systemd-run
+# reaches the service manager through its socket in /run, which a read-only
+# mount still allows, so the hardening below needs no exception for it.
+Environment=BMUSTER_SESSIONS=systemd
 
-# Hardening. Sessions (SPEC-SESSIONS) will need shells and the display, and
-# will relax only what they must.
+# Hardening of the agent itself.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/var/lib/bmuster
@@ -214,5 +218,13 @@ mod tests {
         assert!(unit.contains("Restart=always\n"));
         assert!(unit.contains("RestartPreventExitStatus=3\n"));
         assert!(unit.contains("ReadWritePaths=/var/lib/bmuster\n"));
+    }
+
+    #[test]
+    fn sessions_run_as_transient_units_outside_the_sandbox() {
+        let unit = unit_file();
+        assert!(unit.contains("Environment=BMUSTER_SESSIONS=systemd\n"));
+        assert!(unit.contains("ProtectSystem=strict\n"));
+        assert!(unit.contains("ProtectHome=read-only\n"));
     }
 }

@@ -17,7 +17,7 @@ use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex};
 
 /// Frames waiting for the socket before the request threads wait too.
-const OUTPUT_QUEUE: usize = 32;
+pub const OUTPUT_QUEUE: usize = 32;
 /// Requests running at once in one session.
 const MAX_RUNNING: usize = 16;
 
@@ -142,45 +142,74 @@ impl Shared {
     }
 }
 
-/// Serves file requests over `socket` until the server closes it or `stop`.
+/// One files session's requests, wherever its messages come from: the
+/// session socket (in the agent's process) or the files helper's input
+/// (in a transient unit, `files_helper`).
+pub struct Requests {
+    shared: Arc<Shared>,
+    /// A chunk's request comes first; its data follows in a binary frame.
+    awaiting: HashMap<u32, (String, String, u64)>,
+}
+
+impl Requests {
+    /// Replies and read data go to `output`; `stop` ends reads early.
+    pub fn new(output: SyncSender<Outgoing>, stop: Arc<AtomicBool>) -> Self {
+        Self {
+            shared: Arc::new(Shared {
+                output,
+                reads: Mutex::new(HashMap::new()),
+                running: AtomicUsize::new(0),
+                stop,
+            }),
+            awaiting: HashMap::new(),
+        }
+    }
+
+    /// Starts what one message from the server asks for.
+    pub fn take(&mut self, message: Incoming) {
+        match message {
+            Incoming::Text(text) => match serde_json::from_str::<FilesRequest>(&text) {
+                Ok(request) => dispatch(&self.shared, &mut self.awaiting, request),
+                Err(e) => log::warn!("Ignoring a files request this agent does not know: {e}"),
+            },
+            Incoming::Bytes(bytes) => match split_frame(&bytes) {
+                Some((id, data)) => match self.awaiting.remove(&id) {
+                    Some((dir, name, offset)) => {
+                        let data = data.to_vec();
+                        self.shared
+                            .spawn(id, move |_| transfer::chunk(&dir, &name, offset, &data));
+                    }
+                    None => log::warn!("Ignoring data for request {id}, which is not a chunk."),
+                },
+                None => log::warn!("Ignoring a binary frame too short for a request id."),
+            },
+        }
+    }
+
+    /// The session is over: reads still running stop.
+    pub fn finish(self) {
+        for credit in lock(&self.shared.reads).values() {
+            credit.cancel();
+        }
+    }
+}
+
+/// Serves file requests over `socket` in the agent's own process until the
+/// server closes it or `stop`.
 pub fn run(socket: &mut Socket, stop: &Arc<AtomicBool>) -> Result<Ended> {
     let (output, outgoing) = mpsc::sync_channel::<Outgoing>(OUTPUT_QUEUE);
-    let shared = Arc::new(Shared {
-        output,
-        reads: Mutex::new(HashMap::new()),
-        running: AtomicUsize::new(0),
-        stop: Arc::clone(stop),
-    });
-    // A chunk's request comes first; its data follows in a binary frame.
-    let mut awaiting: HashMap<u32, (String, String, u64)> = HashMap::new();
+    let mut requests = Requests::new(output, Arc::clone(stop));
     let ended = pump(
         socket,
         &outgoing,
         stop,
         || true,
         |message| {
-            match message {
-                Incoming::Text(text) => match serde_json::from_str::<FilesRequest>(&text) {
-                    Ok(request) => dispatch(&shared, &mut awaiting, request),
-                    Err(e) => log::warn!("Ignoring a files request this agent does not know: {e}"),
-                },
-                Incoming::Bytes(bytes) => match split_frame(&bytes) {
-                    Some((id, data)) => match awaiting.remove(&id) {
-                        Some((dir, name, offset)) => {
-                            let data = data.to_vec();
-                            shared.spawn(id, move |_| transfer::chunk(&dir, &name, offset, &data));
-                        }
-                        None => log::warn!("Ignoring data for request {id}, which is not a chunk."),
-                    },
-                    None => log::warn!("Ignoring a binary frame too short for a request id."),
-                },
-            }
+            requests.take(message);
             Ok(())
         },
     );
-    for credit in lock(&shared.reads).values() {
-        credit.cancel();
-    }
+    requests.finish();
     ended
 }
 

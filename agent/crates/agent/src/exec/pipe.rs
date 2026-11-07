@@ -2,6 +2,7 @@
 //! docs/mcp.md): no input, stdout and stderr kept apart, a time limit and an
 //! output cap. Everything the command starts ends with it.
 
+use super::placement::Placement;
 use super::spawn::Launch;
 use anyhow::{Context as _, Result};
 use std::io::Read;
@@ -75,29 +76,56 @@ fn read_into(mut source: impl Read, stream: Stream, events: mpsc::Sender<Event>)
     let _ = events.send(Event::Closed);
 }
 
+/// The command as the agent's own child, with only `launch.env`.
+fn in_process(launch: &Launch) -> Command {
+    let mut command = Command::new(&launch.program.path);
+    command
+        .args(&launch.program.args)
+        .current_dir(&launch.cwd)
+        .env_clear()
+        .envs(launch.env.iter().map(|(name, value)| (name, value)));
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        command.arg0(&launch.program.arg0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        // CREATE_NO_WINDOW: a service has no console to show.
+        command.creation_flags(0x0800_0000);
+    }
+    command
+}
+
 /// Runs `launch` to the end, the time limit, or `stop`, handing output to
-/// `sink` as it arrives (never more than the cap in total).
+/// `sink` as it arrives (never more than the cap in total). For a unit,
+/// `systemd-run` hands its pipes to the service and exits with its code.
 pub fn run(
     launch: &Launch,
+    placement: &Placement,
     limits: Limits,
     stop: &AtomicBool,
     mut sink: impl FnMut(Stream, &[u8]),
 ) -> Result<Outcome> {
     let started = Instant::now();
-    let mut command = Command::new(&launch.program.path);
+    let mut command = match placement {
+        Placement::InProcess => in_process(launch),
+        #[cfg(target_os = "linux")]
+        Placement::Unit(unit) => unit.command(
+            super::unit::Io::Pipe {
+                runtime_max: Some(limits.timeout),
+            },
+            launch,
+        ),
+    };
     command
-        .args(&launch.program.args)
-        .current_dir(&launch.cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt as _;
-        command
-            .arg0(&launch.program.arg0)
-            .env_clear()
-            .envs(launch.env.iter().map(|(name, value)| (name, value)));
         // SAFETY: setsid is async-signal-safe. The command leads its own
         // session, so everything it starts can be found and ended.
         unsafe {
@@ -109,19 +137,17 @@ pub fn run(
             });
         }
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt as _;
-        // CREATE_NO_WINDOW: a service has no console to show.
-        command
-            .env_clear()
-            .envs(launch.env.iter().map(|(name, value)| (name, value)))
-            .creation_flags(0x0800_0000);
-    }
-    let mut child = command
-        .spawn()
-        .with_context(|| format!("could not start {}", launch.program.path.display()))?;
+    let mut child = command.spawn().with_context(|| {
+        format!(
+            "could not start {}",
+            std::path::Path::new(command.get_program()).display()
+        )
+    })?;
     let tree = Tree::of(&child)?;
+    let end = || {
+        placement.end();
+        tree.end();
+    };
 
     let (events, inbox) = mpsc::channel();
     let mut readers = 0;
@@ -149,11 +175,11 @@ pub fn run(
             if let Some(exit) = child.try_wait().context("could not check the command")? {
                 status = Some(exit);
                 // Anything it left running goes too; its output so far is kept.
-                tree.end();
+                end();
                 drain_until = Some(Instant::now() + DRAIN);
             } else if stop.load(Ordering::SeqCst) || Instant::now() >= deadline {
                 timed_out = !stop.load(Ordering::SeqCst);
-                tree.end();
+                end();
                 let _ = child.kill();
                 status = Some(child.wait().context("could not wait for the command")?);
                 drain_until = Some(Instant::now() + DRAIN);
@@ -269,6 +295,7 @@ mod tests {
         let mut err = Vec::new();
         let outcome = run(
             &launch(command),
+            &Placement::InProcess,
             limits,
             &AtomicBool::new(false),
             |stream, bytes| match stream {
