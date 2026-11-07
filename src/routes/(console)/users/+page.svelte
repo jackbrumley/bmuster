@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Button from '#lib/ui/button.svelte';
 	import { IconKey, IconPlus, IconShieldCheck } from '@tabler/icons-svelte-runes';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import { formatRelative } from '#lib/utils/format.ts';
@@ -16,7 +17,9 @@
 
 <PageHeader title="Users" summary="People who can sign in to this console.">
 	{#snippet actions()}
-		<button type="button" class="primary"><IconPlus size={18} /> Add user</button>
+		<Button variant="primary" size="compact" type="button" onclick={undefined}
+			><IconPlus size={18} /> Add user</Button
+		>
 	{/snippet}
 </PageHeader>
 
@@ -49,20 +52,6 @@
 </ul>
 
 <style>
-	.primary {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-2);
-		padding: var(--space-2) var(--space-4);
-		border: none;
-		border-radius: var(--radius-pill);
-		background: var(--brand);
-		color: var(--brand-contrast);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		cursor: pointer;
-	}
-
 	.list {
 		margin: 0;
 		padding: 0;
@@ -137,7 +126,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: var(--space-1);
-		padding: 2px var(--space-2);
+		padding: var(--space-0-5) var(--space-2);
 		border-radius: var(--radius-pill);
 		background: var(--surface-muted);
 		color: var(--text-soft);

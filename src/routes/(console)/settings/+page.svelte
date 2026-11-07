@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Button from '#lib/ui/button.svelte';
 	import { IconBrandWindows, IconKey, IconPlus, IconShieldLock } from '@tabler/icons-svelte-runes';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import type { PageProps } from './$types';
@@ -15,7 +16,9 @@
 <section class="panel">
 	<div class="panel-head">
 		<h2>Identity providers</h2>
-		<button type="button" class="secondary"><IconPlus size={18} /> Add provider</button>
+		<Button variant="secondary" size="compact" type="button" onclick={undefined}
+			><IconPlus size={18} /> Add provider</Button
+		>
 	</div>
 	<ul class="list">
 		{#each data.providers as provider (provider.id)}
@@ -51,6 +54,7 @@
 <style>
 	.panel {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-3);
 		margin-bottom: var(--space-4);
 		padding: var(--space-4);
@@ -73,20 +77,6 @@
 		color: var(--muted);
 		text-transform: uppercase;
 		letter-spacing: var(--tracking-caps);
-	}
-
-	.secondary {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-2);
-		padding: var(--space-2) var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--surface-elevated);
-		color: var(--text-soft);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		cursor: pointer;
 	}
 
 	.list {
@@ -125,7 +115,7 @@
 	}
 
 	.state {
-		padding: 2px var(--space-3);
+		padding: var(--space-0-5) var(--space-3);
 		border-radius: var(--radius-pill);
 		background: var(--surface-muted);
 		color: var(--muted);

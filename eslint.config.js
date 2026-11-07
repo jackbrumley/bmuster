@@ -79,6 +79,11 @@ export default defineConfig(
 		languageOptions: { parserOptions: { parser: ts.parser } }
 	},
 	{
+		// Command-line scripts report to the terminal (AGENTS.md §7).
+		files: ['scripts/**'],
+		rules: { 'no-console': 'off' }
+	},
+	{
 		files: ['**/*.js'],
 		...ts.configs.disableTypeChecked
 	}

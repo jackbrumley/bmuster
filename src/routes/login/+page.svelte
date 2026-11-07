@@ -3,6 +3,8 @@
 	import { resolve } from '$app/paths';
 	import { IconBrandWindows, IconShieldLock } from '@tabler/icons-svelte-runes';
 	import PublicPage from '#lib/shell/public-page.svelte';
+	import Button from '#lib/ui/button.svelte';
+	import TextField from '#lib/ui/text-field.svelte';
 	import type { PageProps } from './$types';
 
 	/** PROTOTYPE: every button signs you in straight away. */
@@ -41,15 +43,23 @@
 	{/if}
 
 	<form class="form" onsubmit={signIn}>
-		<label>
-			<span>Email or username</span>
-			<input autocomplete="username" autocapitalize="off" bind:value={username} required />
-		</label>
-		<label>
-			<span>Password</span>
-			<input type="password" autocomplete="current-password" bind:value={password} required />
-		</label>
-		<button type="submit" class="primary">Sign in</button>
+		<TextField
+			label="Email or username"
+			type="text"
+			autocomplete="username"
+			autocapitalize="off"
+			required={true}
+			bind:value={username}
+		/>
+		<TextField
+			label="Password"
+			type="password"
+			autocomplete="current-password"
+			autocapitalize="off"
+			required={true}
+			bind:value={password}
+		/>
+		<Button variant="primary" size="large" type="submit" onclick={undefined}>Sign in</Button>
 	</form>
 </PublicPage>
 
@@ -102,37 +112,5 @@
 	.form {
 		display: grid;
 		gap: var(--space-4);
-	}
-
-	label {
-		display: grid;
-		gap: var(--space-1);
-		color: var(--text-soft);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-	}
-
-	input {
-		height: 48px;
-		padding: 0 var(--space-3);
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius-control);
-		background: var(--surface);
-		color: var(--text);
-		font-size: var(--text-base);
-	}
-
-	.primary {
-		height: 48px;
-		border: none;
-		border-radius: var(--radius-pill);
-		background: var(--brand);
-		color: var(--brand-contrast);
-		font-weight: var(--weight-semibold);
-		cursor: pointer;
-	}
-
-	.primary:hover {
-		background: var(--brand-hover);
 	}
 </style>

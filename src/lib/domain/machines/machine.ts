@@ -5,9 +5,9 @@ export type OsFamily = 'windows' | 'linux' | 'macos';
 export type MachineStatus =
 	{ kind: 'online'; sinceIso: string } | { kind: 'offline'; lastSeenIso: string };
 
-export type SignedInUser = { kind: 'none' } | { kind: 'user'; name: string };
+type SignedInUser = { kind: 'none' } | { kind: 'user'; name: string };
 
-export type Disk = {
+type Disk = {
 	mount: string;
 	sizeBytes: number;
 	usedBytes: number;

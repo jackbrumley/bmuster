@@ -44,6 +44,7 @@
 		<div class="shells" role="group" aria-label="Shell">
 			{#each shells as shell (shell.id)}
 				<button
+					data-raw-button="chip"
 					type="button"
 					class="chip"
 					aria-pressed={activeShell?.id === shell.id}
@@ -62,6 +63,7 @@ Connected through BMuster relay.
 		<form class="input-line" onsubmit={run}>
 			<span class="prompt">{prompt}</span>
 			<input
+				data-raw-input="terminal-command"
 				aria-label="Command"
 				autocomplete="off"
 				autocapitalize="off"
@@ -73,7 +75,7 @@ Connected through BMuster relay.
 
 	<div class="keys" role="toolbar" aria-label="Extra keys">
 		{#each extraKeys as key (key)}
-			<button type="button" class="key">{key}</button>
+			<button data-raw-button="key" type="button" class="key">{key}</button>
 		{/each}
 	</div>
 {/if}

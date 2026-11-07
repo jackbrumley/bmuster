@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Button from '#lib/ui/button.svelte';
 	import { IconArrowRight, IconPlus } from '@tabler/icons-svelte-runes';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import PermissionChips from '#lib/ui/permission-chips.svelte';
@@ -20,7 +21,9 @@
 	summary="Each rule lets one group of people do certain things on one group of machines. Rules add up; nothing is denied."
 >
 	{#snippet actions()}
-		<button type="button" class="primary"><IconPlus size={18} /> New rule</button>
+		<Button variant="primary" size="compact" type="button" onclick={undefined}
+			><IconPlus size={18} /> New rule</Button
+		>
 	{/snippet}
 </PageHeader>
 
@@ -43,20 +46,6 @@
 </ul>
 
 <style>
-	.primary {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-2);
-		padding: var(--space-2) var(--space-4);
-		border: none;
-		border-radius: var(--radius-pill);
-		background: var(--brand);
-		color: var(--brand-contrast);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		cursor: pointer;
-	}
-
 	.list {
 		margin: 0;
 		padding: 0;

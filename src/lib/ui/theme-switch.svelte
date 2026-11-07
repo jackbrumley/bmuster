@@ -42,6 +42,7 @@
 <div class="switch" role="group" aria-label="Theme">
 	{#each options as option (option.id)}
 		<button
+			data-raw-button="segment"
 			type="button"
 			aria-pressed={theme === option.id}
 			aria-label={option.label}

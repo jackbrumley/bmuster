@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Button from '#lib/ui/button.svelte';
 	import { IconDevices, IconPlus, IconUsers } from '@tabler/icons-svelte-runes';
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import type { PageProps } from './$types';
@@ -22,15 +23,27 @@
 
 <PageHeader title="Groups" summary="Put people and machines into groups, then give groups access.">
 	{#snippet actions()}
-		<button type="button" class="primary"><IconPlus size={18} /> New group</button>
+		<Button variant="primary" size="compact" type="button" onclick={undefined}
+			><IconPlus size={18} /> New group</Button
+		>
 	{/snippet}
 </PageHeader>
 
 <div class="switch" role="group" aria-label="Group type">
-	<button type="button" aria-pressed={view === 'people'} onclick={() => (view = 'people')}>
+	<button
+		data-raw-button="segment"
+		type="button"
+		aria-pressed={view === 'people'}
+		onclick={() => (view = 'people')}
+	>
 		<IconUsers size={18} /> People
 	</button>
-	<button type="button" aria-pressed={view === 'machines'} onclick={() => (view = 'machines')}>
+	<button
+		data-raw-button="segment"
+		type="button"
+		aria-pressed={view === 'machines'}
+		onclick={() => (view = 'machines')}
+	>
 		<IconDevices size={18} /> Machines
 	</button>
 </div>
@@ -60,20 +73,6 @@
 </ul>
 
 <style>
-	.primary {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-2);
-		padding: var(--space-2) var(--space-4);
-		border: none;
-		border-radius: var(--radius-pill);
-		background: var(--brand);
-		color: var(--brand-contrast);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		cursor: pointer;
-	}
-
 	.switch {
 		display: inline-flex;
 		gap: var(--space-1);

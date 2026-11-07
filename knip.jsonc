@@ -1,0 +1,23 @@
+{
+	// Dead-code check (AGENTS.md §10): `npm run deadcode`, also run by `npm run hygiene`.
+	// Fails on unused files, exports, types and dependencies and on unlisted
+	// dependencies. The svelte, sveltekit, vite, vitest and drizzle plugins
+	// switch on from package.json and add the route files, hooks, test projects
+	// and configs as entries; scripts/*.ts are entries through the npm scripts
+	// that name them.
+	"$schema": "https://unpkg.com/knip@6.42.1/schema-jsonc.json",
+	"entry": [
+		// The database connection is written ahead of the first service that
+		// uses it (docs/engineering-plan.md); remove this entry once a
+		// repository imports it.
+		"src/lib/server/database/connection.ts"
+	],
+	"ignoreDependencies": [
+		// The browser test project (vite.config.ts, `ui`) has no component tests
+		// yet; the first *.svelte.test.ts imports it and makes this entry stale.
+		"vitest-browser-svelte"
+	],
+	"project": ["src/**/*.{ts,svelte}", "scripts/**/*.ts", "tests/**/*.ts"],
+	// A stale entry or ignore in this file fails the check too.
+	"treatConfigHintsAsErrors": true
+}

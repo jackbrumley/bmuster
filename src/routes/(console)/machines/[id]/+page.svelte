@@ -87,12 +87,13 @@
 <style>
 	.sections {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-4);
 	}
 
 	@media (min-width: 900px) {
 		.sections {
-			grid-template-columns: 1fr 1fr;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 
 		.wide {
@@ -102,6 +103,7 @@
 
 	.panel {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-4);
 		align-content: start;
 		padding: var(--space-4);

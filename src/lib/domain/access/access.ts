@@ -7,16 +7,8 @@
  * rule that matches them both; there are no deny rules.
  */
 
-export const PERMISSIONS = [
-	'view',
-	'terminal',
-	'desktop-view',
-	'desktop-control',
-	'files',
-	'share-links'
-] as const;
-
-export type Permission = (typeof PERMISSIONS)[number];
+export type Permission =
+	'view' | 'terminal' | 'desktop-view' | 'desktop-control' | 'files' | 'share-links';
 
 export function permissionLabel(permission: Permission): string {
 	switch (permission) {
@@ -36,9 +28,9 @@ export function permissionLabel(permission: Permission): string {
 }
 
 /** Console-wide role. Admins manage users, groups, rules, settings and enrolment. */
-export type ConsoleRole = 'admin' | 'member';
+type ConsoleRole = 'admin' | 'member';
 
-export type SignInMethod = { kind: 'password' } | { kind: 'provider'; providerName: string };
+type SignInMethod = { kind: 'password' } | { kind: 'provider'; providerName: string };
 
 export type User = {
 	id: string;
@@ -64,7 +56,7 @@ export type MachineGroup = {
 };
 
 /** Before a session starts: ask the person at the screen, or connect straight away. */
-export type Consent = 'ask' | 'unattended';
+type Consent = 'ask' | 'unattended';
 
 export type AccessRule = {
 	id: string;

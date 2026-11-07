@@ -1,0 +1,14 @@
+#!/bin/sh
+# Pre-push gate (AGENTS.md §8): the quick checks run before anything leaves
+# this machine. Installed by `npm install` (package.json "prepare" sets
+# core.hooksPath).
+#
+# --fast runs everything `npm run verify` does except the production build;
+# run the full `npm run verify` before a release.
+#
+# It checks the working tree as it is, uncommitted changes included.
+# --skip-if-verified passes at once when a verify already passed on exactly
+# these files (scripts/verify-stamp.ts), so pushing straight after a verify,
+# or pushing several branches, does not run the checks again. Never skip the
+# hook with --no-verify.
+exec npm run verify -- --fast --skip-if-verified

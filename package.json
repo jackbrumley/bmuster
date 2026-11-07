@@ -10,12 +10,17 @@
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
+		"prepare": "svelte-kit sync || echo ''; git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
 		"lint": "eslint .",
 		"fmt": "prettier --write .",
 		"fmt:check": "prettier --check .",
 		"test": "vitest run",
+		"hygiene": "node scripts/hygiene.ts && npm run deadcode && npm run duplication",
+		"hygiene:docs": "node scripts/hygiene-docs.ts",
+		"deadcode": "svelte-kit sync && knip",
+		"duplication": "node scripts/duplication.ts",
+		"verify": "node scripts/verify.ts",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:studio": "drizzle-kit studio"
@@ -35,6 +40,8 @@
 		"eslint-config-prettier": "10.1.8",
 		"eslint-plugin-svelte": "3.23.1",
 		"globals": "17.13.0",
+		"jscpd": "5.4.2",
+		"knip": "6.42.1",
 		"playwright": "1.64.1",
 		"prettier": "3.9.10",
 		"prettier-plugin-svelte": "4.1.1",
@@ -48,7 +55,8 @@
 	},
 	"dependencies": {
 		"better-sqlite3": "13.0.3",
-		"drizzle-orm": "0.45.4"
+		"drizzle-orm": "0.45.4",
+		"zod": "4.6.7"
 	},
 	"license": "AGPL-3.0-only",
 	"engines": {

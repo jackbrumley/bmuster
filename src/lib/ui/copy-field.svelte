@@ -17,7 +17,13 @@
 
 <div class="field">
 	<code>{value}</code>
-	<button type="button" class="copy" aria-label="Copy {label}" onclick={copy}>
+	<button
+		data-raw-button="icon"
+		type="button"
+		class="copy"
+		aria-label="Copy {label}"
+		onclick={copy}
+	>
 		{#if copied}
 			<IconCheck size={18} />
 		{:else}
@@ -29,6 +35,7 @@
 <style>
 	.field {
 		display: flex;
+		min-width: 0;
 		align-items: center;
 		gap: var(--space-2);
 		padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);

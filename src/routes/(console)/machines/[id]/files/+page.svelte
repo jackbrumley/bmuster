@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Button from '#lib/ui/button.svelte';
 	import {
 		IconFile,
 		IconFileUpload,
@@ -31,7 +32,9 @@
 {:else}
 	<div class="bar">
 		<code class="path">{path}</code>
-		<button type="button" class="upload"><IconFileUpload size={18} /> Send a file</button>
+		<Button variant="primary" size="compact" type="button" onclick={undefined}
+			><IconFileUpload size={18} /> Send a file</Button
+		>
 	</div>
 
 	<ul class="list">
@@ -75,21 +78,6 @@
 		color: var(--text-soft);
 		font-family: var(--font-mono);
 		font-size: var(--text-sm);
-	}
-
-	.upload {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-2);
-		flex-shrink: 0;
-		padding: var(--space-2) var(--space-4);
-		border: none;
-		border-radius: var(--radius-pill);
-		background: var(--brand);
-		color: var(--brand-contrast);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		cursor: pointer;
 	}
 
 	.list {

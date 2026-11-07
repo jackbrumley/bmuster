@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Button from '#lib/ui/button.svelte';
 	import { page } from '$app/state';
 	import {
 		IconBrandApple,
@@ -55,14 +56,15 @@
 			<p class="code">{joinCode}</p>
 			<p class="hint">Works once. Expires in 60 minutes.</p>
 		</div>
-		<button type="button" class="secondary" onclick={newCode}
-			><IconRefresh size={18} /> New code</button
+		<Button variant="secondary" size="compact" type="button" onclick={newCode}
+			><IconRefresh size={18} /> New code</Button
 		>
 	</div>
 
 	<div class="targets" role="group" aria-label="Operating system">
 		{#each targets as item (item.id)}
 			<button
+				data-raw-button="card"
 				type="button"
 				class="target"
 				aria-pressed={target === item.id}
@@ -101,6 +103,8 @@
 
 	.panel {
 		display: grid;
+		/* minmax(0, …): the long install command scrolls inside its field instead of widening the card. */
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-6);
 		max-width: 44rem;
 		padding: var(--space-4);
@@ -136,23 +140,9 @@
 		font-size: var(--text-xs);
 	}
 
-	.secondary {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-2);
-		padding: var(--space-2) var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--surface-elevated);
-		color: var(--text-soft);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		cursor: pointer;
-	}
-
 	.targets {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: var(--space-2);
 	}
 
@@ -179,6 +169,7 @@
 
 	.step {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-2);
 	}
 </style>

@@ -77,7 +77,39 @@ Later: map provider groups (Entra `groups` claim, Authentik groups) to BMuster u
 - An opaque session id in an HttpOnly, Secure, SameSite=Lax cookie; the session row lives in SQLite.
 - Sign-out deletes the row. Disabling a user deletes all their sessions.
 
-## 3. Tables (sketch)
+## 3. Share links
+
+A share link gives someone without an account (an outside vendor, urgently) access to **one machine** for a **limited time**. Anyone holding the link can open it, so it is treated like a key: short-lived, narrow, visible and revocable. Based on the MeshCentral feature people like.
+
+### Creating one
+
+- From a machine's page, by someone with the `share-links` permission on that machine.
+- **Required:** who it is for (free text, e.g. "Dave, Acme Printers"), what it allows, and how long it lasts.
+- **What it allows:** tick boxes. _Watch desktop_ is always on; tick _Control desktop_ and _Files_ (upload and download, e.g. to send an installer) as needed. Terminal is never offered; anyone who needs a shell gets an account. The creator can only tick what they hold themselves on that machine.
+- **How long:** chosen from a list: 15 minutes, 1 hour, 4 hours, 8 hours, 24 hours. **24 hours is the maximum.** Longer access means an account with a group and a rule.
+- The link is shown **once**, with a copy button. It contains a 256-bit random token; the server stores only its hash.
+
+### Using one
+
+- `https://<server>/s/<token>` opens a guest page: no console, just the machine's desktop (and a Files panel if ticked), a banner ("Shared by Jack Brumley · ends 3:40 pm") and a countdown.
+- **The person at the screen is always asked first** when someone is signed in, whatever the machine's rules say. A machine at the sign-in screen, with nobody to ask, connects straight away.
+- One guest session at a time per link.
+- When the time runs out, the link stops working **and any open session ends**.
+
+### Control and record
+
+- The machine's page lists its active links: who for, what, created by, time left. Each has **End now**, which also closes an open session.
+- Admins see every active link in one list.
+- Audit entries: created, opened (time, IP address, browser), session started and ended, each file uploaded or downloaded (name, size, SHA-256), ended early, expired.
+- Wrong or expired tokens get the same plain "This link has ended" page, and repeated failures from one address are rate-limited.
+
+### Table
+
+| Table         | Columns                                                                                                           |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `share_links` | id, machine_id, token_hash, recipient, permissions (json), created_by, created_at, expires_at, ended_at, ended_by |
+
+## 4. Tables (sketch)
 
 | Table                                     | Holds                                                                    |
 | ----------------------------------------- | ------------------------------------------------------------------------ |
@@ -89,8 +121,7 @@ Later: map provider groups (Entra `groups` claim, Authentik groups) to BMuster u
 | `machine_groups`, `machine_group_members` | groups of machines                                                       |
 | `access_rules`                            | user group, machine group, permissions (JSON list), consent              |
 
-## 4. Open questions
+## 5. Open questions
 
-1. Should share links have their own expiry list (15 min, 1 h, 1 day), or a free time?
-2. Should a rule be able to target "all machines", without a machine group?
-3. Provider group sync in the first release, or later?
+1. Should a rule be able to target "all machines", without a machine group?
+2. Provider group sync in the first release, or later?

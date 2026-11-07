@@ -42,6 +42,6 @@
 
 	.online .dot {
 		background: var(--success);
-		box-shadow: 0 0 0 3px var(--success-bg);
+		box-shadow: var(--shadow-status-online);
 	}
 </style>

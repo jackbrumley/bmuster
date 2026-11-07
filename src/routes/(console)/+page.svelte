@@ -78,11 +78,17 @@
 <div class="toolbar">
 	<label class="search">
 		<IconSearch size={18} />
-		<input type="search" placeholder="Search name, host or tag" bind:value={query} />
+		<input
+			data-raw-input="list-search"
+			type="search"
+			placeholder="Search name, host or tag"
+			bind:value={query}
+		/>
 	</label>
 	<div class="chips" role="group" aria-label="Filter machines">
 		{#each filters as item (item.id)}
 			<button
+				data-raw-button="chip"
 				type="button"
 				class="chip"
 				aria-pressed={filter === item.id}
@@ -312,7 +318,7 @@
 	}
 
 	.tag {
-		padding: 2px var(--space-2);
+		padding: var(--space-0-5) var(--space-2);
 		border-radius: var(--radius-pill);
 		background: var(--surface-muted);
 		color: var(--text-soft);

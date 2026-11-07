@@ -21,7 +21,7 @@
 	}
 
 	.chip {
-		padding: 2px var(--space-2);
+		padding: var(--space-0-5) var(--space-2);
 		border-radius: var(--radius-pill);
 		background: var(--brand-tint);
 		color: var(--brand);

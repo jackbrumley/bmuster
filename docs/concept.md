@@ -66,6 +66,7 @@ This tool runs commands and controls desktops. Whoever controls the server contr
 - **Audit:** full history of who connected to what and when.
 - **Session recording.**
 - **Clipboard sync.**
+- **CSV export on every list:** machines, users, groups, access rules and activity, for audits and outside parties. Exports respect the viewer's access and are themselves audited.
 - **Devices with no agent** (routers, PLCs): an agent on the same network scans and reports them.
 
 ## 6. Reuse and licences

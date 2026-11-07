@@ -43,6 +43,7 @@
 		<div class="group" role="group" aria-label="Display">
 			{#each displays as item (item.index)}
 				<button
+					data-raw-button="chip"
 					type="button"
 					class="chip"
 					aria-pressed={display === item.index}
@@ -52,6 +53,7 @@
 		</div>
 		<div class="group">
 			<button
+				data-raw-button="icon"
 				type="button"
 				class="icon-button"
 				aria-label="Input: {inputMode}"
@@ -63,10 +65,10 @@
 					<IconHandFinger size={20} />
 				{/if}
 			</button>
-			<button type="button" class="icon-button" aria-label="Keyboard"
+			<button data-raw-button="icon" type="button" class="icon-button" aria-label="Keyboard"
 				><IconKeyboard size={20} /></button
 			>
-			<button type="button" class="icon-button" aria-label="Full screen"
+			<button data-raw-button="icon" type="button" class="icon-button" aria-label="Full screen"
 				><IconArrowsMaximize size={20} /></button
 			>
 		</div>
