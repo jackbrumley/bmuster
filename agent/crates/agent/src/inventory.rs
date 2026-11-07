@@ -186,6 +186,11 @@ fn linux_seat_user(sessions: &std::path::Path) -> SignedInUser {
     };
     let mut found: Vec<String> = Vec::new();
     for entry in entries.flatten() {
+        // Only plain files: logind keeps `<id>.ref` named pipes here too, and
+        // opening one as root blocks for ever (it froze the check-in loop).
+        if !entry.file_type().is_ok_and(|kind| kind.is_file()) {
+            continue;
+        }
         let Ok(text) = std::fs::read_to_string(entry.path()) else {
             continue;
         };
@@ -258,6 +263,35 @@ mod tests {
         assert_eq!(
             linux_seat_user(&dir.path().join("missing")),
             SignedInUser::None
+        );
+    }
+
+    /// logind keeps `<id>.ref` named pipes beside the session files; reading
+    /// one blocks for ever, which froze the check-in loop when run as root.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn seat_user_skips_named_pipes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("c2"),
+            "UID=1000\nUSER=jack\nACTIVE=1\nSEAT=seat0\nCLASS=user\n",
+        )
+        .unwrap();
+        let fifo = std::ffi::CString::new(dir.path().join("c2.ref").to_str().unwrap()).unwrap();
+        // SAFETY: a valid, NUL-terminated path; mkfifo only creates the node.
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+
+        let path = dir.path().to_path_buf();
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || send.send(linux_seat_user(&path)).unwrap());
+        let found = receive
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("linux_seat_user blocked on a named pipe");
+        assert_eq!(
+            found,
+            SignedInUser::User {
+                name: "jack".into()
+            }
         );
     }
 }
