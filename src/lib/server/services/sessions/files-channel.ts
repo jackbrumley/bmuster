@@ -55,11 +55,11 @@ export type OpenSession = (
 	onEnded: (ended: EndedSession) => void
 ) =>
 	| { kind: 'opened'; sessionId: string }
-	| { kind: 'refused'; status: 403 | 404 | 409; message: string };
+	| { kind: 'refused'; status: 403 | 404 | 409 | 503; message: string };
 
 export type ChannelLookup =
 	| { kind: 'channel'; channel: FilesChannel }
-	| { kind: 'refused'; status: 403 | 404 | 409; message: string };
+	| { kind: 'refused'; status: 403 | 404 | 409 | 503; message: string };
 
 type Pending = {
 	settle: (answer: AgentAnswer) => void;
@@ -274,7 +274,7 @@ function parseJson(text: string): unknown {
 }
 
 /** A files session with nothing running ends after this. */
-export const FILES_IDLE_MS = 5 * 60_000;
+const FILES_IDLE_MS = 5 * 60_000;
 
 /** Kept on globalThis, like the relay: every copy of this module must share the channels. */
 const CHANNELS_KEY = Symbol.for('bmuster.files-channels');

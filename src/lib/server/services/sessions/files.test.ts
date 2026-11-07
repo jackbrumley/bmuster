@@ -255,7 +255,7 @@ describe('who may use files (F1)', () => {
 		const { admin, context } = await setUp();
 		expect(await listRoots(context(admin))).toMatchObject({
 			kind: 'refused',
-			status: 409,
+			status: 503,
 			message: 'This machine is offline.'
 		});
 	});

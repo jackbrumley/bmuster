@@ -70,8 +70,10 @@ function statusFor(code: FileErrorCode): number {
 			return 404;
 		case 'exists':
 		case 'not-empty':
-		case 'offset':
 			return 409;
+		// The upload's client asks again where to carry on.
+		case 'offset':
+			return 412;
 		case 'denied':
 			return 403;
 		case 'no-space':
@@ -113,7 +115,8 @@ function allowed(context: FilesContext): FilesOutcome<Allowed> {
 		return refused(403, "You don't have permission to use files on this machine.");
 	}
 	if (!isAgentConnected(machineId)) {
-		return refused(409, 'This machine is offline.');
+		// 503, not 409 as for terminals: an upload waits for the machine to come back.
+		return refused(503, 'This machine is offline.');
 	}
 	return { kind: 'ok', value: { machine: { id: machineId, ...basics }, grants } };
 }
@@ -164,7 +167,7 @@ function channelFor(context: FilesContext, access: Allowed): FilesOutcome<FilesC
 		auditSessionOpened(database, record, access.machine.name);
 		if (!sendToAgent(machineId, { type: 'session-open', ...signed })) {
 			relay.end(sessionId, 'agent-lost', 'This machine is offline.');
-			return { kind: 'refused', status: 409, message: 'This machine is offline.' };
+			return { kind: 'refused', status: 503, message: 'This machine is offline.' };
 		}
 		return { kind: 'opened', sessionId };
 	});

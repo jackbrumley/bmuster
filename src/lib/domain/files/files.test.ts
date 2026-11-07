@@ -35,6 +35,7 @@ describe('paths in the Files tab (SPEC-FILES F9)', () => {
 			{ label: 'Public', target: { kind: 'folder', path: 'C:\\Users\\Public' } }
 		]);
 		expect(breadcrumbs('unix', '/home/kim')).toEqual([
+			{ label: 'Disks', target: { kind: 'roots' } },
 			{ label: '/', target: { kind: 'folder', path: '/' } },
 			{ label: 'home', target: { kind: 'folder', path: '/home' } },
 			{ label: 'kim', target: { kind: 'folder', path: '/home/kim' } }

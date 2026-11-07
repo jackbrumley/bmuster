@@ -6,7 +6,7 @@
 import type { OsFamily } from '../machines/machine.ts';
 
 export const ENTRY_KINDS = ['file', 'folder', 'link', 'other'] as const;
-export type EntryKind = (typeof ENTRY_KINDS)[number];
+type EntryKind = (typeof ENTRY_KINDS)[number];
 
 /** One entry of a folder. Links are shown as links, never followed. */
 export type FileEntry = {
@@ -99,7 +99,7 @@ export function baseName(flavour: PathFlavour, path: string): string {
 
 export type Crumb = { label: string; target: { kind: 'roots' } | { kind: 'folder'; path: string } };
 
-/** "This PC › C: › Users" or "/ › home › kim": each part opens that folder. */
+/** "This PC › C: › Users" or "Disks › / › home": each part opens that folder; the first lists the roots. */
 export function breadcrumbs(flavour: PathFlavour, path: string): Crumb[] {
 	const { root, parts } = partsOf(flavour, path);
 	const crumbs: Crumb[] =
@@ -108,7 +108,10 @@ export function breadcrumbs(flavour: PathFlavour, path: string): Crumb[] {
 					{ label: 'This PC', target: { kind: 'roots' } },
 					{ label: root.slice(0, 2), target: { kind: 'folder', path: root } }
 				]
-			: [{ label: '/', target: { kind: 'folder', path: root } }];
+			: [
+					{ label: 'Disks', target: { kind: 'roots' } },
+					{ label: '/', target: { kind: 'folder', path: root } }
+				];
 	parts.forEach((part, index) => {
 		crumbs.push({
 			label: part,

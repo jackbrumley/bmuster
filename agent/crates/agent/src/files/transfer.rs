@@ -256,6 +256,8 @@ pub fn begin(dir: &str, name: &str, size: u64, replace: bool) -> Result<FilesRes
             ));
         }
     }
+    // The part file exists from the start, so an empty upload has one to finish.
+    open_part(&part).map_err(|e| FileError::io(&e, &display(&part)))?;
     Ok(FilesResult::Part { part_size: have })
 }
 
@@ -455,6 +457,15 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_file_uploads() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = text(dir.path());
+        begin(&base, "empty.txt", 0, false).unwrap();
+        end(&base, "empty.txt", 0, &hex_sha(b"")).unwrap();
+        assert_eq!(fs::read(dir.path().join("empty.txt")).unwrap(), b"");
+    }
+
+    #[test]
     fn a_changed_upload_is_thrown_away() {
         let dir = tempfile::tempdir().unwrap();
         let base = text(dir.path());
@@ -484,6 +495,8 @@ mod tests {
             begin(&base, "c.bin", 3, false).unwrap(),
             FilesResult::Part { part_size: 0 }
         );
+        // Planted again between two requests.
+        fs::remove_file(dir.path().join("c.bin.bmuster-part")).unwrap();
         std::os::unix::fs::symlink(&victim, dir.path().join("c.bin.bmuster-part")).unwrap();
         chunk(&base, "c.bin", 0, b"new").unwrap();
         assert_eq!(fs::read(&victim).unwrap(), b"original");

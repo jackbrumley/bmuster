@@ -31,7 +31,7 @@ export const fileNameSchema = z
 
 const bytes = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
 
-export const fileEntrySchema: z.ZodType<FileEntry> = z.object({
+const fileEntrySchema: z.ZodType<FileEntry> = z.object({
 	name: z.string(),
 	kind: z.enum(ENTRY_KINDS),
 	size: bytes,
@@ -40,7 +40,7 @@ export const fileEntrySchema: z.ZodType<FileEntry> = z.object({
 	linkTarget: z.string().nullable()
 });
 
-export const fileRootSchema: z.ZodType<FileRoot> = z.object({
+const fileRootSchema: z.ZodType<FileRoot> = z.object({
 	path: z.string(),
 	label: z.string(),
 	kind: z.enum(['drive', 'mount']),
