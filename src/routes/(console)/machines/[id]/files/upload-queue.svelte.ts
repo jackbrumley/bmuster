@@ -173,7 +173,7 @@ export class UploadQueue {
 			}
 			const before = upload.sent;
 			const attempt = await this.#attempt(upload);
-			if (upload.controller.signal.aborted || attempt === 'cancelled') {
+			if (stopped(upload) || attempt === 'cancelled') {
 				return;
 			}
 			if (attempt === 'done') {
@@ -213,7 +213,7 @@ export class UploadQueue {
 		await hashUpTo(upload, offset);
 		upload.sent = offset;
 		while (offset < upload.size) {
-			if (upload.controller.signal.aborted) {
+			if (stopped(upload)) {
 				return 'cancelled';
 			}
 			upload.state = { kind: 'sending' };
@@ -227,7 +227,7 @@ export class UploadQueue {
 				},
 				upload.controller.signal
 			);
-			if (upload.controller.signal.aborted) {
+			if (stopped(upload)) {
 				return 'cancelled';
 			}
 			if (!sent.ok) {
@@ -251,6 +251,11 @@ export class UploadQueue {
 		}
 		return 'done';
 	}
+}
+
+/** Whether the person cancelled the upload (a call, so a check made earlier is not assumed to hold). */
+function stopped(upload: Upload): boolean {
+	return upload.controller.signal.aborted;
 }
 
 /** Brings the running hash to `offset` bytes: further on by reading, or from the start. */

@@ -3,27 +3,12 @@ import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { Grant } from '#lib/domain/access/access.ts';
 import type { Machine } from '#lib/domain/machines/machine.ts';
+import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import TerminalTab from './+page.svelte';
 
 const SESSION_ID = '22222222-2222-4222-8222-222222222222';
 
-const MACHINE: Machine = {
-	id: '11111111-1111-4111-8111-111111111111',
-	name: 'Reception PC',
-	description: '',
-	hostname: 'reception',
-	osFamily: 'linux',
-	target: 'x86_64-unknown-linux-gnu',
-	agentVersion: '0.2.0',
-	update: { kind: 'up-to-date' },
-	status: { kind: 'online' },
-	lastUser: { kind: 'none' },
-	live: { kind: 'none' },
-	inventory: { kind: 'pending' },
-	enrolledIso: '2026-11-01T00:00:00.000Z',
-	lastSeenIso: '2026-11-07T12:00:00.000Z',
-	inUse: []
-};
+const MACHINE: Machine = TEST_MACHINE;
 
 const GRANTS: Grant[] = [
 	{ permission: 'view', consent: 'unattended' },
