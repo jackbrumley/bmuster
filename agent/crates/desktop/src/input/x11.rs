@@ -12,10 +12,11 @@ use crate::capture::x11_session::{connect, X11Target};
 use std::collections::HashMap;
 use x11rb::connection::{Connection, RequestConnection};
 use x11rb::protocol::xproto::{
-    ConnectionExt as _, Keycode, Keysym, Window, BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT,
+    ConnectionExt as _, Keycode, Keysym, Mapping, Window, BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT,
     KEY_PRESS_EVENT, KEY_RELEASE_EVENT, MOTION_NOTIFY_EVENT,
 };
 use x11rb::protocol::xtest::{self, ConnectionExt as _};
+use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 
 const XK_SHIFT_L: Keysym = 0xFFE1;
@@ -166,11 +167,7 @@ impl XTestInput {
         let (min_keycode, max_keycode) = (setup.min_keycode, setup.max_keycode);
         let map = KeyboardMap::load(&connection)?;
         let shift = map.keycode_for(&[XK_SHIFT_L, XK_SHIFT_R]).unwrap_or(50);
-        // AltGr: the layout's level-3 key, else Mode_switch, else Right Alt.
-        let level3 = map
-            .keycode_for(&[XK_ISO_LEVEL3_SHIFT])
-            .or_else(|| map.keycode_for(&[XK_MODE_SWITCH]))
-            .unwrap_or(100 + EVDEV_OFFSET as u8);
+        let level3 = level3_keycode(&map);
         let spare = map.spare_keycodes();
         Ok(XTestInput {
             connection,
@@ -185,6 +182,31 @@ impl XTestInput {
             borrowed: HashMap::new(),
             wheel: [0; 2],
         })
+    }
+
+    /// Reloads the keyboard map when the layout changed (MappingNotify),
+    /// so characters resolve against the current layout. Spare key codes
+    /// stay as first found: the ones we borrowed now look taken.
+    fn refresh_map(&mut self) -> InputResult<()> {
+        let mut changed = false;
+        while let Some(event) = self
+            .connection
+            .poll_for_event()
+            .map_err(failed("reading X events"))?
+        {
+            if let Event::MappingNotify(notify) = event {
+                changed |= notify.request == Mapping::KEYBOARD;
+            }
+        }
+        if changed {
+            self.map = KeyboardMap::load(&self.connection)?;
+            self.shift = self
+                .map
+                .keycode_for(&[XK_SHIFT_L, XK_SHIFT_R])
+                .unwrap_or(self.shift);
+            self.level3 = level3_keycode(&self.map);
+        }
+        Ok(())
     }
 
     fn fake(&self, kind: u8, detail: u8, x: i16, y: i16) -> InputResult<()> {
@@ -225,7 +247,12 @@ impl XTestInput {
         Ok(keycode)
     }
 
+    /// Puts borrowed key codes back to NoSymbol, and waits for the server
+    /// to apply it (a round trip), so it is done before the connection goes.
     fn restore_borrowed(&mut self) {
+        if self.borrowed.is_empty() {
+            return;
+        }
         let empty = vec![NO_SYMBOL; self.map.per_keycode];
         for (_, keycode) in self.borrowed.drain() {
             let _ = self.connection.change_keyboard_mapping(
@@ -235,7 +262,13 @@ impl XTestInput {
                 &empty,
             );
         }
-        let _ = self.connection.flush();
+        let synced = self
+            .connection
+            .get_input_focus()
+            .map(|cookie| cookie.reply());
+        if !matches!(synced, Ok(Ok(_))) {
+            log::warn!("Could not confirm that borrowed key codes were restored");
+        }
     }
 }
 
@@ -243,6 +276,13 @@ impl Drop for XTestInput {
     fn drop(&mut self) {
         self.restore_borrowed();
     }
+}
+
+/// AltGr: the layout's level-3 key, else Mode_switch, else Right Alt.
+fn level3_keycode(map: &KeyboardMap) -> Keycode {
+    map.keycode_for(&[XK_ISO_LEVEL3_SHIFT])
+        .or_else(|| map.keycode_for(&[XK_MODE_SWITCH]))
+        .unwrap_or((100 + EVDEV_OFFSET) as u8)
 }
 
 fn x_button(button: Button) -> u8 {
@@ -300,10 +340,12 @@ impl InputBackend for XTestInput {
     }
 
     fn alt_gr(&mut self, down: bool) -> InputResult<()> {
+        self.refresh_map()?;
         self.keycode(self.level3, down)
     }
 
     fn type_char(&mut self, character: char) -> InputResult<()> {
+        self.refresh_map()?;
         let keysyms = char_keysyms(character);
         let resolved = keysyms.iter().find_map(|&k| self.map.resolve(k));
         let key = match resolved {
