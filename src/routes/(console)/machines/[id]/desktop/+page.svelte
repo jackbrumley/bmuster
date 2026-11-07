@@ -27,9 +27,11 @@
 	import { DesktopCanvas } from './desktop-canvas.ts';
 	import { DesktopSession } from './desktop-session.svelte.ts';
 	import DesktopSettings from './desktop-settings.svelte';
+	import FullScreenBar from './full-screen-bar.svelte';
 	import type { Geometry } from './input.ts';
 	import { attachScreenInput } from './screen-input.ts';
 	import KeyBar from './key-bar.svelte';
+	import ToolButton from './tool-button.svelte';
 	import type { PageProps } from './$types';
 
 	/**
@@ -52,7 +54,6 @@
 	let touchMode = $state<'trackpad' | 'touch'>('trackpad');
 	let showSettings = $state(false);
 	let fullScreen = $state(false);
-	let resumed = $state(false);
 
 	const connection = $derived(session?.connection ?? { kind: 'idle' as const });
 	const running = $derived(
@@ -62,6 +63,12 @@
 			connection.kind === 'reconnecting'
 	);
 	const watchOnly = $derived(session?.mode === 'watch');
+	/**
+	 * Connect and Watch only are offered whenever no session runs: at first,
+	 * after Disconnect and after the session ended. A reload or a dropped
+	 * connection reattaches instead (`connecting`), keeping the mode.
+	 */
+	const choosing = $derived(connection.kind === 'idle' || connection.kind === 'ended');
 	const frame = $derived(session?.frameSize);
 	const display = $derived(session?.displays.find((item) => item.id === session?.current));
 	const displayOptions = $derived(
@@ -127,6 +134,11 @@
 		void session?.start(mode);
 	}
 
+	function switchMode(mode: DesktopMode): void {
+		showSettings = false;
+		void session?.switchMode(mode);
+	}
+
 	async function endSession(): Promise<void> {
 		const yes = await confirmAction({
 			title: 'Disconnect from this screen?',
@@ -146,6 +158,13 @@
 		}
 	}
 
+	$effect(() => {
+		// A session that ends in full screen leaves it, so the choices show.
+		if (fullScreen && !running && document.fullscreenElement !== null) {
+			void document.exitFullscreen();
+		}
+	});
+
 	onMount(() => {
 		const surface = stage;
 		if (
@@ -163,9 +182,7 @@
 			viewport
 		);
 		session = current;
-		void current.resume().then((found) => {
-			resumed = found;
-		});
+		void current.resume();
 
 		const onFullScreen = () => {
 			fullScreen = document.fullscreenElement !== null;
@@ -224,14 +241,23 @@
 					data-fps={session?.throughput.fps ?? 0}
 					data-bytes-per-second={session?.throughput.bytesPerSecond ?? 0}>{status}</span
 				>
-				{#if running && !watchOnly}
-					<button
-						data-raw-button="icon"
+				{#if running && canControl && session?.mode !== undefined}
+					<Button
+						variant="secondary"
+						size="compact"
 						type="button"
-						class="tool"
-						aria-label={touchMode === 'trackpad'
+						onclick={() => {
+							switchMode(watchOnly ? 'control' : 'watch');
+						}}>{watchOnly ? 'Take control' : 'Switch to view only'}</Button
+					>
+				{/if}
+				{#if running && !watchOnly}
+					<ToolButton
+						label={touchMode === 'trackpad'
 							? 'Touch input: trackpad. Switch to tapping where to click'
 							: 'Touch input: tap where to click. Switch to trackpad'}
+						pressed={undefined}
+						disabled={false}
 						onclick={() => (touchMode = touchMode === 'trackpad' ? 'touch' : 'trackpad')}
 					>
 						{#if touchMode === 'trackpad'}
@@ -239,32 +265,32 @@
 						{:else}
 							<IconHandFinger size={20} />
 						{/if}
-					</button>
+					</ToolButton>
 				{/if}
 				{#if running}
-					<button
-						data-raw-button="icon"
-						type="button"
-						class="tool"
-						aria-label="Picture settings"
-						aria-pressed={showSettings}
+					<ToolButton
+						label="Picture settings"
+						pressed={showSettings}
+						disabled={false}
 						onclick={() => (showSettings = !showSettings)}
-						><IconAdjustmentsHorizontal size={20} /></button
 					>
+						<IconAdjustmentsHorizontal size={20} />
+					</ToolButton>
 				{/if}
-				<button
-					data-raw-button="icon"
-					type="button"
-					class="tool"
-					aria-label={fullScreen ? 'Leave full screen' : 'Full screen'}
-					onclick={() => void toggleFullScreen()}
-				>
-					{#if fullScreen}
-						<IconArrowsMinimize size={20} />
-					{:else}
-						<IconArrowsMaximize size={20} />
-					{/if}
-				</button>
+				{#if !choosing}
+					<ToolButton
+						label={fullScreen ? 'Leave full screen' : 'Full screen'}
+						pressed={undefined}
+						disabled={false}
+						onclick={() => void toggleFullScreen()}
+					>
+						{#if fullScreen}
+							<IconArrowsMinimize size={20} />
+						{:else}
+							<IconArrowsMaximize size={20} />
+						{/if}
+					</ToolButton>
+				{/if}
 				{#if running}
 					<Button variant="secondary" size="compact" type="button" onclick={() => void endSession()}
 						>Disconnect</Button
@@ -273,31 +299,17 @@
 			</div>
 		</div>
 
-		{#if connection.kind === 'ended' || connection.kind === 'moved'}
-			<Notice
-				tone="info"
-				title={connection.kind === 'ended'
-					? connection.message
-					: 'This session is open in another window or tab.'}
-			>
+		{#if connection.kind === 'ended'}
+			<Notice tone="info" title={connection.message} children={undefined} />
+		{:else if connection.kind === 'moved'}
+			<Notice tone="info" title="This session is open in another window or tab.">
 				<div class="actions">
-					{#if connection.kind === 'moved'}
-						<Button
-							variant="primary"
-							size="compact"
-							type="button"
-							onclick={() => void session?.takeBack()}>Use it here</Button
-						>
-					{:else}
-						<Button
-							variant="primary"
-							size="compact"
-							type="button"
-							onclick={() => {
-								start(session?.mode ?? 'watch');
-							}}>Connect again</Button
-						>
-					{/if}
+					<Button
+						variant="primary"
+						size="compact"
+						type="button"
+						onclick={() => void session?.takeBack()}>Use it here</Button
+					>
 				</div>
 			</Notice>
 		{/if}
@@ -319,7 +331,7 @@
 			</Notice>
 		{/if}
 
-		{#if connection.kind === 'idle' && !resumed}
+		{#if choosing}
 			<Panel heading={undefined} actions={undefined} tone="normal" padding="normal">
 				<div class="start">
 					<IconDeviceDesktop size={40} stroke={1.25} />
@@ -359,17 +371,17 @@
 			</Panel>
 		{/if}
 
-		{#if showSettings && session !== undefined && running}
+		{#if showSettings && session !== undefined && running && !fullScreen}
 			<DesktopSettings
 				settings={session.settings}
-				onchange={(settings: PictureSettings) => session?.changeSettings(settings)}
+				onchange={(next: PictureSettings) => session?.changeSettings(next)}
 			/>
 		{/if}
 
 		<div
 			class="stage"
 			class:full={fullScreen}
-			class:hidden={connection.kind === 'idle' && !resumed}
+			class:hidden={choosing}
 			class:watching={watchOnly}
 			bind:this={stage}
 			style:aspect-ratio={frame !== undefined ? `${frame.width} / ${frame.height}` : '16 / 9'}
@@ -380,6 +392,28 @@
 			<canvas class="cursor" bind:this={cursorCanvas} aria-hidden="true"></canvas>
 			{#if frame === undefined && running}
 				<p class="waiting">{status}</p>
+			{/if}
+			{#if fullScreen && stage !== undefined}
+				<FullScreenBar
+					surface={stage}
+					mode={running ? session?.mode : undefined}
+					canSwitch={canControl}
+					windows={machine.osFamily === 'windows'}
+					settingsOpen={showSettings}
+					onexit={() => void toggleFullScreen()}
+					onswitch={switchMode}
+					onsettings={() => (showSettings = !showSettings)}
+					ondisconnect={() => void endSession()}
+				>
+					{#snippet settings()}
+						{#if session !== undefined}
+							<DesktopSettings
+								settings={session.settings}
+								onchange={(next: PictureSettings) => session?.changeSettings(next)}
+							/>
+						{/if}
+					{/snippet}
+				</FullScreenBar>
 			{/if}
 		</div>
 
@@ -437,24 +471,6 @@
 		font-size: var(--text-xs);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
-	}
-
-	.tool {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 40px;
-		height: 40px;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--surface-elevated);
-		color: var(--text-soft);
-		cursor: pointer;
-	}
-
-	.tool[aria-pressed='true'] {
-		border-color: var(--brand);
-		color: var(--brand);
 	}
 
 	.actions {

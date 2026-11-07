@@ -85,6 +85,8 @@ export class DesktopSession {
 				this.#onText(text);
 			},
 			ended: () => {
+				// The next session is a fresh choice: only a reattach keeps the mode.
+				this.mode = undefined;
 				this.#stopClock();
 			}
 		});
@@ -118,6 +120,18 @@ export class DesktopSession {
 			this.mode = mode;
 			this.#startClock();
 		}
+	}
+
+	/**
+	 * Watch only to control and back. A ticket carries its permissions, so a
+	 * new mode is a new session: this one ends, and one in the new mode opens.
+	 */
+	async switchMode(mode: DesktopMode): Promise<void> {
+		if (mode === this.mode) {
+			return;
+		}
+		this.end();
+		await this.start(mode);
 	}
 
 	/** Input from the viewer; dropped unless this session controls (SPEC-DESKTOP 7). */

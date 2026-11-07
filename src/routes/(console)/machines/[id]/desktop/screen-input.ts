@@ -10,7 +10,8 @@ import { KeyFilter, toDisplay, TouchGestures, type Geometry, type TouchMode } fr
  *
  * The listeners are attached here, not in the template, because the wheel
  * and touch ones must cancel the page's own scrolling (not passive), and
- * the screen takes the keyboard like any remote desktop window.
+ * the screen takes the keyboard like any remote desktop window. Events
+ * whose target is a control laid over the screen never reach the machine.
  */
 
 export type ScreenInputHost = {
@@ -77,9 +78,16 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 		name: K,
 		listener: (event: HTMLElementEventMap[K]) => void
 	) => {
-		surface.addEventListener(name, listener, { passive: false });
+		const onScreen = (event: HTMLElementEventMap[K]) => {
+			// Controls drawn over the screen (the full-screen bar) keep their own
+			// clicks and keys; only the screen itself feeds the machine.
+			if (event.target === surface) {
+				listener(event);
+			}
+		};
+		surface.addEventListener(name, onScreen, { passive: false });
 		detachers.push(() => {
-			surface.removeEventListener(name, listener);
+			surface.removeEventListener(name, onScreen);
 		});
 	};
 	on('pointerdown', (event) => {

@@ -29,6 +29,14 @@ export class FakeSocket {
 		this.readyState = 3;
 	}
 
+	/** The connection drops without the server closing it (code 1006). */
+	drop(): void {
+		this.readyState = 3;
+		for (const listener of this.#listeners.get('close') ?? []) {
+			listener({ code: 1006 });
+		}
+	}
+
 	receive(data: string | Uint8Array): void {
 		const payload = typeof data === 'string' ? data : data.slice().buffer;
 		for (const listener of this.#listeners.get('message') ?? []) {

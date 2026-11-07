@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { Grant } from '#lib/domain/access/access.ts';
+import { confirmation } from '#lib/ui/confirm-action.svelte.ts';
 import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import DesktopTab from './+page.svelte';
@@ -71,8 +72,8 @@ const DISPLAYS = {
 	current: 'Xvfb-0'
 };
 
-async function open(grants: Grant[], button: 'Connect' | 'Watch only') {
-	const screen = await render(DesktopTab, {
+function renderTab(grants: Grant[]) {
+	return render(DesktopTab, {
 		params: { id: TEST_MACHINE.id },
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
@@ -82,13 +83,22 @@ async function open(grants: Grant[], button: 'Connect' | 'Watch only') {
 			grants
 		}
 	});
+}
+
+/** The server's side of a socket that just opened: attached, ready, the displays. */
+function attach(socket: FakeSocket): void {
+	socket.receive(JSON.stringify({ type: 'attached', resumed: false }));
+	socket.receive(JSON.stringify({ type: 'ready' }));
+	socket.receive(JSON.stringify(DISPLAYS));
+}
+
+async function open(grants: Grant[], button: 'Connect' | 'Watch only') {
+	const screen = await renderTab(grants);
 	await screen.getByRole('button', { name: button }).click();
 	await expect.poll(() => FakeSocket.last?.url ?? '').toContain('ticket=t-1');
 	const socket = FakeSocket.last;
 	if (socket === undefined) throw new Error('no socket');
-	socket.receive(JSON.stringify({ type: 'attached', resumed: false }));
-	socket.receive(JSON.stringify({ type: 'ready' }));
-	socket.receive(JSON.stringify(DISPLAYS));
+	attach(socket);
 	return { screen, socket };
 }
 
@@ -199,7 +209,112 @@ describe('the desktop tab', () => {
 		await expect
 			.element(screen.getByText('Someone at the machine pressed Disconnect.'))
 			.toBeVisible();
-		await expect.element(screen.getByRole('button', { name: 'Connect again' })).toBeVisible();
+		await expect.element(screen.getByRole('button', { name: 'Connect' })).toBeVisible();
+		await expect.element(screen.getByRole('button', { name: 'Watch only' })).toBeVisible();
+	});
+
+	it('offers both choices again after Watch only and Disconnect, and Connect then controls', async () => {
+		const { screen, socket } = await open(CONTROL, 'Watch only');
+		await screen.getByRole('button', { name: 'Disconnect' }).click();
+		await expect.poll(() => confirmation.current.kind).toBe('asking');
+		if (confirmation.current.kind === 'asking') confirmation.current.answer(true);
+		await expect.poll(() => socket.messages()).toContainEqual({ type: 'end' });
+		socket.receive(
+			JSON.stringify({
+				type: 'ended',
+				reason: 'closed',
+				message: 'The session was ended from the console.'
+			})
+		);
+		await expect.element(screen.getByRole('button', { name: 'Watch only' })).toBeVisible();
+		await screen.getByRole('button', { name: 'Connect', exact: true }).click();
+		await expect.poll(() => posted.at(-1)).toEqual({ kind: 'desktop', mode: 'control' });
+	});
+
+	it('keeps the mode when it reattaches after a reload or a dropped connection', async () => {
+		sessionStorage.setItem(
+			`bmuster.desktop.${TEST_MACHINE.id}`,
+			JSON.stringify({ sessionId: SESSION, tag: 'watch', sinceMs: Date.now() })
+		);
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				posted.push(url);
+				return Promise.resolve(Response.json({ kind: 'issued', browserTicket: 't-2' }));
+			})
+		);
+		const screen = await renderTab(CONTROL);
+		await expect.poll(() => FakeSocket.last?.url ?? '').toContain('ticket=t-2');
+		const first = FakeSocket.last;
+		if (first === undefined) throw new Error('no socket');
+		attach(first);
+		await expect.element(screen.getByText('View only')).toBeVisible();
+		expect(screen.container.textContent).not.toContain('Connect');
+
+		first.drop();
+		await expect.poll(() => FakeSocket.last !== first, { timeout: 5000 }).toBe(true);
+		const second = FakeSocket.last;
+		if (second === undefined) throw new Error('no socket');
+		attach(second);
+		await expect.element(screen.getByText('View only')).toBeVisible();
+		expect(screen.container.textContent).not.toContain('Connect');
+		expect(posted.every((url) => typeof url === 'string' && url.includes('browser-ticket'))).toBe(
+			true
+		);
+	});
+
+	it('switches a running watch session to control by opening a new one', async () => {
+		const { screen, socket } = await open(CONTROL, 'Watch only');
+		await screen.getByRole('button', { name: 'Take control' }).click();
+		await expect.poll(() => posted.at(-1)).toEqual({ kind: 'desktop', mode: 'control' });
+		expect(socket.messages()).toContainEqual({ type: 'end' });
+		await expect.poll(() => FakeSocket.last !== socket).toBe(true);
+		const next = FakeSocket.last;
+		if (next === undefined) throw new Error('no socket');
+		attach(next);
+		await expect.element(screen.getByRole('button', { name: 'Switch to view only' })).toBeVisible();
+		expect(screen.container.textContent).not.toContain('View only');
+	});
+
+	it('full screen has a bar with Exit that hides when idle and comes back near the top edge', async () => {
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+		const bar = screen.getByRole('group', { name: 'Full screen controls' });
+		await expect.element(bar).toBeVisible();
+		await expect.element(bar.getByText('Control')).toBeVisible();
+		await expect.element(bar.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+
+		// The bar's own clicks never reach the machine, and the keyboard goes back to the screen.
+		const before = sentTypes(socket).filter((type) => type === 'pointer').length;
+		await bar.getByRole('button', { name: 'Picture settings' }).click();
+		expect(sentTypes(socket).filter((type) => type === 'pointer').length).toBe(before);
+		await expect.element(screen.getByRole('application', { name: /Screen of/ })).toHaveFocus();
+		await bar.getByRole('button', { name: 'Picture settings' }).click();
+
+		// The mouse leaves the bar for the middle of the screen: the bar hides after a few seconds.
+		const stage = screen.getByRole('application', { name: /Screen of/ });
+		const middle = stage.element().getBoundingClientRect();
+		await stage.hover({ position: { x: middle.width / 2, y: middle.height / 2 } });
+		await expect.element(bar, { timeout: 6000 }).not.toBeInTheDocument();
+		await stage.hover({ position: { x: 300, y: 5 } });
+		await expect.element(bar).toBeVisible();
+
+		await bar.getByRole('button', { name: 'Leave full screen' }).click();
+		await expect.poll(() => document.fullscreenElement).toBeNull();
+		await expect.element(screen.getByRole('button', { name: 'Full screen' })).toBeVisible();
+	});
+
+	it('follows the browser leaving full screen by itself (Esc)', async () => {
+		const { screen } = await open(CONTROL, 'Connect');
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+		await document.exitFullscreen();
+		await expect.element(screen.getByRole('button', { name: 'Full screen' })).toBeVisible();
+		await expect
+			.element(screen.getByRole('group', { name: 'Full screen controls' }))
+			.not.toBeInTheDocument();
 	});
 
 	it('does not offer a session whose rules ask the person at the screen first', async () => {
