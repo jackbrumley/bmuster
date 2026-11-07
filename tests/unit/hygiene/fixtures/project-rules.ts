@@ -37,6 +37,27 @@ const fontSize = (content: string) => () =>
 		verifyInputFontSize([file(PANEL, content)], [TOKENS], reporter.violation);
 	});
 
+const TERMINAL = 'src/routes/(console)/machines/[id]/terminal/+page.svelte';
+
+const xtermFontSize = (size: string) => () =>
+	reported((reporter) => {
+		verifyInputFontSize(
+			[
+				file(
+					TERMINAL,
+					`<div class="session"></div>\n<style>\n\t.session :global(.xterm-helper-textarea) { font-size: ${size}; }\n</style>`
+				)
+			],
+			[TOKENS],
+			reporter.violation
+		);
+	});
+
+const appCss = (content: string) => () =>
+	reported((reporter) => {
+		verifyInputFontSize([], [TOKENS, file('src/app.css', content)], reporter.violation);
+	});
+
 const ROLES: ReadonlySet<string> = new Set(['pill', 'control', 'card']);
 
 const radius = (content: string) => () =>
@@ -69,6 +90,27 @@ export const projectRuleFixtures: readonly RuleFixture[] = [
 		),
 		good: fontSize(
 			'<input data-raw-input="list-search" class="search" />\n<style>\n\t.search { font-size: var(--text-base); }\n</style>'
+		)
+	},
+	{
+		rule: 'input-font-size-ios-zoom',
+		bad: fontSize(
+			'<textarea class="notes"></textarea>\n<style>\n\t.notes { font: inherit; }\n</style>'
+		),
+		good: fontSize(
+			'<textarea class="notes"></textarea>\n<style>\n\t.notes { font: inherit; font-size: var(--text-base); }\n</style>'
+		)
+	},
+	{
+		rule: 'input-font-size-ios-zoom',
+		bad: xtermFontSize('var(--text-sm)'),
+		good: xtermFontSize('var(--text-base)')
+	},
+	{
+		rule: 'input-font-size-ios-zoom',
+		bad: appCss('input,\ntextarea {\n\tfont-size: var(--text-base);\n}'),
+		good: appCss(
+			'input,\ntextarea,\nselect,\n[contenteditable] {\n\tfont-size: var(--text-base);\n}'
 		)
 	},
 	{

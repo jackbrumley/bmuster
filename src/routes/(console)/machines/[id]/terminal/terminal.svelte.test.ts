@@ -1,3 +1,4 @@
+import '../../../../../app.css';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
@@ -82,6 +83,13 @@ describe('the terminal tab (T1)', () => {
 		await expect
 			.poll(() => screen.getByRole('status').element().textContent)
 			.toMatch(/^Session · \d\d:\d\d$/);
+	});
+
+	it("keeps xterm's hidden text box at 16px or more, so tapping it never zooms an iPhone", async () => {
+		const { screen } = await openTerminal();
+		const box = screen.container.querySelector('.xterm-helper-textarea');
+		if (box === null) throw new Error('no xterm text box');
+		expect(Number.parseFloat(getComputedStyle(box).fontSize)).toBeGreaterThanOrEqual(16);
 	});
 
 	it('remembers the running session in this tab, so a reload comes back to it', async () => {
