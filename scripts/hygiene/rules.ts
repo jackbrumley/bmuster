@@ -230,8 +230,8 @@ export const HYGIENE_RULES = {
 	'input-font-size-ios-zoom': {
 		severity: 'violation',
 		section: '4',
-		why: 'iPhones zoom into fields whose text is under 16px, cropping the layout.',
-		fix: 'Use a font-size token that resolves to at least 1rem (16px), e.g. `var(--text-base)`, on fields.'
+		why: 'iOS zooms the page when a text box under 16px is focused (inputs, textareas, selects, contenteditable, xterm.js), cropping the phone layout.',
+		fix: 'Size text boxes with `var(--text-base)` or a larger token (never `inherit`, `em` or `calc()`), and keep the 16px base rule for text boxes in src/app.css.'
 	},
 
 	// Page frames (scripts/hygiene/page-frames.ts)

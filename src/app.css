@@ -44,6 +44,19 @@ button {
 	color: inherit;
 }
 
+/*
+ * iOS zooms the page when a text box under 16px is focused. Browsers give
+ * text boxes a smaller default (13.33px), and a contenteditable box takes its
+ * parent's size, so every text box starts at the base size here; a component
+ * may only make it larger (hygiene rule input-font-size-ios-zoom).
+ */
+input,
+textarea,
+select,
+[contenteditable] {
+	font-size: var(--text-base);
+}
+
 :focus-visible {
 	outline: 2px solid var(--focus-ring);
 	outline-offset: 2px;

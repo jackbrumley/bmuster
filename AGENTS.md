@@ -124,7 +124,7 @@ docs/                   concept, plans, specs
 - **Radius roles:** things you click are pills (`--radius-pill`); things you type into are boxes (`--radius-control`); cards `--radius-card`; modals `--radius-modal`; dots and avatars `--radius-round`.
 - **Shared page blocks:** pages are built from `src/lib/ui`, never their own copies. Every console page starts with `PageHeader` (machine tabs take the machine layout's header); cards are `Panel`, bordered lists are `ListCard` with `ListRow`, link tabs are `TabNav`, pick-one pills are `ChipGroup` / `SegmentedControl`, empty and offline states are `EmptyState`, small uppercase headings are `SectionHeading`. `ShellFrame` spaces a page's blocks with `--gap-section`, so a page adds no outer margins. A route file never declares a card look (hygiene rules `route-card-look-forbidden`, `page-header-required`).
 - **Page frames:** every console page renders inside `ShellFrame`, every other page inside `PublicPage`. Frames own the safe-area padding; a page never adds its own full-height root container. Anything `position: fixed` against an edge adds the matching `--safe-*` inset.
-- **Mobile first:** design at phone width, then widen. Breakpoint for the sidebar layout: 900px. Inputs use at least `--text-base` (16px) so iOS does not zoom. Touch targets are at least 40px.
+- **Mobile first:** design at phone width, then widen. Breakpoint for the sidebar layout: 900px. Text boxes (text inputs, textareas, selects, contenteditable, xterm's hidden textarea) are at least 16px (`--text-base`), because iOS zooms the page when a smaller one is focused; src/app.css sets that base, and a component may only make it larger. Helper text and labels beside a box can stay small. Touch targets are at least 40px.
 - No `!important`.
 
 ---
@@ -327,9 +327,11 @@ The design is in `docs/access-and-sign-in.md`.
 - `inline-dependencies-forbidden` (violation, §7): `npm:`, `jsr:` and URL
   imports bypass package.json, so versions and audits drift. **Fix:** Add the
   package to package.json with an exact version and import it by name.
-- `input-font-size-ios-zoom` (violation, §4): iPhones zoom into fields whose
-  text is under 16px, cropping the layout. **Fix:** Use a font-size token that
-  resolves to at least 1rem (16px), e.g. `var(--text-base)`, on fields.
+- `input-font-size-ios-zoom` (violation, §4): iOS zooms the page when a text box
+  under 16px is focused (inputs, textareas, selects, contenteditable, xterm.js),
+  cropping the phone layout. **Fix:** Size text boxes with `var(--text-base)` or
+  a larger token (never `inherit`, `em` or `calc()`), and keep the 16px base
+  rule for text boxes in src/app.css.
 - `lib-root-file-forbidden` (violation, §2): src/lib/ holds only the area
   folders, so loose modules or new top-level folders leave nobody sure where a
   file belongs. **Fix:** Move the file into its folder (server/, domain/,
