@@ -171,9 +171,17 @@ pub fn signed_in_user() -> SignedInUser {
     {
         linux_seat_user(std::path::Path::new("/run/systemd/sessions"))
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
     {
-        // Windows needs the WTS API (planned with SPEC-SESSIONS).
+        // The console session's user (WTSUserName and WTSDomainName); the
+        // sign-in screen has none. A locked session still counts, as on Linux.
+        match bmuster_desktop::winsession::console::console_user() {
+            Some(name) => SignedInUser::User { name },
+            None => SignedInUser::None,
+        }
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
         SignedInUser::None
     }
 }

@@ -183,14 +183,28 @@ pub fn agent_account() -> Account {
     }
 }
 
+/// On Windows `home` is where sessions start: the system drive's root
+/// (`C:\`), not SYSTEM's profile under `C:\WINDOWS\system32\config`.
 #[cfg(windows)]
 pub fn agent_account() -> Account {
     let name = std::env::var("USERNAME").unwrap_or_else(|_| "SYSTEM".into());
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("SystemRoot"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(r"C:\"));
+    let home = system_drive_root(std::env::var("SystemDrive").ok().as_deref());
     Account { name, home }
+}
+
+/// `C:\` from `%SystemDrive%` (`C:`); `C:\` when it is missing or odd.
+#[cfg(any(windows, test))]
+fn system_drive_root(system_drive: Option<&str>) -> PathBuf {
+    match system_drive {
+        Some(drive)
+            if drive.len() == 2
+                && drive.as_bytes()[0].is_ascii_alphabetic()
+                && drive.ends_with(':') =>
+        {
+            PathBuf::from(format!("{drive}\\"))
+        }
+        _ => PathBuf::from(r"C:\"),
+    }
 }
 
 /// The search path for session processes on Unix: the agent's own may be a
@@ -269,5 +283,19 @@ mod tests {
             None,
             "nothing leaks from the agent's environment"
         );
+    }
+}
+
+#[cfg(test)]
+mod start_folder_tests {
+    use super::system_drive_root;
+    use std::path::PathBuf;
+
+    #[test]
+    fn windows_sessions_start_at_the_system_drive_root() {
+        assert_eq!(system_drive_root(Some("C:")), PathBuf::from("C:\\"));
+        assert_eq!(system_drive_root(Some("D:")), PathBuf::from("D:\\"));
+        assert_eq!(system_drive_root(None), PathBuf::from("C:\\"));
+        assert_eq!(system_drive_root(Some("weird")), PathBuf::from("C:\\"));
     }
 }
