@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+pub mod session;
+
 /// First line of every signed message; bump it if the message format changes.
 pub const SIGNING_DOMAIN: &str = "BMUSTER-REQ-1";
 
@@ -587,6 +589,11 @@ pub enum ServerMessage {
     PinUpdate {
         next: ServerTrust,
     },
+    /// Start a session (SPEC-SESSIONS): a signed ticket, see [`session`].
+    SessionOpen {
+        ticket: String,
+        signature: String,
+    },
 }
 
 /// Agent to server.
@@ -598,6 +605,12 @@ pub enum AgentMessage {
         cpu_percent: f32,
         #[serde(rename = "memoryUsedBytes")]
         memory_used_bytes: u64,
+    },
+    /// A `session-open` this agent would not start, and why.
+    SessionRefused {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        message: String,
     },
 }
 

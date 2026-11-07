@@ -5,9 +5,15 @@
  * Upgrade requests skip hooks.server.ts: each route authenticates itself.
  */
 
-type SocketPeer<Context> = {
+/** One connection, as a route's handlers see it. */
+export type SocketPeer<Context> = {
 	readonly context: Context;
 	send(data: string): void;
+	/** Sends bytes; `sent` runs once they are handed to the network (backpressure). */
+	sendBinary(data: Uint8Array, sent: () => void): void;
+	/** Stops (and restarts) reading from this connection, so its sender slows down. */
+	pause(): void;
+	resume(): void;
 	close(code: number, reason: string): void;
 };
 
@@ -19,30 +25,36 @@ export type SocketRefusal = {
 	message: string;
 };
 
+/** `[name]` segments of a route's path, e.g. `{ id: '…' }` for `/agent/v1/sessions/[id]`. */
+export type PathParams = Readonly<Record<string, string>>;
+
 export type SocketRouteHandlers<Context> = {
-	/** Exact path, e.g. `/agent/v1/socket`. */
+	/** The path, with `[name]` for a segment that varies, e.g. `/agent/v1/sessions/[id]`. */
 	readonly path: string;
-	upgrade(request: Request): Promise<Context | SocketRefusal>;
+	upgrade(request: Request, params: PathParams): Promise<Context | SocketRefusal>;
 	open(peer: SocketPeer<Context>): void;
 	message(peer: SocketPeer<Context>, data: string): void;
+	binary(peer: SocketPeer<Context>, data: Uint8Array): void;
 	close(peer: SocketPeer<Context>): void;
 };
 
 /** The transport side of one connection, provided by attach.ts. */
-type SocketConnection = {
-	send(data: string): void;
-	close(code: number, reason: string): void;
-};
+type SocketConnection = Omit<SocketPeer<never>, 'context'>;
 
 type SocketSession = {
 	open(): void;
 	message(data: string): void;
+	binary(data: Uint8Array): void;
 	close(): void;
 };
 
 export type SocketRoute = {
 	readonly path: string;
-	accept(request: Request, connection: SocketConnection): Promise<SocketSession | SocketRefusal>;
+	accept(
+		request: Request,
+		params: PathParams,
+		connection: SocketConnection
+	): Promise<SocketSession | SocketRefusal>;
 };
 
 export function isSocketRefusal(value: unknown): value is SocketRefusal {
@@ -51,12 +63,39 @@ export function isSocketRefusal(value: unknown): value is SocketRefusal {
 	);
 }
 
+/** Segments of at most 64 URL-safe characters; nothing else matches a `[name]`. */
+const PARAM_VALUE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** The route's parameters when `pathname` matches its `path`, or undefined. */
+export function matchSocketPath(path: string, pathname: string): PathParams | undefined {
+	const wanted = path.split('/');
+	const actual = pathname.split('/');
+	if (wanted.length !== actual.length) {
+		return undefined;
+	}
+	const params: Record<string, string> = {};
+	for (const [index, segment] of wanted.entries()) {
+		const value = actual[index] ?? '';
+		const name = /^\[([a-z][a-zA-Z]*)\]$/.exec(segment)?.[1];
+		if (name === undefined) {
+			if (segment !== value) {
+				return undefined;
+			}
+		} else if (PARAM_VALUE.test(value)) {
+			params[name] = value;
+		} else {
+			return undefined;
+		}
+	}
+	return params;
+}
+
 /** Declares a socket route; the context `upgrade` returns is typed through to the other handlers. */
 export function defineSocketRoute<Context>(handlers: SocketRouteHandlers<Context>): SocketRoute {
 	return {
 		path: handlers.path,
-		async accept(request, connection) {
-			const context = await handlers.upgrade(request);
+		async accept(request, params, connection) {
+			const context = await handlers.upgrade(request, params);
 			if (isSocketRefusal(context)) {
 				return context;
 			}
@@ -64,6 +103,15 @@ export function defineSocketRoute<Context>(handlers: SocketRouteHandlers<Context
 				context,
 				send: (data) => {
 					connection.send(data);
+				},
+				sendBinary: (data, sent) => {
+					connection.sendBinary(data, sent);
+				},
+				pause: () => {
+					connection.pause();
+				},
+				resume: () => {
+					connection.resume();
 				},
 				close: (code, reason) => {
 					connection.close(code, reason);
@@ -75,6 +123,9 @@ export function defineSocketRoute<Context>(handlers: SocketRouteHandlers<Context
 				},
 				message: (data) => {
 					handlers.message(peer, data);
+				},
+				binary: (data) => {
+					handlers.binary(peer, data);
 				},
 				close: () => {
 					handlers.close(peer);

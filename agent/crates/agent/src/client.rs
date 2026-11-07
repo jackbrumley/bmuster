@@ -409,6 +409,12 @@ impl Session {
         next
     }
 
+    /// The time now on the server's clock, as far as the agent knows it
+    /// (for checking session tickets).
+    pub fn server_now_ms(&self) -> i64 {
+        local_now_ms() + lock(&self.clock).offset_ms
+    }
+
     /// Signs one request. Keep the result alive until the request is sent.
     pub fn sign(&self, method: &str, path: &str, body: &[u8]) -> Signed<'_> {
         let order = lock(&self.order);

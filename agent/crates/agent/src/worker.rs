@@ -7,12 +7,14 @@ use crate::inventory::{self, Probe};
 use crate::local_page::journal::Journal;
 use crate::local_page::people::People;
 use crate::local_page::{self, Reporter};
+use crate::sessions::Sessions;
 use crate::socket;
 use crate::status::{RunMode, StatusBoard};
 use crate::trust::{Trust, TrustState};
 use anyhow::{Context as _, Result};
 use bmuster_protocol::{
-    CheckInReply, CheckInRequest, InventoryReport, Refusal, RefusalReason, CHECK_IN_PATH,
+    decode_public_key, CheckInReply, CheckInRequest, InventoryReport, Refusal, RefusalReason,
+    CHECK_IN_PATH,
 };
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -145,13 +147,16 @@ pub fn run(
     });
 
     let stop = Arc::new(AtomicBool::new(false));
+    let server_key = decode_public_key(&identity.server_public_key)
+        .context("identity.json holds an unreadable server key")?;
+    let sessions = Sessions::new(Arc::clone(&session), server_key, Arc::clone(&stop));
     let socket_thread = {
         let session = Arc::clone(&session);
         let stop = Arc::clone(&stop);
         let board = Arc::clone(&board);
         std::thread::Builder::new()
             .name("live-socket".into())
-            .spawn(move || socket::run(&session, &sender, &stop, &board))
+            .spawn(move || socket::run(&session, &sessions, &sender, &stop, &board))
             .context("could not start the live socket thread")?
     };
 

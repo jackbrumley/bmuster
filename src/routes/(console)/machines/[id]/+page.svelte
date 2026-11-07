@@ -5,6 +5,7 @@
 	import UsageBar from '#lib/ui/usage-bar.svelte';
 	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
 	import { osLabel, signedInUserOf, type Gpu } from '#lib/domain/machines/machine.ts';
+	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -37,6 +38,7 @@
 
 	const facts = $derived.by(() => {
 		const list = [
+			...(machine.inUse.length > 0 ? [{ label: 'In use', value: inUseLabel(machine.inUse) }] : []),
 			{ label: 'Operating system', value: osLabel(machine) },
 			{ label: 'Signed in', value: user.kind === 'user' ? user.name : 'Nobody' },
 			{

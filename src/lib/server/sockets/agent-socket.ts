@@ -12,11 +12,16 @@ import {
 	recordLiveFigures,
 	type LivePeer
 } from '../services/agents/live-agents.ts';
+import { sessionRelay } from '../services/sessions/relay.ts';
 import { defineSocketRoute } from './socket-route.ts';
 
 const AGENT_SOCKET_PATH = '/agent/v1/socket';
 
-/** An agent's live socket (SPEC-ENROLMENT 8): signed upgrade, live figures in, commands out. */
+/**
+ * An agent's live socket (SPEC-ENROLMENT 8): signed upgrade, live figures
+ * and session refusals in, commands and session requests out. Session bytes
+ * travel on each session's own socket (session-sockets.ts).
+ */
 export const agentSocketRoute = defineSocketRoute<{
 	machineId: string;
 	peer: LivePeer | undefined;
@@ -71,12 +76,25 @@ export const agentSocketRoute = defineSocketRoute<{
 			peer.close(4002, 'Unknown message');
 			return;
 		}
-		// The only message so far; more types become a switch.
-		recordLiveFigures(peer.context.machineId, {
-			cpuPercent: parsed.data.cpuPercent,
-			memoryUsedBytes: parsed.data.memoryUsedBytes,
-			atMs: Date.now()
-		});
+		switch (parsed.data.type) {
+			case 'live':
+				recordLiveFigures(peer.context.machineId, {
+					cpuPercent: parsed.data.cpuPercent,
+					memoryUsedBytes: parsed.data.memoryUsedBytes,
+					atMs: Date.now()
+				});
+				return;
+			case 'session-refused':
+				sessionRelay().refusedByAgent(
+					parsed.data.sessionId,
+					peer.context.machineId,
+					parsed.data.message
+				);
+				return;
+		}
+	},
+	binary(peer) {
+		peer.close(4002, 'Binary messages belong on a session socket');
 	},
 	close(peer) {
 		if (peer.context.peer !== undefined) {

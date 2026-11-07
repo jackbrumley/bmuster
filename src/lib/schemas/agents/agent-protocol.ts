@@ -207,6 +207,12 @@ export const agentSocketMessageSchema = z.discriminatedUnion('type', [
 		type: z.literal('live'),
 		cpuPercent: z.number().min(0).max(100),
 		memoryUsedBytes: byteCount
+	}),
+	/** A `session-open` the agent would not start (SPEC-SESSIONS T3), and why. */
+	z.object({
+		type: z.literal('session-refused'),
+		sessionId: z.string().max(64),
+		message: z.string().max(2000)
 	})
 ]);
 
@@ -223,7 +229,9 @@ export type ServerSocketMessage =
 	| { type: 'watch'; intervalMs: number }
 	| { type: 'unwatch' }
 	/** The certificate the server will serve after its next restart (L7). */
-	| { type: 'pin-update'; next: ServerTrust };
+	| { type: 'pin-update'; next: ServerTrust }
+	/** Start a session: a ticket (base64 JSON) and the server's signature over it (SPEC-SESSIONS T3). */
+	| { type: 'session-open'; ticket: string; signature: string };
 
 export type RefusalReason =
 	| 'bad-request'

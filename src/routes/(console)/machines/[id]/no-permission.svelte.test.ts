@@ -19,7 +19,8 @@ const MACHINE: Machine = {
 	live: { kind: 'none' },
 	inventory: { kind: 'pending' },
 	enrolledIso: '2026-11-01T00:00:00.000Z',
-	lastSeenIso: '2026-11-07T12:00:00.000Z'
+	lastSeenIso: '2026-11-07T12:00:00.000Z',
+	inUse: []
 };
 
 function props(grants: Grant[]) {
@@ -53,7 +54,7 @@ describe('machine tabs without the permission (SPEC-ACCESS A6)', () => {
 			TerminalTab,
 			props([...VIEW_ONLY, { permission: 'terminal', consent: 'ask' }])
 		);
-		await expect.element(terminal.getByLabelText('Command')).toBeVisible();
+		await expect.element(terminal.getByRole('group', { name: 'Shell' })).toBeVisible();
 		expect(terminal.container.textContent).not.toContain(NO_PERMISSION);
 		await terminal.unmount();
 		const desktop = await render(

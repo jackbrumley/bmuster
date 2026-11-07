@@ -50,7 +50,9 @@ const AUDIT_KINDS = [
 	'machine-group-member-removed',
 	'access-rule-added',
 	'access-rule-changed',
-	'access-rule-deleted'
+	'access-rule-deleted',
+	'session-opened',
+	'session-ended'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -171,5 +173,9 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Changed an access rule';
 		case 'access-rule-deleted':
 			return 'Deleted an access rule';
+		case 'session-opened':
+			return 'Opened a terminal';
+		case 'session-ended':
+			return 'Closed a terminal';
 	}
 }

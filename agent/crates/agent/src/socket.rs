@@ -1,8 +1,10 @@
 //! The live socket: a signed WebSocket the server uses to ask for a check-in
-//! now and to watch the machine's load while a console page is open.
+//! now, to watch the machine's load while a console page is open, and to
+//! start sessions (each on a socket of its own, see `sessions`).
 
 use crate::client::{parse_reply, Channel, Reply, Session, USER_AGENT};
 use crate::inventory::Probe;
+use crate::sessions::Sessions;
 use crate::status::StatusBoard;
 use crate::worker::{Backoff, Signal};
 use anyhow::{bail, Context as _, Result};
@@ -32,9 +34,9 @@ const MIN_WATCH_INTERVAL_MS: u64 = 500;
 /// Close reason the server uses when the machine is removed.
 const REVOKED_CLOSE_REASON: &str = "revoked";
 
-type Socket = WebSocket<MaybeTlsStream<TcpStream>>;
+pub type Socket = WebSocket<MaybeTlsStream<TcpStream>>;
 
-enum Connect {
+pub enum Connect {
     Open(Box<Socket>),
     Revoked(String),
 }
@@ -46,7 +48,13 @@ enum Ended {
 }
 
 /// Keeps the socket open until `stop` is set or the machine is revoked.
-pub fn run(session: &Session, signals: &Sender<Signal>, stop: &AtomicBool, board: &StatusBoard) {
+pub fn run(
+    session: &Session,
+    sessions: &Sessions,
+    signals: &Sender<Signal>,
+    stop: &AtomicBool,
+    board: &StatusBoard,
+) {
     let mut backoff = Backoff::new(Duration::from_secs(1), Duration::from_secs(60));
     let mut probe = Probe::new();
     while !stop.load(Ordering::SeqCst) {
@@ -55,7 +63,7 @@ pub fn run(session: &Session, signals: &Sender<Signal>, stop: &AtomicBool, board
             Ok(Connect::Open(socket)) => {
                 log::info!("Live socket connected.");
                 board.socket(true);
-                let ended = serve(*socket, session, signals, stop, &mut probe);
+                let ended = serve(*socket, session, sessions, signals, stop, &mut probe);
                 board.socket(false);
                 ended
             }
@@ -112,7 +120,7 @@ fn open_tcp(host: &str, port: u16) -> Result<TcpStream> {
     }
 }
 
-fn tcp_of(socket: &mut Socket) -> Result<&mut TcpStream> {
+pub fn tcp_of(socket: &mut Socket) -> Result<&mut TcpStream> {
     match socket.get_mut() {
         MaybeTlsStream::Plain(stream) => Ok(stream),
         MaybeTlsStream::Rustls(stream) => Ok(&mut stream.sock),
@@ -120,18 +128,24 @@ fn tcp_of(socket: &mut Socket) -> Result<&mut TcpStream> {
     }
 }
 
-/// Opens the socket, following a planned certificate change (L7).
+/// Opens the live socket, following a planned certificate change (L7).
 fn connect(session: &Session) -> Result<Connect> {
-    session
-        .transport
-        .exchange(|channel| connect_with(session, channel))
+    connect_to(session, SOCKET_PATH)
 }
 
-/// Opens the socket with a signed upgrade request (`GET`, empty body).
-fn connect_with(session: &Session, channel: &Channel) -> Result<Connect> {
+/// Opens a signed socket at `path` (the live socket or a session's own),
+/// following a planned certificate change (L7).
+pub fn connect_to(session: &Session, path: &str) -> Result<Connect> {
+    session
+        .transport
+        .exchange(|channel| connect_with(session, channel, path))
+}
+
+/// Opens a socket with a signed upgrade request (`GET`, empty body).
+fn connect_with(session: &Session, channel: &Channel, path: &str) -> Result<Connect> {
     let server = &session.transport.server;
     let mut request = server
-        .ws_url(SOCKET_PATH)
+        .ws_url(path)
         .into_client_request()
         .context("bad socket URL")?;
     let tcp = open_tcp(server.host(), server.port())?;
@@ -139,7 +153,7 @@ fn connect_with(session: &Session, channel: &Channel) -> Result<Connect> {
     tcp.set_write_timeout(Some(HANDSHAKE_TIMEOUT))?;
     tcp.set_nodelay(true)?;
 
-    let signed = session.sign("GET", SOCKET_PATH, b"");
+    let signed = session.sign("GET", path, b"");
     request.headers_mut().insert(
         "authorization",
         HeaderValue::from_str(&signed.authorization).context("bad authorization header")?,
@@ -196,6 +210,7 @@ fn is_timeout(error: &tungstenite::Error) -> bool {
 fn serve(
     mut socket: Socket,
     session: &Session,
+    sessions: &Sessions,
     signals: &Sender<Signal>,
     stop: &AtomicBool,
     probe: &mut Probe,
@@ -269,6 +284,20 @@ fn serve(
                     watch = None;
                 }
                 Ok(ServerMessage::PinUpdate { next }) => session.transport.announce(next),
+                Ok(ServerMessage::SessionOpen { ticket, signature }) => {
+                    if let Err(refused) = sessions.open(&ticket, &signature) {
+                        log::warn!("{}", refused.message);
+                        if let Some(session_id) = refused.session_id {
+                            let message = AgentMessage::SessionRefused {
+                                session_id,
+                                message: refused.message,
+                            };
+                            socket
+                                .send(Message::text(serde_json::to_string(&message)?))
+                                .context("could not refuse a session")?;
+                        }
+                    }
+                }
                 Err(e) => log::warn!("Ignoring a socket message this agent does not know: {e}"),
             },
             Message::Close(frame) => {

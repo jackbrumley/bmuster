@@ -8,6 +8,7 @@
 	import UsageBar from '#lib/ui/usage-bar.svelte';
 	import { formatBytes, formatRelative } from '#lib/utils/format.ts';
 	import { osLabel } from '#lib/domain/machines/machine.ts';
+	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import type { MachineRow } from './machine-row.ts';
 
 	/** The Cards view of the Machines page: one card per machine, a batch at a time. */
@@ -64,9 +65,14 @@
 								</p>
 							{/if}
 
-							{#if updates > 0}
+							{#if updates > 0 || machine.inUse.length > 0}
 								<div class="tags">
-									<span class="tag warn">{updates} updates</span>
+									{#if machine.inUse.length > 0}
+										<span class="tag in-use">In use: {inUseLabel(machine.inUse)}</span>
+									{/if}
+									{#if updates > 0}
+										<span class="tag warn">{updates} updates</span>
+									{/if}
 								</div>
 							{/if}
 						</a>
@@ -170,6 +176,11 @@
 		background: var(--surface-muted);
 		color: var(--text-soft);
 		font-size: var(--text-xs);
+	}
+
+	.tag.in-use {
+		background: var(--brand-tint);
+		color: var(--brand);
 	}
 
 	.tag.warn {
