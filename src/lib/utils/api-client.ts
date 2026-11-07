@@ -75,6 +75,56 @@ export function apiUpload<Reply>(options: {
 	});
 }
 
+/**
+ * Listens to a server-sent event stream (EventSource): each `event` is parsed
+ * with its zod contract (anything else is ignored). The browser reconnects a
+ * dropped stream by itself; `onReconnect` runs when it is back, since events
+ * sent meanwhile were missed. `onFailure` runs when the stream cannot be had
+ * at all (no EventSource, or a refusal such as a signed-out session), so the
+ * caller can fall back to polling. Returns the stop.
+ */
+export function apiEvents<Event>(options: {
+	url: string;
+	event: string;
+	reply: z.ZodType<Event>;
+	onEvent: (event: Event) => void;
+	onReconnect: () => void;
+	onFailure: () => void;
+}): () => void {
+	if (typeof EventSource === 'undefined') {
+		options.onFailure();
+		return () => undefined;
+	}
+	const source = new EventSource(options.url);
+	let opened = false;
+	source.addEventListener('open', () => {
+		if (opened) {
+			options.onReconnect();
+		}
+		opened = true;
+	});
+	source.addEventListener(options.event, (message) => {
+		let json: unknown;
+		try {
+			json = JSON.parse(String(message.data));
+		} catch {
+			return;
+		}
+		const parsed = options.reply.safeParse(json);
+		if (parsed.success) {
+			options.onEvent(parsed.data);
+		}
+	});
+	source.addEventListener('error', () => {
+		if (source.readyState === EventSource.CLOSED) {
+			options.onFailure();
+		}
+	});
+	return () => {
+		source.close();
+	};
+}
+
 function resultOf<Reply>(status: number, json: unknown, reply: z.ZodType<Reply>): ApiResult<Reply> {
 	if (status < 200 || status > 299) {
 		return { ok: false, message: messageFrom(json) ?? `The server said ${status}.`, status };
