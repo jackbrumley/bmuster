@@ -12,7 +12,10 @@
 	import { roleLabel, type ConsoleRole, type UserView } from '#lib/domain/users/user.ts';
 	import UserForm from './user-form.svelte';
 	import Checkbox from '#lib/ui/checkbox.svelte';
-	import { addUser, setUserGroups, updateUser } from './user-requests.ts';
+	import { addUser, sendInvitation, setUserGroups, updateUser } from './user-requests.ts';
+	import InvitationLink from './invitation-link.svelte';
+	import SignInChoice from './sign-in-choice.svelte';
+	import type { Invitation } from '#lib/domain/users/invitation.ts';
 	import type { PageProps } from './$types';
 
 	/** People who can sign in (SPEC-SIGN-IN S12): list → view → edit. */
@@ -32,6 +35,10 @@
 	let email = $state('');
 	let role = $state<ConsoleRole>('member');
 	let password = $state('');
+	let signIn = $state<'invite' | 'password' | 'provider'>('invite');
+	let link = $state<
+		{ kind: 'closed' } | { kind: 'open'; name: string; url: string; expiresIso: string }
+	>({ kind: 'closed' });
 	let groupIds = $state<string[]>([]);
 
 	const selectedId = $derived(
@@ -50,6 +57,7 @@
 		email = '';
 		role = 'member';
 		password = '';
+		signIn = 'invite';
 		problem = undefined;
 		panel = { kind: 'add' };
 	}
@@ -85,16 +93,51 @@
 			name,
 			email,
 			role,
-			password: password === '' ? { kind: 'none' } : { kind: 'set', value: password }
+			signIn: signIn === 'password' ? { kind: 'password', value: password } : { kind: signIn }
 		});
 		busy = false;
 		if (!result.ok) {
 			problem = result.message;
 			return;
 		}
-		showToast(`${result.data.name} can now sign in.`, 'success');
 		close();
+		told(result.data.user.name, result.data.invitation);
 		await refreshAll();
+	}
+
+	/** Says how the person hears about their account (SPEC-EMAIL E5). */
+	function told(who: string, invitation: Invitation): void {
+		switch (invitation.kind) {
+			case 'none':
+				showToast(`${who} can now sign in.`, 'success');
+				return;
+			case 'emailed':
+				showToast(`Invitation emailed to ${invitation.to}.`, 'success');
+				return;
+			case 'link':
+				link = { kind: 'open', name: who, url: invitation.url, expiresIso: invitation.expiresIso };
+				return;
+		}
+	}
+
+	async function invite(user: UserView): Promise<void> {
+		const result = await sendInvitation(user.id);
+		if (!result.ok) {
+			showToast(result.message, 'error');
+			return;
+		}
+		close();
+		told(user.name, result.data);
+	}
+
+	/** Never signed in, no password and no provider: an invitation can be (re)sent. */
+	function canInvite(user: UserView): boolean {
+		return (
+			user.status.kind === 'active' &&
+			!user.hasPassword &&
+			user.providerNames.length === 0 &&
+			user.lastSignIn.kind === 'never'
+		);
 	}
 
 	/** Sends only what changed, one step at a time; stops at the first refusal. */
@@ -226,8 +269,9 @@
 		bind:role
 		bind:password
 		emailEditable={{ kind: 'yes' }}
-		passwordMode={{ kind: 'optional-new' }}
+		passwordMode={{ kind: 'chosen-separately' }}
 	/>
+	<SignInChoice bind:choice={signIn} bind:password emailReady={data.emailReady} />
 	{#if problem !== undefined}<p class="problem" role="alert">{problem}</p>{/if}
 	{#snippet footer()}
 		<Button variant="secondary" size="compact" type="button" onclick={close}>Cancel</Button>
@@ -236,6 +280,8 @@
 		</Button>
 	{/snippet}
 </Modal>
+
+<InvitationLink {link} onclose={() => (link = { kind: 'closed' })} />
 
 <Modal
 	open={panel.kind === 'view' && selected !== undefined}
@@ -271,6 +317,11 @@
 	{#snippet footer()}
 		{#if selected !== undefined}
 			{@const user = selected}
+			{#if canInvite(user)}
+				<Button variant="secondary" size="compact" type="button" onclick={() => void invite(user)}>
+					Send invitation
+				</Button>
+			{/if}
 			{#if user.status.kind === 'active'}
 				{#if user.id !== data.me}
 					<Button

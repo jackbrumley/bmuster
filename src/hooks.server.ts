@@ -12,6 +12,7 @@ import {
 	startupServedCertificate
 } from '#lib/server/services/agents/local-tls.ts';
 import { applyFirstRunLocalNetworkMode, prepareFirstRun } from '#lib/server/services/auth/setup.ts';
+import { startEmailWorker } from '#lib/server/services/email/email-worker.ts';
 import { printToServerLog, serverSetupCode } from '#lib/server/services/auth/setup-code.ts';
 import { registerSocketRoutes } from '#lib/server/sockets/socket-registry.ts';
 import { SOCKET_ROUTES } from '#lib/server/sockets/socket-route-table.ts';
@@ -23,8 +24,8 @@ import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts
  * server.ts before the server takes requests; on a server with no users the
  * installer's local network mode default is applied first (SPEC-SERVER-INSTALL
  * I12), then the first admin is created from the environment, or a setup code
- * is printed (SPEC-SIGN-IN S17, S18). The dev server registers Vite's own
- * certificate.
+ * is printed (SPEC-SIGN-IN S17, S18); the email queue starts working
+ * (SPEC-EMAIL E3). The dev server registers Vite's own certificate.
  */
 export const init: ServerInit = async () => {
 	registerSocketRoutes(SOCKET_ROUTES);
@@ -35,6 +36,7 @@ export const init: ServerInit = async () => {
 		);
 	}
 	await prepareFirstRun(database, env.firstAdmin, serverSetupCode, printToServerLog, Date.now());
+	startEmailWorker(database, env.secretsKey);
 };
 
 /**

@@ -1,6 +1,11 @@
 import { apiRequest, type ApiResult } from '#lib/utils/api-client.ts';
 import { changedReplySchema } from '#lib/schemas/access/access.ts';
-import { userReplySchema } from '#lib/schemas/users/users.ts';
+import {
+	createUserReplySchema,
+	invitationReplySchema,
+	userReplySchema
+} from '#lib/schemas/users/users.ts';
+import type { Invitation, SignInChoice } from '#lib/domain/users/invitation.ts';
 import type { ConsoleRole, UserView } from '#lib/domain/users/user.ts';
 
 /** The Users page's requests. Each returns the user as the server now has them. */
@@ -25,15 +30,25 @@ export async function addUser(input: {
 	name: string;
 	email: string;
 	role: ConsoleRole;
-	password: { kind: 'none' } | { kind: 'set'; value: string };
-}): Promise<ApiResult<UserView>> {
-	const result = await apiRequest({
+	signIn: SignInChoice;
+}): Promise<ApiResult<{ user: UserView; invitation: Invitation }>> {
+	return apiRequest({
 		method: 'POST',
 		url: '/api/users',
 		body: input,
-		reply: userReplySchema
+		reply: createUserReplySchema
 	});
-	return result.ok ? { ok: true, data: result.data.user } : result;
+}
+
+/** A fresh invitation for someone with no password yet (SPEC-EMAIL E5). */
+export async function sendInvitation(id: string): Promise<ApiResult<Invitation>> {
+	const result = await apiRequest({
+		method: 'POST',
+		url: `/api/users/${id}/invitation`,
+		body: {},
+		reply: invitationReplySchema
+	});
+	return result.ok ? { ok: true, data: result.data.invitation } : result;
 }
 
 /** Puts the person in exactly these user groups (SPEC-ACCESS A1). */

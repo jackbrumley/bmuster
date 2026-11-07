@@ -18,7 +18,7 @@ export function emailKindLabel(kind: EmailKind): string {
 	}
 }
 
-export type EmailMessageStatus =
+type EmailMessageStatus =
 	| { kind: 'queued'; attempts: number; nextAttemptIso: string; lastError: string | null }
 	| { kind: 'sent'; atIso: string; reply: string }
 	| { kind: 'failed'; atIso: string; attempts: number; error: string };

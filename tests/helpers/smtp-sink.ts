@@ -6,7 +6,7 @@ import { createServer, type Server, type Socket } from 'node:net';
  * SMTP for upyo (EHLO, AUTH PLAIN and LOGIN, MAIL, RCPT, DATA, QUIT), offers
  * no STARTTLS, and can refuse recipients to test failures.
  */
-export type SunkMessage = {
+type SunkMessage = {
 	from: string;
 	to: string[];
 	/** The raw message as received, headers and body. */
