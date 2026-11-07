@@ -159,7 +159,7 @@ export class SessionLink {
 		}
 	}
 
-	sendBytes(data: Uint8Array): void {
+	sendBytes(data: Uint8Array<ArrayBuffer>): void {
 		if (this.#socket?.readyState === WebSocket.OPEN) {
 			this.#socket.send(data);
 		}

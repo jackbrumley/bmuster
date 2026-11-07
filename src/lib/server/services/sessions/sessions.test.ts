@@ -344,7 +344,7 @@ describe('desktop tickets (SPEC-DESKTOP R2, R3)', () => {
 		expect(result).toMatchObject({ kind: 'refused', status: 409 });
 		expect(result.kind === 'refused' ? result.message : '').toContain('asks the person');
 		expect(sent.filter((item) => item.type === 'session-open')).toEqual([]);
-		// An unattended rule for the same permission wins (SPEC-ACCESS: any rule says so).
+		// An unattended rule for the same permission wins (SPEC-ACCESS: one such rule is enough).
 		grantAccess(database, {
 			adminId: admin.id,
 			name: 'Unattended',
