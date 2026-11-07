@@ -6,12 +6,14 @@
 //!
 //! [`show`] registers a viewer and returns a [`Notice`] that takes the name
 //! off the bar when dropped. The bar itself is drawn by the platform module
-//! on its own thread: an override-redirect window on X11. A session that
-//! follows the screen moves the bar with [`keep_on`] when the screen
-//! changes, and puts it back if its X server went away. Windows draws no
-//! bar yet (a layered window excluded from capture, SPEC-DESKTOP 8), so
-//! there the notice only logs.
+//! on its own thread: an override-redirect window on X11, a topmost tool
+//! window kept out of the capture on Windows (drawn by the desktop helper,
+//! on the user's desktop only). A session that follows the screen moves the
+//! bar with [`keep_on`] when the screen changes, and puts it back if its X
+//! server went away.
 
+#[cfg(windows)]
+pub mod windows;
 #[cfg(target_os = "linux")]
 pub mod x11;
 
@@ -21,10 +23,10 @@ use std::sync::mpsc::Sender;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-/// Where the bar is drawn: the X display on Linux; nothing yet on Windows.
+/// Where the bar is drawn: the X display on Linux.
 #[cfg(target_os = "linux")]
 pub type Target = crate::capture::x11_session::X11Target;
-/// Windows draws no bar yet, so there is one place for it: the console.
+/// Elsewhere one place: the helper's own (Default) desktop on Windows.
 #[cfg(not(target_os = "linux"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target;
@@ -218,7 +220,18 @@ fn start_bar(target: &Target, names: Vec<String>) -> Option<Sender<BarCommand>> 
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+fn start_bar(_target: &Target, names: Vec<String>) -> Option<Sender<BarCommand>> {
+    match windows::start(names) {
+        Ok(bar) => Some(bar),
+        Err(error) => {
+            log::error!("Could not show the notice bar: {error}");
+            None
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn start_bar(_target: &Target, names: Vec<String>) -> Option<Sender<BarCommand>> {
     log::warn!(
         "The notice bar is not built for this platform yet; {} is connected",

@@ -26,3 +26,20 @@ pub mod input_desktop;
 pub mod launch;
 #[cfg(windows)]
 pub mod pipe;
+
+/// Called once when the helper starts: per-monitor DPI awareness, so the
+/// display rectangles, the cursor position and `SendInput` all use real
+/// pixels, as DXGI does. Without it Windows scales them on high-DPI screens
+/// and clicks land in the wrong place.
+#[cfg(windows)]
+pub fn prepare_helper_process() {
+    use ::windows::Win32::UI::HiDpi::{
+        SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    };
+    // SAFETY: a process-wide setting made before any window or capture.
+    if let Err(error) =
+        unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) }
+    {
+        log::warn!("Could not make the desktop helper DPI aware: {error}");
+    }
+}
