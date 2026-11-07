@@ -3,3 +3,9 @@ package-lock.json
 /src/lib/server/database/migrations/
 /agent/
 /LICENSE
+
+# The bmuster.com site (Jekyll/Liquid templates, which Prettier would mangle)
+/docs/_layouts/
+/docs/_includes/
+/docs/*.html
+/docs/styles.css

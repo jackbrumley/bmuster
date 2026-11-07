@@ -1,0 +1,14 @@
+# GitHub Pages (Jekyll) settings for bmuster.com, served from main /docs
+# like the Yambuck and Voquill sites. The project notes and specs in this
+# folder are for contributors, so they stay out of the public site.
+title: BMuster
+url: https://bmuster.com
+repo_url: https://github.com/jackbrumley/bmuster
+license_label: GNU AGPLv3
+license_url: https://www.gnu.org/licenses/agpl-3.0.html
+exclude:
+  - specs
+  - concept.md
+  - engineering-plan.md
+  - access-and-sign-in.md
+  - mcp.md

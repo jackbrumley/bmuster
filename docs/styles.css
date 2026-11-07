@@ -1,0 +1,935 @@
+/* BMuster website styles.
+   Shares the layout language of brumley.info and the Yambuck / Voquill pages
+   (gradient hero with an angled edge, glass install panel, Inter type) in
+   BMuster's lime brand colour (#65a30d light, #a3e635 dark, as in the console). */
+
+/* Fonts: Inter, self-hosted (SIL OFL 1.1, see assets/fonts/OFL.txt). */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url("assets/fonts/inter-latin-300-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("assets/fonts/inter-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("assets/fonts/inter-latin-600-normal.woff2") format("woff2");
+}
+
+/* Tokens */
+
+:root {
+  --bg: #ffffff;
+  --surface: rgba(255, 255, 255, 0.84);
+  --surface-solid: #ffffff;
+  --border: #dfe8d6;
+  --text: #111a14;
+  --muted: #4f5d52;
+  --accent: #4d7c0f;
+  --brand-lime: #a3e635;
+  --brand-green: #34d399;
+  --on-brand: #1b221d;
+  --inline-code-bg: #eef4e6;
+  --code-bg: #121a14;
+  --code-text: #eef3ea;
+  --code-border: #2a3a2e;
+  --status-bg: #ecf7dc;
+  --status-text: #3f6212;
+  --warn-bg: #fdf1dc;
+  --warn-text: #8a5300;
+  --hero-wash:
+    radial-gradient(ellipse 55% 85% at 88% 5%, rgba(52, 211, 153, 0.26) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 90% at 5% 0%, rgba(163, 230, 53, 0.28) 0%, transparent 70%),
+    linear-gradient(180deg, #f1f8e6 0%, #eef8ee 100%);
+  --panel-shadow: 0 1px 2px rgba(17, 26, 20, 0.05), 0 18px 50px rgba(77, 124, 15, 0.12);
+  --card-shadow: 0 1px 2px rgba(17, 26, 20, 0.05), 0 4px 16px rgba(17, 26, 20, 0.04);
+  --tile-bg: linear-gradient(145deg, #e6f5cf, #dcf5e6);
+  --tile-rim: rgba(17, 26, 20, 0.06);
+  --tile-glow: 0 10px 26px rgba(77, 124, 15, 0.2);
+  --icon-glow: none;
+  --app-tile-base: #ffffff;
+  --app-tile-mix: 14%;
+  --shot-shadow: 0 10px 32px rgba(17, 26, 20, 0.16);
+  --overlay: rgba(6, 10, 7, 0.9);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b100c;
+    --surface: rgba(18, 26, 20, 0.88);
+    --surface-solid: #141c16;
+    --border: #26332a;
+    --text: #eef3ea;
+    --muted: #a6b5a8;
+    --accent: #a3e635;
+    --inline-code-bg: rgba(255, 255, 255, 0.07);
+    --code-bg: #070b08;
+    --status-bg: rgba(52, 211, 153, 0.12);
+    --status-text: #bef264;
+    --warn-bg: #3a2c12;
+    --warn-text: #f5c26b;
+    --hero-wash:
+      radial-gradient(ellipse 55% 85% at 88% 5%, rgba(52, 211, 153, 0.16) 0%, transparent 70%),
+      radial-gradient(ellipse 70% 90% at 5% 0%, rgba(163, 230, 53, 0.2) 0%, transparent 70%),
+      linear-gradient(180deg, #1d3318 0%, #0e150f 100%);
+    --panel-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    --card-shadow: none;
+    --tile-bg: linear-gradient(145deg, #2a4416, #183a2a);
+    --tile-rim: rgba(255, 255, 255, 0.16);
+    --tile-glow: 0 8px 30px rgba(163, 230, 53, 0.3);
+    --icon-glow: drop-shadow(0 0 8px rgba(163, 230, 53, 0.45));
+    --app-tile-base: #1f2a22;
+    --app-tile-mix: 30%;
+    --shot-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* Base */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-underline-offset: 2px; }
+a:hover { color: var(--text); }
+
+strong, b, th { font-weight: 600; }
+
+code, pre {
+  font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", ui-monospace, "DejaVu Sans Mono", monospace;
+}
+
+code {
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+  background: var(--inline-code-bg);
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+h2 {
+  margin: 0 0 16px;
+  font-size: 1.6rem;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Hero */
+
+.hero {
+  position: relative;
+  background: var(--hero-wash);
+  clip-path: polygon(0 0, 100% 0, 100% 80%, 26% 100%, 0 90%);
+  padding: 28px 16px 150px;
+  overflow: hidden;
+}
+
+.hero-compact { padding-bottom: 170px; }
+
+.hero-inner { max-width: 960px; margin: 0 auto; }
+
+/* Top bar: same row as Rusty G6 and SomeDrive. */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.topbar a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+.topbar a:hover { color: var(--text); }
+
+/* Top-aligned with a fixed offset, so the tile and heading sit in the same
+   place on every app page however long the description is. */
+.hero-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  margin-top: 40px;
+}
+
+.hero-copy { max-width: 540px; padding-top: 9px; }
+
+.hero-tile {
+  display: inline-grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  border-radius: 24px;
+  background: var(--tile-bg);
+  box-shadow: inset 0 0 0 1px var(--tile-rim), inset 0 1px 0 rgba(255, 255, 255, 0.35), var(--tile-glow);
+}
+
+.hero-tile img { width: 64px; height: 64px; filter: var(--icon-glow); }
+
+.hero h1 {
+  margin: 22px 0 0;
+  font-size: clamp(2.6rem, 7vw, 3.8rem);
+  font-weight: 300;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+
+.tagline {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+/* "Back to Home" above a sub-page heading, as on voquill.org. */
+.crumb a { color: var(--muted); text-decoration: none; font-size: 0.92rem; }
+.crumb a:hover { color: var(--text); }
+.hero .crumb + h1 { margin-top: 14px; }
+.crumb-docs { margin-top: 40px; }
+
+.hero-art {
+  flex: none;
+  width: 360px;
+  height: auto;
+  margin-right: -20px;
+}
+
+/* Page body */
+
+.page {
+  max-width: 992px; /* 960px of content, matching .hero-inner, plus side padding */
+  margin: -110px auto 0;
+  padding: 0 16px 48px;
+  position: relative;
+}
+
+.section { margin-top: 64px; }
+
+/* Glass panels */
+
+.panel {
+  position: relative;
+  padding: 28px 28px 24px;
+  background: var(--surface);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--panel-shadow);
+  overflow: hidden;
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand-lime), var(--brand-green));
+}
+
+.panel + .panel { margin-top: 24px; }
+.panel-secondary::before { opacity: 0.45; }
+
+.panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 10px;
+}
+
+.panel-header h2 { margin: 0; }
+
+.panel-lede { margin: 0 0 18px; color: var(--muted); }
+
+.panel-foot {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.status {
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: var(--status-bg);
+  color: var(--status-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.status-warn { background: var(--warn-bg); color: var(--warn-text); }
+
+.command-note {
+  margin: 6px 0 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.command-note-center { text-align: center; margin-top: 10px; }
+
+/* Install picker */
+
+.install-variants {
+  display: flex;
+  justify-content: center;
+  gap: 1.25rem;
+  margin: 4px 0 0;
+}
+
+.install-variant-btn {
+  position: relative;
+  background: transparent;
+  border: none;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0.3rem 0.6rem 0.45rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.install-variant-btn::after {
+  content: "";
+  position: absolute;
+  left: 0.6rem;
+  right: 0.6rem;
+  bottom: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--brand-lime), var(--brand-green));
+  opacity: 0;
+  transform: scaleX(0.4);
+  transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.install-variant-btn:hover,
+.install-variant-btn.active { color: var(--text); }
+.install-variant-btn.active::after { opacity: 1; transform: none; }
+.install-variant-btn:focus-visible { outline-offset: 2px; }
+
+.command-hint {
+  margin: 18px 0 8px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.command-hint strong { color: var(--text); }
+
+.command-shell {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.command-shell code {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 0.9rem;
+  background: none;
+  border-radius: 0;
+  color: var(--code-text);
+  font-size: 0.85rem;
+  white-space: pre;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.copy-btn {
+  flex: none;
+  min-width: 72px;
+  padding: 0 14px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--code-border);
+  color: rgba(238, 243, 234, 0.78);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.copy-btn:hover { color: #ffffff; background: #1f2d22; }
+.copy-btn:focus-visible { outline-offset: -3px; }
+
+/* Buttons */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.button svg { width: 18px; height: 18px; flex: none; }
+
+.button-primary {
+  background: linear-gradient(135deg, var(--brand-lime), var(--brand-green));
+  color: var(--on-brand);
+  box-shadow: 0 8px 22px rgba(101, 163, 13, 0.28);
+}
+
+.button-primary:hover {
+  color: var(--on-brand);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(101, 163, 13, 0.38);
+}
+
+.button-secondary {
+  background: var(--surface-solid);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.button-secondary:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.button-ghost {
+  padding: 7px 14px;
+  font-size: 0.88rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+
+.button-ghost svg { width: 16px; height: 16px; }
+
+.button-ghost:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* What it does (same as the Rusty G6 and SomeDrive pages) */
+
+/* "What it does": one paragraph (what it is, what it does, why it exists),
+   then the cards (App Standard, Install Page). */
+.features .features-lead {
+  max-width: 72ch;
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.features ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.features li {
+  position: relative;
+  padding: 14px 16px 14px 40px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+}
+
+.features li::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 21px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, var(--brand-lime), var(--brand-green));
+  transform: rotate(45deg);
+}
+
+/* Quick start steps */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+}
+
+.step p { margin: 0; color: var(--muted); }
+
+.step .step-kicker {
+  position: relative;
+  padding-left: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.step-kicker::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-top: -5px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, var(--brand-lime), var(--brand-green));
+  transform: rotate(45deg);
+}
+
+.step-action { align-self: flex-start; margin-top: 6px; }
+
+/* Screenshot frames */
+
+.shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shot-shadow);
+}
+
+.preview-carousel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.preview-image-wrap { flex: 1; min-width: 0; }
+
+.round-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.round-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.preview-badge {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.preview-actions { display: flex; justify-content: center; margin-top: 16px; }
+
+.screenshots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 18px;
+  margin-top: 8px;
+}
+
+.screenshot-card {
+  margin: 0;
+  cursor: zoom-in;
+  border-radius: 12px;
+}
+
+.screenshot-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shot-shadow);
+  transition: transform 0.2s ease;
+}
+
+.screenshot-card:hover img { transform: translateY(-3px); }
+
+.screenshot-card figcaption {
+  margin-top: 10px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: none;
+  place-items: center;
+  padding: 64px 72px;
+  background: var(--overlay);
+}
+
+.lightbox.open { display: grid; }
+
+.lightbox-image {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.lightbox button {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(18, 26, 20, 0.85);
+  color: #ffffff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.lightbox button:hover { border-color: var(--brand-lime); }
+
+.lightbox-close {
+  top: 16px;
+  right: 16px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.lightbox-nav {
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin-top: -23px;
+  border-radius: 50%;
+}
+
+.lightbox-nav-prev { left: 14px; }
+.lightbox-nav-next { right: 14px; }
+
+/* Donate */
+
+.donate-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.donate-actions { display: flex; }
+
+.donate-qr-wrap a { display: block; border-radius: 14px; }
+
+.donate-qr {
+  display: block;
+  width: 190px;
+  height: auto;
+  padding: 10px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  box-shadow: var(--shot-shadow);
+}
+
+/* Support band */
+
+.support {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 64px;
+  padding: 28px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(ellipse 60% 120% at 100% 0%, rgba(52, 211, 153, 0.14), transparent 70%),
+    radial-gradient(ellipse 60% 120% at 0% 100%, rgba(163, 230, 53, 0.14), transparent 70%),
+    var(--surface-solid);
+}
+
+.support h2 { margin: 0 0 6px; font-size: 1.35rem; font-weight: 400; }
+
+.support-copy p { margin: 0; color: var(--muted); max-width: 560px; }
+.support-copy .command-note { margin-top: 8px; }
+
+.support-actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Markdown docs (rendered by GitHub Pages from docs/*.md) */
+
+.prose { padding: 32px 36px; }
+
+.prose > :first-child { margin-top: 0; }
+
+.prose h1 {
+  font-size: 2.2rem;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.prose h2 { margin: 40px 0 12px; }
+.prose h3 { margin: 28px 0 8px; }
+.prose li + li { margin-top: 4px; }
+
+.prose pre {
+  padding: 14px 16px;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 10px;
+  color: var(--code-text);
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+
+.prose pre code { padding: 0; background: none; font-size: inherit; color: inherit; }
+
+.prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.prose th, .prose td {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose blockquote {
+  margin: 16px 0;
+  padding: 2px 16px;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
+
+.prose hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0; }
+
+/* Footer: family links */
+
+.site-footer { margin-top: 72px; }
+
+.other-apps-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.all-apps { color: var(--accent); font-size: 0.9rem; font-weight: 400; text-decoration: none; }
+.all-apps:hover { text-decoration: underline; }
+
+.app-tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.app-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-solid);
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.app-tile:hover {
+  color: var(--text);
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--app) 45%, var(--border));
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--app) 18%, transparent);
+}
+
+.app-tile.is-current { border-color: color-mix(in srgb, var(--app) 55%, var(--border)); }
+
+.tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+  background: linear-gradient(145deg,
+    color-mix(in srgb, var(--app) var(--app-tile-mix), var(--app-tile-base)),
+    color-mix(in srgb, var(--app-2) calc(var(--app-tile-mix) * 0.6), var(--app-tile-base)));
+  box-shadow: inset 0 0 0 1px var(--tile-rim), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.tile img { width: 34px; height: 34px; }
+
+.footer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 32px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.footer-meta a { color: var(--muted); }
+.footer-meta a:hover { color: var(--accent); }
+
+/* Responsive */
+
+/* Manual download button, as on voquill.org */
+
+.install-manual {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.manual-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-solid);
+  color: var(--text);
+  box-shadow: var(--card-shadow);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.manual-btn:hover,
+.manual-btn:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.manual-icon { width: 1.5em; height: 1.5em; flex-shrink: 0; }
+
+.install-manual + .panel-foot { margin-top: 14px; padding-top: 0; border-top: 0; }
+
+@media (max-width: 760px) {
+  .hero { padding-bottom: 140px; }
+  .hero-compact { padding-bottom: 160px; }
+  .hero-row { position: relative; margin-top: 28px; }
+  .hero-copy { position: relative; z-index: 1; padding-top: 0; }
+  .hero-art {
+    position: absolute;
+    right: -110px;
+    top: -30px;
+    width: 280px;
+    opacity: 0.4;
+  }
+  .panel { padding: 22px 16px 18px; }
+  .prose { padding: 22px 18px; }
+  .install-variants { gap: 0.4rem; }
+  .install-variant-btn { letter-spacing: 0.1em; font-size: 0.76rem; }
+  .support { flex-direction: column; align-items: flex-start; padding: 22px; }
+  .support-actions { align-self: stretch; }
+  .donate-body { flex-direction: column; align-items: flex-start; }
+  .preview-carousel { gap: 8px; }
+  .round-btn { width: 34px; height: 34px; font-size: 0.85rem; }
+  .app-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lightbox { padding: 64px 12px; }
+  .lightbox-nav { top: auto; bottom: 14px; margin-top: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; }
+  .button:hover, .app-tile:hover, .screenshot-card:hover img { transform: none; }
+}
+
+/* BMuster's mark is its own dark tile, so it fills the hero tile edge to edge
+   instead of sitting on the gradient tile the other app pages use. */
+.hero-tile-solid { background: none; box-shadow: var(--tile-glow); overflow: hidden; }
+.hero-tile-solid img { width: 92px; height: 92px; filter: none; }

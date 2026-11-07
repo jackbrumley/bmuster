@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {% include site-head.html %}
+  </head>
+  <body class="{{ page.body_class }}">
+    {%- assign source_ext = page.name | split: "." | last -%}
+    {% if source_ext == "md" %}
+    <header class="hero hero-compact">
+      <div class="hero-inner">
+        {% include brand.html %}
+        <nav class="crumb crumb-docs" aria-label="Breadcrumb">
+          <a href="{{ '/' | relative_url }}">&larr; Back to Home</a>
+        </nav>
+      </div>
+    </header>
+    <main class="page">
+      <article class="panel prose">
+        {{ content }}
+      </article>
+      {% include site-footer.html %}
+    </main>
+    {% else %}
+    {{ content }}
+    {% endif %}
+  </body>
+</html>
