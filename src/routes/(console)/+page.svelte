@@ -3,12 +3,18 @@
 	import { resolve } from '$app/paths';
 	import { IconDevices, IconLockAccess, IconSearch } from '@tabler/icons-svelte-runes';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
+	import type { DataTableSort } from '#lib/ui/data-table/data-table-types.ts';
 	import EmptyState from '#lib/ui/empty-state.svelte';
+	import ExportButton from '#lib/ui/export-button.svelte';
 	import Notice from '#lib/ui/notice.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
-	import { matchesSearch } from '#lib/domain/machines/machine.ts';
+	import {
+		machinesMatching,
+		matchesFilter,
+		toMachineRow,
+		type MachineFilter
+	} from '#lib/domain/machines/machine-row.ts';
 	import MachineCards from './machine-cards.svelte';
-	import { matchesFilter, toMachineRow, type MachineFilter } from './machine-row.ts';
 	import MachineTable from './machine-table.svelte';
 	import { defaultView, readSavedView, saveView, type MachinesView } from './machines-view.ts';
 	import type { PageProps } from './$types';
@@ -43,9 +49,24 @@
 		}
 	}
 
-	const visible = $derived(
-		rows.filter((row) => matchesFilter(row, filter ?? 'all') && matchesSearch(row.machine, query))
-	);
+	const visible = $derived(machinesMatching(rows, query, filter ?? 'all'));
+
+	// The Table view's sort, kept here so the export lists machines in the same order.
+	let sort = $state<DataTableSort>({ column: 'name', direction: 'asc' });
+
+	/**
+	 * Every machine matching the search and filter, not just the batches drawn
+	 * (X6): the server applies them again behind the access check. Cards view
+	 * keeps the list order, so it sends no sort.
+	 */
+	const exportHref = $derived.by(() => {
+		const search = new URLSearchParams({
+			...(query.trim() === '' ? {} : { search: query.trim() }),
+			...(filter === null || filter === 'all' ? {} : { filter }),
+			...(view === 'table' ? { sort: sort.column, direction: sort.direction } : {})
+		}).toString();
+		return `${resolve('/api/exports/machines')}${search === '' ? '' : `?${search}`}`;
+	});
 
 	// A new search or filter starts the list again from the first batch.
 	const resetKey = $derived(`${filter ?? 'all'}|${query}`);
@@ -75,14 +96,15 @@
 	);
 </script>
 
-{#snippet viewSwitch()}
+{#snippet headerActions()}
 	<ChipGroup label="View" options={viewOptions} bind:value={() => view, pickView} />
+	<ExportButton href={exportHref} />
 {/snippet}
 
 <PageHeader
 	title="Machines"
 	{summary}
-	actions={data.view.kind === 'machines' && machines.length > 0 ? viewSwitch : undefined}
+	actions={data.view.kind === 'machines' && machines.length > 0 ? headerActions : undefined}
 />
 
 {#if data.rollout.kind === 'rollout' && data.rollout.paused.kind === 'paused' && data.rollout.paused.by === 'system'}
@@ -125,7 +147,7 @@
 			children={undefined}
 		/>
 	{:else if view === 'table'}
-		<MachineTable rows={visible} now={data.now} batchSize={BATCH_SIZE} {resetKey} />
+		<MachineTable rows={visible} now={data.now} batchSize={BATCH_SIZE} {resetKey} bind:sort />
 	{:else}
 		<MachineCards rows={visible} now={data.now} batchSize={BATCH_SIZE} {resetKey} />
 	{/if}

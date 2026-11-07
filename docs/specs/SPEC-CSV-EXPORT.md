@@ -1,0 +1,75 @@
+# SPEC-CSV-EXPORT: CSV export on every list
+
+**Status:** `IMPLEMENTED` (X1–X8 built; version bump and changelog left for the release step) · asked for 2026-11-07 · **Date:** 2026-11-07
+
+## 1. Problem
+
+Admins need lists out of BMuster for audits, asset registers and outside parties: machines, users, groups, access rules and activity (`docs/concept.md`, Later). Copying from the screen is slow, and the Machines list only draws rows as you scroll. An export is also a way to take data out of the server, so it must respect the viewer's access and be audited like any other read of note.
+
+## 2. Acceptance criteria
+
+| #   | Criterion                                                                                                                                                                                                                                                                                                  | Test                                                           |
+| :-- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------- |
+| X1  | Machines, Users, Groups, Access rules and Activity each have an **Export** button (secondary, download icon) in the page header. On Machines it sits next to the Cards / Table switch, and the header still wraps cleanly at 390px.                                                                        | `export-button.svelte.test.ts`, `machines-page.svelte.test.ts` |
+| X2  | Each export is a server `GET` that answers `text/csv; charset=utf-8` with `Content-Disposition: attachment; filename="bmuster-<list>-<YYYY-MM-DD>.csv"`, UTF-8 with a byte order mark so Excel reads it correctly, lines ending CRLF.                                                                      | `exports.test.ts`                                              |
+| X3  | Cells follow RFC 4180: a cell with a comma, quote, CR or LF is quoted, and quotes inside are doubled.                                                                                                                                                                                                      | `csv.test.ts`                                                  |
+| X4  | **Injection guard:** a text cell that starts with `=`, `+`, `-`, `@`, tab or CR gets a leading `'`, so a spreadsheet never runs it as a formula. Numbers are written as numbers.                                                                                                                           | `csv.test.ts`                                                  |
+| X5  | An export holds only what the viewer may see, through the same access service the page uses: a member's Machines export lists only machines they can see and leaves out machine group names; their Activity export only entries about those machines. Users, Groups and Access rules are admin-only (403). | `exports.test.ts`, `guards.test.ts`                            |
+| X6  | Machines exports **every** machine matching the current search and filter (not just the rows drawn so far), in the order on screen: the table's sort in Table view, the list order in Cards view.                                                                                                          | `exports.test.ts`, `machines-page.svelte.test.ts`              |
+| X7  | Activity exports newest first, up to 100 000 rows, with time in ISO (UTC) and in the viewer's time zone, and takes an optional date range. When there are more, the last line says the export was cut off and how to get the rest.                                                                         | `exports.test.ts`                                              |
+| X8  | Every export is audited (`list-exported`): who, which list, how many rows, and the search, filter, sort and date range used.                                                                                                                                                                               | `exports.test.ts`                                              |
+
+## 3. Columns
+
+| List         | Columns                                                                                                                                             |
+| :----------- | :-------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Machines     | Name, Host, Status, OS, OS version, CPU %, Memory %, Disk % (fullest), Last user, Last seen (ISO), Groups (admins only), Agent version, Description |
+| Users        | Name, Email, Role, Sign-in method, Groups, Last sign-in (ISO), Disabled                                                                             |
+| Groups       | Name, Kind (People / Machines), Member count, Members                                                                                               |
+| Access rules | Who (group of people), What machines (group of machines), Permissions, Consent                                                                      |
+| Activity     | Time (ISO), Time (local, `<zone>`), Actor, Action, Target, IP, Details                                                                              |
+
+Lists inside a cell (groups, members, permissions) are joined with `; `. An unknown figure is an empty cell.
+
+## 4. Routes
+
+| Method | Path                        | Guard | Query                                                                                |
+| :----- | :-------------------------- | :---- | :----------------------------------------------------------------------------------- |
+| GET    | `/api/exports/machines`     | user  | `search`, `filter` (`all` · `online` · `offline` · `attention`), `sort`, `direction` |
+| GET    | `/api/exports/users`        | admin | none                                                                                 |
+| GET    | `/api/exports/groups`       | admin | none                                                                                 |
+| GET    | `/api/exports/access-rules` | admin | none                                                                                 |
+| GET    | `/api/exports/activity`     | user  | `timeZone` (IANA name), `from`, `to` (ISO times, optional)                           |
+
+No schema change: the audit log gains one kind, `list-exported`.
+
+## 5. Security notes
+
+- Read-only, but it moves data off the server in bulk: the same access checks as the pages (`visibleMachineIds`, `activityScopeFor`, admin guards), never a browser-supplied list.
+- The filters only narrow what the access check allows; no parameter widens it.
+- Formula injection is guarded (X4); the file is served as an attachment with `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
+
+## 6. Open questions
+
+1. Activity has no search, filter or date range on the page today. The export takes `from` and `to` so a later filter bar can pass them through; the button exports everything the viewer may see, newest first, up to the cap. Should Activity get a date-range picker?
+2. Users, Groups and Access rules have no search, filter or sort on screen, so their exports follow the page order.
+
+## 7. As built (2026-11-07)
+
+Built as specified unless listed here. Tested end to end against a scratch server with a seeded database (14 machines, an admin and a member who sees 5): every list downloaded through its Export button, file name, byte order mark, header and row count checked, and the member refused the admin lists.
+
+| #     | Where                                                                                                                                                                                                                                                      | Tests                                                                    |
+| :---- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------- |
+| X1    | `ui/export-button.svelte`: the standard `Button` (secondary, compact) with `IconDownload` and "Export". It downloads through a temporary link with `download`, so the page stays put. Before the primary action on Users and Access rules.                 | `export-button.svelte.test.ts`, `machines-page.svelte.test.ts`           |
+| X2–X4 | `services/exports/csv.ts`: `csvCell`, `csvLine`, `csvResponse` (sent in chunks of 1000 lines; also `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`). The file date is the server's local date.                                                | `csv.test.ts`                                                            |
+| X5    | `services/exports/exports.ts` uses `visibleMachineIds` and `activityScopeFor`; group names go through the new `canSeeGroups` in the access service. Users, Groups and Access rules routes are `route.admin`.                                               | `exports.test.ts`, `guards.test.ts`                                      |
+| X6    | The Machines list rules (`toMachineRow`, filter, search, per-column sort values) moved to `domain/machines/machine-row.ts`, and `sortRows` to `utils/sort-rows.ts`, so the page and the export share one definition. `DataTable`'s `sort` is now bindable. | `exports.test.ts`, `machine-row.test.ts`, `machines-page.svelte.test.ts` |
+| X7    | `audit.listAuditBetween`. The cut-off note is one cell on the last line: "Cut off at 100000 rows: older entries than <ISO time> are not in this file." Local time is `YYYY-MM-DD HH:mm:ss` in the browser's zone (`timeZone` from the Activity page).      | `exports.test.ts`                                                        |
+| X8    | Audit kind `list-exported`, target the list's name, detail `rows` plus `search`, `filter`, `sort`, `timeZone`, `from`, `to` and `cutOff` when used. Not tied to a machine, so only admins see it on Activity.                                              | `exports.test.ts`                                                        |
+
+**Different from the spec or decided while building**
+
+- **Machines columns.** OS is the reported name ("Ubuntu"), or the family before the first inventory; OS version is empty until then. CPU % and Memory % are filled only while the machine is online, as on screen. Groups leaves out All machines, which holds every machine.
+- **Groups.** One file, groups of people first, then groups of machines (All machines first). Members are listed by name.
+- **Activity details.** Every detail except `ip` goes in Details as `label: value`. A member's Activity export holds the same entries as their Activity page, which includes group membership changes about their machines (so a group name can appear there).
+- **Query errors** answer 400 with the first problem, like the JSON routes.

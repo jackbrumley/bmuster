@@ -61,7 +61,7 @@ function renderTable(rows: readonly Person[], batchSize: number) {
 		rows,
 		rowKey: (person: Person) => person.id,
 		rowHref: (person: Person) => resolve('/(console)/machines/[id]', { id: person.id }),
-		initialSort: { column: 'name', direction: 'asc' },
+		sort: { column: 'name', direction: 'asc' },
 		batchSize,
 		resetKey: ''
 	});

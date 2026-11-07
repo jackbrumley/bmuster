@@ -38,3 +38,9 @@ export type UserView = {
 	lastSignIn: { kind: 'never' } | { kind: 'at'; iso: string };
 	createdIso: string;
 };
+
+/** "Password, Microsoft": how someone signs in, as the Users page and its export show it. */
+export function signInSummary(user: Pick<UserView, 'hasPassword' | 'providerNames'>): string {
+	const methods = [...(user.hasPassword ? ['Password'] : []), ...user.providerNames];
+	return methods.length === 0 ? 'Not signed in yet' : methods.join(', ');
+}

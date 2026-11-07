@@ -71,7 +71,9 @@ const AUDIT_KINDS = [
 	'agent-pinned',
 	'agent-unpinned',
 	'agent-rollout-paused',
-	'agent-rollout-resumed'
+	'agent-rollout-resumed',
+	// SPEC-CSV-EXPORT
+	'list-exported'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -230,5 +232,7 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Paused the agent roll-out';
 		case 'agent-rollout-resumed':
 			return 'Resumed the agent roll-out';
+		case 'list-exported':
+			return 'Exported a list';
 	}
 }
