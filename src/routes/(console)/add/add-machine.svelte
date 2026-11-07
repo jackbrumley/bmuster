@@ -10,7 +10,11 @@
 	} from '@tabler/icons-svelte-runes';
 	import CopyField from '#lib/ui/copy-field.svelte';
 	import Panel from '#lib/ui/panel.svelte';
-	import { oneLineInstallCommand, type AgentDownload } from '#lib/domain/machines/agent-release.ts';
+	import {
+		hasBuildFor,
+		oneLineInstallCommand,
+		type AgentDownload
+	} from '#lib/domain/machines/agent-release.ts';
 	import type { OsFamily } from '#lib/domain/machines/machine.ts';
 	import { installPin, type LocalTlsStatus } from '#lib/domain/settings/local-tls.ts';
 	import CertificatePin from './certificate-pin.svelte';
@@ -135,6 +139,22 @@
 
 	{#if target === 'macos'}
 		<p class="hint">The macOS agent is not built yet.</p>
+	{:else if !hasBuildFor(target, downloads)}
+		<div class="step">
+			<p class="error">
+				This server has no {target === 'windows' ? 'Windows' : 'Linux'} agent yet, so the install command
+				would fail.
+			</p>
+			<p class="hint">
+				{#if target === 'windows'}
+					Windows agents are built by the release workflow on GitHub.
+				{:else if devServer}
+					Run <code>npm run agent:release-local</code> to build one for this computer.
+				{:else}
+					Install a release of BMuster that includes the agents.
+				{/if}
+			</p>
+		</div>
 	{:else if joinCode.kind === 'ready'}
 		<div class="step">
 			<p class="label">

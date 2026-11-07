@@ -22,6 +22,20 @@ export type AgentDownload =
 	| { kind: 'none'; target: AgentTarget }
 	| { kind: 'ready'; target: AgentTarget; version: string; size: number; sha256: string };
 
+/** The builds the one-line command for `os` can install: it picks the processor on the machine. */
+export function targetsFor(os: 'linux' | 'windows'): readonly AgentTarget[] {
+	return os === 'windows'
+		? ['x86_64-pc-windows-msvc']
+		: ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'];
+}
+
+/** True when the server has a build the one-line command for `os` can install. */
+export function hasBuildFor(os: 'linux' | 'windows', downloads: readonly AgentDownload[]): boolean {
+	return downloads.some(
+		(download) => download.kind === 'ready' && targetsFor(os).includes(download.target)
+	);
+}
+
 /** `sha256:<base64>` → the `sha256//<base64>` curl's `--pinnedpubkey` takes. */
 function curlPin(pin: string): string {
 	return `sha256//${pin.slice('sha256:'.length)}`;

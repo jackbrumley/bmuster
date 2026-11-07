@@ -184,6 +184,16 @@ describe('Add machine: install manually', () => {
 		expect(production.container.textContent).not.toContain('agent:release-local');
 	});
 
+	it('M1: offers no one-line command for an OS the server has no agent build for', async () => {
+		stubJoinCodes();
+		const linuxOnly = DOWNLOADS.filter((download) => download.target !== 'x86_64-pc-windows-msvc');
+		const screen = await renderPage(linuxOnly, false);
+		await expect.element(screen.getByText('Run in a terminal')).toBeVisible();
+		await screen.getByRole('button', { name: 'Windows' }).click();
+		await expect.element(screen.getByText(/This server has no Windows agent yet/)).toBeVisible();
+		expect(screen.container.textContent).not.toContain('Run in PowerShell as administrator');
+	});
+
 	it('M2: no processor is chosen for Linux until the admin picks one', async () => {
 		const screen = await renderPage(DOWNLOADS, false);
 		await screen.getByText('Install manually').click();
