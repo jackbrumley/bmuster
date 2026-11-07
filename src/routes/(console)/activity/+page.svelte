@@ -31,7 +31,9 @@
 		IconTerminal2,
 		IconUpload,
 		IconUser,
-		IconUsersGroup
+		IconUsersGroup,
+		IconWifi,
+		IconWifiOff
 	} from '@tabler/icons-svelte-runes';
 	import {
 		activityLabel,
@@ -183,6 +185,10 @@
 				return IconEdit;
 			case 'folder-created':
 				return IconFolderPlus;
+			case 'machine-offline':
+				return IconWifiOff;
+			case 'machine-online':
+				return IconWifi;
 		}
 	}
 </script>
@@ -205,7 +211,7 @@
 		<span
 			class="icon"
 			class:refused={entry.kind === 'sign-in-failed'}
-			class:warning={sentence.kind === 'local' && sentence.warning}
+			class:warning={sentence.kind !== 'standard' && sentence.warning}
 		>
 			<Icon size={20} stroke={1.75} />
 		</span>
@@ -217,6 +223,8 @@
 						Reported by the agent {formatRelative(sentence.sentIso, data.now)}, after it was offline
 					</p>
 				{/if}
+			{:else if sentence.kind === 'presence'}
+				<p class="what">{sentence.text}</p>
 			{:else}
 				<p class="what">
 					<strong>{entry.actor.kind === 'user' ? entry.actor.name : 'System'}</strong>

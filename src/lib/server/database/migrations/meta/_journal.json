@@ -78,6 +78,13 @@
       "when": 1794046457211,
       "tag": "0010_early_updates_group",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794055758965,
+      "tag": "0011_machine_presence",
+      "breakpoints": true
     }
   ]
 }

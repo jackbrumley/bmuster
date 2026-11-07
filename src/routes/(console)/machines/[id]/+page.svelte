@@ -52,7 +52,9 @@
 			{
 				label: 'Last seen',
 				value:
-					machine.status.kind === 'online' ? 'Now' : formatRelative(machine.lastSeenIso, data.now)
+					machine.status.kind === 'online'
+						? 'Now'
+						: formatRelative(machine.status.sinceIso, data.now)
 			},
 			{ label: 'Enrolled', value: formatRelative(machine.enrolledIso, data.now) }
 		];

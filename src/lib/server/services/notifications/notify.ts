@@ -149,6 +149,37 @@ function renderEvent(
 				ruleDescription: rule
 			});
 		}
+		case 'machine-offline': {
+			const detail = EVENT_DETAIL_SCHEMAS[kind].parse(raw);
+			return notificationEmail({
+				subject: `Offline: ${detail.machineName}`,
+				heading: 'A machine went offline',
+				summary: `${detail.machineName} has not been connected to BMuster for a minute.`,
+				facts: [
+					{ label: 'Machine', value: detail.machineName },
+					{ label: 'Host name', value: detail.hostname },
+					{ label: 'Offline since', value: detail.offlineSince }
+				],
+				url: `${consoleUrl}/machines/${event.machineId}`,
+				ruleDescription: rule
+			});
+		}
+		case 'machine-online': {
+			const detail = EVENT_DETAIL_SCHEMAS[kind].parse(raw);
+			return notificationEmail({
+				subject: `Back online: ${detail.machineName}`,
+				heading: 'A machine came back online',
+				summary: `${detail.machineName} is connected to BMuster again.`,
+				facts: [
+					{ label: 'Machine', value: detail.machineName },
+					{ label: 'Host name', value: detail.hostname },
+					{ label: 'Offline since', value: detail.offlineSince },
+					{ label: 'Back online', value: event.at.toISOString() }
+				],
+				url: `${consoleUrl}/machines/${event.machineId}`,
+				ruleDescription: rule
+			});
+		}
 	}
 }
 

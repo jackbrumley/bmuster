@@ -4,7 +4,7 @@
 
 	/**
 	 * Online or Offline. `since: 'shown'` adds how long ago an offline machine
-	 * was last seen; tables that show it in a column of their own hide it.
+	 * went offline; tables that show it in a column of their own hide it.
 	 */
 	let { status, now, since }: { status: MachineStatus; now: number; since: 'shown' | 'hidden' } =
 		$props();
@@ -13,7 +13,7 @@
 		status.kind === 'online'
 			? 'Online'
 			: since === 'shown'
-				? `Offline · ${formatRelative(status.lastSeenIso, now)}`
+				? `Offline · ${formatRelative(status.sinceIso, now)}`
 				: 'Offline'
 	);
 </script>

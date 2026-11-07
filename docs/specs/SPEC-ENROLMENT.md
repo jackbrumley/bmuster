@@ -124,7 +124,7 @@ Inventory = {
 - Server → agent: `{ type: 'check-in-now' }`, `{ type: 'watch', intervalMs }`, `{ type: 'unwatch' }`, `{ type: 'pin-update', next }` (local network mode certificate changes, SPEC-INSTALL-OPTIONS L7). Later: `session-open`.
 - Agent → server: `{ type: 'live', cpuPercent, memoryUsedBytes }` every `intervalMs` while watched (a console page is open on that machine).
 - The agent reconnects with back-off (1 s doubling to 60 s).
-- Online = socket open, or a check-in within 3 intervals.
+- Online = socket open, or a check-in within 3 intervals. Superseded by SPEC-PRESENCE: an agent that has used the socket is online while connected and goes offline 60 s after it closes; the check-in rule stays for agents that never open one.
 
 ## 9. Removing a machine
 

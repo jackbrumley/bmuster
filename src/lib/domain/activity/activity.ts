@@ -81,7 +81,10 @@ const AUDIT_KINDS = [
 	'file-uploaded',
 	'files-deleted',
 	'file-renamed',
-	'folder-created'
+	'folder-created',
+	// SPEC-PRESENCE
+	'machine-offline',
+	'machine-online'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -254,5 +257,9 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Renamed a file';
 		case 'folder-created':
 			return 'Made a folder';
+		case 'machine-offline':
+			return 'A machine went offline';
+		case 'machine-online':
+			return 'A machine came back online';
 	}
 }

@@ -13,12 +13,10 @@ import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { raiseNotification } from '../notifications/events.ts';
 import { updateStates } from '../agents/agent-updates.ts';
-import { disconnectAgent, isAgentConnected, liveFigures } from '../agents/live-agents.ts';
+import { disconnectAgent, liveFigures } from '../agents/live-agents.ts';
+import { presenceOf } from '../agents/presence.ts';
 import { sessionRelay } from '../sessions/relay.ts';
 import type { ReleaseLookup } from '../agents/releases.ts';
-
-/** A machine with no socket and no check-in for this many intervals shows Offline. */
-const OFFLINE_AFTER_INTERVALS = 3;
 
 type MachineRow = typeof machines.$inferSelect;
 type StatusRow = typeof machineStatus.$inferSelect;
@@ -168,9 +166,6 @@ function toMachine(
 	updates: ReadonlyMap<string, MachineUpdateState>,
 	now: number
 ): Machine {
-	const connected = isAgentConnected(machine.id);
-	const recent =
-		now - machine.lastSeenAt.getTime() < OFFLINE_AFTER_INTERVALS * machine.checkInSeconds * 1000;
 	return {
 		id: machine.id,
 		name: machine.name,
@@ -188,10 +183,7 @@ function toMachine(
 						seenIso: machine.lastUserSeenAt.toISOString()
 					}
 				: { kind: 'none' },
-		status:
-			connected || recent
-				? { kind: 'online' }
-				: { kind: 'offline', lastSeenIso: machine.lastSeenAt.toISOString() },
+		status: presenceOf(machine, now),
 		live: toLive(machine.id, status),
 		inventory: toInventory(inventory),
 		enrolledIso: machine.enrolledAt.toISOString(),

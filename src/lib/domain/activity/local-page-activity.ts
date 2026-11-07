@@ -1,7 +1,8 @@
 import type { ActivityEntry, AuditKind } from './activity.ts';
 
 /**
- * How Activity words what happened on a machine's local page (SPEC-AGENT-LOCAL 7). The agent
+ * How Activity words what happened on a machine's local page (SPEC-AGENT-LOCAL 7), and a
+ * machine going offline and coming back (SPEC-PRESENCE). The agent
  * reports the events; the server stores whose code was used (`whose`), when it received them
  * (`sentIso`) and any extras in the entry's detail. Browser-safe.
  */
@@ -45,7 +46,9 @@ function isLocalPageKind(kind: AuditKind): kind is LocalPageKind {
 }
 
 export type ActivitySentence =
-	{ kind: 'standard' } | { kind: 'local'; text: string; warning: boolean; sentIso: string };
+	| { kind: 'standard' }
+	| { kind: 'local'; text: string; warning: boolean; sentIso: string }
+	| { kind: 'presence'; text: string; warning: boolean };
 
 function detailValue(entry: ActivityEntry, label: string): string {
 	return entry.detail.find((item) => item.label === label)?.value ?? '';
@@ -55,9 +58,18 @@ function capitalised(text: string): string {
 	return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** The sentence for a local page entry, or `standard` for every other entry. */
+/**
+ * The sentence for a local page entry, or for a machine going offline and coming back
+ * (SPEC-PRESENCE P6: "mint went offline"); `standard` for every other entry.
+ */
 export function activitySentence(entry: ActivityEntry): ActivitySentence {
 	const kind = entry.kind;
+	if (kind === 'machine-offline') {
+		return { kind: 'presence', text: `${entry.target} went offline`, warning: true };
+	}
+	if (kind === 'machine-online') {
+		return { kind: 'presence', text: `${entry.target} came back online`, warning: false };
+	}
 	if (!isLocalPageKind(kind)) {
 		return { kind: 'standard' };
 	}

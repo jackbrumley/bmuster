@@ -6,7 +6,12 @@
  * need no change.
  */
 
-export const NOTIFICATION_EVENT_KINDS = ['machine-enrolled', 'machine-removed'] as const;
+export const NOTIFICATION_EVENT_KINDS = [
+	'machine-enrolled',
+	'machine-removed',
+	'machine-offline',
+	'machine-online'
+] as const;
 
 /** The events a rule can pick. The test notification is sent from a rule itself. */
 export type NotificationEventKind = (typeof NOTIFICATION_EVENT_KINDS)[number];
@@ -28,6 +33,17 @@ export const NOTIFICATION_CATALOGUE: Record<NotificationEventKind | 'test', Cata
 		label: 'Machine removed',
 		description: 'An admin removes a machine; its agent is refused from then on.',
 		carries: ['Machine name', 'Host name', 'Who removed it']
+	},
+	'machine-offline': {
+		label: 'Machine went offline',
+		description:
+			"A machine's live connection has been gone for a minute. Many machines go offline every evening, so pick the machines that matter.",
+		carries: ['Machine name', 'Host name', 'When it went offline']
+	},
+	'machine-online': {
+		label: 'Machine came back online',
+		description: 'A machine that had gone offline connects again.',
+		carries: ['Machine name', 'Host name', 'When it went offline']
 	},
 	test: {
 		label: 'Test notification',

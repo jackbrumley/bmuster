@@ -7,7 +7,6 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { done } from '#tests/helpers/access.ts';
-import { enrolFakeAgent } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import { createGroup, listMachineGroups, setGroupMembers } from '../services/access/groups.ts';
 import { createRule } from '../services/access/rules.ts';
@@ -52,6 +51,23 @@ function databaseBeforeEarlyUpdates(): AppDatabase {
 	return database;
 }
 
+/**
+ * A machine row with only the columns the schema had before the migration:
+ * enrolment code writes today's columns, which an older database lacks.
+ */
+function insertMachineBeforeEarlyUpdates(database: AppDatabase): string {
+	const id = crypto.randomUUID();
+	database.$client
+		.prepare(
+			`INSERT INTO machines (id, name, hostname, os_family, target, agent_version, public_key,
+				last_request_ms, check_in_seconds, enrolled_at, last_seen_at)
+			VALUES (?, 'Test machine', 'test-host', 'linux', 'x86_64-unknown-linux-gnu', '0.1.0', 'key',
+				0, 300, ?, ?)`
+		)
+		.run(id, NOW, NOW);
+	return id;
+}
+
 function migrateToLatest(database: AppDatabase): void {
 	migrate(database, { migrationsFolder: MIGRATIONS_FOLDER });
 }
@@ -78,8 +94,8 @@ describe('Early updates migration (SPEC-ACCESS A11, SPEC-AGENT-UPDATES U8)', () 
 			role: 'admin',
 			password: null
 		});
-		const first = enrolFakeAgent(database, NOW).machineId;
-		const second = enrolFakeAgent(database, NOW).machineId;
+		const first = insertMachineBeforeEarlyUpdates(database);
+		const second = insertMachineBeforeEarlyUpdates(database);
 		const early = done(
 			createGroup(
 				database,

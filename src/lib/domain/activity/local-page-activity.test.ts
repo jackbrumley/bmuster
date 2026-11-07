@@ -78,6 +78,19 @@ describe('Activity wording for the local page (SPEC-AGENT-LOCAL 7, E3)', () => {
 		});
 	});
 
+	it('words a machine going offline and coming back by its name (SPEC-PRESENCE P6)', () => {
+		expect(activitySentence(entry('machine-offline', {}))).toEqual({
+			kind: 'presence',
+			text: 'mint went offline',
+			warning: true
+		});
+		expect(activitySentence(entry('machine-online', {}))).toEqual({
+			kind: 'presence',
+			text: 'mint came back online',
+			warning: false
+		});
+	});
+
 	it('leaves every other entry to the standard wording', () => {
 		expect(activitySentence(entry('local-code-viewed', {}))).toEqual({ kind: 'standard' });
 		expect(activitySentence(entry('sign-in', {}))).toEqual({ kind: 'standard' });

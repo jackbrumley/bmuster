@@ -191,7 +191,7 @@
 {/snippet}
 
 {#snippet lastSeenCell({ machine }: MachineRow)}
-	{machine.status.kind === 'online' ? 'Now' : formatRelative(machine.lastSeenIso, now)}
+	{machine.status.kind === 'online' ? 'Now' : formatRelative(machine.status.sinceIso, now)}
 {/snippet}
 
 {#snippet actionsCell({ machine }: MachineRow)}
