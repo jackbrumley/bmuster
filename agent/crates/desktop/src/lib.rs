@@ -7,6 +7,7 @@
 //! - [`capture`]: X11 (XShm, XDamage, RandR, XFixes) and Windows (DXGI
 //!   Desktop Duplication, GDI fallback).
 //! - [`input`]: XTest and `SendInput`, with release-all.
+//! - [`notice`]: the bar at the machine while someone is connected.
 //! - [`encode`], [`frame`], [`pacing`], [`control`]: the wire format and the
 //!   pure logic, tested without a display.
 //!
@@ -18,6 +19,7 @@ pub mod control;
 pub mod encode;
 pub mod frame;
 pub mod input;
+pub mod notice;
 pub mod pacing;
 pub mod session;
 
@@ -27,11 +29,12 @@ pub use session::{run, DesktopSession, Incoming, Outgoing, SessionSlot};
 use capture::Capturer;
 use input::{InputBackend, InputResult};
 
-/// A capturer for the console and a way to make its injector (called only
-/// for a control session).
+/// A capturer for the console, a way to make its injector (called only
+/// for a control session) and where to show the notice bar.
 pub struct Platform {
     pub capturer: Box<dyn Capturer>,
     pub make_input: Box<dyn FnOnce() -> InputResult<Box<dyn InputBackend>> + Send>,
+    pub notice_target: notice::Target,
 }
 
 /// Opens capture on the active seat0 X session (Linux).
@@ -41,11 +44,13 @@ pub fn open_platform() -> Result<Platform, String> {
     let capturer =
         capture::x11::X11Capturer::open(&seat.target, seat.state.clone()).map_err(|e| e.0)?;
     let target = seat.target;
+    let notice_target = target.clone();
     Ok(Platform {
         capturer: Box::new(capturer),
         make_input: Box::new(move || {
             Ok(Box::new(input::x11::XTestInput::open(&target)?) as Box<dyn InputBackend>)
         }),
+        notice_target,
     })
 }
 
@@ -59,5 +64,12 @@ pub fn open_platform() -> Result<Platform, String> {
         make_input: Box::new(|| {
             Ok(Box::new(input::windows::SendInputBackend::new()) as Box<dyn InputBackend>)
         }),
+        notice_target: (),
     })
+}
+
+/// No desktop capture on other platforms yet (macOS comes later).
+#[cfg(not(any(target_os = "linux", windows)))]
+pub fn open_platform() -> Result<Platform, String> {
+    Err("Remote desktop is not available on this platform yet".to_string())
 }

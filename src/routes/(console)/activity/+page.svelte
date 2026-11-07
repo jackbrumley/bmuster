@@ -27,6 +27,7 @@
 		IconRocket,
 		IconShieldLock,
 		IconShieldX,
+		IconPlugConnectedX,
 		IconTerminal2,
 		IconUpload,
 		IconUser,
@@ -144,6 +145,8 @@
 			case 'session-opened':
 			case 'session-ended':
 				return IconTerminal2;
+			case 'session-disconnected-at-machine':
+				return IconPlugConnectedX;
 			case 'email-sent':
 			case 'invitation-created':
 			case 'invitation-accepted':

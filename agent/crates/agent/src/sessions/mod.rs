@@ -4,9 +4,10 @@
 //! blocks the live socket.
 //!
 //! Every session kind shares this path: [`Sessions::open`] checks the
-//! ticket, [`pump`] moves the bytes, and the kind's module (terminal, exec;
-//! files) decides what the bytes mean.
+//! ticket, [`pump`] moves the bytes, and the kind's module (terminal, exec,
+//! files, desktop) decides what the bytes mean.
 
+mod desktop;
 mod exec;
 mod files;
 mod pump;
@@ -159,6 +160,7 @@ fn purpose_label(purpose: &SessionPurpose) -> String {
         SessionPurpose::Terminal { shell, .. } => format!("terminal, {}", shell.as_str()),
         SessionPurpose::Exec { shell, .. } => format!("command, {}", shell.as_str()),
         SessionPurpose::Files {} => "files".into(),
+        SessionPurpose::Desktop { .. } => "desktop".into(),
     }
 }
 
@@ -201,6 +203,20 @@ fn serve(inner: &Inner, ticket: &SessionTicket) -> Result<Ended> {
             }
         }
         SessionPurpose::Files {} => files::run(&mut socket, &inner.stop),
+        SessionPurpose::Desktop { consent, notice } => {
+            let request = desktop::Request {
+                permissions: &ticket.permissions,
+                consent: *consent,
+                notice: *notice,
+            };
+            match desktop::prepare(&request, bmuster_desktop::open_platform) {
+                Ok(desktop::Prepared::Ready(ready)) => {
+                    desktop::run(&mut socket, *ready, &ticket.user.name, &inner.stop)
+                }
+                Ok(desktop::Prepared::Busy) => desktop::refuse_busy(&mut socket),
+                Err(e) => fail(&mut socket, &e),
+            }
+        }
     }
 }
 

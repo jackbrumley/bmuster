@@ -1,4 +1,5 @@
 import { sign, type KeyObject } from 'node:crypto';
+import type { Consent } from '#lib/domain/access/access.ts';
 import type { TerminalShell } from '#lib/domain/sessions/session.ts';
 
 /**
@@ -18,7 +19,7 @@ const TICKET_DOMAIN = 'BMUSTER-TICKET-1';
 /** How long the agent has to start the session. */
 export const TICKET_LIFETIME_MS = 60_000;
 
-type TicketPurpose =
+export type TicketPurpose =
 	| { kind: 'terminal'; shell: TerminalShell; cols: number; rows: number }
 	| {
 			kind: 'exec';
@@ -28,7 +29,12 @@ type TicketPurpose =
 			maxOutputBytes: number;
 	  }
 	/** File actions (SPEC-FILES); the agent needs the `files` permission. */
-	| { kind: 'files' };
+	| { kind: 'files' }
+	/**
+	 * A remote desktop (SPEC-DESKTOP); the agent needs `desktop-view`, and
+	 * reads `desktop-control` in the permissions as leave to control.
+	 */
+	| { kind: 'desktop'; consent: Consent; notice: boolean };
 
 export type SessionTicket = {
 	sessionId: string;
@@ -73,6 +79,8 @@ function purposeJson(purpose: TicketPurpose): TicketPurpose {
 			};
 		case 'files':
 			return { kind: 'files' };
+		case 'desktop':
+			return { kind: 'desktop', consent: purpose.consent, notice: purpose.notice };
 	}
 }
 

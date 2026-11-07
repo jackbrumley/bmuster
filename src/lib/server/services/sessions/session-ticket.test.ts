@@ -33,7 +33,8 @@ describe('session tickets (T3)', () => {
 		expect(vectors.tickets.map((vector) => vector.ticket.purpose.kind)).toEqual([
 			'terminal',
 			'exec',
-			'files'
+			'files',
+			'desktop'
 		]);
 	});
 

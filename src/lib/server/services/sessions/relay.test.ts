@@ -347,3 +347,65 @@ describe('local ends: the server in the browser’s place (SPEC-FILES)', () => {
 		expect(relay.toAgent(RECORD.id, '{}')).toBe(false);
 	});
 });
+
+describe('desktop sessions in the relay (SPEC-DESKTOP R2)', () => {
+	function desktop() {
+		const relay = createRelay(RELAY_LIMITS);
+		const ended: EndedSession[] = [];
+		relay.start({ ...RECORD, kind: 'desktop', mode: 'watch', openedAt: Date.now() }, (session) =>
+			ended.push(session)
+		);
+		const agent = fakePeer(true);
+		const browser = fakePeer(true);
+		connectBrowser(relay, browser);
+		relay.attachAgent(RECORD.id, RECORD.machineId, agent);
+		return { relay, ended, agent, browser };
+	}
+
+	it('passes the JSON control messages both ways unread, and frames to the browser', () => {
+		const { relay, agent, browser } = desktop();
+		const hello = {
+			type: 'hello',
+			codecs: ['jpeg'],
+			viewport: { width: 1, height: 1, pixelRatio: 1 }
+		};
+		relay.browserText(RECORD.id, browser, JSON.stringify(hello));
+		relay.browserText(RECORD.id, browser, '{"type":"ack","seq":3}');
+		relay.agentText(RECORD.id, agent, '{"type":"stalled"}');
+		relay.fromAgent(RECORD.id, agent, Buffer.from([2, 0, 7, 1]));
+		expect(agent.texts).toEqual([hello, { type: 'ack', seq: 3 }]);
+		expect(browser.texts.slice(2)).toEqual([{ type: 'stalled' }]);
+		expect(browser.bytes).toEqual([Buffer.from([2, 0, 7, 1])]);
+		expect(relay.inUse(RECORD.machineId)).toEqual([
+			{ kind: 'desktop', mode: 'watch', userName: 'Kim' }
+		]);
+	});
+
+	it("ends with the agent's reason, and tells the browser in plain words", () => {
+		const { relay, ended, agent, browser } = desktop();
+		relay.agentText(RECORD.id, agent, '{"type":"ended","reason":"disconnected-at-machine"}');
+		expect(ended.map((session) => session.reason)).toEqual(['disconnected-at-machine']);
+		expect(browser.texts.at(-1)).toEqual({
+			type: 'ended',
+			reason: 'disconnected-at-machine',
+			message: 'Someone at the machine pressed Disconnect.'
+		});
+		expect(agent.closed?.code).toBe(1000);
+	});
+
+	it('replays nothing to a reattaching browser: it asks for a keyframe instead', () => {
+		const { relay, agent, browser } = desktop();
+		relay.fromAgent(RECORD.id, agent, Buffer.alloc(1000, 2));
+		relay.browserClosed(RECORD.id, browser);
+		const again = fakePeer(true);
+		connectBrowser(relay, again);
+		expect(again.bytes).toEqual([]);
+		expect(again.texts).toEqual([{ type: 'attached', resumed: true }, { type: 'ready' }]);
+	});
+
+	it('the console can still end it with end', () => {
+		const { relay, ended, browser } = desktop();
+		relay.browserText(RECORD.id, browser, '{"type":"end"}');
+		expect(ended.map((session) => session.reason)).toEqual(['closed']);
+	});
+});

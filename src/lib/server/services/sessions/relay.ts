@@ -1,9 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import type {
-	ServerControl,
-	SessionEndReason,
-	SessionInUse,
-	TerminalShell
+import {
+	endReasonLabel,
+	type DesktopMode,
+	type ServerControl,
+	type SessionEndReason,
+	type SessionInUse,
+	type TerminalShell
 } from '#lib/domain/sessions/session.ts';
 import { agentSessionEventSchema, browserControlSchema } from '#lib/schemas/sessions/sessions.ts';
 import { OutputRing } from './output-ring.ts';
@@ -25,6 +27,11 @@ import { OutputRing } from './output-ring.ts';
  * File sessions (SPEC-FILES) have no browser socket: the server itself is
  * the other end (a `LocalEnd`), sending requests and reading the replies.
  * The relay still owns their lifetime, their agent socket and "In use".
+ *
+ * Desktop sessions (SPEC-DESKTOP) talk in text frames both ways (JSON
+ * control messages the relay passes on unread) besides the agent's binary
+ * frames. Nothing is replayed to a reattaching browser: it says `hello`
+ * again and the agent sends a fresh keyframe.
  */
 
 export type RelayLimits = {
@@ -72,7 +79,11 @@ export type SessionRecord = {
 	userName: string;
 	ip: string;
 	openedAt: number;
-} & ({ kind: 'terminal'; shell: TerminalShell } | { kind: 'files' });
+} & (
+	| { kind: 'terminal'; shell: TerminalShell }
+	| { kind: 'files' }
+	| { kind: 'desktop'; mode: DesktopMode }
+);
 
 /** The server's own end of a session, in the browser's place (file sessions). */
 export type LocalEnd = {
@@ -372,7 +383,9 @@ export function createRelay(limits: RelayLimits) {
 				session.local.bytes(data);
 				return;
 			}
-			session.ring.push(data);
+			if (session.record.kind !== 'desktop') {
+				session.ring.push(data);
+			}
 			forward(session.browser, session.agent, data);
 		},
 
@@ -383,10 +396,18 @@ export function createRelay(limits: RelayLimits) {
 			}
 			const parsed = agentSessionEventSchema.safeParse(parseJson(text));
 			if (!parsed.success) {
-				session.local?.text(text);
+				if (session.local !== undefined) {
+					session.local.text(text);
+				} else if (session.record.kind === 'desktop') {
+					session.bytesOut += text.length;
+					session.browser.peer?.sendText(text);
+				}
 				return;
 			}
 			switch (parsed.data.type) {
+				case 'ended':
+					end(sessionId, parsed.data.reason, desktopEndedMessage(parsed.data.reason));
+					return;
 				case 'exited':
 					end(sessionId, 'exited', `The shell exited with code ${parsed.data.code}.`);
 					return;
@@ -436,6 +457,12 @@ export function createRelay(limits: RelayLimits) {
 			}
 			const parsed = browserControlSchema.safeParse(parseJson(text));
 			if (!parsed.success) {
+				if (session.record.kind === 'desktop') {
+					// The viewer's own messages (hello, acks, input) are the agent's to read.
+					session.bytesIn += text.length;
+					session.lastInputAt = Date.now();
+					session.agent.peer?.sendText(text);
+				}
 				return;
 			}
 			switch (parsed.data.type) {
@@ -472,7 +499,16 @@ export function createRelay(limits: RelayLimits) {
 		inUse(machineId: string): SessionInUse[] {
 			return [...sessions.values()]
 				.filter((session) => session.machineId === machineId)
-				.map((session) => ({ kind: session.record.kind, userName: session.record.userName }));
+				.map((session): SessionInUse => {
+					const record = session.record;
+					switch (record.kind) {
+						case 'terminal':
+						case 'files':
+							return { kind: record.kind, userName: record.userName };
+						case 'desktop':
+							return { kind: 'desktop', mode: record.mode, userName: record.userName };
+					}
+				});
 		},
 
 		/** How a recently ended session ended, for a page that comes back to it. */
@@ -489,6 +525,31 @@ export function createRelay(limits: RelayLimits) {
 			return [...sessions.values()].filter((session) => session.userId === userId).length;
 		}
 	};
+}
+
+/** What the viewer is told when the agent ends a desktop session. */
+function desktopEndedMessage(reason: SessionEndReason): string {
+	switch (reason) {
+		case 'closed':
+			return 'The session was ended.';
+		case 'disconnected-at-machine':
+			return 'Someone at the machine pressed Disconnect.';
+		case 'too-many-sessions':
+			return 'This machine already has 4 desktop sessions open. Try again when one ends.';
+		case 'agent-lost':
+			return 'The machine stopped sending its screen.';
+		case 'declined':
+		case 'timed-out':
+		case 'permission-removed':
+		case 'no-browser':
+		case 'exited':
+		case 'failed':
+		case 'refused':
+		case 'idle':
+		case 'agent-timeout':
+		case 'unused':
+			return `${endReasonLabel(reason)}.`;
+	}
 }
 
 function parseJson(text: string): unknown {

@@ -1,6 +1,6 @@
 //! X11 capture and input against a nested X server (SPEC-DESKTOP 11.2):
-//! `x11_capture`, `x11_input` and `displays` tests, plus one session end to
-//! end. Each test starts its own headless Xvfb (Xephyr only when asked for
+//! `x11_capture`, `x11_input`, `displays` and `notice` tests, plus one
+//! session end to end. Each test starts its own headless Xvfb (Xephyr only when asked for
 //! with `BMUSTER_X_TESTS=xephyr`) and skips without one; see
 //! `support/mod.rs`. Run them with `cargo test -p bmuster-desktop --test x11`.
 
@@ -14,13 +14,13 @@ use bmuster_desktop::capture::{Capturer, Damage, DesktopKind, DesktopState, Rect
 use bmuster_desktop::encode::tiles::TileEncoder;
 use bmuster_desktop::input::x11::XTestInput;
 use bmuster_desktop::input::{InputBackend, InputController};
-use bmuster_desktop::{DesktopSession, Mode, Outgoing};
+use bmuster_desktop::{notice, DesktopSession, EndReason, Incoming, Mode, Outgoing};
 use std::time::{Duration, Instant};
 use support::NestedX;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    ConnectionExt as _, CreateGCAux, CreateWindowAux, EventMask, InputFocus, KeyButMask, Rectangle,
-    Window, WindowClass,
+    AtomEnum, ConnectionExt as _, CreateGCAux, CreateWindowAux, EventMask, InputFocus, KeyButMask,
+    Rectangle, Window, WindowClass,
 };
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
@@ -455,4 +455,75 @@ fn x11_session_end_to_end_frames_and_pointer() {
         .reply()
         .unwrap();
     assert_eq!((pointer.root_x, pointer.root_y), (640, 400));
+}
+
+/// The bar's window, found by its title among the root's children.
+fn notice_window(client: &Client) -> Option<Window> {
+    let tree = client
+        .connection
+        .query_tree(client.root)
+        .unwrap()
+        .reply()
+        .unwrap();
+    tree.children.into_iter().find(|&window| {
+        client
+            .connection
+            .get_property(false, window, AtomEnum::WM_NAME, AtomEnum::STRING, 0, 64)
+            .unwrap()
+            .reply()
+            .is_ok_and(|p| p.value == notice::BAR_TITLE.as_bytes())
+    })
+}
+
+#[test]
+fn notice_bar_disconnect_through_xtest_ends_the_session() {
+    let Some(x) = NestedX::start() else { return };
+    let client = Client::new(&x);
+    let (end, inbox) = std::sync::mpsc::channel();
+    let shown = notice::show(&x.target, "Kim", end);
+    client.sync();
+    let window = notice_window(&client).expect("the bar is mapped on the nested server");
+    let geometry = client
+        .connection
+        .get_geometry(window)
+        .unwrap()
+        .reply()
+        .unwrap();
+    assert_eq!(geometry.y, 0, "at the top");
+    assert_eq!(
+        i32::from(geometry.x) * 2 + i32::from(geometry.width),
+        1280,
+        "centred"
+    );
+    let attributes = client
+        .connection
+        .get_window_attributes(window)
+        .unwrap()
+        .reply()
+        .unwrap();
+    assert!(attributes.override_redirect);
+
+    // Disconnect is the right end of the bar.
+    let mut input = controller(&x);
+    let display = Rect::new(0, 0, 1280, 800);
+    let (bx, by) = (
+        f64::from(geometry.x) + f64::from(geometry.width) - 20.0,
+        f64::from(geometry.height) / 2.0,
+    );
+    input.pointer(display, bx, by, 1).unwrap();
+    input.pointer(display, bx, by, 0).unwrap();
+    assert_eq!(
+        inbox.recv_timeout(Duration::from_secs(5)),
+        Ok(Incoming::End(EndReason::DisconnectedAtMachine))
+    );
+
+    drop(shown);
+    let until = Instant::now() + Duration::from_secs(5);
+    while notice_window(&client).is_some() {
+        assert!(
+            Instant::now() < until,
+            "the bar closes with the last viewer"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }

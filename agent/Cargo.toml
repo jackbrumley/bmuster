@@ -12,6 +12,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 bmuster-protocol = { path = "crates/protocol" }
 bmuster-service = { path = "crates/service" }
+bmuster-desktop = { path = "crates/desktop" }
 anyhow = "=1.0.104"
 base64 = "=0.22.1"
 clap = { version = "=4.6.7", features = ["derive"] }

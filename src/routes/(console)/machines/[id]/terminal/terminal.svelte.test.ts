@@ -3,6 +3,7 @@ import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { Grant } from '#lib/domain/access/access.ts';
 import type { Machine } from '#lib/domain/machines/machine.ts';
+import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import TerminalTab from './+page.svelte';
 
@@ -14,48 +15,6 @@ const GRANTS: Grant[] = [
 	{ permission: 'view', consent: 'unattended' },
 	{ permission: 'terminal', consent: 'unattended' }
 ];
-
-/** A browser WebSocket the test drives: what the page sends, and messages from the "server". */
-class FakeSocket {
-	static readonly OPEN = 1;
-	static last: FakeSocket | undefined;
-	readonly url: string;
-	readyState = 1;
-	binaryType = 'blob';
-	readonly sent: (string | Uint8Array)[] = [];
-	readonly #listeners = new Map<string, ((event: unknown) => void)[]>();
-
-	constructor(url: string) {
-		this.url = url;
-		FakeSocket.last = this;
-	}
-
-	addEventListener(type: string, listener: (event: unknown) => void): void {
-		this.#listeners.set(type, [...(this.#listeners.get(type) ?? []), listener]);
-	}
-
-	send(data: string | Uint8Array): void {
-		this.sent.push(data);
-	}
-
-	close(): void {
-		this.readyState = 3;
-	}
-
-	receive(data: string | Uint8Array): void {
-		const payload = typeof data === 'string' ? data : data.slice().buffer;
-		for (const listener of this.#listeners.get('message') ?? []) {
-			listener({ data: payload });
-		}
-	}
-
-	/** Bytes the page sent, as text. */
-	typed(): string[] {
-		return this.sent
-			.filter((item): item is Uint8Array => typeof item !== 'string')
-			.map((bytes) => new TextDecoder().decode(bytes));
-	}
-}
 
 const requests: { url: string; body: unknown }[] = [];
 
@@ -128,7 +87,7 @@ describe('the terminal tab (T1)', () => {
 	it('remembers the running session in this tab, so a reload comes back to it', async () => {
 		await openTerminal();
 		const saved = sessionStorage.getItem(`bmuster.terminal.${MACHINE.id}`) ?? '';
-		expect(JSON.parse(saved)).toMatchObject({ sessionId: SESSION_ID, shell: 'bash' });
+		expect(JSON.parse(saved)).toMatchObject({ sessionId: SESSION_ID, tag: 'bash' });
 	});
 
 	it('says how the session ended and offers a new one', async () => {
