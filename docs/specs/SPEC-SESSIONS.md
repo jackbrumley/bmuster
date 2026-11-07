@@ -47,6 +47,7 @@ Built from the approved research plan (phases 1–4). Decisions: admin shell onl
 **Different from the spec or decided while building**
 
 - **Reloads.** Closing the tab does not end the session at once: the browser has 60 s to come back (the page keeps the session id in `sessionStorage`, per tab) and the server replays the last 256 KB of output. Raw replay into a terminal of another size can show garbled lines that the shell redrew at the old size.
+- **Phones.** Below 900px the terminal runs edge to edge (it undoes the page gutter, `--page-gutter`, and the safe-area padding; its text keeps clear of a notch). A swipe on it scrolls the history with momentum, never the page (`touch-scroll.ts`, `terminal-touch.ts`); a tap still focuses it. In the alternate screen (vim, less, htop) each row of a swipe is a wheel event for xterm.js, which sends arrow keys or mouse-wheel reports, without momentum. A finger that rests before moving is left to the browser (long-press). Tests: `touch-scroll.test.ts`, `terminal.svelte.test.ts`.
 - **One browser per session.** A second window takes the session over; the first is told and can take it back.
 - **No database table.** Running sessions live in the server's memory (they end with the process anyway); the audit log is the record.
 - **Exec sessions** (`purpose: exec`, permission `ai-commands`) are built in the agent with tests (`exec/pipe.rs`: no input, separate stdout and stderr frames, time limit up to 10 min, output cap up to 16 MB). The server issues none yet; MCP comes later (docs/mcp.md).
