@@ -28,6 +28,9 @@ agent/
     src/totp.rs           the local page's 6-digit sign-in codes (RFC 6238)
     src/status.rs         connection state shared by the loop, the socket and the page
     src/service_linux.rs  systemd install and uninstall
+    src/exec/             starting session processes: pseudo-terminals, pipes, process trees, and
+                          transient systemd units for sessions (placement.rs, unit.rs; SPEC-SESSION-UNITS)
+    src/sessions/         terminal, exec, files and desktop sessions; files_helper.rs runs files in a unit
     src/service_windows.rs  Windows service install, uninstall and service entry point
 ```
 
@@ -38,7 +41,7 @@ agent/
 | `bmuster-agent install --url <server> --code <code> [--name <name>] [--pin-cert <pin>]` | Needs root or Administrator. Copies the binary into place, enrols, then installs and starts the service. |
 | `bmuster-agent enrol --url <server> --code <code> [--name <name>] [--pin-cert <pin>] [--data-dir <dir>] [--insecure-dev-tls]` | Enrols only. Use it for development. |
 | `bmuster-agent launch [--data-dir <dir>] [--insecure-dev-tls]` | The service entry point: the launcher. It runs the agent from `<data>/versions/current` and keeps it up to date. |
-| `bmuster-agent run [--data-dir <dir>] [--insecure-dev-tls]` | The agent itself: the check-in loop, the live socket and the local page. Run by hand it does not update itself. |
+| `bmuster-agent run [--data-dir <dir>] [--insecure-dev-tls] [--sessions <mode>]` | The agent itself: the check-in loop, the live socket and the local page. Run by hand it does not update itself. `--sessions` (or `BMUSTER_SESSIONS`) says where terminal, command and files sessions run; see below. |
 | `bmuster-agent rejoin --url <server> --code <code> [--name <name>] [--pin-cert <pin>] [--data-dir <dir>] [--insecure-dev-tls]` | Moves this machine to another server: enrols there first with a new key, then tells the old server it left. Needs root or Administrator for an installed agent; stops and restarts its service. |
 | `bmuster-agent status [--data-dir <dir>]` | Shows the enrolment and the service state. It does not contact the server. |
 | `bmuster-agent uninstall [--purge]` | Stops and removes the service and the binary. `--purge` also deletes the data folder (identity and key). |
@@ -47,6 +50,31 @@ agent/
 `--pin-cert sha256:<base64>` is for a server in local network mode (its own self-signed certificate; the pin is on Add machine). The agent then accepts only a server certificate whose public key has that SHA-256, for HTTPS and the live socket, and ignores the host name and issuer. The pin is saved in `identity.json` (`serverPin`), so `run` and the service need no flag. When the server announces a new certificate (`pin-update` on the live socket) the agent saves it as `nextPin` and switches to it only once a connection with it works.
 
 Exit codes for `run`: `0` stopped, `1` error, `3` the server removed this machine (`revoked`), `4` restart (the local page's Restart, or after a move), `5` a checked update waits in `versions/incoming` (only under the launcher). The launcher starts the agent again for `4`, switches for `5`, and itself exits `3` for a removed machine; the systemd unit sets `RestartPreventExitStatus=3`, so a removed machine stays stopped. Started by hand, a restart re-executes the agent in place.
+
+## Sessions outside the sandbox (Linux, SPEC-SESSION-UNITS)
+
+The agent's own unit is hardened (read-only system and home folders, private `/tmp`, no new privileges). Terminal, command and files sessions therefore run as their own transient systemd services, started by the service manager with `systemd-run`, outside that sandbox: `bmuster-terminal-<session id>`, `bmuster-exec-<session id>` and `bmuster-files-<session id>` (`systemctl list-units 'bmuster-*'`). They have no hardening on purpose (an admin's session is full root) and `UMask=0022`. Desktop sessions stay in the agent's process.
+
+| `--sessions` / `BMUSTER_SESSIONS` | Where sessions run |
+| :-- | :-- |
+| `in-process` (the default) | As the agent's own child processes, inside its sandbox. Development runs, tests, macOS and Windows. |
+| `systemd` | Transient services of the system manager. The installed unit sets `Environment=BMUSTER_SESSIONS=systemd`. |
+| `systemd-user` | Debug builds only: transient services of your own user manager (`systemd-run --user`), to try the path without root. |
+
+The agent logs the mode when it starts and the unit name for each session.
+
+**Existing installs keep their old unit** until reinstalled, and a reinstall also re-enrols the machine. To turn the mode on without reinstalling, once the machine runs an agent build with this change (an update from the server is enough; the launcher in `/opt/bmuster` passes the environment through), add a drop-in and restart:
+
+```bash
+sudo mkdir -p /etc/systemd/system/bmuster-agent.service.d
+printf '[Service]\nEnvironment=BMUSTER_SESSIONS=systemd\n' | sudo tee /etc/systemd/system/bmuster-agent.service.d/sessions.conf
+sudo systemctl daemon-reload
+sudo systemctl restart bmuster-agent
+```
+
+(`sudo systemctl edit bmuster-agent` and the same two lines does the same.) Check it with `journalctl -u bmuster-agent | grep 'transient systemd services'`, then open a terminal and run `cat /proc/self/cgroup`: it shows `/system.slice/bmuster-terminal-<id>.service`. An older agent ignores the variable. `uninstall` does not remove the drop-in folder; remove `/etc/systemd/system/bmuster-agent.service.d` by hand afterwards.
+
+To try it without root: `cargo run -p bmuster-agent -- run --data-dir ./dev-data --insecure-dev-tls --sessions systemd-user`. `cargo test -p bmuster-agent -- --ignored` runs commands in units of your user manager.
 
 ## Updates (SPEC-AGENT-UPDATES)
 
