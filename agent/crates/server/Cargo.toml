@@ -1,0 +1,22 @@
+[package]
+name = "bmuster-server"
+description = "BMuster server launcher: runs the bundled Node server and installs it as a service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "bmuster-server"
+path = "src/main.rs"
+
+[dependencies]
+bmuster-service.workspace = true
+anyhow.workspace = true
+base64.workspace = true
+clap.workspace = true
+getrandom.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-service.workspace = true
