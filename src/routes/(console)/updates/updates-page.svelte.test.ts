@@ -27,6 +27,12 @@ function machine(id: string, name: string, update: Data['machines'][number]['upd
 	};
 }
 
+const EARLY_GROUP: Data['earlyGroup'] = {
+	id: '00000000-0000-4000-8000-0000000ea51e',
+	name: 'Early updates',
+	machines: 2
+};
+
 const MACHINES: Data['machines'] = [
 	machine('11111111-1111-4111-8111-111111111111', 'Current', { kind: 'up-to-date' }),
 	machine('22222222-2222-4222-8222-222222222222', 'Behind', {
@@ -56,7 +62,7 @@ function renderPage(overrides: Partial<Data>) {
 			now: NOW,
 			policy: 'automatic',
 			rollout: ROLLOUT,
-			earlyGroupSize: 2,
+			earlyGroup: EARLY_GROUP,
 			builds: [
 				{ version: '0.2.0', target: 'x86_64-unknown-linux-gnu', signed: true },
 				{ version: '0.1.0', target: 'x86_64-unknown-linux-gnu', signed: false }
@@ -135,5 +141,28 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 	it('explains that nothing can be offered without a signed build', async () => {
 		const screen = await renderPage({ rollout: { kind: 'none' }, builds: [] });
 		await expect.element(screen.getByText(/no signed agent build yet/)).toBeVisible();
+	});
+
+	it('U8: links to the built-in Early updates group, inviting a first machine when it is empty', async () => {
+		const screen = await renderPage({ earlyGroup: { ...EARLY_GROUP, machines: 0 } });
+		await expect
+			.element(screen.getByText(/Machines in Early updates get new versions first\. 0 machines/))
+			.toBeVisible();
+		await expect
+			.element(screen.getByRole('link', { name: 'add one' }))
+			.toHaveAttribute('href', '/groups?machineGroup=00000000-0000-4000-8000-0000000ea51e');
+	});
+
+	it('U8: counts the Early updates machines and offers to add or take out', async () => {
+		const screen = await renderPage({ earlyGroup: { ...EARLY_GROUP, machines: 1 } });
+		await expect.element(screen.getByText(/get new versions first\. 1 machine —/)).toBeVisible();
+		await expect.element(screen.getByRole('link', { name: 'add or take out' })).toBeVisible();
+	});
+
+	it('U8: shows the Early updates line before there is any signed build', async () => {
+		const screen = await renderPage({ rollout: { kind: 'none' }, builds: [] });
+		await expect
+			.element(screen.getByText(/Machines in Early updates get new versions first/))
+			.toBeVisible();
 	});
 });

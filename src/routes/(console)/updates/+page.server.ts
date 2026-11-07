@@ -3,7 +3,7 @@ import { database } from '#lib/server/database/app-database.ts';
 import { env } from '#lib/server/env.ts';
 import { page } from '#lib/server/guards/page.ts';
 import {
-	earlyGroupSize,
+	earlyUpdatesGroup,
 	newestVersion,
 	rolloutView
 } from '#lib/server/services/agents/agent-updates.ts';
@@ -24,7 +24,7 @@ export const load: PageServerLoad = page.admin(() => {
 		now,
 		policy: getSetting(database, 'agentUpdatePolicy'),
 		rollout: rolloutView(database, newest?.version, now),
-		earlyGroupSize: earlyGroupSize(database),
+		earlyGroup: earlyUpdatesGroup(database),
 		builds: listReleases(env.releasesPath, AGENT_TARGETS),
 		machines: listMachines(database, now, releases).map((machine) => ({
 			id: machine.id,

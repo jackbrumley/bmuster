@@ -1,0 +1,123 @@
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { done } from '#tests/helpers/access.ts';
+import { enrolFakeAgent } from '#tests/helpers/fake-agent.ts';
+import { addTestUser, NOW } from '#tests/helpers/people.ts';
+import { createGroup, listMachineGroups, setGroupMembers } from '../services/access/groups.ts';
+import { createRule } from '../services/access/rules.ts';
+import { MIGRATIONS_FOLDER, type AppDatabase } from './connection.ts';
+import * as schema from './schema.ts';
+
+/** The migration that makes Early updates a built-in machine group (SPEC-ACCESS A11). */
+const EARLY_UPDATES_MIGRATION = '0010_early_updates_group';
+
+const journalSchema = z.looseObject({ entries: z.array(z.looseObject({ tag: z.string() })) });
+
+const folders: string[] = [];
+
+afterEach(() => {
+	for (const folder of folders.splice(0)) {
+		rmSync(folder, { recursive: true, force: true });
+	}
+});
+
+/** A copy of the migrations folder whose journal stops before the Early updates migration. */
+function migrationsBeforeEarlyUpdates(): string {
+	const folder = mkdtempSync(join(tmpdir(), 'bmuster-early-migration-'));
+	folders.push(folder);
+	cpSync(MIGRATIONS_FOLDER, folder, { recursive: true });
+	const journalPath = join(folder, 'meta', '_journal.json');
+	const journal = journalSchema.parse(JSON.parse(readFileSync(journalPath, 'utf8')));
+	const cut = journal.entries.findIndex((entry) => entry.tag === EARLY_UPDATES_MIGRATION);
+	expect(cut).toBeGreaterThan(0);
+	writeFileSync(
+		journalPath,
+		JSON.stringify({ ...journal, entries: journal.entries.slice(0, cut) })
+	);
+	return folder;
+}
+
+/** An in-memory database migrated up to, but not including, the Early updates migration. */
+function databaseBeforeEarlyUpdates(): AppDatabase {
+	const client = new Database(':memory:');
+	client.pragma('foreign_keys = ON');
+	const database = drizzle(client, { schema, casing: 'snake_case' });
+	migrate(database, { migrationsFolder: migrationsBeforeEarlyUpdates() });
+	return database;
+}
+
+function migrateToLatest(database: AppDatabase): void {
+	migrate(database, { migrationsFolder: MIGRATIONS_FOLDER });
+}
+
+describe('Early updates migration (SPEC-ACCESS A11, SPEC-AGENT-UPDATES U8)', () => {
+	it('A11: makes a new built-in Early updates group when there is none', () => {
+		const database = databaseBeforeEarlyUpdates();
+		expect(listMachineGroups(database).map((group) => group.name)).toEqual(['All machines']);
+		migrateToLatest(database);
+		expect(listMachineGroups(database)[1]).toEqual({
+			id: '00000000-0000-4000-8000-0000000ea51e',
+			name: 'Early updates',
+			description:
+				'New agent versions reach these machines first. Put one or two test machines here.',
+			builtIn: 'early',
+			membership: { kind: 'chosen', machineIds: [] }
+		});
+	});
+
+	it('A11: turns an existing group of that name (any case) into the built-in one, keeping its machines and rules', async () => {
+		const database = databaseBeforeEarlyUpdates();
+		const admin = await addTestUser(database, {
+			email: 'ada@example.com',
+			role: 'admin',
+			password: null
+		});
+		const first = enrolFakeAgent(database, NOW).machineId;
+		const second = enrolFakeAgent(database, NOW).machineId;
+		const early = done(
+			createGroup(
+				database,
+				'machine',
+				admin.id,
+				{ name: 'early Updates', description: 'Test PCs' },
+				NOW
+			)
+		);
+		done(setGroupMembers(database, 'machine', admin.id, early, [first, second], NOW));
+		const testers = done(
+			createGroup(database, 'user', admin.id, { name: 'Testers', description: '' }, NOW)
+		);
+		done(
+			createRule(
+				database,
+				admin.id,
+				{ userGroupId: testers, machineGroupId: early, permissions: ['view'], consent: 'ask' },
+				NOW
+			)
+		);
+		done(createGroup(database, 'machine', admin.id, { name: 'Office', description: '' }, NOW));
+
+		migrateToLatest(database);
+
+		const groups = listMachineGroups(database);
+		expect(groups.map((group) => group.name)).toEqual(['All machines', 'early Updates', 'Office']);
+		expect(groups.filter((group) => group.builtIn === 'early')).toHaveLength(1);
+		const migrated = groups[1];
+		expect(migrated).toMatchObject({ id: early, description: 'Test PCs', builtIn: 'early' });
+		const members = migrated?.membership.kind === 'chosen' ? migrated.membership.machineIds : [];
+		expect(members.toSorted()).toEqual([first, second].toSorted());
+		expect(
+			database
+				.select()
+				.from(schema.accessRules)
+				.all()
+				.map((rule) => rule.machineGroupId)
+		).toEqual([early]);
+	});
+});

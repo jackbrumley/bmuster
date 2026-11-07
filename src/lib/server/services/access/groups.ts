@@ -1,5 +1,9 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
-import type { MachineGroupView, UserGroupView } from '#lib/domain/access/access.ts';
+import type {
+	BuiltInMachineGroup,
+	MachineGroupView,
+	UserGroupView
+} from '#lib/domain/access/access.ts';
 import type { AuditKind } from '#lib/domain/activity/activity.ts';
 import {
 	machineGroupMembers,
@@ -14,9 +18,10 @@ import { listUsers } from '../users/users.ts';
 import { deleteRulesOfGroup } from './rules.ts';
 
 /**
- * User groups and machine groups (SPEC-ACCESS A1–A3, A8, A9). Both kinds
+ * User groups and machine groups (SPEC-ACCESS A1–A3, A8, A9, A11). Both kinds
  * work the same way, so each operation is written once over a store that
- * knows its tables. Deleting a group deletes its memberships and the rules
+ * knows its tables. The built-in machine groups cannot be renamed or deleted;
+ * Early updates takes members like any other group, All machines takes none. Deleting a group deletes its memberships and the rules
  * that use it, never the people or machines in it. Every change is audited
  * in the same transaction.
  */
@@ -25,7 +30,7 @@ export type GroupKind = 'user' | 'machine';
 export type GroupChange =
 	{ kind: 'done'; id: string } | { kind: 'refused'; status: 404 | 409; message: string };
 
-type GroupRow = { id: string; name: string; description: string; builtIn: boolean };
+type GroupRow = { id: string; name: string; description: string; builtIn: BuiltInMachineGroup };
 
 type GroupStore = {
 	audit: {
@@ -67,7 +72,7 @@ const userStore: GroupStore = {
 	memberNoun: 'person',
 	find: (database, id) => {
 		const row = database.select().from(userGroups).where(eq(userGroups.id, id)).get();
-		return row === undefined ? undefined : { ...row, builtIn: false };
+		return row === undefined ? undefined : { ...row, builtIn: 'none' };
 	},
 	findByName: (database, name) => {
 		const row = database
@@ -75,7 +80,7 @@ const userStore: GroupStore = {
 			.from(userGroups)
 			.where(sql`lower(${userGroups.name}) = lower(${name})`)
 			.get();
-		return row === undefined ? undefined : { ...row, builtIn: false };
+		return row === undefined ? undefined : { ...row, builtIn: 'none' };
 	},
 	insert: (database, row, now) => {
 		database
@@ -128,7 +133,7 @@ const machineStore: GroupStore = {
 	memberNoun: 'machine',
 	find: (database, id) => {
 		const row = database.select().from(machineGroups).where(eq(machineGroups.id, id)).get();
-		return row === undefined ? undefined : { ...row, builtIn: row.builtIn !== null };
+		return row === undefined ? undefined : { ...row, builtIn: row.builtIn ?? 'none' };
 	},
 	findByName: (database, name) => {
 		const row = database
@@ -136,7 +141,7 @@ const machineStore: GroupStore = {
 			.from(machineGroups)
 			.where(sql`lower(${machineGroups.name}) = lower(${name})`)
 			.get();
-		return row === undefined ? undefined : { ...row, builtIn: row.builtIn !== null };
+		return row === undefined ? undefined : { ...row, builtIn: row.builtIn ?? 'none' };
 	},
 	insert: (database, row, now) => {
 		database
@@ -194,8 +199,25 @@ function storeFor(kind: GroupKind): GroupStore {
 	}
 }
 
-const BUILT_IN =
-	'All machines always holds every machine, now and later. It cannot be renamed, changed or deleted.';
+/** Why a built-in group refuses a change, in its own words. */
+function builtInRefusal(builtIn: Exclude<BuiltInMachineGroup, 'none'>): GroupChange {
+	switch (builtIn) {
+		case 'all':
+			return {
+				kind: 'refused',
+				status: 409,
+				message:
+					'All machines always holds every machine, now and later. It cannot be renamed, changed or deleted, and machines cannot be added or taken out.'
+			};
+		case 'early':
+			return {
+				kind: 'refused',
+				status: 409,
+				message:
+					'Early updates is built in: the staged roll-out sends new agent versions to its machines first. It cannot be renamed, changed or deleted; add or take out its machines instead.'
+			};
+	}
+}
 
 function nameTaken(name: string): GroupChange {
 	return { kind: 'refused', status: 409, message: `There is already a group called ${name}.` };
@@ -218,19 +240,23 @@ export function listUserGroups(database: Queryable): UserGroupView[] {
 		}));
 }
 
-/** All machines first, then by name. Removed machines are left out of the members. */
+/** All machines first, then Early updates, then by name. Removed machines are left out of the members. */
 export function listMachineGroups(database: Queryable): MachineGroupView[] {
 	const active = activeMachineNames(database);
 	const members = database.select().from(machineGroupMembers).all();
 	return database
 		.select()
 		.from(machineGroups)
-		.orderBy(asc(sql`${machineGroups.builtIn} is null`), asc(sql`lower(${machineGroups.name})`))
+		.orderBy(
+			asc(sql`case ${machineGroups.builtIn} when 'all' then 0 when 'early' then 1 else 2 end`),
+			asc(sql`lower(${machineGroups.name})`)
+		)
 		.all()
 		.map((group) => ({
 			id: group.id,
 			name: group.name,
 			description: group.description,
+			builtIn: group.builtIn ?? 'none',
 			membership:
 				group.builtIn === 'all'
 					? { kind: 'all-machines' }
@@ -289,8 +315,8 @@ export function updateGroupDetails(
 		if (group === undefined) {
 			return NO_GROUP;
 		}
-		if (group.builtIn) {
-			return { kind: 'refused', status: 409, message: BUILT_IN };
+		if (group.builtIn !== 'none') {
+			return builtInRefusal(group.builtIn);
 		}
 		const other = store.findByName(tx, details.name);
 		if (other !== undefined && other.id !== id) {
@@ -339,8 +365,8 @@ export function deleteGroup(
 		if (group === undefined) {
 			return NO_GROUP;
 		}
-		if (group.builtIn) {
-			return { kind: 'refused', status: 409, message: BUILT_IN };
+		if (group.builtIn !== 'none') {
+			return builtInRefusal(group.builtIn);
 		}
 		const members = store.memberIds(tx, id).length;
 		const rules = deleteRulesOfGroup(tx, kind, id, actorUserId, now);
@@ -405,8 +431,8 @@ export function setGroupMembers(
 		if (group === undefined) {
 			return NO_GROUP;
 		}
-		if (group.builtIn) {
-			return { kind: 'refused', status: 409, message: BUILT_IN };
+		if (group.builtIn === 'all') {
+			return builtInRefusal(group.builtIn);
 		}
 		const candidates = store.candidates(tx);
 		const wanted = new Set(memberIds);
@@ -451,8 +477,8 @@ export function setGroupsOfMember(
 			if (group === undefined) {
 				return NO_GROUP;
 			}
-			if (group.builtIn) {
-				return { kind: 'refused', status: 409, message: BUILT_IN };
+			if (group.builtIn === 'all') {
+				return builtInRefusal(group.builtIn);
 			}
 		}
 		const current = new Set(store.groupIdsOf(tx, memberId));
@@ -471,7 +497,7 @@ export function setGroupsOfMember(
 export function areChosenMachineGroups(database: Queryable, groupIds: readonly string[]): boolean {
 	return groupIds.every((groupId) => {
 		const group = machineStore.find(database, groupId);
-		return group !== undefined && !group.builtIn;
+		return group !== undefined && group.builtIn !== 'all';
 	});
 }
 
@@ -492,7 +518,7 @@ export function joinGroupsAtEnrolment(
 ): string[] {
 	return [...new Set(groupIds)].flatMap((groupId) => {
 		const group = machineStore.find(tx, groupId);
-		if (group === undefined || group.builtIn) {
+		if (group === undefined || group.builtIn === 'all') {
 			return [];
 		}
 		machineStore.addMember(tx, groupId, machineId);

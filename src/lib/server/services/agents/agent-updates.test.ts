@@ -1,14 +1,17 @@
+import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { STAGE_MS } from '#lib/domain/machines/agent-updates.ts';
 import type { UpdateReport } from '#lib/schemas/agents/agent-protocol.ts';
 import { NO_RELEASES, enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { NOW, addTestUser } from '#tests/helpers/people.ts';
 import type { AppDatabase } from '../../database/connection.ts';
+import { machineGroups } from '../../database/schema.ts';
 import { createGroup, setGroupMembers } from '../access/groups.ts';
 import { listAudit } from '../audit/audit.ts';
 import { updateSetting } from '../settings/settings.ts';
 import {
 	checkInUpdate,
+	earlyUpdatesGroup,
 	pauseRollout,
 	requestUpdates,
 	resumeRollout,
@@ -33,15 +36,8 @@ async function setUp(earlyGroup: boolean) {
 	});
 	const agent = enrolFakeAgent(database, NOW);
 	if (earlyGroup) {
-		const group = createGroup(
-			database,
-			'machine',
-			admin.id,
-			{ name: 'Early updates', description: '' },
-			NOW
-		);
-		if (group.kind !== 'done') throw new Error('no group');
-		setGroupMembers(database, 'machine', admin.id, group.id, [agent.machineId], NOW);
+		const early = earlyUpdatesGroup(database);
+		setGroupMembers(database, 'machine', admin.id, early.id, [agent.machineId], NOW);
 	}
 	return { database, admin, machineId: agent.machineId };
 }
@@ -121,7 +117,32 @@ describe('agent updates on the server (SPEC-AGENT-UPDATES)', () => {
 		expect(entry?.detail).toEqual({ from: '0.1.0', to: '0.2.0' });
 	});
 
-	it('waits an hour for the 10% stage when there is no Early updates group', async () => {
+	it('U8: finds the Early updates group by its built-in marker, not by its name', async () => {
+		const { database, admin, machineId } = await setUp(false);
+		// A group someone made can never be called Early updates; a lookalike name is ignored.
+		const lookalike = createGroup(
+			database,
+			'machine',
+			admin.id,
+			{ name: 'Early updates (old)', description: '' },
+			NOW
+		);
+		if (lookalike.kind !== 'done') throw new Error('no group');
+		setGroupMembers(database, 'machine', admin.id, lookalike.id, [machineId], NOW);
+		expect(earlyUpdatesGroup(database)).toMatchObject({ name: 'Early updates', machines: 0 });
+		const early = earlyUpdatesGroup(database);
+		database
+			.update(machineGroups)
+			.set({ name: 'Canaries' })
+			.where(eq(machineGroups.id, early.id))
+			.run();
+		setGroupMembers(database, 'machine', admin.id, early.id, [machineId], NOW);
+		expect(earlyUpdatesGroup(database)).toEqual({ id: early.id, name: 'Canaries', machines: 1 });
+		expect(checkIn(database, machineId, LAUNCHER, NOW)).toEqual({ kind: 'offer', ...RELEASE });
+		expect(rolloutView(database, '0.2.0', NOW)).toMatchObject({ stage: 'early' });
+	});
+
+	it('waits an hour for the 10% stage when the Early updates group is empty', async () => {
 		const { database, machineId } = await setUp(false);
 		const view = rolloutView(database, '0.2.0', NOW);
 		expect(view).toMatchObject({ stage: 'tenth' });

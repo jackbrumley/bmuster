@@ -1,0 +1,4 @@
+-- Custom SQL migration file, put your code below! --
+UPDATE `machine_groups` SET `built_in` = 'early' WHERE `id` = (SELECT `id` FROM `machine_groups` WHERE `built_in` IS NULL AND lower(`name`) = 'early updates' ORDER BY `name` = 'Early updates' DESC, `created_at` LIMIT 1);--> statement-breakpoint
+UPDATE `machine_groups` SET `description` = 'New agent versions reach these machines first. Put one or two test machines here.' WHERE `built_in` = 'early' AND `description` = '';--> statement-breakpoint
+INSERT INTO `machine_groups` (`id`, `name`, `description`, `built_in`, `created_at`) SELECT '00000000-0000-4000-8000-0000000ea51e', 'Early updates', 'New agent versions reach these machines first. Put one or two test machines here.', 'early', 0 WHERE NOT EXISTS (SELECT 1 FROM `machine_groups` WHERE `built_in` = 'early');

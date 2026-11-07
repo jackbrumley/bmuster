@@ -216,6 +216,7 @@ describe('admin lists (X5)', () => {
 		expect(result.rows).toEqual([
 			['Front desk', 'People', 1, 'pat'],
 			['All machines', 'Machines', 3, 'Build server; Office laptop; Reception PC'],
+			['Early updates', 'Machines', 0, ''],
 			['Front desk machines', 'Machines', 2, 'Build server; Reception PC']
 		]);
 	});
