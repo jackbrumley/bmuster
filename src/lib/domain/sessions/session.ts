@@ -34,7 +34,8 @@ export const SESSION_END_REASONS = [
 	'idle',
 	'no-browser',
 	'agent-lost',
-	'agent-timeout'
+	'agent-timeout',
+	'unused'
 ] as const;
 
 /** Why a session ended, as the audit log and the console say it. */
@@ -58,11 +59,13 @@ export function endReasonLabel(reason: SessionEndReason): string {
 			return 'The connection to the machine was lost';
 		case 'agent-timeout':
 			return 'The machine did not answer';
+		case 'unused':
+			return 'Files not used for 5 minutes';
 	}
 }
 
 /** Someone using a machine right now (SPEC-SESSIONS T8). */
-export type SessionInUse = { kind: 'terminal'; userName: string };
+export type SessionInUse = { kind: 'terminal' | 'files'; userName: string };
 
 /** "terminal by Kim", for "In use: …". */
 export function inUseLabel(sessions: readonly SessionInUse[]): string {

@@ -32,7 +32,8 @@ describe('session tickets (T3)', () => {
 	it('has vectors for every purpose the agent knows', () => {
 		expect(vectors.tickets.map((vector) => vector.ticket.purpose.kind)).toEqual([
 			'terminal',
-			'exec'
+			'exec',
+			'files'
 		]);
 	});
 

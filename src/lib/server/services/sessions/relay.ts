@@ -21,6 +21,10 @@ import { OutputRing } from './output-ring.ts';
  *
  * Reloads: the browser can go away for up to a minute and come back with a
  * fresh ticket; the last 256 KB of output are replayed when it does.
+ *
+ * File sessions (SPEC-FILES) have no browser socket: the server itself is
+ * the other end (a `LocalEnd`), sending requests and reading the replies.
+ * The relay still owns their lifetime, their agent socket and "In use".
  */
 
 export type RelayLimits = {
@@ -66,10 +70,17 @@ export type SessionRecord = {
 	machineId: string;
 	userId: string;
 	userName: string;
-	kind: 'terminal';
-	shell: TerminalShell;
 	ip: string;
 	openedAt: number;
+} & ({ kind: 'terminal'; shell: TerminalShell } | { kind: 'files' });
+
+/** The server's own end of a session, in the browser's place (file sessions). */
+export type LocalEnd = {
+	/** The agent's socket is open: requests can go. */
+	ready(): void;
+	/** A text frame from the agent that is not its last word. */
+	text(text: string): void;
+	bytes(data: Uint8Array): void;
 };
 
 export type EndedSession = SessionRecord & {
@@ -89,7 +100,12 @@ type Side = {
 	paused: boolean;
 };
 
-type LiveSession = SessionRecord & {
+type LiveSession = {
+	record: SessionRecord;
+	id: string;
+	machineId: string;
+	userId: string;
+	local: LocalEnd | undefined;
 	onEnded: (session: EndedSession) => void;
 	agent: Side;
 	browser: Side;
@@ -185,14 +201,7 @@ export function createRelay(limits: RelayLimits) {
 		session.browser.peer?.close(CLOSE_ENDED, reason);
 		session.agent.peer?.close(1000, reason);
 		const record: EndedSession = {
-			id: session.id,
-			machineId: session.machineId,
-			userId: session.userId,
-			userName: session.userName,
-			kind: session.kind,
-			shell: session.shell,
-			ip: session.ip,
-			openedAt: session.openedAt,
+			...session.record,
 			reason,
 			message,
 			endedAt: Date.now(),
@@ -209,39 +218,81 @@ export function createRelay(limits: RelayLimits) {
 		return sessions.get(sessionId);
 	}
 
+	function track(
+		record: SessionRecord,
+		onEnded: (session: EndedSession) => void,
+		local: LocalEnd | undefined
+	): LiveSession {
+		const session: LiveSession = {
+			record,
+			id: record.id,
+			machineId: record.machineId,
+			userId: record.userId,
+			local,
+			onEnded,
+			agent: { peer: undefined, waiting: 0, paused: false },
+			browser: { peer: undefined, waiting: 0, paused: false },
+			ring: new OutputRing(limits.replayBytes),
+			earlyInput: [],
+			bytesOut: 0,
+			bytesIn: 0,
+			lastInputAt: Date.now(),
+			everAttached: false,
+			timers: new Map()
+		};
+		sessions.set(record.id, session);
+		later(session, 'agent', limits.agentWaitMs, () => {
+			end(record.id, 'agent-timeout', 'The machine did not open the session in time.');
+		});
+		return session;
+	}
+
 	return {
 		/**
 		 * A session was asked for; the agent has `agentWaitMs` to open its
 		 * socket. `onEnded` hears how it ended (for the audit log).
 		 */
 		start(record: SessionRecord, onEnded: (session: EndedSession) => void): void {
-			const session: LiveSession = {
-				...record,
-				onEnded,
-				agent: { peer: undefined, waiting: 0, paused: false },
-				browser: { peer: undefined, waiting: 0, paused: false },
-				ring: new OutputRing(limits.replayBytes),
-				earlyInput: [],
-				bytesOut: 0,
-				bytesIn: 0,
-				lastInputAt: Date.now(),
-				everAttached: false,
-				timers: new Map()
-			};
-			sessions.set(record.id, session);
-			later(session, 'agent', limits.agentWaitMs, () => {
-				end(record.id, 'agent-timeout', 'The machine did not open the session in time.');
-			});
+			const session = track(record, onEnded, undefined);
 			later(session, 'browser', limits.noBrowserMs, () => {
 				end(record.id, 'no-browser', 'No browser was connected for 60 seconds.');
 			});
 			watchIdle(session);
 		},
 
+		/**
+		 * A session whose other end is the server itself (files). Its owner
+		 * ends it (with `end`) when it is no longer used.
+		 */
+		startLocal(
+			record: SessionRecord,
+			onEnded: (session: EndedSession) => void,
+			local: LocalEnd
+		): void {
+			track(record, onEnded, local);
+		},
+
+		/** Sends to a local session's agent; false before it is connected or once it has ended. */
+		toAgent(sessionId: string, message: string | Uint8Array): boolean {
+			const session = live(sessionId);
+			const peer = session?.agent.peer;
+			if (session?.local === undefined || peer === undefined) {
+				return false;
+			}
+			session.lastInputAt = Date.now();
+			if (typeof message === 'string') {
+				peer.sendText(message);
+			} else {
+				session.bytesIn += message.byteLength;
+				peer.sendBytes(message, () => undefined);
+			}
+			return true;
+		},
+
 		/** A single-use ticket for this person's browser to (re)attach, or undefined. */
 		issueBrowserTicket(sessionId: string, userId: string): string | undefined {
 			const session = live(sessionId);
-			if (session?.userId !== userId) {
+			if (session?.userId !== userId || session.local !== undefined) {
 				return undefined;
 			}
 			const now = Date.now();
@@ -279,13 +330,14 @@ export function createRelay(limits: RelayLimits) {
 			}
 			session.earlyInput = [];
 			sendControl(session.browser.peer, { type: 'ready' });
+			session.local?.ready();
 			return { kind: 'attached' };
 		},
 
 		/** Attaches a browser (after `redeemBrowserTicket`); an earlier browser is let go. */
 		attachBrowser(sessionId: string, peer: RelayPeer): Attach {
 			const session = live(sessionId);
-			if (session === undefined) {
+			if (session === undefined || session.local !== undefined) {
 				return { kind: 'refused', message: 'This session has ended.' };
 			}
 			const previous = session.browser.peer;
@@ -316,6 +368,10 @@ export function createRelay(limits: RelayLimits) {
 				return;
 			}
 			session.bytesOut += data.byteLength;
+			if (session.local !== undefined) {
+				session.local.bytes(data);
+				return;
+			}
 			session.ring.push(data);
 			forward(session.browser, session.agent, data);
 		},
@@ -327,6 +383,7 @@ export function createRelay(limits: RelayLimits) {
 			}
 			const parsed = agentSessionEventSchema.safeParse(parseJson(text));
 			if (!parsed.success) {
+				session.local?.text(text);
 				return;
 			}
 			switch (parsed.data.type) {
@@ -415,7 +472,7 @@ export function createRelay(limits: RelayLimits) {
 		inUse(machineId: string): SessionInUse[] {
 			return [...sessions.values()]
 				.filter((session) => session.machineId === machineId)
-				.map((session) => ({ kind: session.kind, userName: session.userName }));
+				.map((session) => ({ kind: session.record.kind, userName: session.record.userName }));
 		},
 
 		/** How a recently ended session ended, for a page that comes back to it. */

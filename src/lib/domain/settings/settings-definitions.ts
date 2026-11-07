@@ -36,6 +36,15 @@ type SettingDefinition<T> = {
 const consentSchema = z.enum(CONSENTS);
 const updatePolicySchema = z.enum(['automatic', 'manual']);
 
+/** Largest upload in the Files tab, in GB (SPEC-FILES F6). */
+const UPLOAD_LIMITS_GB = ['1', '5', '10', '50', '100', '1000'] as const;
+const uploadLimitSchema = z.enum(UPLOAD_LIMITS_GB);
+
+/** The largest upload the setting allows, in bytes. */
+export function maxUploadBytes(gigabytes: z.infer<typeof uploadLimitSchema>): number {
+	return Number(gigabytes) * 1024 ** 3;
+}
+
 export const SETTING_DEFINITIONS = {
 	defaultConsent: {
 		label: 'Default for new access rules',
@@ -79,6 +88,22 @@ export const SETTING_DEFINITIONS = {
 			]
 		}
 	} satisfies SettingDefinition<z.infer<typeof updatePolicySchema>>,
+	maxUploadGb: {
+		label: 'Largest upload in Files',
+		description:
+			'The biggest single file anyone can send to a machine from its Files tab. Uploads go in 8 MB pieces and resume after a dropped connection.',
+		schema: uploadLimitSchema,
+		defaultValue: '10',
+		changedBy: 'admin',
+		section: 'general',
+		control: {
+			kind: 'choice',
+			options: UPLOAD_LIMITS_GB.map((value) => ({
+				value,
+				label: value === '1000' ? '1 TB' : `${value} GB`
+			}))
+		}
+	} satisfies SettingDefinition<z.infer<typeof uploadLimitSchema>>,
 	localNetworkMode: {
 		label: 'Local network mode',
 		description:

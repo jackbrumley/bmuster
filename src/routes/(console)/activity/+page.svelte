@@ -12,6 +12,7 @@
 		IconDevices,
 		IconDownload,
 		IconEdit,
+		IconFolderPlus,
 		IconNoteOff,
 		IconRefresh,
 		IconKey,
@@ -27,6 +28,7 @@
 		IconShieldLock,
 		IconShieldX,
 		IconTerminal2,
+		IconUpload,
 		IconUser,
 		IconUsersGroup
 	} from '@tabler/icons-svelte-runes';
@@ -168,6 +170,16 @@
 				return IconPin;
 			case 'list-exported':
 				return IconDownload;
+			case 'file-downloaded':
+				return IconDownload;
+			case 'file-uploaded':
+				return IconUpload;
+			case 'files-deleted':
+				return IconTrash;
+			case 'file-renamed':
+				return IconEdit;
+			case 'folder-created':
+				return IconFolderPlus;
 		}
 	}
 </script>

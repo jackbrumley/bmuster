@@ -26,7 +26,9 @@ type TicketPurpose =
 			command: string;
 			timeoutMs: number;
 			maxOutputBytes: number;
-	  };
+	  }
+	/** File actions (SPEC-FILES); the agent needs the `files` permission. */
+	| { kind: 'files' };
 
 export type SessionTicket = {
 	sessionId: string;
@@ -44,21 +46,6 @@ export type SignedTicket = { ticket: string; signature: string };
 
 /** The ticket as JSON, fields in the agreed order (so the vectors match). */
 function ticketJson(ticket: SessionTicket): string {
-	const purpose: TicketPurpose =
-		ticket.purpose.kind === 'terminal'
-			? {
-					kind: 'terminal',
-					shell: ticket.purpose.shell,
-					cols: ticket.purpose.cols,
-					rows: ticket.purpose.rows
-				}
-			: {
-					kind: 'exec',
-					shell: ticket.purpose.shell,
-					command: ticket.purpose.command,
-					timeoutMs: ticket.purpose.timeoutMs,
-					maxOutputBytes: ticket.purpose.maxOutputBytes
-				};
 	return JSON.stringify({
 		sessionId: ticket.sessionId,
 		machineId: ticket.machineId,
@@ -67,8 +54,26 @@ function ticketJson(ticket: SessionTicket): string {
 		runAs: { kind: ticket.runAs.kind },
 		issuedAtMs: ticket.issuedAtMs,
 		expiresAtMs: ticket.expiresAtMs,
-		purpose
+		purpose: purposeJson(ticket.purpose)
 	});
+}
+
+/** The purpose with its fields in the agreed order. */
+function purposeJson(purpose: TicketPurpose): TicketPurpose {
+	switch (purpose.kind) {
+		case 'terminal':
+			return { kind: 'terminal', shell: purpose.shell, cols: purpose.cols, rows: purpose.rows };
+		case 'exec':
+			return {
+				kind: 'exec',
+				shell: purpose.shell,
+				command: purpose.command,
+				timeoutMs: purpose.timeoutMs,
+				maxOutputBytes: purpose.maxOutputBytes
+			};
+		case 'files':
+			return { kind: 'files' };
+	}
 }
 
 /** Signs a ticket: base64 of its JSON, and of the signature over `BMUSTER-TICKET-1\n` + that JSON. */

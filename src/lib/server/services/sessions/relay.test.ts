@@ -307,3 +307,43 @@ describe('in use (T8)', () => {
 		expect(relay.inUse(RECORD.machineId)).toEqual([]);
 	});
 });
+
+describe('local ends: the server in the browser’s place (SPEC-FILES)', () => {
+	it('hands the agent’s replies and bytes to the server, takes no browser, and shows as in use', () => {
+		const relay = createRelay(RELAY_LIMITS);
+		const ended: EndedSession[] = [];
+		const heard: { ready: number; texts: string[]; bytes: number[] } = {
+			ready: 0,
+			texts: [],
+			bytes: []
+		};
+		const record: SessionRecord = { ...RECORD, kind: 'files', openedAt: Date.now() };
+		relay.startLocal(record, (session) => ended.push(session), {
+			ready: () => {
+				heard.ready += 1;
+			},
+			text: (text) => heard.texts.push(text),
+			bytes: (data) => heard.bytes.push(data.byteLength)
+		});
+		expect(relay.inUse(RECORD.machineId)).toEqual([{ kind: 'files', userName: 'Kim' }]);
+		expect(relay.issueBrowserTicket(RECORD.id, RECORD.userId)).toBeUndefined();
+		expect(relay.toAgent(RECORD.id, '{"id":1,"op":"roots"}')).toBe(false);
+
+		const agent = fakePeer(true);
+		expect(relay.attachAgent(RECORD.id, RECORD.machineId, agent)).toEqual({ kind: 'attached' });
+		expect(heard.ready).toBe(1);
+		expect(relay.toAgent(RECORD.id, '{"id":1,"op":"roots"}')).toBe(true);
+		expect(relay.toAgent(RECORD.id, new Uint8Array(8))).toBe(true);
+		expect(agent.texts).toEqual([{ id: 1, op: 'roots' }]);
+		expect(agent.bytes).toHaveLength(1);
+
+		relay.agentText(RECORD.id, agent, '{"type":"done","id":1,"result":{}}');
+		relay.fromAgent(RECORD.id, agent, new Uint8Array(12));
+		expect(heard.texts).toEqual(['{"type":"done","id":1,"result":{}}']);
+		expect(heard.bytes).toEqual([12]);
+
+		relay.agentText(RECORD.id, agent, '{"type":"failed","message":"no disk"}');
+		expect(ended).toMatchObject([{ kind: 'files', reason: 'failed', bytesIn: 8, bytesOut: 12 }]);
+		expect(relay.toAgent(RECORD.id, '{}')).toBe(false);
+	});
+});

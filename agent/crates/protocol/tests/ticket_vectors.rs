@@ -42,7 +42,7 @@ fn ticket_vectors() {
             &vectors.machine_id,
             vectors.now_ms,
         );
-        // Exec tickets need `ai-commands`, which these carry.
+        // Each vector carries the permission its purpose needs.
         assert_eq!(
             opened.as_ref(),
             Ok(&vector.ticket),
