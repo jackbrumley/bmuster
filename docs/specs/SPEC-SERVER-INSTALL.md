@@ -85,7 +85,7 @@ A fresh install listens on **8443** in **local network mode** (`BMUSTER_LOCAL_NE
 - **Why HTTPS out of the box:** session cookies are `Secure` (SPEC-SIGN-IN S5), so over plain HTTP to a LAN address nobody can sign in, and the desktop viewer needs a secure context (WebCodecs, clipboard). A new Pi or VM has no domain and no reverse proxy, so the server's own certificate (SPEC-INSTALL-OPTIONS L4) is the only thing that works with no extra steps. The browser warns once; agents get the pin from Add machine.
 - **Why 8443:** the well-known alternative HTTPS port; 443 is often taken (or wanted by a reverse proxy) and needs privileges. `--port` picks another on first install; the unit allows ports below 1024, so 443 works too.
 - **Why a first-run switch:** local network mode is a database setting. The switch applies only while there are no users, so after setup Settings → Security owns it, and turning it off for a reverse proxy sticks.
-- **Behind a domain:** turn local network mode off in Settings, restart, and put a reverse proxy with a public certificate in front of `http://<host>:8443`. `ORIGIN` can be added to `server.env` if the proxy does not pass the host.
+- **Behind a domain:** turn local network mode off in Settings, restart, and put a reverse proxy with a public certificate in front of `http://<host>:8443`. The proxy must pass the original `Host` header: adapter-node 6 has no `ORIGIN` setting, and the scheme is taken as `https` (corrected by SPEC-HOSTING; the container image reads `X-Forwarded-Proto` and `X-Forwarded-Host` instead).
 
 ## 7. Launcher commands
 
@@ -97,7 +97,7 @@ A fresh install listens on **8443** in **local network mode** (`BMUSTER_LOCAL_NE
 | `bmuster-server status [--prefix <dir>] [--data-dir <dir>]`                              | Version, folders, service state, port and log location.                                                                                                                                                                                                                                                                |
 | `bmuster-server --version`                                                               | The launcher's version.                                                                                                                                                                                                                                                                                                |
 
-`server.env` holds `SECRETS_KEY`, `HOST`, `PORT` and `BMUSTER_LOCAL_NETWORK_MODE`, plus anything the admin adds (`ORIGIN`, `BMUSTER_ADMIN_EMAIL` …). `DATABASE_PATH` and `RELEASES_PATH` are always set by the launcher, so a moved prefix or data folder cannot drift from the file.
+`server.env` holds `SECRETS_KEY`, `HOST`, `PORT` and `BMUSTER_LOCAL_NETWORK_MODE`, plus anything the admin adds (`BMUSTER_ADMIN_EMAIL`, `BMUSTER_BACKUP_TIME` …). `DATABASE_PATH` and `RELEASES_PATH` are always set by the launcher, so a moved prefix or data folder cannot drift from the file.
 
 ## 8. Upgrade and uninstall
 
