@@ -184,7 +184,6 @@ fn sign_in(page: &Page, request: &Request, now: u64) -> (Response, After) {
     let form = request.form();
     let problem = match page.gate.sign_in(field(&form, "code"), now) {
         SignIn::SignedIn { token } => {
-            log::info!("Local page: someone signed in with a code.");
             return (
                 Response::redirect("/").with_header("set-cookie", session_cookie(&token)),
                 After::Nothing,
@@ -341,19 +340,6 @@ pub fn run_after(page: &Page, after: After) {
     }
 }
 
-/// Whose code a session signed in with, in words.
-fn whose_code(codes: &CodeOwners) -> String {
-    match codes {
-        CodeOwners::Machine => "the shared machine code".into(),
-        // Several only when their codes matched at once.
-        CodeOwners::People { people } => people
-            .iter()
-            .map(|person| format!("{}'s code", person.name))
-            .collect::<Vec<_>>()
-            .join(" and "),
-    }
-}
-
 fn status_page(page: &Page, notice: Option<&str>, codes: &CodeOwners) -> String {
     let now = SystemTime::now();
     let snapshot = page.board.snapshot();
@@ -425,7 +411,7 @@ fn status_page(page: &Page, notice: Option<&str>, codes: &CodeOwners) -> String 
             },
         ),
         pages::row("Data folder", &page.data_dir.display().to_string()),
-        pages::row("Signed in with", &whose_code(codes)),
+        pages::row("Signed in with", &super::gate::whose_code(codes)),
         pages::row("This page", &listen),
         Row {
             label: "Page certificate",

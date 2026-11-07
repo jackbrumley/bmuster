@@ -164,6 +164,7 @@ impl Gate {
                         codes: codes.clone(),
                     },
                 );
+                log::info!("Local page: signed in with {}.", whose_code(&codes));
                 self.journal
                     .record_at(LocalEvent::SignedIn { codes }, now_ms);
                 SignIn::SignedIn { token }
@@ -250,6 +251,19 @@ impl Gate {
                 now_ms,
             );
         }
+    }
+}
+
+/// Whose code a session signed in with, in words.
+pub fn whose_code(codes: &CodeOwners) -> String {
+    match codes {
+        CodeOwners::Machine => "the shared machine code".into(),
+        // Several only when their codes matched at once.
+        CodeOwners::People { people } => people
+            .iter()
+            .map(|person| format!("{}'s code", person.name))
+            .collect::<Vec<_>>()
+            .join(" and "),
     }
 }
 
