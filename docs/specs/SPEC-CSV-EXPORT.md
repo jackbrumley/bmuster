@@ -1,6 +1,6 @@
 # SPEC-CSV-EXPORT: CSV export on every list
 
-**Status:** `DRAFT` · asked for 2026-11-07 · **Date:** 2026-11-07
+**Status:** `IMPLEMENTED` (X1–X8 built; version bump and changelog left for the release step) · asked for 2026-11-07 · **Date:** 2026-11-07
 
 ## 1. Problem
 
@@ -53,3 +53,23 @@ No schema change: the audit log gains one kind, `list-exported`.
 
 1. Activity has no search, filter or date range on the page today. The export takes `from` and `to` so a later filter bar can pass them through; the button exports everything the viewer may see, newest first, up to the cap. Should Activity get a date-range picker?
 2. Users, Groups and Access rules have no search, filter or sort on screen, so their exports follow the page order.
+
+## 7. As built (2026-11-07)
+
+Built as specified unless listed here. Tested end to end against a scratch server with a seeded database (14 machines, an admin and a member who sees 5): every list downloaded through its Export button, file name, byte order mark, header and row count checked, and the member refused the admin lists.
+
+| #     | Where                                                                                                                                                                                                                                                      | Tests                                                                    |
+| :---- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------- |
+| X1    | `ui/export-button.svelte`: the standard `Button` (secondary, compact) with `IconDownload` and "Export". It downloads through a temporary link with `download`, so the page stays put. Before the primary action on Users and Access rules.                 | `export-button.svelte.test.ts`, `machines-page.svelte.test.ts`           |
+| X2–X4 | `services/exports/csv.ts`: `csvCell`, `csvLine`, `csvResponse` (sent in chunks of 1000 lines; also `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`). The file date is the server's local date.                                                | `csv.test.ts`                                                            |
+| X5    | `services/exports/exports.ts` uses `visibleMachineIds` and `activityScopeFor`; group names go through the new `canSeeGroups` in the access service. Users, Groups and Access rules routes are `route.admin`.                                               | `exports.test.ts`, `guards.test.ts`                                      |
+| X6    | The Machines list rules (`toMachineRow`, filter, search, per-column sort values) moved to `domain/machines/machine-row.ts`, and `sortRows` to `utils/sort-rows.ts`, so the page and the export share one definition. `DataTable`'s `sort` is now bindable. | `exports.test.ts`, `machine-row.test.ts`, `machines-page.svelte.test.ts` |
+| X7    | `audit.listAuditBetween`. The cut-off note is one cell on the last line: "Cut off at 100000 rows: older entries than <ISO time> are not in this file." Local time is `YYYY-MM-DD HH:mm:ss` in the browser's zone (`timeZone` from the Activity page).      | `exports.test.ts`                                                        |
+| X8    | Audit kind `list-exported`, target the list's name, detail `rows` plus `search`, `filter`, `sort`, `timeZone`, `from`, `to` and `cutOff` when used. Not tied to a machine, so only admins see it on Activity.                                              | `exports.test.ts`                                                        |
+
+**Different from the spec or decided while building**
+
+- **Machines columns.** OS is the reported name ("Ubuntu"), or the family before the first inventory; OS version is empty until then. CPU % and Memory % are filled only while the machine is online, as on screen. Groups leaves out All machines, which holds every machine.
+- **Groups.** One file, groups of people first, then groups of machines (All machines first). Members are listed by name.
+- **Activity details.** Every detail except `ip` goes in Details as `label: value`. A member's Activity export holds the same entries as their Activity page, which includes group membership changes about their machines (so a group name can appear there).
+- **Query errors** answer 400 with the first problem, like the JSON routes.
