@@ -41,9 +41,12 @@ To add:
 3. **Moving servers:** the old server marks the machine _moved_ (kept in history, refused from then on).
 
 1. **Where it listens:** localhost only by default; the local network is an opt-in server setting.
-1. **Who sees the code:** admins only for now.
+1. **Who sees the code:** admins only for now. _Changed 2026-11-07 below: each admin sees only their own code._
+1. **A code per person, and local events in Activity (2026-11-07):** each person who may sign in locally gets their own code, derived from the machine's secret, so the agent can tell whose code was used, even offline. The agent keeps the list of those people (admins today, later whoever access rules allow) from its check-in replies and reports local page events (sign-ins, wrong codes, lockouts and actions) to Activity, queued on disk while offline. Old agents keep the shared code until they are updated. Section 7.
 
 ## 6. As built (2026-11-07)
+
+_The first version: one shared code per machine. Section 7 replaces it with a code per person._
 
 Tested end to end against two scratch dev servers: a debug agent enrolled with the first (`--insecure-dev-tls`) and ran with `--local-page-port 47591`; in Playwright the console's Manage tab showed the code, the local page signed in with it, showed the status, passed all four Test connection steps, and moved the machine to the second server. The first server then listed no machines, recorded `machine-moved` and refused the old identity; the second listed the machine Online, checking in, and its own code signed in to the local page after the agent restarted.
 
@@ -84,3 +87,38 @@ Tested end to end against two scratch dev servers: a debug agent enrolled with t
 
 - The service paths of Restart and Uninstall (systemd and Windows) were not run; only the hand-started paths were.
 - Version bump and changelog, as with the other specs.
+
+## 7. A code per person, and local events in Activity (approved 2026-11-07)
+
+**Status:** `APPROVED` (2026-11-07). Security work: it changes who can sign in to the local page and what is audited.
+
+### Why
+
+With one shared code per machine, the agent cannot tell who signed in, and nothing done on the local page reaches the server: a restart, a move or an uninstall at the machine leaves no trace in Activity.
+
+### Design
+
+- **Per-person secret.** `HMAC-SHA256(key = the machine's 20-byte local page secret, message = "BMUSTER-LOCAL-USER-1\n" + userId)`, the first 20 bytes. That is the RFC 6238 key (HMAC-SHA1, 6 digits, 30 s), the same length as the machine secret. The server already holds the machine secret (sealed), so nothing new is sent; the agent derives the same keys. A person's code says nothing about anyone else's, and the machine secret cannot be worked back from a code.
+- **The list.** The server sends the agent the people who may sign in locally, `[{ userId, name }]`, sorted by `userId`: enabled admins today. The list's `hash` is the lower-case hex SHA-256 of its JSON; only the server computes it, and the agent sends it back as is. Each check-in says what the agent holds (`localUsers: { kind: 'none' } | { kind: 'held', hash }`); the reply carries the list (`localUsers: { kind: 'list', hash, users }`) only when the hash differs, otherwise `{ kind: 'unchanged' }`. The agent keeps it in `local-users.json` (0600) and uses it offline.
+- **Why the list is not signed separately.** It travels in the reply to a signed check-in over the agent's checked TLS connection (trust store or pin). It can only narrow who signs in: a userId added by someone else is useless without the machine secret, and removing people is no worse than blocking the server.
+- **Sign-in.** With a list, only the listed people's codes work and the shared machine code does not. Without one (an agent that has not yet heard from a newer server), the shared machine code works as before. Single use and the lockout stay per machine: a step at or before the last one used is refused whoever's code it is, and 5 wrong codes pause sign-in for 5 minutes for everyone. If several people's codes match in the same step (about one in a million per pair), the code is accepted and every matching name is recorded.
+- **Old agents.** An agent that sends no `localUsers` gets no list and keeps the shared code. The server notes per machine whether the agent takes per-person codes (`machines.local_codes`, from each check-in). The Manage tab then shows each admin only their own code; for an older agent it shows the shared code and says per-person codes need an agent update. Once the agent says it takes per-person codes the server never shows the shared code for that machine.
+- **Events.** The agent records local page events in `local-events.json` (0600): at most 500; when full the oldest is dropped and counted in a "dropped N" marker at the front. Each has a sequence number and the time it happened. It sends them, signed, to `POST /agent/v1/local-events` (`{ sentAtMs, events: [{ seq, atMs, event }] }`, at most 100 per request) right after an event, and after every check-in while any are waiting; the server's reply removes them. The server keeps the highest `seq` it took per machine (`machines.local_events_seq`, reset when the agent is reinstalled) and ignores anything at or below it, so a resend after a lost reply records nothing twice.
+- **Event kinds.** `signed-in`, `signed-out`, `session-expired`, `wrong-code`, `locked-out` (the fifth wrong code, instead of a fifth `wrong-code`), `restarted`, `connection-tested` (passed or not), `move-started`, `move-finished`, `move-failed`, `leaving` (just before the signed `leave` of a move or uninstall), `uninstalled`, and the `dropped` marker. Each action carries whose code the session was signed in with (`{ kind: 'machine' }` for the shared code, or `{ kind: 'people', people }`).
+- **Before leaving.** A move or uninstall sends the queue to the old server before its signed `leave`, because the server refuses the machine afterwards. Events still waiting after a move are deleted with the old server's list and secret.
+- **Activity.** Each event is an audit entry about the machine (actor System, so members who can see the machine see it), at the time it happened, with the time it was sent in its detail. The wording names whose code: "Jack Brumley's code signed in to the local page on mint", "Restarted the agent from the local page on mint (signed in with Jack Brumley's code)". Wrong codes, lockouts and dropped events show as warnings.
+
+### Acceptance criteria
+
+| #   | Criterion                                                                                                                                                                            | Test                                                    |
+| :-- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------ |
+| P1  | The server and the agent derive the same per-person secret and code from the shared vectors in `agent/crates/protocol/tests/vectors.json`.                                           | `totp.test.ts`, agent `totp::tests`                     |
+| P2  | The Manage tab shows each admin only their own code for an agent that takes per-person codes, and never the shared one.                                                              | `local-page.test.ts`, `local-page.svelte.test.ts`       |
+| P3  | For an older agent the Manage tab shows the shared code and says per-person codes need an agent update.                                                                              | `local-page.test.ts`, `local-page.svelte.test.ts`       |
+| P4  | A check-in reply carries the list only when the agent's hash differs; changing the admins changes the hash; disabled people are left out.                                            | `local-users.test.ts`                                   |
+| P5  | The agent keeps the list on disk (0600), uses it offline, and a person removed from the list stops working after the next check-in.                                                  | agent `local_page::people::tests`, `gate::tests`        |
+| P6  | With a list, only listed people's codes sign in; without one, the shared code does. Single use and the 5-code lockout apply per machine. Several matches are accepted and all named. | agent `local_page::gate::tests`                         |
+| E1  | The event queue holds at most 500 events, drops the oldest with a counted marker, survives a restart and is private.                                                                 | agent `local_page::journal::tests`                      |
+| E2  | Events reach the server signed; resent events are recorded once; a reinstall starts the count again.                                                                                 | `local-events.test.ts`                                  |
+| E3  | Activity names whose code was used, in the wording above; wrong codes, lockouts and dropped events are warnings.                                                                     | `activity.test.ts`, `local-events.test.ts`              |
+| E4  | End to end: two admins, sign in with the second admin's code, Activity names them; with the server down a sign-in is queued and arrives when it is back.                             | manual (scratch server and agent), recorded in As built |
