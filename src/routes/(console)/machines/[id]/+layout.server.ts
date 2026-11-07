@@ -1,6 +1,8 @@
 import { error } from '@sveltejs/kit';
 import { database } from '#lib/server/database/app-database.ts';
+import { env } from '#lib/server/env.ts';
 import { page } from '#lib/server/guards/page.ts';
+import { signedReleases } from '#lib/server/services/agents/releases.ts';
 import { permissionsFor } from '#lib/server/services/access/access.ts';
 import { watchAgent } from '#lib/server/services/agents/live-agents.ts';
 import { findMachine } from '#lib/server/services/machines/machine-views.ts';
@@ -17,7 +19,7 @@ export const load: LayoutServerLoad = page.user(({ params }, { user }) => {
 		error(404, 'No machine with this id');
 	}
 	const now = Date.now();
-	const machine = findMachine(database, params.id, now);
+	const machine = findMachine(database, params.id, now, signedReleases(env.releasesPath));
 	if (machine === undefined) {
 		error(404, 'No machine with this id');
 	}

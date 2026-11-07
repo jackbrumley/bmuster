@@ -16,6 +16,7 @@ function checkIn(database: AppDatabase, machineId: string, localUsers: LocalUser
 		{
 			agentVersion: '0.3.0',
 			uptimeSeconds: 1,
+			update: { kind: 'no-launcher' as const },
 			signedInUser: { kind: 'none' },
 			load: { cpuPercent: 1, memoryUsedBytes: 1 },
 			inventory: { kind: 'full', hash: 'c'.repeat(64), data: SAMPLE_INVENTORY },
@@ -81,6 +82,7 @@ describe('the list of people for the local page (SPEC-AGENT-LOCAL 7)', () => {
 		const old = checkInRequestSchema.parse({
 			agentVersion: '0.2.0',
 			uptimeSeconds: 1,
+			update: { kind: 'no-launcher' as const },
 			signedInUser: { kind: 'none' },
 			load: { cpuPercent: 1, memoryUsedBytes: 1 },
 			inventory: { kind: 'unchanged', hash: 'c'.repeat(64) }

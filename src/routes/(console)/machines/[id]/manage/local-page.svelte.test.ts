@@ -20,9 +20,16 @@ function replyWith(body: unknown): Response {
 }
 
 describe('Manage tab: Local page (SPEC-AGENT-LOCAL)', () => {
-	it('tells an admin plainly to update an older agent', async () => {
+	it('tells an admin plainly, as a warning, to reinstall an older agent', async () => {
 		const screen = await render(LocalPage, { machineId: MACHINE_ID, localPage: { kind: 'none' } });
-		await expect.element(screen.getByText(/Update the agent to get a local page/)).toBeVisible();
+		const warning = screen.getByRole('alert');
+		await expect.element(warning).toBeVisible();
+		await expect
+			.element(warning.getByText('This agent is too old for the local page'))
+			.toBeVisible();
+		await expect
+			.element(warning.getByText(/Reinstall\s+it\s+once\s+with\s+Reinstall\s+agent\s+below/))
+			.toBeVisible();
 		expect(screen.getByRole('button', { name: /Show local page code/ }).all()).toHaveLength(0);
 	});
 

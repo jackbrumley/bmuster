@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
+import { enrolFakeAgent, testDatabase, NO_RELEASES } from '#tests/helpers/fake-agent.ts';
 import { agentConnected, agentDisconnected } from '../agents/live-agents.ts';
 import { listAudit } from '../audit/audit.ts';
 import { sessionRelay } from '../sessions/relay.ts';
@@ -12,10 +12,10 @@ describe('machine status (A7, A8)', () => {
 	it('is online within 3 check-in intervals of the last contact, then offline with its last-seen time', () => {
 		const database = testDatabase();
 		const agent = enrolFakeAgent(database, NOW);
-		expect(findMachine(database, agent.machineId, NOW + 179_000)?.status).toEqual({
+		expect(findMachine(database, agent.machineId, NOW + 179_000, NO_RELEASES)?.status).toEqual({
 			kind: 'online'
 		});
-		expect(findMachine(database, agent.machineId, NOW + 180_000)?.status).toEqual({
+		expect(findMachine(database, agent.machineId, NOW + 180_000, NO_RELEASES)?.status).toEqual({
 			kind: 'offline',
 			lastSeenIso: new Date(NOW).toISOString()
 		});
@@ -26,21 +26,27 @@ describe('machine status (A7, A8)', () => {
 		const agent = enrolFakeAgent(database, NOW);
 		const peer = { send: () => undefined, close: () => undefined };
 		agentConnected(agent.machineId, peer);
-		expect(findMachine(database, agent.machineId, NOW + 3_600_000)?.status).toEqual({
+		expect(findMachine(database, agent.machineId, NOW + 3_600_000, NO_RELEASES)?.status).toEqual({
 			kind: 'online'
 		});
 		agentDisconnected(agent.machineId, peer);
-		expect(findMachine(database, agent.machineId, NOW + 3_600_000)?.status.kind).toBe('offline');
+		expect(findMachine(database, agent.machineId, NOW + 3_600_000, NO_RELEASES)?.status.kind).toBe(
+			'offline'
+		);
 	});
 
 	it('shows a new machine with its inventory pending, and hides removed machines', () => {
 		const database = testDatabase();
 		const kept = enrolFakeAgent(database, NOW);
 		const removed = enrolFakeAgent(database, NOW);
-		expect(findMachine(database, kept.machineId, NOW)?.inventory).toEqual({ kind: 'pending' });
+		expect(findMachine(database, kept.machineId, NOW, NO_RELEASES)?.inventory).toEqual({
+			kind: 'pending'
+		});
 		removeMachine(database, removed.machineId, ADMIN_ID, NOW);
-		expect(listMachines(database, NOW).map((machine) => machine.id)).toEqual([kept.machineId]);
-		expect(findMachine(database, removed.machineId, NOW)).toBeUndefined();
+		expect(listMachines(database, NOW, NO_RELEASES).map((machine) => machine.id)).toEqual([
+			kept.machineId
+		]);
+		expect(findMachine(database, removed.machineId, NOW, NO_RELEASES)).toBeUndefined();
 	});
 
 	it('audits a removal with the admin who removed it, and refuses an unknown or already removed machine', () => {
@@ -80,11 +86,13 @@ describe('in use (SPEC-SESSIONS T8)', () => {
 			},
 			() => undefined
 		);
-		expect(findMachine(database, agent.machineId, NOW)?.inUse).toEqual([
+		expect(findMachine(database, agent.machineId, NOW, NO_RELEASES)?.inUse).toEqual([
 			{ kind: 'terminal', userName: 'Kim' }
 		]);
-		expect(listMachines(database, NOW)[0]?.inUse).toEqual([{ kind: 'terminal', userName: 'Kim' }]);
+		expect(listMachines(database, NOW, NO_RELEASES)[0]?.inUse).toEqual([
+			{ kind: 'terminal', userName: 'Kim' }
+		]);
 		sessionRelay().end(sessionId, 'closed', 'done');
-		expect(findMachine(database, agent.machineId, NOW)?.inUse).toEqual([]);
+		expect(findMachine(database, agent.machineId, NOW, NO_RELEASES)?.inUse).toEqual([]);
 	});
 });

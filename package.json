@@ -16,6 +16,8 @@
 		"agent:release-local": "node scripts/agent-release-local.ts",
 		"release:server-local": "node scripts/release-server.ts",
 		"docker:local": "node scripts/docker-local.ts",
+		"agent:release-key": "node scripts/agent-release-key.ts",
+		"agent:sign": "node scripts/agent-sign.ts",
 		"admin:reset": "node scripts/admin-reset.ts",
 		"brand:icons": "node scripts/brand-icons.ts",
 		"prepare": "svelte-kit sync || echo ''; git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .githooks || true",

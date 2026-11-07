@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { togglePermission, type Permission } from '#lib/domain/access/access.ts';
 import { accessRuleRequestSchema } from '#lib/schemas/access/access.ts';
 import { done } from '#tests/helpers/access.ts';
-import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
+import { enrolFakeAgent, testDatabase, NO_RELEASES } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import { updateSetting } from '../settings/settings.ts';
 import { listMachines } from '../machines/machine-views.ts';
@@ -160,6 +160,8 @@ describe('deleting a group used by rules (A8)', () => {
 		expect(listUserGroups(database)).toEqual([]);
 		expect(listMachineGroups(database).map((group) => group.name)).toEqual(['All machines', 'Lab']);
 		expect(listUsers(database).map((user) => user.id)).toEqual([admin.id]);
-		expect(listMachines(database, NOW).map((machine) => machine.id)).toEqual([machineId]);
+		expect(listMachines(database, NOW, NO_RELEASES).map((machine) => machine.id)).toEqual([
+			machineId
+		]);
 	});
 });

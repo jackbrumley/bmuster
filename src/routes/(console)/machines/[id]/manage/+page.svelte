@@ -11,6 +11,7 @@
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import { removeMachineReplySchema } from '#lib/schemas/machines/remove-machine.ts';
 	import { agentCommands } from '#lib/domain/machines/agent-commands.ts';
+	import AgentUpdate from './agent-update.svelte';
 	import LocalPage from './local-page.svelte';
 	import MachineDetails from './machine-details.svelte';
 	import MachineGroups from './machine-groups.svelte';
@@ -57,9 +58,8 @@
 <MachineGroups machineId={machine.id} groups={data.machineGroups} />
 
 <Panel heading="Agent" actions={undefined} tone="normal" padding="normal">
-	<p class="muted">
-		Version {machine.agentVersion}. Run these on the machine itself ({commands.shell.toLowerCase()}).
-	</p>
+	<AgentUpdate machineId={machine.id} version={machine.agentVersion} update={machine.update} />
+	<p class="muted">Run these on the machine itself ({commands.shell.toLowerCase()}).</p>
 	<div class="command">
 		<p class="command-label">Check its status</p>
 		<CopyField value={commands.status} label="status command" />

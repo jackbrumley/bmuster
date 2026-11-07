@@ -288,7 +288,7 @@ pub fn enrol(dir: &Path, options: &EnrolOptions<'_>) -> Result<Identity> {
         name,
         os_family: std::env::consts::OS.to_string(),
         target: env!("BMUSTER_TARGET").to_string(),
-        agent_version: env!("CARGO_PKG_VERSION").to_string(),
+        agent_version: env!("BMUSTER_VERSION").to_string(),
     };
     let body = serde_json::to_vec(&request)?;
 

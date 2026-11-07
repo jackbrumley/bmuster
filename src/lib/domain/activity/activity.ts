@@ -62,7 +62,16 @@ const AUDIT_KINDS = [
 	'invitation-accepted',
 	'notification-rule-added',
 	'notification-rule-changed',
-	'notification-rule-deleted'
+	'notification-rule-deleted',
+	// SPEC-AGENT-UPDATES
+	'agent-updated',
+	'agent-update-rolled-back',
+	'agent-update-refused',
+	'agent-update-requested',
+	'agent-pinned',
+	'agent-unpinned',
+	'agent-rollout-paused',
+	'agent-rollout-resumed'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -205,5 +214,21 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Changed a notification rule';
 		case 'notification-rule-deleted':
 			return 'Deleted a notification rule';
+		case 'agent-updated':
+			return "Updated a machine's agent";
+		case 'agent-update-rolled-back':
+			return 'Rolled back an agent update';
+		case 'agent-update-refused':
+			return 'Refused an agent update';
+		case 'agent-update-requested':
+			return 'Asked an agent to update now';
+		case 'agent-pinned':
+			return "Pinned a machine's agent version";
+		case 'agent-unpinned':
+			return "Unpinned a machine's agent version";
+		case 'agent-rollout-paused':
+			return 'Paused the agent roll-out';
+		case 'agent-rollout-resumed':
+			return 'Resumed the agent roll-out';
 	}
 }

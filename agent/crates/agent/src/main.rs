@@ -6,6 +6,7 @@ mod exec;
 mod gpus;
 mod identity;
 mod inventory;
+mod launcher;
 mod local_page;
 mod logging;
 mod paths;
@@ -20,6 +21,7 @@ mod status;
 mod tls;
 mod totp;
 mod trust;
+mod updates;
 mod worker;
 
 use anyhow::{bail, Context as _, Result};
@@ -29,6 +31,7 @@ use client::TlsMode;
 use status::RunMode;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 
 /// Exit code when the server has removed this machine (distinct from a crash).
@@ -36,9 +39,11 @@ const EXIT_REVOKED: u8 = 3;
 /// Exit code asking the service manager to start the agent again (the local
 /// page's Restart, or after moving servers).
 const EXIT_RESTART: u8 = 4;
+/// Exit code telling the launcher a checked build waits in `versions/incoming`.
+const EXIT_UPDATE: u8 = launcher::EXIT_UPDATE;
 
 #[derive(Parser)]
-#[command(name = "bmuster-agent", version, about = "BMuster agent")]
+#[command(name = "bmuster-agent", version = updates::VERSION, about = "BMuster agent")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -85,8 +90,9 @@ enum Command {
         #[arg(long)]
         insecure_dev_tls: bool,
     },
-    /// Run the agent (the service entry point)
-    Run {
+    /// Run the launcher, which runs the agent and keeps it up to date (the
+    /// service entry point)
+    Launch {
         /// Data folder (default: /var/lib/bmuster or C:\ProgramData\BMuster)
         #[arg(long)]
         data_dir: Option<PathBuf>,
@@ -100,6 +106,21 @@ enum Command {
         #[cfg(windows)]
         #[arg(long, hide = true)]
         service: bool,
+    },
+    /// Run the agent itself, without updates (the launcher runs it with --launched)
+    Run {
+        /// Data folder (default: /var/lib/bmuster or C:\ProgramData\BMuster)
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        /// DEVELOPMENT ONLY: accept any TLS certificate from the server
+        #[arg(long)]
+        insecure_dev_tls: bool,
+        /// Serve the local page on this port on localhost (tests and development)
+        #[arg(long, hide = true, value_name = "PORT")]
+        local_page_port: Option<u16>,
+        /// Started by the launcher, which switches versions and restarts it
+        #[arg(long, hide = true)]
+        launched: bool,
     },
     /// Move this machine to another BMuster server: enrol there first, then
     /// leave this one (needs root or Administrator when installed)
@@ -139,11 +160,21 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
 
     #[cfg(windows)]
-    if let Command::Run { service: true, .. } = cli.command {
+    if let Command::Launch { service: true, .. } = cli.command {
         return run_windows_service();
     }
 
-    if let Err(e) = logging::init_stderr() {
+    // A worker under the Windows service has no console: it logs to the file.
+    #[cfg(windows)]
+    let logged = match cli.command {
+        Command::Run { launched: true, .. } => service_windows::log_path()
+            .map_err(|e| format!("{e:#}"))
+            .and_then(|path| logging::init_file(&path)),
+        _ => logging::init_stderr(),
+    };
+    #[cfg(not(windows))]
+    let logged = logging::init_stderr();
+    if let Err(e) = logged {
         eprintln!("error: {e}");
         return ExitCode::FAILURE;
     }
@@ -194,18 +225,44 @@ fn dispatch(command: Command) -> Result<ExitCode> {
             )?;
             Ok(ExitCode::SUCCESS)
         }
-        Command::Run {
+        Command::Launch {
             data_dir,
             insecure_dev_tls,
             local_page_port,
             ..
         } => {
-            let mode = run_mode();
+            let mut worker_args = Vec::new();
+            if insecure_dev_tls {
+                worker_args.push("--insecure-dev-tls".into());
+            }
+            if let Some(port) = local_page_port {
+                worker_args.push("--local-page-port".into());
+                worker_args.push(port.to_string().into());
+            }
+            let launcher = launcher::Launcher::new(paths::data_dir(data_dir)?, worker_args)?;
+            match launcher.run(&AtomicBool::new(false))? {
+                launcher::Ended::Stopped => Ok(ExitCode::SUCCESS),
+                launcher::Ended::Revoked => Ok(ExitCode::from(EXIT_REVOKED)),
+            }
+        }
+        Command::Run {
+            data_dir,
+            insecure_dev_tls,
+            local_page_port,
+            launched,
+        } => {
+            // Under the launcher the agent restarts like a service: by exiting.
+            let mode = if launched {
+                RunMode::Service
+            } else {
+                run_mode()
+            };
             let options = worker::RunOptions {
                 data_dir: paths::data_dir(data_dir)?,
                 insecure_dev_tls,
                 mode,
                 local_page_port,
+                launched,
             };
             let (sender, signals) = mpsc::channel();
             match worker::run(&options, sender, signals)? {
@@ -215,6 +272,7 @@ fn dispatch(command: Command) -> Result<ExitCode> {
                     RunMode::Service => Ok(ExitCode::from(EXIT_RESTART)),
                     RunMode::Foreground => restart_in_place(),
                 },
+                worker::Outcome::Update => Ok(ExitCode::from(EXIT_UPDATE)),
             }
         }
         Command::Rejoin {
@@ -323,7 +381,7 @@ fn rejoin(join: &Join, data_dir: Option<PathBuf>, insecure_dev_tls: bool) -> Res
 }
 
 fn status(data_dir: &Path) -> Result<ExitCode> {
-    println!("Agent version: {}", env!("CARGO_PKG_VERSION"));
+    println!("Agent version: {}", env!("BMUSTER_VERSION"));
     println!("Data folder:   {}", data_dir.display());
     println!("Service:       {}", platform::service_state());
     if !identity::is_enrolled(data_dir) {
@@ -342,6 +400,9 @@ fn status(data_dir: &Path) -> Result<ExitCode> {
         println!("Announced:     {}", trust::describe(&next));
     }
     println!("Check-in:      every {} s", identity.check_in_seconds);
+    for (label, value) in launcher::describe(data_dir) {
+        println!("{label:<14} {value}");
+    }
     Ok(ExitCode::SUCCESS)
 }
 
@@ -363,7 +424,6 @@ mod platform {
     };
 
     const _: () = assert!(crate::service_windows::REVOKED_EXIT_CODE == crate::EXIT_REVOKED as u32);
-    const _: () = assert!(crate::service_windows::RESTART_EXIT_CODE == crate::EXIT_RESTART as i32);
 }
 
 #[cfg(not(any(target_os = "linux", windows)))]

@@ -1,5 +1,6 @@
 /** What the console knows about one enrolled machine. Browser-safe: no server imports. */
 import type { SessionInUse, TerminalShell } from '../sessions/session.ts';
+import type { MachineUpdateState } from './agent-updates.ts';
 
 export type OsFamily = 'windows' | 'linux' | 'macos';
 
@@ -59,6 +60,8 @@ export type Machine = {
 	/** The agent build it runs, e.g. `x86_64-unknown-linux-gnu`. */
 	target: string;
 	agentVersion: string;
+	/** Whether its agent is up to date, updating, rolled back or pinned (SPEC-AGENT-UPDATES). */
+	update: MachineUpdateState;
 	status: MachineStatus;
 	lastUser: LastUser;
 	live: LiveFigures;

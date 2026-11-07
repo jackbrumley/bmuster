@@ -20,12 +20,14 @@ import { recordAudit, type AuditActor } from '../audit/audit.ts';
 const PARSE: { [K in SettingKey]: (value: unknown) => SettingValues[K] } = {
 	defaultConsent: (value) => SETTING_DEFINITIONS.defaultConsent.schema.parse(value),
 	connectedNotice: (value) => SETTING_DEFINITIONS.connectedNotice.schema.parse(value),
+	agentUpdatePolicy: (value) => SETTING_DEFINITIONS.agentUpdatePolicy.schema.parse(value),
 	localNetworkMode: (value) => SETTING_DEFINITIONS.localNetworkMode.schema.parse(value)
 };
 
 const DEFAULTS: SettingValues = {
 	defaultConsent: SETTING_DEFINITIONS.defaultConsent.defaultValue,
 	connectedNotice: SETTING_DEFINITIONS.connectedNotice.defaultValue,
+	agentUpdatePolicy: SETTING_DEFINITIONS.agentUpdatePolicy.defaultValue,
 	localNetworkMode: SETTING_DEFINITIONS.localNetworkMode.defaultValue
 };
 

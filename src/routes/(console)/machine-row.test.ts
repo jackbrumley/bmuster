@@ -34,6 +34,7 @@ function machine(overrides: Partial<Machine>): Machine {
 		osFamily: 'linux',
 		target: 'x86_64-unknown-linux-gnu',
 		agentVersion: '0.2.0',
+		update: { kind: 'up-to-date' },
 		status: { kind: 'online' },
 		lastUser: { kind: 'none' },
 		live: {

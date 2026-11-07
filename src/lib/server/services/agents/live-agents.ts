@@ -79,6 +79,11 @@ export function sendToAgent(machineId: string, message: ServerSocketMessage): bo
 	return true;
 }
 
+/** Asks a connected agent to check in now, e.g. to take an update straight away. */
+export function askForCheckIn(machineId: string): boolean {
+	return sendToAgent(machineId, { type: 'check-in-now' });
+}
+
 export function sendToAllAgents(message: ServerSocketMessage): void {
 	for (const peer of peers.values()) {
 		peer.send(message);

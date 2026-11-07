@@ -19,6 +19,9 @@ agent/
     src/inventory.rs      inventory, load and signed-in user (sysinfo)
     src/gpus.rs           graphics cards: /sys/class/drm and pci.ids on Linux, WMI on Windows
     src/worker.rs         `run`: the check-in loop
+    src/launcher.rs       `launch`: runs the worker, switches versions, rolls back (SPEC-AGENT-UPDATES)
+    src/updates.rs        trusted release keys, build checks, version folders, the worker's download
+    release-key.pub       the project's release public key, built into every agent
     src/socket.rs         the live socket (own thread)
     src/local_page/       the local page on https://localhost:47500 (SPEC-AGENT-LOCAL)
     src/relocate.rs       moving to another server, and leaving before an uninstall
@@ -34,7 +37,8 @@ agent/
 | :-- | :-- |
 | `bmuster-agent install --url <server> --code <code> [--name <name>] [--pin-cert <pin>]` | Needs root or Administrator. Copies the binary into place, enrols, then installs and starts the service. |
 | `bmuster-agent enrol --url <server> --code <code> [--name <name>] [--pin-cert <pin>] [--data-dir <dir>] [--insecure-dev-tls]` | Enrols only. Use it for development. |
-| `bmuster-agent run [--data-dir <dir>] [--insecure-dev-tls]` | The service entry point. It runs the check-in loop, the live socket and the local page. |
+| `bmuster-agent launch [--data-dir <dir>] [--insecure-dev-tls]` | The service entry point: the launcher. It runs the agent from `<data>/versions/current` and keeps it up to date. |
+| `bmuster-agent run [--data-dir <dir>] [--insecure-dev-tls]` | The agent itself: the check-in loop, the live socket and the local page. Run by hand it does not update itself. |
 | `bmuster-agent rejoin --url <server> --code <code> [--name <name>] [--pin-cert <pin>] [--data-dir <dir>] [--insecure-dev-tls]` | Moves this machine to another server: enrols there first with a new key, then tells the old server it left. Needs root or Administrator for an installed agent; stops and restarts its service. |
 | `bmuster-agent status [--data-dir <dir>]` | Shows the enrolment and the service state. It does not contact the server. |
 | `bmuster-agent uninstall [--purge]` | Stops and removes the service and the binary. `--purge` also deletes the data folder (identity and key). |
@@ -42,7 +46,13 @@ agent/
 
 `--pin-cert sha256:<base64>` is for a server in local network mode (its own self-signed certificate; the pin is on Add machine). The agent then accepts only a server certificate whose public key has that SHA-256, for HTTPS and the live socket, and ignores the host name and issuer. The pin is saved in `identity.json` (`serverPin`), so `run` and the service need no flag. When the server announces a new certificate (`pin-update` on the live socket) the agent saves it as `nextPin` and switches to it only once a connection with it works.
 
-Exit codes for `run`: `0` stopped, `1` error, `3` the server removed this machine (`revoked`), `4` restart (the local page's Restart, or after a move, under systemd). The systemd unit sets `RestartPreventExitStatus=3`, so a removed machine stays stopped. Started by hand, a restart re-executes the agent in place.
+Exit codes for `run`: `0` stopped, `1` error, `3` the server removed this machine (`revoked`), `4` restart (the local page's Restart, or after a move), `5` a checked update waits in `versions/incoming` (only under the launcher). The launcher starts the agent again for `4`, switches for `5`, and itself exits `3` for a removed machine; the systemd unit sets `RestartPreventExitStatus=3`, so a removed machine stays stopped. Started by hand, a restart re-executes the agent in place.
+
+## Updates (SPEC-AGENT-UPDATES)
+
+The launcher keeps `versions/current` and `versions/previous` in the data folder. When a check-in reply offers a newer build, the agent checks the signature over the version, target, size and SHA-256 before downloading, downloads it over its usual connection (the same certificate check or pin), checks the size and SHA-256, writes it to `versions/incoming` and exits `5`. The launcher checks it again with its own keys, switches, and gives the new version 120 s to check in; otherwise it switches back and records "rolled back". `update-state.json` holds the last update event, reported in every check-in. `status` shows the running and previous versions.
+
+Trusted keys: `release-key.pub` (the project key) and, only if set when building, `BMUSTER_EXTRA_RELEASE_KEY` (base64 raw Ed25519 public key; development builds and self-builders). `BMUSTER_VERSION` at build time sets the version (default: Cargo's).
 
 ## Local page
 
@@ -80,7 +90,9 @@ The dev server uses a self-signed certificate. Without the `--insecure-dev-tls` 
 npm run agent:release-local
 ```
 
-Builds the agent in release mode for this computer and copies it to `RELEASES_PATH/<version>/<target>/` (from `.env`), so the dev server's install scripts and the **Install manually** download on Add machine can serve it. It prints the path and SHA-256.
+Builds the agent in release mode for this computer as version `<cargo version>-dev.<UTC time>` (every build its own version), signs it with the development key in `~/.config/bmuster-dev/release-dev-key.pem` (made on first use; `--key-file` for another), and copies it with its `.sig` to `RELEASES_PATH/<version>/<target>/` (from `.env`). The dev server's install scripts and Add machine serve it, and agents built this way take newer development builds as updates. Release agents never trust the development key. It prints the path and SHA-256.
+
+`npm run agent:sign -- --target <triple> [--version <v>] [--key-file <pem>] <binary>` signs any build (the release workflow uses the `BMUSTER_RELEASE_SIGNING_KEY` secret instead of a file). `npm run agent:release-key -- --out <file>` makes a new project key pair; see its header before using it.
 
 ## Checks
 

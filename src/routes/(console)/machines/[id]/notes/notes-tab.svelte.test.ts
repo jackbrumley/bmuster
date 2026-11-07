@@ -15,6 +15,7 @@ const MACHINE: Machine = {
 	osFamily: 'windows',
 	target: 'x86_64-pc-windows-msvc',
 	agentVersion: '0.2.0',
+	update: { kind: 'up-to-date' },
 	status: { kind: 'online' },
 	lastUser: { kind: 'none' },
 	live: { kind: 'none' },

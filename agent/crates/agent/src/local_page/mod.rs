@@ -62,6 +62,8 @@ pub struct Setup {
     pub port_override: Option<u16>,
     pub people: Arc<People>,
     pub journal: Arc<Journal>,
+    /// Started by the launcher, so it can update itself (SPEC-AGENT-UPDATES).
+    pub launched: bool,
 }
 
 /// The running page's shared state.
@@ -72,6 +74,7 @@ pub struct Page {
     board: Arc<StatusBoard>,
     mode: RunMode,
     insecure_dev_tls: bool,
+    launched: bool,
     gate: Gate,
     people: Arc<People>,
     journal: Arc<Journal>,
@@ -228,6 +231,7 @@ fn try_start(setup: Setup) -> Result<Reporter> {
         ),
         people: setup.people,
         journal: setup.journal,
+        launched: setup.launched,
         hosts: listen.hosts,
         listen: listeners.iter().map(|(address, _)| *address).collect(),
         fingerprint: certificate::fingerprint(&cert.sha256_hex),

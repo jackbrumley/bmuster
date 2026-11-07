@@ -1,17 +1,21 @@
-import { eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { inventorySchema } from '#lib/schemas/agents/agent-protocol.ts';
+import type { MachineUpdateState } from '#lib/domain/machines/agent-updates.ts';
 import type {
 	LiveFigures,
 	Machine,
 	MachineInventory,
+	OsFamily,
 	SignedInUser
 } from '#lib/domain/machines/machine.ts';
 import { machineInventory, machineStatus, machines } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { raiseNotification } from '../notifications/events.ts';
+import { updateStates } from '../agents/agent-updates.ts';
 import { disconnectAgent, isAgentConnected, liveFigures } from '../agents/live-agents.ts';
 import { sessionRelay } from '../sessions/relay.ts';
+import type { ReleaseLookup } from '../agents/releases.ts';
 
 /** A machine with no socket and no check-in for this many intervals shows Offline. */
 const OFFLINE_AFTER_INTERVALS = 3;
@@ -21,7 +25,11 @@ type StatusRow = typeof machineStatus.$inferSelect;
 type InventoryRow = typeof machineInventory.$inferSelect;
 
 /** Every machine that has not been removed, for the console, newest name first. */
-export function listMachines(database: AppDatabase, now: number): Machine[] {
+export function listMachines(
+	database: AppDatabase,
+	now: number,
+	releases: ReleaseLookup
+): Machine[] {
 	const rows = database
 		.select()
 		.from(machines)
@@ -30,7 +38,15 @@ export function listMachines(database: AppDatabase, now: number): Machine[] {
 		.where(isNull(machines.removedAt))
 		.orderBy(machines.name)
 		.all();
-	return rows.map((row) => toMachine(row.machines, row.machine_status, row.machine_inventory, now));
+	const updates = updateStates(
+		database,
+		rows.map((row) => row.machines),
+		releases,
+		now
+	);
+	return rows.map((row) =>
+		toMachine(row.machines, row.machine_status, row.machine_inventory, updates, now)
+	);
 }
 
 /**
@@ -47,6 +63,18 @@ export function activeMachineNames(database: Queryable): Map<string, string> {
 	return new Map(rows.map((row) => [row.id, row.name]));
 }
 
+/** The name and operating system of a machine that has not been removed (sessions need no more). */
+export function activeMachineBasics(
+	database: Queryable,
+	id: string
+): { name: string; osFamily: OsFamily } | undefined {
+	return database
+		.select({ name: machines.name, osFamily: machines.osFamily })
+		.from(machines)
+		.where(and(eq(machines.id, id), isNull(machines.removedAt)))
+		.get();
+}
+
 /** True for a machine that is enrolled and has not been removed. */
 export function isActiveMachine(database: Queryable, id: string): boolean {
 	const row = database
@@ -57,7 +85,12 @@ export function isActiveMachine(database: Queryable, id: string): boolean {
 	return row?.removedAt === null;
 }
 
-export function findMachine(database: AppDatabase, id: string, now: number): Machine | undefined {
+export function findMachine(
+	database: AppDatabase,
+	id: string,
+	now: number,
+	releases: ReleaseLookup
+): Machine | undefined {
 	const row = database
 		.select()
 		.from(machines)
@@ -71,7 +104,8 @@ export function findMachine(database: AppDatabase, id: string, now: number): Mac
 	if (row.machines.removedAt !== null) {
 		return undefined;
 	}
-	return toMachine(row.machines, row.machine_status, row.machine_inventory, now);
+	const updates = updateStates(database, [row.machines], releases, now);
+	return toMachine(row.machines, row.machine_status, row.machine_inventory, updates, now);
 }
 
 /**
@@ -131,6 +165,7 @@ function toMachine(
 	machine: MachineRow,
 	status: StatusRow | null,
 	inventory: InventoryRow | null,
+	updates: ReadonlyMap<string, MachineUpdateState>,
 	now: number
 ): Machine {
 	const connected = isAgentConnected(machine.id);
@@ -144,6 +179,7 @@ function toMachine(
 		osFamily: machine.osFamily,
 		target: machine.target,
 		agentVersion: machine.agentVersion,
+		update: updates.get(machine.id) ?? { kind: 'no-release' },
 		lastUser:
 			machine.lastUserName !== null && machine.lastUserSeenAt !== null
 				? {

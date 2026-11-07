@@ -4,7 +4,8 @@ import {
 	SAMPLE_INVENTORY,
 	enrolFakeAgent,
 	enrolWithCode,
-	testDatabase
+	testDatabase,
+	NO_RELEASES
 } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import { listAudit } from '../audit/audit.ts';
@@ -41,6 +42,7 @@ async function reinstallable(database: AppDatabase) {
 		{
 			agentVersion: '0.1.0',
 			uptimeSeconds: 5,
+			update: { kind: 'no-launcher' as const },
 			signedInUser: { kind: 'user', name: 'sarah.k' },
 			load: { cpuPercent: 1, memoryUsedBytes: 1 },
 			inventory: { kind: 'full', hash: 'c'.repeat(64), data: SAMPLE_INVENTORY },
@@ -93,7 +95,7 @@ describe('reinstall code (D9)', () => {
 		// The old install's figures go; the new agent's first check-in brings its own.
 		expect(database.select().from(machineStatus).all()).toEqual([]);
 		expect(database.select().from(machineInventory).all()).toEqual([]);
-		expect(findMachine(database, old.machineId, NOW + 20)?.inventory).toEqual({
+		expect(findMachine(database, old.machineId, NOW + 20, NO_RELEASES)?.inventory).toEqual({
 			kind: 'pending'
 		});
 
@@ -187,6 +189,6 @@ describe('reinstall code (D9)', () => {
 		const second = enrolWithCode(database, plain.code, 'test-host', NOW + 21);
 		if (isRefusal(second)) throw new Error(second.message);
 		expect(second.machineId).not.toBe(old.machineId);
-		expect(listMachines(database, NOW + 21)).toHaveLength(2);
+		expect(listMachines(database, NOW + 21, NO_RELEASES)).toHaveLength(2);
 	});
 });

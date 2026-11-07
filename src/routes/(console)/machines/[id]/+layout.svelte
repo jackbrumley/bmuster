@@ -12,6 +12,7 @@
 	} from '@tabler/icons-svelte-runes';
 	import OsIcon from '#lib/ui/os-icon.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
+	import UpdateBadge from '#lib/ui/update-badge.svelte';
 	import TabNav from '#lib/ui/tab-nav.svelte';
 	import type { LayoutProps } from './$types';
 
@@ -55,7 +56,10 @@
 			<h1>{data.machine.name}</h1>
 			<p>{data.machine.hostname}</p>
 		</div>
-		<StatusBadge status={data.machine.status} now={data.now} since="shown" />
+		<div class="badges">
+			<StatusBadge status={data.machine.status} now={data.now} since="shown" />
+			<UpdateBadge state={data.machine.update} />
+		</div>
 	</div>
 	{#if data.machine.description !== ''}
 		<p class="description">{data.machine.description}</p>
@@ -95,6 +99,14 @@
 	.names {
 		flex: 1;
 		min-width: 0;
+	}
+
+	/* Side by side when there is room; stacked to the right on a phone. */
+	.badges {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: var(--space-1);
 	}
 
 	/* The same size as PageHeader's title on the other pages. */

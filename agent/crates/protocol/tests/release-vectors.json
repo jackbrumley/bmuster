@@ -1,0 +1,12 @@
+{
+	"note": "Shared release-signing test vector (SPEC-AGENT-UPDATES). Rust (crates/protocol, the agent verifier) and TypeScript (src/lib/server/services/agents/release-signing.ts, checked by release-signing.test.ts) must both reproduce it.",
+	"seedHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+	"publicKeyBase64": "ebVWLo/mVPlAeLES6KmLp5AfhTrmlb7X4OORC60ElmQ=",
+	"version": "0.2.0-dev.20261107153000",
+	"target": "x86_64-unknown-linux-gnu",
+	"binaryUtf8": "not really an agent\n",
+	"size": 20,
+	"sha256": "f40208fd26142ae1b3f574445e330edb041f356612964db5d0253513f80104ca",
+	"messageUtf8": "BMUSTER-RELEASE-1\n0.2.0-dev.20261107153000\nx86_64-unknown-linux-gnu\n20\nf40208fd26142ae1b3f574445e330edb041f356612964db5d0253513f80104ca",
+	"signatureBase64": "gUCDeCJouCjEqiINy5CAFG1esoYGgsl3V86fNwR0NYspH9XKZ55dwioybSzcXeF6iQuXqW68892/nhvZ1sjEAg=="
+}
