@@ -390,12 +390,22 @@
 		margin: 0;
 	}
 
+	/*
+	 * On phones the terminal runs edge to edge (it undoes the page gutter and
+	 * the frame's safe-area padding), so every column counts; the text keeps
+	 * clear of a notch in landscape. Swipes inside it scroll the terminal
+	 * (terminal-touch.ts), never the page.
+	 */
 	.screen {
 		min-height: 240px;
-		padding: var(--space-2);
-		border-radius: var(--radius-card);
+		margin-left: calc(-1 * var(--page-gutter) - var(--safe-left));
+		margin-right: calc(-1 * var(--page-gutter) - var(--safe-right));
+		padding: var(--space-2) calc(var(--space-1) + var(--safe-right)) var(--space-2)
+			calc(var(--space-1) + var(--safe-left));
 		background: var(--terminal-bg);
 		overflow: hidden;
+		touch-action: none;
+		overscroll-behavior: contain;
 	}
 
 	.host {
@@ -430,7 +440,9 @@
 
 	@media (min-width: 900px) {
 		.screen {
+			margin: 0;
 			padding: var(--space-3);
+			border-radius: var(--radius-card);
 		}
 
 		.reserve {

@@ -55,6 +55,8 @@
 	--sidebar-width: 15rem;
 	--tabbar-height: 4rem;
 	--content-max: 72rem;
+	/* The space beside a console page on phones; full-width blocks undo it. */
+	--page-gutter: var(--space-4);
 	/* The one gap between the blocks of a page: header, panels, lists. */
 	--gap-section: var(--space-6);
 

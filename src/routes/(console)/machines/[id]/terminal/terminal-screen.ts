@@ -1,4 +1,5 @@
 import type { ITheme } from '@xterm/xterm';
+import { attachTouchScroll } from './terminal-touch.ts';
 
 /**
  * The terminal on the page: xterm.js with fitting, clickable links and wide
@@ -113,6 +114,7 @@ export async function createScreen(
 	const dataListener = terminal.onData((data) => {
 		events.onData(data);
 	});
+	const detachTouch = attachTouchScroll(host, terminal);
 
 	let size = { cols: terminal.cols, rows: terminal.rows };
 	function fit(): boolean {
@@ -182,6 +184,7 @@ export async function createScreen(
 			themeWatch.disconnect();
 			darkQuery.removeEventListener('change', retheme);
 			dataListener.dispose();
+			detachTouch();
 			terminal.dispose();
 		}
 	};

@@ -7,6 +7,7 @@ import type { Machine } from '#lib/domain/machines/machine.ts';
 import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import TerminalTab from './+page.svelte';
+import TerminalInFrame from './terminal-in-frame.svelte';
 
 const SESSION_ID = '22222222-2222-4222-8222-222222222222';
 
@@ -57,8 +58,10 @@ function props() {
 	};
 }
 
-async function openTerminal() {
-	const screen = await render(TerminalTab, props());
+async function openTerminal(framed = false) {
+	const screen = framed
+		? await render(TerminalInFrame, { pageProps: props() })
+		: await render(TerminalTab, props());
 	await expect.poll(() => FakeSocket.last?.url ?? '').toContain('ticket=ticket-1');
 	const socket = FakeSocket.last;
 	if (socket === undefined) throw new Error('no socket');
@@ -146,5 +149,80 @@ describe('the extra keys (T5)', () => {
 		await userEvent.keyboard('x');
 
 		await expect.poll(() => socket.typed()).toEqual(['\x1b[1;5D', '\x03', '\x1bb', 'x']);
+	});
+});
+
+/** A one-finger swipe on the terminal, moving `dy` pixels in steps; true if the page was told not to scroll. */
+function swipeTerminal(container: HTMLElement, dy: number): boolean {
+	const target = container.querySelector('.xterm-screen');
+	if (target === null) throw new Error('no terminal screen');
+	const box = target.getBoundingClientRect();
+	const x = box.left + box.width / 2;
+	const start = box.top + box.height / 2;
+	const touch = (y: number) => new Touch({ identifier: 1, target, clientX: x, clientY: y });
+	const send = (type: string, y: number | undefined) => {
+		const touches = y === undefined ? [] : [touch(y)];
+		const event = new TouchEvent(type, {
+			touches,
+			targetTouches: touches,
+			changedTouches: [touch(y ?? start + dy)],
+			bubbles: true,
+			cancelable: true
+		});
+		target.dispatchEvent(event);
+		return event.defaultPrevented;
+	};
+	send('touchstart', start);
+	let prevented = false;
+	const steps = 10;
+	for (let step = 1; step <= steps; step++) {
+		prevented = send('touchmove', start + (dy * step) / steps) || prevented;
+	}
+	send('touchend', undefined);
+	return prevented;
+}
+
+function topRow(container: HTMLElement): string {
+	return container.querySelector('.xterm-rows > div')?.textContent.trim() ?? '';
+}
+
+describe('the terminal on a phone', () => {
+	it('swiping down on the terminal scrolls its history, not the page', async () => {
+		const { screen, socket } = await openTerminal(true);
+		const lines = Array.from({ length: 500 }, (_, index) => String(index + 1)).join('\r\n');
+		socket.receive(new TextEncoder().encode(`${lines}\r\n`));
+		await expect.poll(() => rows(screen.container)).toContain('500');
+		const before = Number(topRow(screen.container));
+
+		expect(swipeTerminal(screen.container, 200)).toBe(true);
+		await expect.poll(() => Number(topRow(screen.container))).toBeLessThan(before);
+		expect(window.scrollY).toBe(0);
+	});
+
+	it('in the alternate screen (less, vim) a swipe sends the arrow keys a mouse wheel would', async () => {
+		const { screen, socket } = await openTerminal(true);
+		socket.receive(new TextEncoder().encode('\x1b[?1049h\x1b[Hless'));
+		await expect.poll(() => rows(screen.container)).toContain('less');
+		expect(swipeTerminal(screen.container, 200)).toBe(true);
+		await expect
+			.poll(() => socket.typed().filter((typed) => typed === '\x1b[A').length)
+			.toBeGreaterThan(0);
+		expect(socket.typed().every((typed) => typed === '\x1b[A')).toBe(true);
+	});
+
+	it('runs the full width of a 390px screen, without a sideways scroll', async () => {
+		const { screen } = await openTerminal(true);
+		const region = screen.getByRole('region', { name: `Terminal on ${MACHINE.name}` });
+		await expect.element(region).toBeVisible();
+		// The body's width: the test page keeps room for a scrollbar.
+		const box = region.element().getBoundingClientRect();
+		expect(box.left).toBe(0);
+		expect(box.right).toBe(document.body.clientWidth);
+		expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
+		const bar = screen
+			.getByRole('button', { name: 'Bigger text' })
+			.element()
+			.getBoundingClientRect();
+		expect(bar.right).toBeLessThanOrEqual(document.body.clientWidth - 16);
 	});
 });

@@ -125,7 +125,7 @@
 		width: 100%;
 		max-width: var(--content-max);
 		margin: 0 auto;
-		padding: var(--space-4) var(--space-4)
+		padding: var(--space-4) var(--page-gutter)
 			calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-6));
 	}
 
