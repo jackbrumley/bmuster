@@ -1,3 +1,4 @@
+import { inUseLabel } from '#lib/domain/sessions/session.ts';
 import { describe, expect, it } from 'vitest';
 import { enrolFakeAgent, testDatabase, NO_RELEASES } from '#tests/helpers/fake-agent.ts';
 import { agentConnected, agentDisconnected } from '../agents/live-agents.ts';
@@ -94,5 +95,30 @@ describe('in use (SPEC-SESSIONS T8)', () => {
 		]);
 		sessionRelay().end(sessionId, 'closed', 'done');
 		expect(findMachine(database, agent.machineId, NOW, NO_RELEASES)?.inUse).toEqual([]);
+	});
+
+	it('R17: a desktop session says whether it controls, as "desktop (control) by Kim"', () => {
+		const database = testDatabase();
+		const agent = enrolFakeAgent(database, NOW);
+		const sessionId = crypto.randomUUID();
+		sessionRelay().start(
+			{
+				id: sessionId,
+				machineId: agent.machineId,
+				userId: ADMIN_ID,
+				userName: 'Kim',
+				kind: 'desktop',
+				mode: 'control',
+				ip: '192.0.2.1',
+				openedAt: NOW
+			},
+			() => undefined
+		);
+		const inUse = findMachine(database, agent.machineId, NOW, NO_RELEASES)?.inUse ?? [];
+		expect(inUseLabel(inUse)).toBe('desktop (control) by Kim');
+		expect(inUseLabel([...inUse, { kind: 'terminal', userName: 'Lee' }])).toBe(
+			'desktop (control) by Kim, terminal by Lee'
+		);
+		sessionRelay().end(sessionId, 'closed', 'done');
 	});
 });

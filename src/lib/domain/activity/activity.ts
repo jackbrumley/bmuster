@@ -53,6 +53,8 @@ const AUDIT_KINDS = [
 	'access-rule-deleted',
 	'session-opened',
 	'session-ended',
+	// SPEC-DESKTOP
+	'session-disconnected-at-machine',
 	// SPEC-EMAIL
 	'email-sent',
 	'email-failed',
@@ -204,6 +206,8 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Opened a session';
 		case 'session-ended':
 			return 'Closed a session';
+		case 'session-disconnected-at-machine':
+			return 'Disconnected at the machine';
 		case 'email-sent':
 			return 'Sent an email';
 		case 'email-failed':

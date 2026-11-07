@@ -5,6 +5,8 @@
  */
 import { z } from 'zod';
 import {
+	DESKTOP_END_REASONS,
+	DESKTOP_MODES,
 	SESSION_END_REASONS,
 	TERMINAL_SHELLS,
 	type BrowserControl,
@@ -15,13 +17,16 @@ import {
 const cols = z.int().min(2).max(1000);
 const rows = z.int().min(1).max(500);
 
-/** `POST /api/machines/[id]/sessions` */
-export const openSessionRequestSchema = z.object({
-	kind: z.literal('terminal'),
-	shell: z.enum(TERMINAL_SHELLS),
-	cols,
-	rows
-});
+/** `POST /api/machines/[id]/sessions`: a terminal, or a desktop (SPEC-DESKTOP R2, R3). */
+export const openSessionRequestSchema = z.discriminatedUnion('kind', [
+	z.object({
+		kind: z.literal('terminal'),
+		shell: z.enum(TERMINAL_SHELLS),
+		cols,
+		rows
+	}),
+	z.object({ kind: z.literal('desktop'), mode: z.enum(DESKTOP_MODES) })
+]);
 
 export type OpenSessionRequest = z.infer<typeof openSessionRequestSchema>;
 
@@ -61,8 +66,12 @@ export const serverControlSchema: z.ZodType<ServerControl> = z.discriminatedUnio
 	})
 ]);
 
-/** Text frames from the agent on a session socket: its last word. */
+/**
+ * Text frames from the agent on a session socket: its last word. A desktop
+ * session's last word is its own `ended` message (SPEC-DESKTOP 5.2).
+ */
 export const agentSessionEventSchema = z.discriminatedUnion('type', [
+	z.object({ type: z.literal('ended'), reason: z.enum(DESKTOP_END_REASONS) }),
 	z.object({ type: z.literal('exited'), code: z.int() }),
 	z.object({ type: z.literal('failed'), message: z.string().max(2000) }),
 	z.object({

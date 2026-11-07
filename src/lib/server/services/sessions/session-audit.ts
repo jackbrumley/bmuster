@@ -4,21 +4,24 @@ import { recordAudit } from '../audit/audit.ts';
 import type { EndedSession, SessionRecord } from './relay.ts';
 
 /**
- * Audit entries for every session kind (SPEC-SESSIONS T7, SPEC-FILES F8):
- * who, where, how long, how it ended, and how much went each way. Never
- * the content.
+ * Audit entries for every session kind (SPEC-SESSIONS T7, SPEC-FILES F8,
+ * SPEC-DESKTOP 9): who, where, how long, how it ended, and how much went
+ * each way. Never the content: no screen, keystrokes or file data.
  */
 
 /** Says who ran it as: the only choice for now is the agent's own account. */
 const RUN_AS_LABEL = 'Administrator (root or SYSTEM)';
 
-/** "terminal" with its shell, or "files". */
+/** "terminal" with its shell, "files", or "desktop" with its mode. */
 function typeDetail(record: SessionRecord): Record<string, string> {
 	switch (record.kind) {
 		case 'terminal':
-			return { type: 'terminal', shell: record.shell };
+			return { type: 'terminal', shell: record.shell, 'run as': RUN_AS_LABEL };
 		case 'files':
-			return { type: 'files' };
+			return { type: 'files', 'run as': RUN_AS_LABEL };
+		case 'desktop':
+			// Ask sessions are refused until consent prompts exist (SPEC-DESKTOP 13).
+			return { type: 'desktop', mode: record.mode, consent: 'unattended', codec: 'JPEG tiles' };
 	}
 }
 
@@ -34,7 +37,7 @@ export function auditSessionOpened(
 			kind: 'session-opened',
 			target: machineName,
 			machineId: record.machineId,
-			detail: { ...typeDetail(record), 'run as': RUN_AS_LABEL, from: record.ip }
+			detail: { ...typeDetail(record), from: record.ip }
 		},
 		record.openedAt
 	);
@@ -66,7 +69,6 @@ export function auditSessionEnded(
 			machineId: ended.machineId,
 			detail: {
 				...typeDetail(ended),
-				'run as': RUN_AS_LABEL,
 				from: ended.ip,
 				duration: durationText(ended.endedAt - ended.openedAt),
 				ended: endReasonLabel(ended.reason),
@@ -76,4 +78,17 @@ export function auditSessionEnded(
 		},
 		ended.endedAt
 	);
+	if (ended.reason === 'disconnected-at-machine') {
+		recordAudit(
+			database,
+			{
+				actor: { kind: 'system' },
+				kind: 'session-disconnected-at-machine',
+				target: machineName,
+				machineId: ended.machineId,
+				detail: { viewer: ended.userName, mode: ended.kind === 'desktop' ? ended.mode : ended.kind }
+			},
+			ended.endedAt
+		);
+	}
 }

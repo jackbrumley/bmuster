@@ -35,7 +35,13 @@ export const SESSION_END_REASONS = [
 	'no-browser',
 	'agent-lost',
 	'agent-timeout',
-	'unused'
+	'unused',
+	// Desktop sessions (SPEC-DESKTOP 9), as the agent reports them.
+	'declined',
+	'timed-out',
+	'disconnected-at-machine',
+	'permission-removed',
+	'too-many-sessions'
 ] as const;
 
 /** Why a session ended, as the audit log and the console say it. */
@@ -61,13 +67,55 @@ export function endReasonLabel(reason: SessionEndReason): string {
 			return 'The machine did not answer';
 		case 'unused':
 			return 'Files not used for 5 minutes';
+		case 'declined':
+			return 'The person at the screen declined';
+		case 'timed-out':
+			return 'Nobody at the screen answered';
+		case 'disconnected-at-machine':
+			return 'Disconnected at the machine';
+		case 'permission-removed':
+			return 'The permission was removed';
+		case 'too-many-sessions':
+			return 'The machine already had 4 desktop sessions';
 	}
 }
 
-/** Someone using a machine right now (SPEC-SESSIONS T8). */
-export type SessionInUse = { kind: 'terminal' | 'files'; userName: string };
+/**
+ * How a desktop session can end, as the agent says in its last message
+ * (`{type: 'ended', reason}`, SPEC-DESKTOP 5.2 and 9).
+ */
+export const DESKTOP_END_REASONS = [
+	'closed',
+	'declined',
+	'timed-out',
+	'disconnected-at-machine',
+	'no-browser',
+	'agent-lost',
+	'permission-removed',
+	'too-many-sessions'
+] as const satisfies readonly SessionEndReason[];
 
-/** "terminal by Kim", for "In use: …". */
+/** Watch the screen only, or watch and control it (SPEC-DESKTOP R3). */
+export const DESKTOP_MODES = ['watch', 'control'] as const;
+
+export type DesktopMode = (typeof DESKTOP_MODES)[number];
+
+/** Someone using a machine right now (SPEC-SESSIONS T8, SPEC-DESKTOP R17). */
+export type SessionInUse =
+	| { kind: 'terminal' | 'files'; userName: string }
+	| { kind: 'desktop'; mode: DesktopMode; userName: string };
+
+/** "terminal by Kim", "desktop (control) by Kim", for "In use: …". */
 export function inUseLabel(sessions: readonly SessionInUse[]): string {
-	return sessions.map((session) => `${session.kind} by ${session.userName}`).join(', ');
+	return sessions
+		.map((session) => {
+			switch (session.kind) {
+				case 'terminal':
+				case 'files':
+					return `${session.kind} by ${session.userName}`;
+				case 'desktop':
+					return `desktop (${session.mode}) by ${session.userName}`;
+			}
+		})
+		.join(', ');
 }

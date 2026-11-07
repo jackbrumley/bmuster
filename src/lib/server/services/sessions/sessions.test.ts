@@ -9,10 +9,13 @@ import { verifySignature } from '../agents/signing.ts';
 import { listAudit } from '../audit/audit.ts';
 import { toConsoleUser } from '../users/users.ts';
 import { createRelay, RELAY_LIMITS, type RelayPeer } from './relay.ts';
-import { browserTicketFor, openTerminalSession } from './sessions.ts';
+import { updateSetting } from '../settings/settings.ts';
+import { browserTicketFor, openDesktopSession, openTerminalSession } from './sessions.ts';
 
 const SECRETS_KEY = Buffer.alloc(32, 3);
 const TERMINAL = { kind: 'terminal', shell: 'bash', cols: 80, rows: 24 } as const;
+const CONTROL = { kind: 'desktop', mode: 'control' } as const;
+const WATCH = { kind: 'desktop', mode: 'watch' } as const;
 
 const connected: { machineId: string; peer: LivePeer }[] = [];
 
@@ -245,5 +248,156 @@ describe('audit (T7)', () => {
 		const everything = JSON.stringify(listAudit(database, 100));
 		expect(everything).not.toContain('shadow');
 		expect(everything).not.toContain('secret output');
+	});
+});
+
+/** The ticket JSON the agent was sent for the last session-open. */
+function lastTicket(sent: ServerSocketMessage[]): Record<string, unknown> {
+	const message = sent.findLast((item) => item.type === 'session-open');
+	if (message?.type !== 'session-open') throw new Error('no session-open sent');
+	return JSON.parse(Buffer.from(message.ticket, 'base64').toString('utf8')) as Record<
+		string,
+		unknown
+	>;
+}
+
+describe('desktop tickets (SPEC-DESKTOP R2, R3)', () => {
+	it('admins control unattended, with the notice setting, and may ask to only watch', async () => {
+		const { database, admin, machineId, relay } = await setUp();
+		const sent = connect(machineId);
+		const open = (request: typeof CONTROL | typeof WATCH) =>
+			openDesktopSession(database, relay, SECRETS_KEY, admin, machineId, request, 'ip', NOW);
+		expect(open(CONTROL).kind).toBe('opened');
+		expect(lastTicket(sent)).toMatchObject({
+			permissions: ['desktop-view', 'desktop-control'],
+			purpose: { kind: 'desktop', consent: 'unattended', notice: true }
+		});
+		updateSetting(database, admin.id, 'connectedNotice', false, NOW);
+		expect(open(WATCH).kind).toBe('opened');
+		expect(lastTicket(sent)).toMatchObject({
+			permissions: ['desktop-view'],
+			purpose: { kind: 'desktop', consent: 'unattended', notice: false }
+		});
+		expect(relay.inUse(machineId)).toEqual([
+			{ kind: 'desktop', mode: 'control', userName: admin.name },
+			{ kind: 'desktop', mode: 'watch', userName: admin.name }
+		]);
+	});
+
+	it('members get what their rules give: watch needs desktop-view, control desktop-control', async () => {
+		const { database, admin, pat, machineId, relay } = await setUp();
+		const sent = connect(machineId);
+		const open = (request: typeof CONTROL | typeof WATCH) =>
+			openDesktopSession(database, relay, SECRETS_KEY, pat, machineId, request, 'ip', NOW);
+		expect(open(WATCH)).toMatchObject({ kind: 'refused', status: 404 });
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'Helpdesk',
+			memberIds: [pat.id],
+			machineIds: [machineId],
+			permissions: ['view'],
+			consent: 'unattended'
+		});
+		expect(open(WATCH)).toMatchObject({
+			kind: 'refused',
+			status: 403,
+			message: "You don't have permission to watch this machine's screen."
+		});
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'Watchers',
+			memberIds: [pat.id],
+			machineIds: [machineId],
+			permissions: ['view', 'desktop-view'],
+			consent: 'unattended'
+		});
+		expect(open(CONTROL)).toMatchObject({
+			kind: 'refused',
+			status: 403,
+			message: "You don't have permission to control this machine's screen."
+		});
+		expect(open(WATCH).kind).toBe('opened');
+		expect(lastTicket(sent)).toMatchObject({ permissions: ['desktop-view'] });
+	});
+
+	it('refuses a session whose rules ask first, until consent prompts exist (R12)', async () => {
+		const { database, admin, pat, machineId, relay } = await setUp();
+		const sent = connect(machineId);
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'Ask first',
+			memberIds: [pat.id],
+			machineIds: [machineId],
+			permissions: ['view', 'desktop-control'],
+			consent: 'ask'
+		});
+		const result = openDesktopSession(
+			database,
+			relay,
+			SECRETS_KEY,
+			pat,
+			machineId,
+			CONTROL,
+			'ip',
+			NOW
+		);
+		expect(result).toMatchObject({ kind: 'refused', status: 409 });
+		expect(result.kind === 'refused' ? result.message : '').toContain('asks the person');
+		expect(sent.filter((item) => item.type === 'session-open')).toEqual([]);
+		// An unattended rule for the same permission wins (SPEC-ACCESS: any rule says so).
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'Unattended',
+			memberIds: [pat.id],
+			machineIds: [machineId],
+			permissions: ['view', 'desktop-control'],
+			consent: 'unattended'
+		});
+		expect(
+			openDesktopSession(database, relay, SECRETS_KEY, pat, machineId, CONTROL, 'ip', NOW).kind
+		).toBe('opened');
+	});
+});
+
+describe('desktop audit (SPEC-DESKTOP R16)', () => {
+	it('records the mode, how it ended, and a disconnect at the machine', async () => {
+		vi.useFakeTimers({ now: NOW });
+		const { database, admin, machineId, relay } = await setUp();
+		connect(machineId);
+		const result = openDesktopSession(
+			database,
+			relay,
+			SECRETS_KEY,
+			admin,
+			machineId,
+			CONTROL,
+			'192.0.2.1',
+			NOW
+		);
+		if (result.kind !== 'opened') throw new Error(result.message);
+		const sessionId = result.reply.sessionId;
+		const agent = quietPeer();
+		relay.attachAgent(sessionId, machineId, agent);
+		vi.advanceTimersByTime(42_000);
+		relay.agentText(sessionId, agent, '{"type":"ended","reason":"disconnected-at-machine"}');
+
+		const entries = listAudit(database, 50);
+		const find = (kind: string) => entries.find((entry) => entry.kind === kind);
+		expect(find('session-opened')?.detail).toEqual({
+			type: 'desktop',
+			mode: 'control',
+			consent: 'unattended',
+			codec: 'JPEG tiles',
+			from: '192.0.2.1'
+		});
+		expect(find('session-ended')?.detail).toMatchObject({
+			duration: '42 s',
+			ended: 'Disconnected at the machine'
+		});
+		expect(find('session-disconnected-at-machine')).toMatchObject({
+			actorUserId: null,
+			target: 'Test machine',
+			detail: { viewer: admin.name, mode: 'control' }
+		});
 	});
 });
