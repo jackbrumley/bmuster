@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { refreshAll } from '$app/navigation';
+	import CopyField from '#lib/ui/copy-field.svelte';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
+	import { agentCommands } from '#lib/domain/machines/agent-commands.ts';
 	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
 	import { osLabel, signedInUserOf } from '#lib/domain/machines/machine.ts';
 	import type { PageProps } from './$types';
@@ -10,6 +12,7 @@
 
 	const machine = $derived(data.machine);
 	const user = $derived(signedInUserOf(machine));
+	const commands = $derived(agentCommands(machine.osFamily));
 
 	// Live figures: refresh while the page is visible (the server asks the agent to stream).
 	onMount(() => {
@@ -113,6 +116,31 @@
 			{/each}
 		</dl>
 	</section>
+
+	<section class="panel wide">
+		<h2>Agent</h2>
+		<p class="muted">
+			Version {machine.agentVersion}. Run these on the machine itself ({commands.shell.toLowerCase()}).
+		</p>
+		<div class="commands">
+			<div class="command">
+				<p class="command-label">Check its status</p>
+				<CopyField value={commands.status} label="status command" />
+			</div>
+			<div class="command">
+				<p class="command-label">Uninstall (keeps its identity and logs)</p>
+				<CopyField value={commands.uninstall} label="uninstall command" />
+			</div>
+			<div class="command">
+				<p class="command-label">Uninstall and delete everything</p>
+				<CopyField value={commands.purge} label="purge command" />
+			</div>
+		</div>
+		<p class="muted">
+			To move this machine to another BMuster server: uninstall with --purge, then run the install
+			command from the other server's Add machine page.
+		</p>
+	</section>
 </div>
 
 <style>
@@ -167,6 +195,24 @@
 		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 		gap: var(--space-4);
 		margin: 0;
+	}
+
+	.commands {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--space-3);
+	}
+
+	.command {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--space-1);
+	}
+
+	.command-label {
+		color: var(--text-soft);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
 	}
 
 	dt {

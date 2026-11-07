@@ -1,137 +1,112 @@
 <script lang="ts">
-	import Button from '#lib/ui/button.svelte';
-	import { IconBrandWindows, IconKey, IconPlus, IconShieldLock } from '@tabler/icons-svelte-runes';
+	import { refreshAll } from '$app/navigation';
 	import PageHeader from '#lib/ui/page-header.svelte';
+	import SegmentedControl from '#lib/ui/segmented-control.svelte';
+	import { showToast } from '#lib/ui/toast.svelte.ts';
+	import { apiRequest } from '#lib/utils/api-client.ts';
+	import { settingsReplySchema } from '#lib/schemas/settings/settings.ts';
+	import {
+		SETTING_DEFINITIONS,
+		type SettingView
+	} from '#lib/domain/settings/settings-definitions.ts';
 	import type { PageProps } from './$types';
 
+	/** Server settings (SPEC-SIGN-IN S16): each one saves when changed, and is audited. */
 	let { data }: PageProps = $props();
+
+	const ON_OFF: { value: 'on' | 'off'; label: string }[] = [
+		{ value: 'on', label: 'On' },
+		{ value: 'off', label: 'Off' }
+	];
+
+	function options(setting: SettingView): readonly { value: string; label: string }[] {
+		const control = SETTING_DEFINITIONS[setting.key].control;
+		switch (control.kind) {
+			case 'switch':
+				return ON_OFF;
+			case 'choice':
+				return control.options;
+		}
+	}
+
+	function shown(setting: SettingView): string {
+		if (typeof setting.value === 'boolean') {
+			return setting.value ? 'on' : 'off';
+		}
+		return setting.value;
+	}
+
+	async function change(setting: SettingView, picked: string): Promise<void> {
+		const value =
+			SETTING_DEFINITIONS[setting.key].control.kind === 'switch' ? picked === 'on' : picked;
+		if (value === setting.value) {
+			return;
+		}
+		const result = await apiRequest({
+			method: 'PATCH',
+			url: '/api/settings',
+			body: { key: setting.key, value },
+			reply: settingsReplySchema
+		});
+		showToast(
+			result.ok ? `“${SETTING_DEFINITIONS[setting.key].label}” is saved.` : result.message,
+			result.ok ? 'success' : 'error'
+		);
+		await refreshAll();
+	}
 </script>
 
 <PageHeader
-	title="Sign-in"
-	summary="How people prove who they are. Access is still set by groups and rules."
+	title="Settings"
+	summary="How this server behaves. Every change is in Activity."
 	actions={undefined}
 />
 
-<section class="panel">
-	<div class="panel-head">
-		<h2>Identity providers</h2>
-		<Button variant="secondary" size="compact" type="button" onclick={undefined}
-			><IconPlus size={18} /> Add provider</Button
-		>
-	</div>
-	<ul class="list">
-		{#each data.providers as provider (provider.id)}
-			<li class="row">
-				<span class="icon">
-					{#if provider.kind === 'microsoft-entra'}
-						<IconBrandWindows size={20} />
-					{:else}
-						<IconShieldLock size={20} />
-					{/if}
-				</span>
-				<div class="body">
-					<p class="name">{provider.name}</p>
-					<p class="meta">OpenID Connect · sign-in code flow with PKCE</p>
-				</div>
-				<span class="state" class:on={provider.enabled}>{provider.enabled ? 'On' : 'Off'}</span>
-			</li>
-		{/each}
-	</ul>
-</section>
-
-<section class="panel">
-	<div class="panel-head">
-		<h2>Password sign-in</h2>
-	</div>
-	<p class="row-text">
-		<IconKey size={18} />
-		Admins can always sign in with a password, so a broken provider never locks you out. Other people
-		use a password only if an admin gives them one.
-	</p>
-</section>
+<ul class="list">
+	{#each data.settings as setting (setting.key)}
+		{@const definition = SETTING_DEFINITIONS[setting.key]}
+		<li class="setting">
+			<div class="text">
+				<h2>{definition.label}</h2>
+				<p>{definition.description}</p>
+			</div>
+			<SegmentedControl
+				label={definition.label}
+				options={options(setting)}
+				bind:value={() => shown(setting), (picked: string) => void change(setting, picked)}
+			/>
+		</li>
+	{/each}
+</ul>
 
 <style>
-	.panel {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-3);
-		margin-bottom: var(--space-4);
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--surface-elevated);
-		box-shadow: var(--shadow-card);
-	}
-
-	.panel-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-3);
-	}
-
-	h2 {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		color: var(--muted);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-caps);
-	}
-
 	.list {
 		margin: 0;
 		padding: 0;
 		list-style: none;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-elevated);
+		overflow: hidden;
 	}
 
-	.row {
-		display: flex;
-		align-items: center;
+	.setting {
+		display: grid;
 		gap: var(--space-3);
-		padding: var(--space-3) 0;
+		padding: var(--space-4);
 	}
 
-	.row + .row {
+	.setting + .setting {
 		border-top: 1px solid var(--border);
 	}
 
-	.icon {
-		display: inline-flex;
-		color: var(--text-soft);
-	}
-
-	.body {
-		flex: 1;
-	}
-
-	.name {
+	h2 {
+		font-size: var(--text-base);
 		font-weight: var(--weight-semibold);
 	}
 
-	.meta {
+	.text p {
 		color: var(--muted);
-		font-size: var(--text-xs);
-	}
-
-	.state {
-		padding: var(--space-0-5) var(--space-3);
-		border-radius: var(--radius-pill);
-		background: var(--surface-muted);
-		color: var(--muted);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-semibold);
-	}
-
-	.state.on {
-		background: var(--success-bg);
-		color: var(--success);
-	}
-
-	.row-text {
-		display: flex;
-		gap: var(--space-3);
-		color: var(--text-soft);
 		font-size: var(--text-sm);
 	}
 </style>

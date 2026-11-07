@@ -65,10 +65,3 @@ export type AccessRule = {
 	permissions: Permission[];
 	consent: Consent;
 };
-
-export type IdentityProvider = {
-	id: string;
-	name: string;
-	kind: 'microsoft-entra' | 'authentik' | 'generic-oidc';
-	enabled: boolean;
-};

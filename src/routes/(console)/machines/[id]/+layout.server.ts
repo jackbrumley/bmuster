@@ -1,10 +1,12 @@
 import { error } from '@sveltejs/kit';
 import { database } from '#lib/server/database/app-database.ts';
+import { page } from '#lib/server/guards/page.ts';
 import { watchAgent } from '#lib/server/services/agents/live-agents.ts';
 import { findMachine } from '#lib/server/services/machines/machine-views.ts';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = ({ params }) => {
+/** A machine's pages: admins only until access rules exist (SPEC-ACCESS). */
+export const load: LayoutServerLoad = page.admin(({ params }) => {
 	const now = Date.now();
 	const machine = findMachine(database, params.id, now);
 	if (machine === undefined) {
@@ -12,4 +14,4 @@ export const load: LayoutServerLoad = ({ params }) => {
 	}
 	watchAgent(machine.id);
 	return { now, machine };
-};
+});

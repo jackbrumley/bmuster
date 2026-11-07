@@ -12,6 +12,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"start": "node server.ts",
+		"agent:dev": "node scripts/agent-dev.ts",
 		"prepare": "svelte-kit sync || echo ''; git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
 		"lint": "eslint .",
@@ -57,8 +58,10 @@
 		"vitest-browser-svelte": "3.1.0"
 	},
 	"dependencies": {
+		"@node-rs/argon2": "2.2.2",
 		"better-sqlite3": "13.0.3",
 		"drizzle-orm": "0.45.4",
+		"openid-client": "6.8.9",
 		"ws": "8.22.0",
 		"zod": "4.6.7"
 	},

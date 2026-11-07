@@ -372,6 +372,10 @@ The design is in `docs/access-and-sign-in.md`.
 - `relative-dynamic-import-forbidden` (violation, §7): Relative dynamic imports
   make the server build evaluate the module graph at runtime. **Fix:** Use a
   static top-level import (`#lib/…`).
+- `route-guard-required` (violation, §11): A route handler not built by a guard
+  runs without checking who is asking. **Fix:** Export it as
+  `route.<public|user|admin|agent>(…)` or `page.<public|user|admin>(…)` from
+  src/lib/server/guards/.
 - `server-imports-app-modules-forbidden` (violation, §6): src/lib/server/** runs
   outside Vite (scripts, tests), where `$app/*` and `$env/*` do not exist.
   **Fix:** Take what the module needs as a parameter from the route or hook.

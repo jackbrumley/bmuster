@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { IconBrandWindows, IconShieldLock } from '@tabler/icons-svelte-runes';
 	import PublicPage from '#lib/shell/public-page.svelte';
@@ -7,16 +7,11 @@
 	import TextField from '#lib/ui/text-field.svelte';
 	import type { PageProps } from './$types';
 
-	/** PROTOTYPE: every button signs you in straight away. */
-	let { data }: PageProps = $props();
+	/** Password, or "Continue with" each enabled provider (SPEC-SIGN-IN 3). */
+	let { data, form }: PageProps = $props();
 
-	let username = $state('');
+	let email = $state('');
 	let password = $state('');
-
-	async function signIn(event: SubmitEvent): Promise<void> {
-		event.preventDefault();
-		await goto(resolve('/(console)'));
-	}
 </script>
 
 <svelte:head>
@@ -29,34 +24,56 @@
 	{#if data.providers.length > 0}
 		<div class="providers">
 			{#each data.providers as provider (provider.id)}
-				<a class="provider" href={resolve('/(console)')}>
-					{#if provider.kind === 'microsoft-entra'}
-						<IconBrandWindows size={20} />
-					{:else}
-						<IconShieldLock size={20} />
-					{/if}
-					Continue with {provider.name}
-				</a>
+				<form
+					method="GET"
+					action={resolve('/auth/oidc/[id=uuid]/start', { id: provider.id })}
+					data-sveltekit-reload
+				>
+					<input type="hidden" name="returnTo" value={data.returnTo} />
+					<Button variant="secondary" size="large" type="submit" onclick={undefined}>
+						{#if provider.kind === 'microsoft-entra'}
+							<IconBrandWindows size={20} />
+						{:else}
+							<IconShieldLock size={20} />
+						{/if}
+						Continue with {provider.name}
+					</Button>
+				</form>
 			{/each}
 		</div>
 		<p class="divider"><span>or with a password</span></p>
 	{/if}
 
-	<form class="form" onsubmit={signIn}>
+	<form
+		class="form"
+		method="POST"
+		use:enhance={() =>
+			async ({ update }) => {
+				password = '';
+				await update({ reset: false });
+			}}
+	>
+		{#if form?.message !== undefined}
+			<p class="problem" role="alert">{form.message}</p>
+		{/if}
 		<TextField
-			label="Email or username"
-			type="text"
+			label="Email"
+			name="email"
+			type="email"
 			autocomplete="username"
 			autocapitalize="off"
 			required={true}
-			bind:value={username}
+			error={undefined}
+			bind:value={email}
 		/>
 		<TextField
 			label="Password"
+			name="password"
 			type="password"
 			autocomplete="current-password"
 			autocapitalize="off"
 			required={true}
+			error={undefined}
 			bind:value={password}
 		/>
 		<Button variant="primary" size="large" type="submit" onclick={undefined}>Sign in</Button>
@@ -74,22 +91,6 @@
 	.providers {
 		display: grid;
 		gap: var(--space-2);
-	}
-
-	.provider {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: var(--space-2);
-		height: 48px;
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius-pill);
-		color: var(--text);
-		font-weight: var(--weight-semibold);
-	}
-
-	.provider:hover {
-		background: var(--surface-muted);
 	}
 
 	.divider {
@@ -112,5 +113,13 @@
 	.form {
 		display: grid;
 		gap: var(--space-4);
+	}
+
+	.problem {
+		padding: var(--space-3);
+		border-radius: var(--radius-control);
+		background: var(--danger-bg);
+		color: var(--danger);
+		font-size: var(--text-sm);
 	}
 </style>

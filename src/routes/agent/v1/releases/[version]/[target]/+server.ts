@@ -1,10 +1,11 @@
 import { error } from '@sveltejs/kit';
 import { env } from '#lib/server/env.ts';
 import { isAgentTarget, releaseFile } from '#lib/server/services/agents/releases.ts';
+import { route } from '#lib/server/guards/route.ts';
 import type { RequestHandler } from './$types';
 
 /** GET /agent/v1/releases/<version>/<target>: the agent binary. Public; it is not secret. */
-export const GET: RequestHandler = ({ params }) => {
+export const GET: RequestHandler = route.public(({ params }) => {
 	if (!isAgentTarget(params.target)) {
 		error(400, `Unknown target '${params.target}'`);
 	}
@@ -19,4 +20,4 @@ export const GET: RequestHandler = ({ params }) => {
 			'content-disposition': `attachment; filename="${release.fileName}"`
 		}
 	});
-};
+});

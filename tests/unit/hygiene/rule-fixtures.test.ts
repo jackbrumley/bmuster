@@ -18,6 +18,7 @@ import { componentFixtures } from './fixtures/components.ts';
 import { fileLayoutFixtures } from './fixtures/file-layout.ts';
 import { projectFileFixtures } from './fixtures/project-files.ts';
 import { projectRuleFixtures } from './fixtures/project-rules.ts';
+import { routeGuardFixtures } from './fixtures/route-guards.ts';
 import { stylingFixtures } from './fixtures/styling.ts';
 
 const FIXTURES: Readonly<Record<string, readonly RuleFixture[]>> = {
@@ -26,7 +27,8 @@ const FIXTURES: Readonly<Record<string, readonly RuleFixture[]>> = {
 	styling: stylingFixtures,
 	components: componentFixtures,
 	'project-files': projectFileFixtures,
-	'project-rules': projectRuleFixtures
+	'project-rules': projectRuleFixtures,
+	'route-guards': routeGuardFixtures
 };
 
 const ALL = Object.values(FIXTURES).flat();

@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { IconDeviceDesktop, IconSearch, IconTerminal2 } from '@tabler/icons-svelte-runes';
+	import {
+		IconDeviceDesktop,
+		IconLockAccess,
+		IconSearch,
+		IconTerminal2
+	} from '@tabler/icons-svelte-runes';
 	import OsIcon from '#lib/ui/os-icon.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
@@ -9,6 +14,8 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	const machines = $derived(data.view.kind === 'machines' ? data.view.machines : []);
 
 	type Filter = 'all' | 'online' | 'offline' | 'attention';
 
@@ -58,17 +65,17 @@
 	}
 
 	const visible = $derived(
-		data.machines.filter((machine) => {
+		machines.filter((machine) => {
 			const text = `${machine.name} ${machine.hostname} ${osLabel(machine)}`.toLowerCase();
 			return matchesFilter(machine) && text.includes(query.trim().toLowerCase());
 		})
 	);
 
 	const counts = $derived({
-		all: data.machines.length,
-		online: data.machines.filter((m) => m.status.kind === 'online').length,
-		offline: data.machines.filter((m) => m.status.kind === 'offline').length,
-		attention: data.machines.filter(needsAttention).length
+		all: machines.length,
+		online: machines.filter((m) => m.status.kind === 'online').length,
+		offline: machines.filter((m) => m.status.kind === 'offline').length,
+		attention: machines.filter(needsAttention).length
 	});
 
 	const filters: { id: Filter; label: string }[] = [
@@ -82,11 +89,19 @@
 <header class="page-head">
 	<div>
 		<h1>Machines</h1>
-		<p class="sub">{counts.online} of {counts.all} online</p>
+		{#if data.view.kind === 'machines'}
+			<p class="sub">{counts.online} of {counts.all} online</p>
+		{/if}
 	</div>
 </header>
 
-{#if data.machines.length === 0}
+{#if data.view.kind === 'awaiting-access'}
+	<div class="first-run">
+		<IconLockAccess size={32} />
+		<p class="awaiting">Your access hasn't been set up yet.</p>
+		<p>An admin will add you to a group that can see machines. Check back later.</p>
+	</div>
+{:else if machines.length === 0}
 	<div class="first-run">
 		<p>No machines yet.</p>
 		<a class="first-link" href={resolve('/(console)/add')}>Add your first machine</a>
@@ -277,6 +292,12 @@
 		gap: var(--space-3);
 		padding: var(--space-12) 0;
 		color: var(--muted);
+		text-align: center;
+	}
+
+	.awaiting {
+		color: var(--text);
+		font-weight: var(--weight-semibold);
 	}
 
 	.first-link {

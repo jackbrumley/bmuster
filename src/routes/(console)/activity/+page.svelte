@@ -1,74 +1,87 @@
 <script lang="ts">
 	import {
-		IconDeviceDesktop,
-		IconFileUpload,
-		IconLink,
-		IconPlugConnectedX,
-		IconPlus,
-		IconTerminal2
+		IconAdjustments,
+		IconKey,
+		IconLogin2,
+		IconLogout,
+		IconRocket,
+		IconShieldLock,
+		IconShieldX,
+		IconUser
 	} from '@tabler/icons-svelte-runes';
-	import { activityLabel, type ActivityKind } from '#lib/domain/activity/activity.ts';
+	import { activityLabel, type AuditKind } from '#lib/domain/activity/activity.ts';
+	import PageHeader from '#lib/ui/page-header.svelte';
 	import { formatRelative } from '#lib/utils/format.ts';
 	import type { PageProps } from './$types';
 
+	/** The audit log (SPEC-SIGN-IN S13): sign-ins, sign-outs and admin changes, newest first. */
 	let { data }: PageProps = $props();
 
-	function iconFor(kind: ActivityKind): typeof IconTerminal2 {
+	function iconFor(kind: AuditKind): typeof IconUser {
 		switch (kind) {
-			case 'terminal-opened':
-				return IconTerminal2;
-			case 'desktop-opened':
-				return IconDeviceDesktop;
-			case 'file-sent':
-				return IconFileUpload;
-			case 'machine-enrolled':
-				return IconPlus;
-			case 'machine-offline':
-				return IconPlugConnectedX;
-			case 'share-link-created':
-				return IconLink;
+			case 'setup':
+				return IconRocket;
+			case 'sign-in':
+				return IconLogin2;
+			case 'sign-in-failed':
+				return IconShieldX;
+			case 'sign-out':
+				return IconLogout;
+			case 'user-added':
+			case 'user-details-changed':
+			case 'user-role-changed':
+			case 'user-disabled':
+			case 'user-enabled':
+				return IconUser;
+			case 'user-password-set':
+				return IconKey;
+			case 'provider-added':
+			case 'provider-changed':
+			case 'provider-deleted':
+				return IconShieldLock;
+			case 'setting-changed':
+				return IconAdjustments;
 		}
 	}
 </script>
 
-<header class="page-head">
-	<h1>Activity</h1>
-	<p class="sub">Who connected to what, and when.</p>
-</header>
+<PageHeader
+	title="Activity"
+	summary="Sign-ins and changes to people, providers and settings."
+	actions={undefined}
+/>
 
-<ul class="list">
-	{#each data.entries as entry (entry.id)}
-		{@const Icon = iconFor(entry.kind)}
-		<li class="entry">
-			<span class="icon"><Icon size={20} stroke={1.75} /></span>
-			<div class="body">
-				<p class="what">
-					<strong>{entry.actor}</strong>
-					{activityLabel(entry.kind).toLowerCase()} ·
-					<span class="machine">{entry.machineName}</span>
-				</p>
-				<p class="detail">{entry.detail}</p>
-			</div>
-			<time datetime={entry.atIso}>{formatRelative(entry.atIso, data.now)}</time>
-		</li>
-	{/each}
-</ul>
+{#if data.entries.length === 0}
+	<p class="empty">Nothing yet.</p>
+{:else}
+	<ul class="list">
+		{#each data.entries as entry (entry.id)}
+			{@const Icon = iconFor(entry.kind)}
+			<li class="entry" class:refused={entry.kind === 'sign-in-failed'}>
+				<span class="icon"><Icon size={20} stroke={1.75} /></span>
+				<div class="body">
+					<p class="what">
+						<strong>{entry.actor.kind === 'user' ? entry.actor.name : 'System'}</strong>
+						{activityLabel(entry.kind).toLowerCase()} ·
+						<span class="target">{entry.target}</span>
+					</p>
+					{#if entry.detail.length > 0}
+						<p class="detail">
+							{entry.detail.map((item) => `${item.label}: ${item.value}`).join(' · ')}
+						</p>
+					{/if}
+				</div>
+				<time datetime={entry.atIso}>{formatRelative(entry.atIso, data.now)}</time>
+			</li>
+		{/each}
+	</ul>
+{/if}
 
 <style>
-	.page-head {
-		display: grid;
-		gap: var(--space-1);
-		margin-bottom: var(--space-4);
-	}
-
-	h1 {
-		font-size: var(--text-2xl);
-		font-weight: var(--weight-bold);
-	}
-
-	.sub {
+	.empty {
+		padding: var(--space-12) 0;
 		color: var(--muted);
-		font-size: var(--text-sm);
+		text-align: center;
 	}
 
 	.list {
@@ -104,6 +117,11 @@
 		color: var(--text-soft);
 	}
 
+	.refused .icon {
+		background: var(--danger-bg);
+		color: var(--danger);
+	}
+
 	.body {
 		flex: 1;
 		min-width: 0;
@@ -111,9 +129,10 @@
 
 	.what {
 		font-size: var(--text-sm);
+		overflow-wrap: anywhere;
 	}
 
-	.what .machine {
+	.target {
 		color: var(--brand);
 		font-weight: var(--weight-medium);
 	}
@@ -121,6 +140,7 @@
 	.detail {
 		color: var(--muted);
 		font-size: var(--text-xs);
+		overflow-wrap: anywhere;
 	}
 
 	time {

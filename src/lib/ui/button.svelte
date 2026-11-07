@@ -4,8 +4,8 @@
 	/**
 	 * The standard action button (AGENTS.md §4, §12): a pill, at least 40px
 	 * tall. `primary` is the page's main action in the brand colour;
-	 * `secondary` is a quieter outlined action. `large` fills its row at 48px,
-	 * for the main action of a form.
+	 * `secondary` is a quieter outlined action; `danger` confirms something
+	 * destructive. `large` fills its row at 48px, for the main action of a form.
 	 */
 	let {
 		variant,
@@ -14,7 +14,7 @@
 		onclick,
 		children
 	}: {
-		variant: 'primary' | 'secondary';
+		variant: 'primary' | 'secondary' | 'danger';
 		size: 'compact' | 'large';
 		type: 'button' | 'submit';
 		onclick: (() => void) | undefined;
@@ -49,6 +49,17 @@
 
 	.primary:hover {
 		background: var(--brand-hover);
+	}
+
+	.danger {
+		border: none;
+		background: var(--danger);
+		color: var(--brand-contrast);
+		font-weight: var(--weight-semibold);
+	}
+
+	.danger:hover {
+		opacity: 0.9;
 	}
 
 	.secondary {

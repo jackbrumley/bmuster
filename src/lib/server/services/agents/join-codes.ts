@@ -15,7 +15,13 @@ export type NewJoinCode = { code: string; expiresAt: Date; maxUses: number };
 /** Makes a join code (SPEC-ENROLMENT 5). The code itself is returned once and never stored. */
 export function createJoinCode(
 	database: AppDatabase,
-	options: { maxUses: number; minutes: number; machineGroupIds: string[] },
+	options: {
+		maxUses: number;
+		minutes: number;
+		machineGroupIds: string[];
+		/** The admin who made it; null only for codes made outside the console (tests, scripts). */
+		createdBy: string | null;
+	},
 	now: number
 ): NewJoinCode {
 	if (options.maxUses < 1 || options.maxUses > JOIN_CODE_LIMITS.maxUses) {
@@ -34,6 +40,7 @@ export function createJoinCode(
 			machineGroupIds: JSON.stringify(options.machineGroupIds),
 			maxUses: options.maxUses,
 			uses: 0,
+			createdBy: options.createdBy,
 			createdAt: new Date(now),
 			expiresAt
 		})

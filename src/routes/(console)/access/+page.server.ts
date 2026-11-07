@@ -1,12 +1,14 @@
+import { page } from '#lib/server/guards/page.ts';
 import {
 	prototypeAccessRules,
 	prototypeMachineGroups,
 	prototypeUserGroups
 } from '#lib/prototype/prototype-data.ts';
-import type { PageLoad } from './$types';
+import type { PageServerLoad } from './$types';
 
-export const load: PageLoad = () => ({
+/** PROTOTYPE data until SPEC-ACCESS; admins only. */
+export const load: PageServerLoad = page.admin(() => ({
 	rules: prototypeAccessRules(),
 	userGroups: prototypeUserGroups(),
 	machineGroups: prototypeMachineGroups()
-});
+}));

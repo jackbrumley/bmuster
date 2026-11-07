@@ -6,11 +6,8 @@
 	// and configs as entries; scripts/*.ts are entries through the npm scripts
 	// that name them.
 	"$schema": "https://unpkg.com/knip@6.42.1/schema-jsonc.json",
-	"ignoreDependencies": [
-		// The browser test project (vite.config.ts, `ui`) has no component tests
-		// yet; the first *.svelte.test.ts imports it and makes this entry stale.
-		"vitest-browser-svelte"
-	],
+	// Route parameter matchers: SvelteKit loads src/params.ts by convention.
+	"entry": ["src/params.ts"],
 	"project": ["src/**/*.{ts,svelte}", "scripts/**/*.ts", "tests/**/*.ts"],
 	// A stale entry or ignore in this file fails the check too.
 	"treatConfigHintsAsErrors": true

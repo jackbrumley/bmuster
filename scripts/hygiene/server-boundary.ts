@@ -76,7 +76,7 @@ export function checkServerImports(file: SourceFile, report: Report): void {
 }
 
 /** The repo-relative path an import resolves to, when it is a local file. */
-function resolveLocalImport(importerRelPath: string, specifier: string): string | null {
+export function resolveLocalImport(importerRelPath: string, specifier: string): string | null {
 	for (const alias of ['#lib/', '$lib/']) {
 		if (specifier.startsWith(alias)) {
 			return normalize(`src/lib/${specifier.slice(alias.length)}`).replaceAll('\\', '/');

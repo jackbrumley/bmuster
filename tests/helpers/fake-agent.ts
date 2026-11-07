@@ -29,7 +29,11 @@ export function enrolFakeAgent(database: AppDatabase, now: number): FakeAgent {
 		.export({ format: 'der', type: 'spki' })
 		.subarray(-32)
 		.toString('base64');
-	const { code } = createJoinCode(database, { maxUses: 1, minutes: 60, machineGroupIds: [] }, now);
+	const { code } = createJoinCode(
+		database,
+		{ maxUses: 1, minutes: 60, machineGroupIds: [], createdBy: null },
+		now
+	);
 	const reply = enrolMachine(
 		database,
 		{

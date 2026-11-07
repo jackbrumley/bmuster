@@ -87,7 +87,7 @@
 			<p>{machine.name} · Display {display + 1}</p>
 			<p class="hint">
 				{user.kind === 'user'
-					? `${user.name} will be asked to allow this session.`
+					? `Connects straight away. ${user.name} sees a notice while you are connected.`
 					: 'Nobody is signed in. The session starts at the sign-in screen.'}
 			</p>
 		</div>

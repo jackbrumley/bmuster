@@ -9,7 +9,7 @@ describe('join codes (A1, A2)', () => {
 		const database = testDatabase();
 		const { code, expiresAt } = createJoinCode(
 			database,
-			{ maxUses: 1, minutes: 60, machineGroupIds: ['g1'] },
+			{ maxUses: 1, minutes: 60, machineGroupIds: ['g1'], createdBy: null },
 			NOW
 		);
 		expect(code).toMatch(/^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$/);
@@ -24,7 +24,7 @@ describe('join codes (A1, A2)', () => {
 		const database = testDatabase();
 		const { code } = createJoinCode(
 			database,
-			{ maxUses: 1, minutes: 60, machineGroupIds: [] },
+			{ maxUses: 1, minutes: 60, machineGroupIds: [], createdBy: null },
 			NOW
 		);
 		expect(redeemJoinCode(database, code, NOW + 60 * 60_000)).toMatchObject({
@@ -40,7 +40,7 @@ describe('join codes (A1, A2)', () => {
 		const database = testDatabase();
 		const { code } = createJoinCode(
 			database,
-			{ maxUses: 3, minutes: 60, machineGroupIds: [] },
+			{ maxUses: 3, minutes: 60, machineGroupIds: [], createdBy: null },
 			NOW
 		);
 		for (let use = 0; use < 3; use += 1) {
@@ -52,10 +52,18 @@ describe('join codes (A1, A2)', () => {
 	it('keeps to the limits: 1 to 100 uses, up to 7 days', () => {
 		const database = testDatabase();
 		expect(() =>
-			createJoinCode(database, { maxUses: 101, minutes: 60, machineGroupIds: [] }, NOW)
+			createJoinCode(
+				database,
+				{ maxUses: 101, minutes: 60, machineGroupIds: [], createdBy: null },
+				NOW
+			)
 		).toThrow();
 		expect(() =>
-			createJoinCode(database, { maxUses: 1, minutes: 7 * 24 * 60 + 1, machineGroupIds: [] }, NOW)
+			createJoinCode(
+				database,
+				{ maxUses: 1, minutes: 7 * 24 * 60 + 1, machineGroupIds: [], createdBy: null },
+				NOW
+			)
 		).toThrow();
 	});
 });

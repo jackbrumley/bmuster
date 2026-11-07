@@ -1,12 +1,14 @@
+import { page } from '#lib/server/guards/page.ts';
 import {
 	prototypeMachineGroups,
 	prototypeMachines,
 	prototypeUserGroups,
 	prototypeUsers
 } from '#lib/prototype/prototype-data.ts';
-import type { PageLoad } from './$types';
+import type { PageServerLoad } from './$types';
 
-export const load: PageLoad = () => {
+/** PROTOTYPE data until SPEC-ACCESS; admins only. */
+export const load: PageServerLoad = page.admin(() => {
 	const now = Date.now();
 	return {
 		users: prototypeUsers(now),
@@ -14,4 +16,4 @@ export const load: PageLoad = () => {
 		userGroups: prototypeUserGroups(),
 		machineGroups: prototypeMachineGroups()
 	};
-};
+});

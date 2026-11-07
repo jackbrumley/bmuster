@@ -19,7 +19,7 @@ describe('enrolment (A4)', () => {
 		const database = testDatabase();
 		const { code } = createJoinCode(
 			database,
-			{ maxUses: 1, minutes: 60, machineGroupIds: [] },
+			{ maxUses: 1, minutes: 60, machineGroupIds: [], createdBy: null },
 			NOW
 		);
 		const reply = enrolMachine(database, { ...REQUEST, code }, SERVER_PUBLIC_KEY, NOW);

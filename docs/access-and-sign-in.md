@@ -33,9 +33,15 @@ machines ─member of─▶ machine groups┘
 
 Every other permission includes `view`. New permissions are added to one list in `lib/domain/access/access.ts`; the compiler then lists every place that must handle them.
 
-### Consent
+### Consent and unattended access
 
-Each rule says **ask** (the person at the screen accepts or declines) or **unattended** (connect at once). When several rules give the same permission, the session is unattended if any of those rules says unattended. This matches "rules only add".
+BMuster's main job is unattended access: an IT admin gets onto a machine at lunch or after a shift without anyone clicking Allow, the way LogMeIn is used today. The agent runs as root / LocalSystem so this always works, including at the sign-in screen.
+
+- **Admins connect unattended**, always. They are trusted with every machine.
+- **Each access rule says `unattended` or `ask`.** `unattended` connects at once; `ask` shows the person at the screen an Allow / Decline prompt (and connects at once if nobody is signed in). When several rules give the same permission, the session is unattended if any of them says so ("rules only add").
+- **New rules default to `unattended`**, set by the server setting _Default for new access rules_.
+- **A notice while connected**, on by default: the person at the screen sees "<name> is connected (BMuster)" for as long as a desktop or terminal session is open. Server setting _Show a notice while connected_ (on / off). Many workplaces must tell staff when someone is on their computer; turning it off is the admin's decision and is audited.
+- Every session is audited whatever the consent setting.
 
 ### Console roles
 

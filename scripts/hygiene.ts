@@ -15,6 +15,7 @@ import { checkStyling } from './hygiene/styling.ts';
 import { checkRawControls } from './hygiene/raw-controls.ts';
 import { checkDestructiveConfirmation } from './hygiene/destructive-confirmation.ts';
 import { checkServerImports } from './hygiene/server-boundary.ts';
+import { checkRouteGuards } from './hygiene/route-guards.ts';
 import { checkUiComponents } from './hygiene/ui-components.ts';
 import { GLOBAL_STYLESHEETS, verifyInputFontSize } from './hygiene/input-font-size.ts';
 import { radiusRoles, RADIUS_VARIABLES_FILE, verifyBorderRadius } from './hygiene/border-radius.ts';
@@ -39,6 +40,7 @@ function checkSourceFiles(paths: readonly string[], files: readonly SourceFile[]
 		checkUiComponents(file, reporter);
 		checkRawControls(file, reporter.violation);
 		checkDestructiveConfirmation(file.relPath, file.content, reporter.violation);
+		checkRouteGuards(file.relPath, file.content, reporter.violation);
 		checkFileSize(file, reporter);
 	}
 }

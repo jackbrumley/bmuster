@@ -25,27 +25,11 @@ function secretsKey(): Buffer {
 	return key;
 }
 
-/**
- * Until sign-in exists (SPEC-SIGN-IN) the console has no accounts. The server
- * refuses to start unless the operator says, in so many words, that this is a
- * development build nobody else can reach.
- */
-function consoleAuth(): 'none-development' {
-	const value = required('CONSOLE_AUTH');
-	if (value !== 'none-development') {
-		throw new Error(
-			"CONSOLE_AUTH must be 'none-development' until sign-in is built; never expose this build"
-		);
-	}
-	return value;
-}
-
 export const env = {
 	/** Path to the SQLite database file, e.g. ./data/bmuster.db */
 	databasePath: required('DATABASE_PATH'),
 	/** Encrypts secrets at rest (the server's signing key, provider secrets). */
 	secretsKey: secretsKey(),
 	/** Folder of agent builds: <version>/<target>/bmuster-agent[.exe] */
-	releasesPath: required('RELEASES_PATH'),
-	consoleAuth: consoleAuth()
+	releasesPath: required('RELEASES_PATH')
 };

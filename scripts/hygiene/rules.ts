@@ -196,6 +196,14 @@ export const HYGIENE_RULES = {
 		fix: 'Confirm with `confirmAction()`, or list a caller-confirmed helper in DESTRUCTIVE_REQUEST_EXEMPTIONS.'
 	},
 
+	// Route guards (scripts/hygiene/route-guards.ts)
+	'route-guard-required': {
+		severity: 'violation',
+		section: '11',
+		why: 'A route handler not built by a guard runs without checking who is asking.',
+		fix: 'Export it as `route.<public|user|admin|agent>(…)` or `page.<public|user|admin>(…)` from src/lib/server/guards/.'
+	},
+
 	// Server boundary (scripts/hygiene/server-boundary.ts)
 	'server-imports-app-modules-forbidden': {
 		severity: 'violation',

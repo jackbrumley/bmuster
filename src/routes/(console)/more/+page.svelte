@@ -4,27 +4,32 @@
 	import { adminNav } from '#lib/shell/console-nav.ts';
 	import SignedInUser from '#lib/shell/signed-in-user.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
+	import type { PageProps } from './$types';
 
-	/** Phones only: what the sidebar shows below the main links. */
-	const admin = adminNav();
+	/** Phones only: what the sidebar shows below the main links. The layout proved who this is. */
+	let { data }: PageProps = $props();
+
+	const admin = $derived(adminNav(data.user.role));
 </script>
 
 <PageHeader title="More" summary="Administration and your account." actions={undefined} />
 
-<ul class="list">
-	{#each admin as item (item.route)}
-		<li>
-			<a class="row" href={resolve(item.route)}>
-				<item.icon size={22} stroke={1.75} />
-				<span class="label">{item.label}</span>
-				<IconChevronRight size={18} />
-			</a>
-		</li>
-	{/each}
-</ul>
+{#if admin.length > 0}
+	<ul class="list">
+		{#each admin as item (item.route)}
+			<li>
+				<a class="row" href={resolve(item.route)}>
+					<item.icon size={22} stroke={1.75} />
+					<span class="label">{item.label}</span>
+					<IconChevronRight size={18} />
+				</a>
+			</li>
+		{/each}
+	</ul>
+{/if}
 
 <section class="account">
-	<SignedInUser name="Jack Brumley" role="Admin" />
+	<SignedInUser user={data.user} />
 </section>
 
 <style>

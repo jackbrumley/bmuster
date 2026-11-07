@@ -68,6 +68,14 @@ export default defineConfig(({ command, mode }) => ({
 				test: {
 					name: 'unit',
 					environment: 'node',
+					// Set before env.ts reads .env (which never overrides a set value), so a
+					// test that loads the server's own database gets a fresh in-memory one,
+					// never the developer's file.
+					env: {
+						DATABASE_PATH: ':memory:',
+						SECRETS_KEY: Buffer.alloc(32, 1).toString('base64'),
+						RELEASES_PATH: 'tests/no-releases'
+					},
 					include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
 					exclude: ['src/**/*.svelte.test.ts']
 				}

@@ -3,17 +3,21 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { IconDots } from '@tabler/icons-svelte-runes';
+	import type { ConsoleUser } from '#lib/domain/users/user.ts';
+	import ConfirmDialog from '#lib/ui/confirm-dialog.svelte';
+	import ToastHost from '#lib/ui/toast-host.svelte';
 	import { adminNav, isCurrent, mainNav } from './console-nav.ts';
 	import SignedInUser from './signed-in-user.svelte';
 
 	/**
 	 * The console frame: a sidebar on wide screens, a bottom tab bar on phones.
-	 * Every console page renders inside it; it owns the safe-area padding.
+	 * Every console page renders inside it; it owns the safe-area padding, the
+	 * shared confirmation dialog and the toasts.
 	 */
-	let { children }: { children: Snippet } = $props();
+	let { user, children }: { user: ConsoleUser; children: Snippet } = $props();
 
-	const main = mainNav();
-	const admin = adminNav();
+	const main = $derived(mainNav(user.role));
+	const admin = $derived(adminNav(user.role));
 	const moreHref = resolve('/(console)/more');
 	const moreCurrent = $derived(
 		page.url.pathname.startsWith(moreHref) ||
@@ -39,21 +43,23 @@
 				</a>
 			{/each}
 		</nav>
-		<nav aria-label="Administration">
-			<p class="nav-heading">Administration</p>
-			{#each admin as item (item.route)}
-				<a
-					class="nav-link"
-					href={resolve(item.route)}
-					aria-current={isCurrent(page.url.pathname, item.route) ? 'page' : undefined}
-				>
-					<item.icon size={20} stroke={1.75} />
-					{item.label}
-				</a>
-			{/each}
-		</nav>
+		{#if admin.length > 0}
+			<nav aria-label="Administration">
+				<p class="nav-heading">Administration</p>
+				{#each admin as item (item.route)}
+					<a
+						class="nav-link"
+						href={resolve(item.route)}
+						aria-current={isCurrent(page.url.pathname, item.route) ? 'page' : undefined}
+					>
+						<item.icon size={20} stroke={1.75} />
+						{item.label}
+					</a>
+				{/each}
+			</nav>
+		{/if}
 		<div class="sidebar-foot">
-			<SignedInUser name="Jack Brumley" role="Admin" />
+			<SignedInUser {user} />
 		</div>
 	</aside>
 
@@ -77,6 +83,9 @@
 			<span>More</span>
 		</a>
 	</nav>
+
+	<ConfirmDialog />
+	<ToastHost />
 </div>
 
 <style>
@@ -105,7 +114,8 @@
 		bottom: 0;
 		z-index: 10;
 		display: grid;
-		grid-template-columns: repeat(4, 1fr);
+		grid-auto-columns: 1fr;
+		grid-auto-flow: column;
 		height: calc(var(--tabbar-height) + var(--safe-bottom));
 		padding-bottom: var(--safe-bottom);
 		background: var(--surface-elevated);
@@ -213,6 +223,7 @@
 	}
 
 	.sidebar-foot {
+		min-width: 0;
 		margin-top: auto;
 		padding-top: var(--space-4);
 		border-top: 1px solid var(--border);
