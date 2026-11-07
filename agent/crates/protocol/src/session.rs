@@ -118,6 +118,23 @@ pub enum SessionPurpose {
     /// socket ([`crate::files`]); nothing runs until it asks. A struct
     /// variant, so a field this agent does not know is refused.
     Files {},
+    /// A remote desktop (SPEC-DESKTOP). `desktop-view` watches; the agent
+    /// reads `desktop-control` from the permissions to allow input.
+    Desktop {
+        /// Whether the person at the screen is asked first (phase 5).
+        consent: Consent,
+        /// Show "<name> is connected (BMuster) · Disconnect" at the machine.
+        notice: bool,
+    },
+}
+
+/// Whether a desktop session connects at once or asks the person at the
+/// screen first (SPEC-DESKTOP 8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Consent {
+    Unattended,
+    Ask,
 }
 
 impl SessionPurpose {
@@ -127,6 +144,7 @@ impl SessionPurpose {
             SessionPurpose::Terminal { .. } => "terminal",
             SessionPurpose::Exec { .. } => "ai-commands",
             SessionPurpose::Files {} => "files",
+            SessionPurpose::Desktop { .. } => "desktop-view",
         }
     }
 }
@@ -395,6 +413,44 @@ mod tests {
             open(&key, &allowed, NOW).unwrap().purpose,
             SessionPurpose::Files {}
         );
+        let desktop = json!({ "kind": "desktop", "consent": "unattended", "notice": true });
+        assert_eq!(
+            open(&key, &ticket_json(json!({ "purpose": desktop })), NOW),
+            Err(TicketError::MissingPermission("desktop-view"))
+        );
+        assert_eq!(
+            open(
+                &key,
+                &ticket_json(json!({ "permissions": ["desktop-control"], "purpose": desktop })),
+                NOW
+            ),
+            Err(TicketError::MissingPermission("desktop-view")),
+            "control alone does not open a desktop"
+        );
+        assert_eq!(
+            open(
+                &key,
+                &ticket_json(json!({ "permissions": ["desktop-view"], "purpose": desktop })),
+                NOW
+            )
+            .unwrap()
+            .purpose,
+            SessionPurpose::Desktop {
+                consent: Consent::Unattended,
+                notice: true
+            }
+        );
+        assert!(matches!(
+            open(
+                &key,
+                &ticket_json(json!({
+                    "permissions": ["desktop-view"],
+                    "purpose": { "kind": "desktop", "consent": "ask", "notice": true, "mode": "control" }
+                })),
+                NOW
+            ),
+            Err(TicketError::NotATicket(_))
+        ));
         assert!(matches!(
             open(
                 &key,

@@ -1,0 +1,164 @@
+{
+	"frames": [
+		{
+			"file": "tile-keyframe.bin",
+			"header": {
+				"display": 0,
+				"flags": 7,
+				"height": 64,
+				"pts": 0,
+				"seq": 1,
+				"type": 2,
+				"version": 1,
+				"width": 100
+			},
+			"payload": {
+				"kind": "tiles",
+				"tiles": [
+					{
+						"format": 3,
+						"h": 64,
+						"length": 4,
+						"rgba": [10, 20, 30, 255],
+						"w": 64,
+						"x": 0,
+						"y": 0
+					},
+					{
+						"format": 1,
+						"h": 64,
+						"length": 4,
+						"rgba": null,
+						"w": 36,
+						"x": 64,
+						"y": 0
+					}
+				]
+			}
+		},
+		{
+			"file": "tile-split-0.bin",
+			"header": {
+				"display": 1,
+				"flags": 0,
+				"height": 1080,
+				"pts": 5124095576030430,
+				"seq": 4294967294,
+				"type": 2,
+				"version": 1,
+				"width": 1920
+			},
+			"payload": {
+				"kind": "tiles",
+				"tiles": [
+					{
+						"format": 3,
+						"h": 64,
+						"length": 4,
+						"rgba": [255, 0, 0, 255],
+						"w": 64,
+						"x": 128,
+						"y": 64
+					},
+					{
+						"format": 3,
+						"h": 64,
+						"length": 4,
+						"rgba": [0, 255, 0, 255],
+						"w": 64,
+						"x": 192,
+						"y": 64
+					}
+				]
+			}
+		},
+		{
+			"file": "tile-split-1.bin",
+			"header": {
+				"display": 1,
+				"flags": 4,
+				"height": 1080,
+				"pts": 5124095576030430,
+				"seq": 4294967294,
+				"type": 2,
+				"version": 1,
+				"width": 1920
+			},
+			"payload": {
+				"kind": "tiles",
+				"tiles": [
+					{
+						"format": 3,
+						"h": 64,
+						"length": 4,
+						"rgba": [0, 0, 255, 255],
+						"w": 64,
+						"x": 256,
+						"y": 64
+					}
+				]
+			}
+		},
+		{
+			"file": "cursor-shape.bin",
+			"header": {
+				"display": 0,
+				"flags": 0,
+				"height": 800,
+				"pts": 1500000,
+				"seq": 7,
+				"type": 3,
+				"version": 1,
+				"width": 1280
+			},
+			"payload": {
+				"hotspotX": 3,
+				"hotspotY": 4,
+				"id": 42,
+				"kind": "cursor-shape",
+				"pngLength": 8
+			}
+		},
+		{
+			"file": "cursor-position.bin",
+			"header": {
+				"display": 0,
+				"flags": 0,
+				"height": 800,
+				"pts": 1500000,
+				"seq": 7,
+				"type": 4,
+				"version": 1,
+				"width": 1280
+			},
+			"payload": {
+				"id": 42,
+				"kind": "cursor-position",
+				"visible": true,
+				"x": -2,
+				"y": 799
+			}
+		},
+		{
+			"file": "cursor-hidden.bin",
+			"header": {
+				"display": 0,
+				"flags": 0,
+				"height": 800,
+				"pts": 1500000,
+				"seq": 7,
+				"type": 4,
+				"version": 1,
+				"width": 1280
+			},
+			"payload": {
+				"id": 42,
+				"kind": "cursor-position",
+				"visible": false,
+				"x": 0,
+				"y": 0
+			}
+		}
+	],
+	"headerLength": 20
+}

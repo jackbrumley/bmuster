@@ -51,7 +51,7 @@ struct Logger {
     sink: Sink,
 }
 
-const OWN_TARGETS: [&str; 2] = ["bmuster_agent", "bmuster_protocol"];
+const OWN_TARGETS: [&str; 3] = ["bmuster_agent", "bmuster_protocol", "bmuster_desktop"];
 
 impl Logger {
     fn allows(&self, metadata: &Metadata<'_>) -> bool {
