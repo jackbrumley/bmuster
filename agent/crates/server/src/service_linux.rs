@@ -133,9 +133,10 @@ pub fn remove_service() -> Result<()> {
     Ok(())
 }
 
-/// After `--purge`: the system user goes too.
+/// After `--purge`: the system user goes too (only root can remove it; a
+/// `--no-service` install never made one).
 pub fn remove_user() -> Result<()> {
-    if user_exists() {
+    if require_root().is_ok() && user_exists() {
         run("userdel", &[USER])?;
         println!("Removed the system user {USER}.");
     }

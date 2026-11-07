@@ -6,6 +6,8 @@ agent/dev-data/
 node_modules/
 .svelte-kit/
 /build/
+# Release archives (npm run release:server-local)
+/dist/
 vite.config.ts.timestamp-*
 
 # Local data and secrets
