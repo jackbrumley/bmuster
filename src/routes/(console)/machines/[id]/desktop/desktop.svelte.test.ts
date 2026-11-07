@@ -72,14 +72,14 @@ const DISPLAYS = {
 	current: 'Xvfb-0'
 };
 
-function renderTab(grants: Grant[]) {
+function renderTab(grants: Grant[], machine = TEST_MACHINE) {
 	return render(DesktopTab, {
-		params: { id: TEST_MACHINE.id },
+		params: { id: machine.id },
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
 			localNetworkMode: false,
 			now: Date.parse('2026-11-07T12:00:00.000Z'),
-			machine: TEST_MACHINE,
+			machine,
 			grants
 		}
 	});
@@ -92,8 +92,8 @@ function attach(socket: FakeSocket): void {
 	socket.receive(JSON.stringify(DISPLAYS));
 }
 
-async function open(grants: Grant[], button: 'Connect' | 'Watch only') {
-	const screen = await renderTab(grants);
+async function open(grants: Grant[], button: 'Connect' | 'Watch only', machine = TEST_MACHINE) {
+	const screen = await renderTab(grants, machine);
 	await screen.getByRole('button', { name: button }).click();
 	await expect.poll(() => FakeSocket.last?.url ?? '').toContain('ticket=t-1');
 	const socket = FakeSocket.last;
@@ -325,6 +325,19 @@ describe('the desktop tab', () => {
 		await bar.getByRole('button', { name: 'Leave full screen' }).click();
 		await expect.poll(() => document.fullscreenElement).toBeNull();
 		await expect.element(screen.getByRole('button', { name: 'Full screen' })).toBeVisible();
+	});
+
+	it('R13: full screen on a Windows machine sends Ctrl+Alt+Del as the special key', async () => {
+		const windows = { ...TEST_MACHINE, osFamily: 'windows' as const };
+		const { screen, socket } = await open(CONTROL, 'Connect', windows);
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+		const bar = screen.getByRole('group', { name: 'Full screen controls' });
+		await bar.getByRole('button', { name: 'Ctrl+Alt+Del' }).click();
+		expect(socket.messages()).toContainEqual({ type: 'special', name: 'ctrl-alt-del' });
+		await bar.getByRole('button', { name: 'Leave full screen' }).click();
+		await expect.poll(() => document.fullscreenElement).toBeNull();
 	});
 
 	it('follows the browser leaving full screen by itself (Esc)', async () => {

@@ -30,6 +30,7 @@
 		onexit,
 		onswitch,
 		onsettings,
+		onctrlaltdel,
 		ondisconnect
 	}: {
 		surface: HTMLElement;
@@ -45,6 +46,8 @@
 		onexit: () => void;
 		onswitch: (mode: DesktopMode) => void;
 		onsettings: () => void;
+		/** Ctrl+Alt+Del on the machine (Windows, control sessions). */
+		onctrlaltdel: () => void;
 		ondisconnect: () => void;
 	} = $props();
 
@@ -159,10 +162,10 @@
 				</ToolButton>
 				{#if windows && mode === 'control'}
 					<ToolButton
-						label="Ctrl+Alt+Del: Windows only, coming later"
+						label="Ctrl+Alt+Del"
 						pressed={undefined}
-						disabled={true}
-						onclick={() => undefined}
+						disabled={false}
+						onclick={act(onctrlaltdel)}
 					>
 						<IconKeyboard size={20} />
 					</ToolButton>

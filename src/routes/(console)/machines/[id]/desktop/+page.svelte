@@ -412,6 +412,7 @@
 					onexit={() => void toggleFullScreen()}
 					onswitch={switchMode}
 					onsettings={() => (showSettings = !showSettings)}
+					onctrlaltdel={() => session?.input({ type: 'special', name: 'ctrl-alt-del' })}
 					ondisconnect={() => void endSession()}
 				>
 					{#snippet settings()}
