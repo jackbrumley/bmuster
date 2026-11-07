@@ -466,11 +466,37 @@ fn session_run_loop_answers_and_ends_when_the_socket_goes() {
     sender.send(Incoming::Text(HELLO.to_string())).unwrap();
     sender.send(Incoming::End(EndReason::NoBrowser)).unwrap();
     let mut sent = Vec::new();
-    let reason = run(&mut session, &receiver, &mut |m| {
-        sent.push(m);
-        Ok(())
-    });
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let reason = run(
+        &mut session,
+        &receiver,
+        &mut |m| {
+            sent.push(m);
+            Ok(())
+        },
+        &stop,
+    );
     assert_eq!(reason, EndReason::NoBrowser);
     assert_eq!(types(&sent).first().map(String::as_str), Some("displays"));
     assert_eq!(types(&sent).last().map(String::as_str), Some("ended"));
+}
+
+#[test]
+fn session_run_loop_stops_when_the_agent_stops() {
+    let h = harness(Mode::Control);
+    let mut session = h.session;
+    let (_sender, receiver) = std::sync::mpsc::channel();
+    let stop = std::sync::atomic::AtomicBool::new(true);
+    let mut sent = Vec::new();
+    let reason = run(
+        &mut session,
+        &receiver,
+        &mut |m| {
+            sent.push(m);
+            Ok(())
+        },
+        &stop,
+    );
+    assert_eq!(reason, EndReason::AgentLost);
+    assert_eq!(types(&sent), ["ended"]);
 }

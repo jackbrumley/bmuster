@@ -15,7 +15,7 @@ use crate::frame::{self, CursorContext, FrameInfo};
 use crate::input::{InputBackend, InputController, InputResult};
 use crate::pacing::{Pacer, TickDecision};
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
@@ -562,20 +562,32 @@ fn error(code: ErrorCode, message: &str) -> Outgoing {
     })
 }
 
+/// Longest wait between checks of the `stop` flag.
+const STOP_POLL: Duration = Duration::from_millis(100);
+
 /// Runs a session until it ends: text frames from `incoming`, ticks on time,
 /// everything produced goes to `send`. A closed channel or a failed send
-/// ends the session with `agent-lost` (the socket is gone).
+/// ends the session with `agent-lost` (the socket is gone). `stop` is the
+/// agent's shutdown flag, as the sessions pump takes it: once set, the
+/// session releases every held key, says `ended` and returns.
 pub fn run(
     session: &mut DesktopSession,
     incoming: &Receiver<Incoming>,
     send: &mut dyn FnMut(Outgoing) -> std::io::Result<()>,
+    stop: &AtomicBool,
 ) -> EndReason {
     loop {
         if let Some(reason) = session.ended() {
             return reason;
         }
+        if stop.load(Ordering::SeqCst) {
+            for message in session.end(EndReason::AgentLost) {
+                let _ = send(message);
+            }
+            return EndReason::AgentLost;
+        }
         let now = Instant::now();
-        let deadline = session.next_tick(now);
+        let deadline = session.next_tick(now).min(now + STOP_POLL);
         let out = if deadline <= now {
             session.tick(now)
         } else {
