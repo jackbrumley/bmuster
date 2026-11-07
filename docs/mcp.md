@@ -1,6 +1,6 @@
 # MCP: letting a coding agent help administer machines
 
-Status: idea, 2026-11-07. Not scheduled; the pieces it needs are built in the order below so nothing has to be redone.
+Status: idea, 2026-11-07. The full design is now `docs/specs/SPEC-MCP.md` (draft, awaiting approval); where they differ, the spec wins.
 
 ## Goal
 
