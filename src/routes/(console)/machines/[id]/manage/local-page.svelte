@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { IconEye, IconEyeOff } from '@tabler/icons-svelte-runes';
+	import { IconCheck, IconCopy, IconEye, IconEyeOff } from '@tabler/icons-svelte-runes';
 	import type { LocalPageInfo } from '#lib/domain/machines/local-page.ts';
 	import { localCodeReplySchema } from '#lib/schemas/machines/local-page.ts';
 	import Button from '#lib/ui/button.svelte';
@@ -23,6 +23,15 @@
 		| { kind: 'failed'; message: string };
 
 	let codeState = $state<CodeState>({ kind: 'hidden' });
+	let copied = $state(false);
+
+	async function copyCode(code: string): Promise<void> {
+		await navigator.clipboard.writeText(code);
+		copied = true;
+		setTimeout(() => {
+			copied = false;
+		}, 1500);
+	}
 	let ticker: ReturnType<typeof setInterval> | undefined;
 
 	async function fetchCode(): Promise<void> {
@@ -123,11 +132,27 @@
 			{:else if codeState.kind === 'loading'}
 				<p class="muted">Getting the code…</p>
 			{:else if codeState.kind === 'shown'}
-				<p class="code">{spaced(codeState.code)}</p>
-				<p class="muted">
-					Changes in {codeState.secondsLeft} s; the next one appears here. Viewing it is recorded in Activity.
-				</p>
-				<div>
+				<div class="shown">
+					<div class="code-row">
+						<p class="code">{spaced(codeState.code)}</p>
+						<button
+							data-raw-button="icon"
+							type="button"
+							class="copy"
+							aria-label="Copy the sign-in code"
+							onclick={() => copyCode(codeState.kind === 'shown' ? codeState.code : '')}
+						>
+							{#if copied}
+								<IconCheck size={20} />
+							{:else}
+								<IconCopy size={20} />
+							{/if}
+						</button>
+					</div>
+					<p class="muted">
+						Changes in {codeState.secondsLeft} s; the next one appears here. Viewing it is recorded in
+						Activity.
+					</p>
 					<Button variant="secondary" size="compact" type="button" onclick={hideCode}
 						><IconEyeOff size={18} /> Hide code</Button
 					>
@@ -173,6 +198,36 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-xs);
 		overflow-wrap: anywhere;
+	}
+
+	.shown {
+		display: grid;
+		justify-items: center;
+		gap: var(--space-2);
+		text-align: center;
+	}
+
+	.code-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
+	/* Same as CopyField's button. */
+	.copy {
+		display: inline-grid;
+		place-items: center;
+		width: 40px;
+		height: 40px;
+		border: none;
+		border-radius: var(--radius-pill);
+		background: var(--surface-muted);
+		color: var(--text-soft);
+		cursor: pointer;
+	}
+
+	.copy:hover {
+		color: var(--text);
 	}
 
 	.code {
