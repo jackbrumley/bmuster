@@ -197,6 +197,27 @@ describe('the desktop tab', () => {
 		});
 	});
 
+	it('shows what the machine screen shows and stays open while it changes', async () => {
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		const state = (value: object) => {
+			socket.receive(JSON.stringify({ type: 'state', screen: value }));
+		};
+		state({ kind: 'desktop', user: 'jack' });
+		await expect.element(screen.getByText("jack's desktop", { exact: true })).toBeVisible();
+		state({ kind: 'locked', user: 'jack' });
+		await expect.element(screen.getByText("jack's desktop · locked")).toBeVisible();
+		state({ kind: 'sign-in' });
+		await expect.element(screen.getByText('Sign-in screen')).toBeVisible();
+		socket.receive(JSON.stringify({ type: 'displays', list: [], current: '' }));
+		state({ kind: 'unavailable', reason: 'Wayland sign-in screen not supported yet' });
+		const reason = 'Screen not available: Wayland sign-in screen not supported yet';
+		await expect.element(screen.getByText(reason).first()).toBeVisible();
+		await expect.element(screen.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+		socket.receive(JSON.stringify(DISPLAYS));
+		state({ kind: 'desktop', user: 'jack' });
+		await expect.element(screen.getByText(reason).first()).not.toBeInTheDocument();
+	});
+
 	it('says why the session ended, as the server tells it', async () => {
 		const { screen, socket } = await open(CONTROL, 'Connect');
 		socket.receive(

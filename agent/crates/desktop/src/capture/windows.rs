@@ -10,8 +10,8 @@
 use super::dxgi::Duplication;
 use super::gdi::GdiGrabber;
 use super::{
-    CaptureError, CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopKind,
-    DesktopState, DisplayInfo, Frame,
+    CaptureError, CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState,
+    DisplayInfo, Frame,
 };
 use ::windows::core::BOOL;
 use ::windows::Win32::Foundation::{LPARAM, RECT};
@@ -234,11 +234,7 @@ impl Capturer for WindowsCapturer {
     }
 
     fn state(&self) -> DesktopState {
-        DesktopState {
-            desktop: DesktopKind::Default,
-            locked: false,
-            signed_in_user: None,
-        }
+        DesktopState::Desktop { user: None }
     }
 }
 

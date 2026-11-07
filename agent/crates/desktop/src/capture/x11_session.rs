@@ -1,24 +1,17 @@
-//! Finding the X display at the machine and connecting to it
-//! (SPEC-DESKTOP 6.1).
+//! Connecting to the X display at the machine (SPEC-DESKTOP 6.1).
 //!
-//! The root agent asks logind (through `loginctl`) for seat0's active
-//! session, its type, display, class and user. The Xauthority comes from the
-//! session's own processes (`XAUTHORITY` in their environment), else from the
-//! X server's `-auth` argument (the greeter's), else the user's
-//! `~/.Xauthority`. The cookie is read here and handed to x11rb directly, so
-//! the agent never changes its own environment.
+//! `x11_follow` asks logind (through [`loginctl`]) which session seat0
+//! shows. The Xauthority comes from the session's own processes
+//! (`XAUTHORITY` in their environment), else from the X server's `-auth`
+//! argument (the greeter's), else GDM's per-user file, else the user's
+//! `~/.Xauthority` ([`find_xauthority`]). The cookie is read here and handed
+//! to x11rb directly, so the agent never changes its own environment.
 
-use super::{DesktopKind, DesktopState};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use x11rb::reexports::x11rb_protocol::xauth::Family;
 use x11rb::rust_connection::{DefaultStream, RustConnection};
-
-/// Development and test override for the display (debug builds only).
-pub const DISPLAY_OVERRIDE: &str = "BMUSTER_DESKTOP_DISPLAY";
-/// Development and test override for the Xauthority file (debug builds only).
-pub const XAUTHORITY_OVERRIDE: &str = "BMUSTER_DESKTOP_XAUTHORITY";
 
 const COOKIE_NAME: &[u8] = b"MIT-MAGIC-COOKIE-1";
 
@@ -29,108 +22,32 @@ pub struct X11Target {
     pub xauthority: Option<PathBuf>,
 }
 
-/// The display at seat0 and what it shows.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct X11Seat {
-    pub target: X11Target,
-    pub state: DesktopState,
+/// The Xauthority for an X session at seat0: from the session's own
+/// processes, else the X server's `-auth` argument (LightDM, SDDM, GDM
+/// greeters), else GDM's per-user file, else the user's `~/.Xauthority`.
+/// `None` connects without a cookie.
+pub fn find_xauthority(session: &str, display: &str, user: &str, uid: &str) -> Option<PathBuf> {
+    let found = session_xauthority(session, display)
+        .or_else(|| xorg_xauthority_from_proc(display))
+        .or_else(|| gdm_xauthority(uid))
+        .or_else(|| home_xauthority(user));
+    if found.is_none() {
+        log::warn!("No Xauthority found for {display}; connecting without a cookie");
+    }
+    found
 }
 
-/// Finds the X display of seat0's active session. In debug builds,
-/// [`DISPLAY_OVERRIDE`] and [`XAUTHORITY_OVERRIDE`] point it at a nested X
-/// server instead; release builds ignore both.
-pub fn find_seat0() -> Result<X11Seat, String> {
-    if cfg!(debug_assertions) {
-        if let Ok(display) = std::env::var(DISPLAY_OVERRIDE) {
-            log::warn!("Desktop capture uses {DISPLAY_OVERRIDE}={display} (development override)");
-            return Ok(X11Seat {
-                target: X11Target {
-                    display,
-                    xauthority: std::env::var_os(XAUTHORITY_OVERRIDE).map(PathBuf::from),
-                },
-                state: DesktopState {
-                    desktop: DesktopKind::Default,
-                    locked: false,
-                    signed_in_user: None,
-                },
-            });
-        }
+/// GDM on X11 keeps the cookie in `/run/user/<uid>/gdm/Xauthority`, for
+/// its greeter user and for each signed-in user.
+fn gdm_xauthority(uid: &str) -> Option<PathBuf> {
+    if uid.is_empty() || !uid.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
     }
-
-    let session = loginctl(&["show-seat", "seat0", "--property=ActiveSession", "--value"])?;
-    let session = session.trim();
-    if session.is_empty() {
-        return Err("seat0 has no active session".to_string());
-    }
-    let properties = parse_properties(&loginctl(&[
-        "show-session",
-        session,
-        "--property=Type",
-        "--property=Display",
-        "--property=Class",
-        "--property=Name",
-        "--property=LockedHint",
-    ])?);
-    let get = |key: &str| properties.get(key).map(String::as_str).unwrap_or("");
-    let seat = seat_from_properties(session, &properties)?;
-    let xauthority = session_xauthority(session, &seat.display)
-        .or_else(|| xorg_xauthority_from_proc(&seat.display))
-        .or_else(|| home_xauthority(get("Name")));
-    if xauthority.is_none() {
-        log::warn!(
-            "No Xauthority found for {}; connecting without a cookie",
-            seat.display
-        );
-    }
-    Ok(X11Seat {
-        target: X11Target {
-            display: seat.display,
-            xauthority,
-        },
-        state: seat.state,
-    })
+    let path = PathBuf::from(format!("/run/user/{uid}/gdm/Xauthority"));
+    path.exists().then_some(path)
 }
 
-#[derive(Debug)]
-struct SeatFields {
-    display: String,
-    state: DesktopState,
-}
-
-fn seat_from_properties(
-    session: &str,
-    properties: &HashMap<String, String>,
-) -> Result<SeatFields, String> {
-    let get = |key: &str| properties.get(key).map(String::as_str).unwrap_or("");
-    match get("Type") {
-        "x11" => {}
-        "wayland" => {
-            return Err(format!(
-                "seat0 session {session} is Wayland; Wayland comes in a later phase"
-            ))
-        }
-        other => return Err(format!("seat0 session {session} is {other:?}, not X11")),
-    }
-    let display = get("Display");
-    if display.is_empty() {
-        return Err(format!("seat0 session {session} has no X display"));
-    }
-    let greeter = get("Class") == "greeter";
-    Ok(SeatFields {
-        display: display.to_string(),
-        state: DesktopState {
-            desktop: if greeter {
-                DesktopKind::Greeter
-            } else {
-                DesktopKind::Default
-            },
-            locked: get("LockedHint") == "yes",
-            signed_in_user: (!greeter && !get("Name").is_empty()).then(|| get("Name").to_string()),
-        },
-    })
-}
-
-fn loginctl(args: &[&str]) -> Result<String, String> {
+pub(crate) fn loginctl(args: &[&str]) -> Result<String, String> {
     let output = Command::new("loginctl")
         .args(args)
         .output()
@@ -441,30 +358,6 @@ mod tests {
             pick_cookie(&entries, Family::INTERNET, b"\x7f\0\0\x01", 1),
             None
         );
-    }
-
-    #[test]
-    fn seat_loginctl_properties_to_state() {
-        let props =
-            parse_properties("Type=x11\nDisplay=:1\nClass=user\nName=jack\nLockedHint=yes\n");
-        let seat = seat_from_properties("4", &props).unwrap();
-        assert_eq!(seat.display, ":1");
-        assert_eq!(
-            seat.state,
-            DesktopState {
-                desktop: DesktopKind::Default,
-                locked: true,
-                signed_in_user: Some("jack".into())
-            }
-        );
-        let greeter = parse_properties("Type=x11\nDisplay=:0\nClass=greeter\nName=gdm\n");
-        let seat = seat_from_properties("c1", &greeter).unwrap();
-        assert_eq!(seat.state.desktop, DesktopKind::Greeter);
-        assert_eq!(seat.state.signed_in_user, None);
-        let wayland = parse_properties("Type=wayland\nDisplay=\n");
-        assert!(seat_from_properties("2", &wayland)
-            .unwrap_err()
-            .contains("Wayland"));
     }
 
     #[test]

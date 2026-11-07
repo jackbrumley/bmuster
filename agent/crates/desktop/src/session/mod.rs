@@ -5,9 +5,12 @@
 //! [`DesktopSession::tick`] when [`DesktopSession::next_tick`] is due. Both
 //! return the messages to send. [`run`] is that loop over a channel, for the
 //! session socket code to drive. Frames come from [`video`], cursor
-//! messages from [`cursor`].
+//! messages from [`cursor`]. A session made with
+//! [`DesktopSession::following`] follows the screen at the machine
+//! ([`following`]).
 
 mod cursor;
+mod following;
 mod video;
 
 use crate::capture::Capturer;
@@ -91,6 +94,8 @@ pub struct DesktopSession {
     viewport: Option<Viewport>,
     scale: Scale,
     ended: Option<EndReason>,
+    /// Set when the session follows the screen instead of holding one.
+    follow: Option<following::Follow>,
 }
 
 impl DesktopSession {
@@ -106,7 +111,16 @@ impl DesktopSession {
             Mode::Control => Some(InputController::new(make_input()?)),
             Mode::Watch => None,
         };
-        Ok(DesktopSession {
+        Ok(DesktopSession::with(mode, capturer, input, now))
+    }
+
+    fn with(
+        mode: Mode,
+        capturer: Box<dyn Capturer>,
+        input: Option<InputController>,
+        now: Instant,
+    ) -> Self {
+        DesktopSession {
             mode,
             capturer,
             input,
@@ -121,7 +135,8 @@ impl DesktopSession {
             viewport: None,
             scale: Scale::Fit,
             ended: None,
-        })
+            follow: None,
+        }
     }
 
     pub fn mode(&self) -> Mode {
@@ -137,7 +152,8 @@ impl DesktopSession {
     /// captured, so it only wakes once a second.
     pub fn next_tick(&self, now: Instant) -> Instant {
         if self.greeted {
-            self.pacer.next_tick()
+            self.waiting_for_screen()
+                .unwrap_or_else(|| self.pacer.next_tick())
         } else {
             now + Duration::from_secs(1)
         }
@@ -217,7 +233,7 @@ impl DesktopSession {
                 self.video.restart();
                 self.pacer.force_keyframe();
                 out.push(self.displays_message());
-                out.push(text(AgentMessage::State(self.capturer.state())));
+                out.push(self.state_message());
             }
             ClientMessage::Keyframe => {
                 if self.pacer.request_keyframe(now) {
@@ -339,6 +355,9 @@ impl DesktopSession {
         if !self.greeted || self.ended.is_some() {
             return out;
         }
+        if !self.follow_screen(now, &mut out) {
+            return out;
+        }
         match self.capturer.poll_layout() {
             Ok(true) => {
                 self.release_all();
@@ -347,7 +366,10 @@ impl DesktopSession {
                 out.push(self.displays_message());
             }
             Ok(false) => {}
-            Err(err) => return self.capture_failed(&err.0),
+            Err(err) => {
+                out.extend(self.capture_failed(now, &err.0));
+                return out;
+            }
         }
 
         match self.pacer.tick(now) {
@@ -373,7 +395,7 @@ impl DesktopSession {
                     Ok(Some(sent)) => self.pacer.sent(sent.seq, now, sent.keyframe),
                     Ok(None) => {}
                     Err(message) => {
-                        out.extend(self.capture_failed(&message));
+                        out.extend(self.capture_failed(now, &message));
                         return out;
                     }
                 }
@@ -388,7 +410,10 @@ impl DesktopSession {
         out
     }
 
-    fn capture_failed(&mut self, message: &str) -> Vec<Outgoing> {
+    fn capture_failed(&mut self, now: Instant, message: &str) -> Vec<Outgoing> {
+        if self.follow.is_some() {
+            return self.screen_lost(now, message);
+        }
         log::error!("Desktop capture failed: {message}");
         let mut out = vec![error(ErrorCode::CaptureFailed, message)];
         out.extend(self.end(EndReason::AgentLost));

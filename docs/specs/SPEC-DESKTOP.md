@@ -128,17 +128,17 @@ Text frames, JSON, one object with a `type` per frame. Each side ignores unknown
 
 ### 5.2 Agent to browser
 
-| Type        | Fields                                                                                                                                                                     |
-| :---------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `displays`  | `list: [{id, name, x, y, width, height, scale, primary}]`, `current`. Sent at start and whenever the layout changes                                                        |
-| `stream`    | `display`, `codec: 'h264' \| 'jpeg' \| 'webp'`, `codecString` (H.264 only, e.g. `avc1.42E01F`), `width`, `height`, `scale`. Before each keyframe that changes any of these |
-| `state`     | `desktop: 'default' \| 'winlogon' \| 'secure' \| 'greeter'`, `locked: boolean`, `signedInUser: string \| null`                                                             |
-| `consent`   | `state: 'asking' \| 'allowed' \| 'declined' \| 'timed-out' \| 'not-needed'`                                                                                                |
-| `wayland`   | `state: 'needs-approval' \| 'pending' \| 'approved' \| 'greeter-unsupported'`                                                                                              |
-| `clipboard` | `text`, in reply to `clipboard-pull`                                                                                                                                       |
-| `stalled`   | — (section 4.3)                                                                                                                                                            |
-| `error`     | `code: 'not-allowed' \| 'too-many-sessions' \| 'capture-failed' \| 'encoder-failed' \| 'bad-message'`, `message`                                                           |
-| `ended`     | `reason` (section 9). The agent closes the socket after it                                                                                                                 |
+| Type        | Fields                                                                                                                                                                           |
+| :---------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `displays`  | `list: [{id, name, x, y, width, height, scale, primary}]`, `current`. Sent at start and whenever the layout changes                                                              |
+| `stream`    | `display`, `codec: 'h264' \| 'jpeg' \| 'webp'`, `codecString` (H.264 only, e.g. `avc1.42E01F`), `width`, `height`, `scale`. Before each keyframe that changes any of these       |
+| `state`     | `screen`: `{kind: 'sign-in'}`, `{kind: 'locked' \| 'desktop', user: string \| null}` or `{kind: 'unavailable', reason}`. Sent after `hello` and whenever it changes (section 16) |
+| `consent`   | `state: 'asking' \| 'allowed' \| 'declined' \| 'timed-out' \| 'not-needed'`                                                                                                      |
+| `wayland`   | `state: 'needs-approval' \| 'pending' \| 'approved' \| 'greeter-unsupported'`                                                                                                    |
+| `clipboard` | `text`, in reply to `clipboard-pull`                                                                                                                                             |
+| `stalled`   | — (section 4.3)                                                                                                                                                                  |
+| `error`     | `code: 'not-allowed' \| 'too-many-sessions' \| 'capture-failed' \| 'encoder-failed' \| 'bad-message'`, `message`                                                                 |
+| `ended`     | `reason` (section 9). The agent closes the socket after it                                                                                                                       |
 
 ### 5.3 Input rules
 
@@ -157,8 +157,8 @@ Text frames, JSON, one object with a `type` per frame. Each side ignores unknown
 
 - The root agent finds the active seat0 session through logind, its `DISPLAY` and its Xauthority: the user's from the session process's environment, the greeter's from Xorg's `-auth` argument.
 - The desktop session runs as a thread in the agent and connects with that Xauthority. Capture: XShm `GetImage` per display rectangle, XDamage to find changed areas, on `x11rb`. Input: XTest. Clipboard: X selections through `arboard`.
-- When the session switches (sign-in, sign-out, user switch), the agent reconnects to the new display and sends `displays`, `state` and a keyframe.
-- Development override: `agent-dev` and tests may set `BMUSTER_DESKTOP_DISPLAY` and `BMUSTER_DESKTOP_XAUTHORITY` to point the agent at a nested X server. Release builds ignore both.
+- When the session switches (sign-in, sign-out, user switch), the agent reconnects to the new display and sends `displays`, `state` and a keyframe. The browser session stays open; with nothing to capture (Wayland, a text console, no session) it waits in `unavailable` with the reason (section 16).
+- Development overrides: `agent-dev` and tests may set `BMUSTER_DESKTOP_DISPLAY` and `BMUSTER_DESKTOP_XAUTHORITY` to point the agent at a nested X server, or `BMUSTER_DESKTOP_SCREEN_FILE` to a file that says which screen to show (so a test can switch screens). Release builds ignore all three.
 
 ### 6.2 Windows (phases 1 and 3)
 
@@ -320,3 +320,39 @@ The capture target is always a nested X server, never the real desktop.
 **End to end** (scratch server on port 47700, the debug agent with `BMUSTER_DESKTOP_DISPLAY=:95`, a headless Xvfb with its own cookie, `xsetroot`, `xclock` and `xedit` on it, Playwright Chromium): the canvas showed the root colour and the xedit window; a click into xedit and typing changed the screen; a watch-only tab showed View only, received frames and sent no input message; a reload came back to the same session with the picture; Disconnect on the notice bar (clicked through the control session) ended both sessions with "Someone at the machine pressed Disconnect."; the audit had the opened, ended and disconnected-at-machine entries. Measured at 1280 px (stream 961×601, fit): an idle screen with a ticking clock 1 fps and about 3 KB/s; the whole background changing 10 times a second (a fine plaid, worst case for JPEG) 9.9 fps and about 3.2 MB/s, with the desktop crate built optimised (an unoptimised debug build managed 4 fps). Screenshots at 390 and 1280 px, light and dark.
 
 **Not tested here:** Windows (type- and clippy-checked only), the real display under GDM or LightDM (seat0 discovery, the greeter's Xauthority), a throttled network (R5's falling frame rate), several displays, and the release build's behaviour beyond the debug build with an optimised encoder.
+
+## 16. As built: following the screen, Linux X11 (2026-11-08)
+
+The desktop follows whatever the physical screen shows, like VNC in service mode: the sign-in screen, someone's desktop, and a switch between them, without ending the browser session. Before this, signing out or switching user made capture fail and the session ended with `agent-lost`.
+
+**Design**
+
+- **Generic part** (`bmuster-desktop`, platform-neutral): `follow.rs` has the `ScreenWatch` trait. `look()` says what the screen shows now (a `Look`: a `key` that changes whenever it is another screen, and the `DesktopState`); `open()` opens capture, input and the notice target on it (a `Platform`). `DesktopSession::following(mode, watch, now)` (in `session/following.rs`) looks once a second. A new key: release every held key and button, drop the old capturer and injector, open the new screen (the injector only for a control session), move the notice bar, and send `displays`, `state` and a keyframe (the `stream` message comes again first). The same key with a new state (lock, unlock): only `state`. A capture failure no longer ends a following session: it closes the screen and looks again at once when the screen had worked for a second, otherwise at the next look, so a broken screen is reopened at most once a second. While nothing is open the loop sleeps until the next look and sends no frames; input is dropped (there is no injector).
+- **`state` message, generic for every platform:** `screen: {kind: 'sign-in'} | {kind: 'locked', user} | {kind: 'desktop', user} | {kind: 'unavailable', reason}`. `user` is the account name or null. It replaced the first draft's `desktop: 'default' | 'winlogon' | 'secure' | 'greeter'` fields, which nothing read. The Windows helper reports the same states (Winlogon with nobody signed in is `sign-in`, the lock screen `locked`, the Default or UAC desktop `desktop`).
+- **Linux** (`capture/x11_follow.rs`): `LogindWatch` runs `loginctl show-seat seat0 -p ActiveSession` and `show-session` (Type, Class, Display, Name, User, State, LockedHint) on every look and reads them with the pure `look_at`. An X11 session with a display is a screen, keyed by session id and display: class `greeter` is `sign-in`, `LockedHint=yes` (or class `lock-screen`) is `locked`, else `desktop`. Otherwise it waits with a reason: "Wayland sign-in screen not supported yet", "Wayland desktop not supported yet", "Text console", "The session on the screen is closing", "No session is on the screen", "Cannot find the screen (seat0): …". `open()` finds the Xauthority (the session's processes, then the X server's `-auth` argument, which covers LightDM's `/var/run/lightdm/root/:0` and SDDM, then GDM's `/run/user/<uid>/gdm/Xauthority`, then `~/.Xauthority`) and builds the capturer, the XTest injector factory and the notice target with `x11_platform`. LightDM reuses the greeter's X server for the user session, so the display can stay `:0` across a switch; the key changes with the logind session, so everything is reopened anyway.
+- **Agent wiring:** `open_console()` returns `Console::Following(LogindWatch)` on Linux and `Console::Fixed(open_platform())` elsewhere; `sessions/desktop.rs` builds `DesktopSession::following` or `DesktopSession::new` from it. A following session never fails to start: with nothing to show it opens in `unavailable`.
+- **Notice bar:** the bar is global (one per machine). `notice::keep_on(screen)` moves it: a following session calls it when it opens a screen (the bar closes on the old display and opens on the new one), with `None` when there is no screen, and on every look of the same screen, which brings the bar back if its X server restarted. `show(None, …)` registers a viewer on the screen a following session placed. A screen the bar cannot open on is retried every 10 s. On Windows the notice target is now a unit struct instead of `()`.
+- **Console:** `src/lib/domain/desktop/screen.ts` (`DesktopScreen`, `screenLabel`) and the zod `screenSchema`. The Desktop tab shows a status line beside the frame rate: "Sign-in screen", "jack's desktop", "jack's desktop · locked", and for `unavailable` "Screen not available: <reason>" over the picture, while Disconnect stays.
+
+**Tests**
+
+- Unit: `x11_follow` `follow_loginctl_*` (user desktop and locked, greeter, Wayland greeter and desktop, tty, closing, no display, other types, garbage output, defensive parsing) and `follow_screen_file_*`; `session::following` `follow_*` with a fake watch (user to greeter and back with a keyframe from each screen and input on the new one only, held buttons released before a switch, lock and unlock as state only, Wayland and text console waiting open, no seat at the start, a screen that will not open retried, capture failure looking again instead of ending, watch-only never building an injector); `notice_keep_on_moves_the_bar_to_another_screen`; agent `a_following_session_with_nothing_to_show_stays_open_with_the_reason`; `control_agent_messages_serialise_as_the_spec_says`.
+- Headless switch: `follow_switch_between_two_x_servers_keeps_the_stream_and_moves_input_and_bar` starts two Xvfb servers with their own cookies (`NestedX::start_two`), drives the seat through a test `ScreenWatch` from A (a desktop) to B (the sign-in screen), and checks the `sign-in` state, the keyframe's colour from B, the pointer moving on B and not on A, and the notice bar leaving A for B.
+- Browser: `screen.test.ts`; `desktop.svelte.test.ts` "shows what the machine screen shows and stays open while it changes".
+- End to end (scratch server on port 47740, the debug agent with `BMUSTER_DESKTOP_SCREEN_FILE`, headless Xvfb `:181` painted blue and `:182` painted red, each with its own cookie, Playwright Chromium): Connect showed the blue screen and "jack's desktop" with the notice bar on `:181`; `screen=locked` changed the line to "jack's desktop · locked"; switching the file to `:182` and `sign-in` turned the picture red with "Sign-in screen", moved the bar to `:182` (gone from `:181`), and clicks still went out; `unavailable` with "Text console" showed "Screen not available: Text console" over the picture with Disconnect still there, at 1280 and 390 px; switching back to `:181` brought the blue picture back. The session never ended.
+
+**Jack's manual test (Linux Mint, Cinnamon, LightDM, X11)**
+
+Install the agent built from this branch, then from the console, on another device:
+
+1. Open the laptop's Desktop tab and press Connect. The picture shows the desktop; the status line says "jack's desktop"; the notice bar is at the top of the laptop's screen.
+2. At the laptop, lock the screen (Super+L). The status line says "jack's desktop · locked" and the picture shows the lock screen. Unlock remotely by typing the password into the picture: it goes back to "jack's desktop".
+3. Sign out from the laptop's menu while connected. Within a few seconds the picture shows the LightDM sign-in screen, the status line says "Sign-in screen", the session is not ended, and the notice bar is on the sign-in screen.
+4. Sign in remotely: click the user, type the password, press Enter. The picture follows into the desktop, and the status line says "jack's desktop" again.
+5. Switch user (menu, Switch User): the sign-in screen for a new seat session appears in the picture ("Sign-in screen"). Choose Jack again and sign in: the picture comes back to the desktop.
+6. Optional: press Ctrl+Alt+F3 at the laptop. The tab says "Screen not available: Text console" and stays connected; Ctrl+Alt+F7 brings the picture back.
+7. Press Disconnect in the console: the bar goes away at the laptop.
+
+Report anything that ends the session instead of following, and `journalctl -u bmuster-agent` lines starting "The screen at the machine" or "Desktop capture failed".
+
+**Not tested here:** a real LightDM, GDM or SDDM greeter and its Xauthority (unit-tested paths only), a real lock screen's `LockedHint`, Wayland machines beyond the reason text.

@@ -8,15 +8,18 @@
 //!   Desktop Duplication, GDI fallback).
 //! - [`input`]: XTest and `SendInput`, with release-all.
 //! - [`notice`]: the bar at the machine while someone is connected.
+//! - [`follow`]: a session that follows the screen at the machine (the
+//!   sign-in screen, a desktop, a switch between them) without ending.
 //! - [`encode`], [`frame`], [`pacing`], [`control`]: the wire format and the
 //!   pure logic, tested without a display.
 //!
-//! [`open_platform`] builds the capturer and the injector factory for this
-//! machine's console.
+//! [`open_console`] says how a session gets this machine's screen: on Linux
+//! it follows seat0; on Windows [`open_platform`] opens the input desktop.
 
 pub mod capture;
 pub mod control;
 pub mod encode;
+pub mod follow;
 pub mod frame;
 pub mod input;
 pub mod notice;
@@ -24,6 +27,7 @@ pub mod pacing;
 pub mod session;
 
 pub use control::{EndReason, Mode};
+pub use follow::{Look, ScreenWatch};
 pub use session::{run, DesktopSession, Incoming, Outgoing, SessionSlot};
 
 use capture::Capturer;
@@ -37,13 +41,32 @@ pub struct Platform {
     pub notice_target: notice::Target,
 }
 
-/// Opens capture on the active seat0 X session (Linux).
+/// How a session gets the machine's screen.
+pub enum Console {
+    /// One screen for the whole session.
+    Fixed(Platform),
+    /// Whatever the physical screen shows, followed as it changes.
+    Following(Box<dyn ScreenWatch>),
+}
+
+/// Follows seat0's active session through logind (Linux).
 #[cfg(target_os = "linux")]
-pub fn open_platform() -> Result<Platform, String> {
-    let seat = capture::x11_session::find_seat0()?;
-    let capturer =
-        capture::x11::X11Capturer::open(&seat.target, seat.state.clone()).map_err(|e| e.0)?;
-    let target = seat.target;
+pub fn open_console() -> Result<Console, String> {
+    Ok(Console::Following(Box::new(
+        capture::x11_follow::LogindWatch::new(),
+    )))
+}
+
+/// The input desktop, which the Windows helper follows itself.
+#[cfg(not(target_os = "linux"))]
+pub fn open_console() -> Result<Console, String> {
+    open_platform().map(Console::Fixed)
+}
+
+/// Capture, input and the notice bar on one X display (Linux).
+#[cfg(target_os = "linux")]
+pub fn x11_platform(target: capture::x11_session::X11Target) -> Result<Platform, String> {
+    let capturer = capture::x11::X11Capturer::open(&target).map_err(|e| e.0)?;
     let notice_target = target.clone();
     Ok(Platform {
         capturer: Box::new(capturer),
@@ -64,7 +87,7 @@ pub fn open_platform() -> Result<Platform, String> {
         make_input: Box::new(|| {
             Ok(Box::new(input::windows::SendInputBackend::new()) as Box<dyn InputBackend>)
         }),
-        notice_target: (),
+        notice_target: notice::Target,
     })
 }
 

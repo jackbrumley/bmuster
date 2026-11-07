@@ -20,6 +20,7 @@ use bmuster_desktop::capture::x11_session::{write_xauth_entry, X11Target, XauthE
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Mutex, MutexGuard, Once};
 use std::time::Duration;
@@ -63,12 +64,31 @@ fn choose_server() -> Option<Server> {
     find_in_path("Xvfb").map(Server::Xvfb)
 }
 
+/// The server to run, or `None` after saying once why the tests skip.
+fn server_or_skip() -> Option<Server> {
+    let server = choose_server();
+    if server.is_none() {
+        SKIP_NOTICE.call_once(|| {
+            // Straight to stderr: the test harness hides eprintln! output
+            // of passing tests, and this line should be seen once.
+            use std::io::Write as _;
+            let _ = writeln!(
+                std::io::stderr().lock(),
+                "X11 tests skipped: no headless X server (install Xvfb, set BMUSTER_XVFB, \
+                 or set BMUSTER_X_TESTS=xephyr)"
+            );
+        });
+    }
+    server
+}
+
 pub struct NestedX {
     pub target: X11Target,
     pub number: u16,
     child: Child,
     _dir: Option<tempfile::TempDir>,
-    _turn: MutexGuard<'static, ()>,
+    /// Shared by both servers of a pair: the turn ends with the last one.
+    _turn: Rc<MutexGuard<'static, ()>>,
 }
 
 fn find_in_path(program: &str) -> Option<PathBuf> {
@@ -115,25 +135,26 @@ fn hostname() -> Vec<u8> {
 impl NestedX {
     /// Starts a nested server, or returns `None` (and says why) to skip.
     pub fn start() -> Option<NestedX> {
-        let Some(server) = choose_server() else {
-            SKIP_NOTICE.call_once(|| {
-                // Straight to stderr: the test harness hides eprintln! output
-                // of passing tests, and this line should be seen once.
-                use std::io::Write as _;
-                let _ = writeln!(
-                    std::io::stderr().lock(),
-                    "X11 tests skipped: no headless X server (install Xvfb, set BMUSTER_XVFB, \
-                     or set BMUSTER_X_TESTS=xephyr)"
-                );
-            });
-            return None;
-        };
-        let name = match &server {
+        let server = server_or_skip()?;
+        let turn = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
+        Some(NestedX::launch(&server, Rc::new(turn)))
+    }
+
+    /// Two nested servers at once, each with its own cookie (the screen
+    /// switch tests), or `None` to skip.
+    pub fn start_two() -> Option<(NestedX, NestedX)> {
+        let server = server_or_skip()?;
+        let turn = Rc::new(ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner()));
+        let first = NestedX::launch(&server, Rc::clone(&turn));
+        let second = NestedX::launch(&server, turn);
+        Some((first, second))
+    }
+
+    fn launch(server: &Server, turn: Rc<MutexGuard<'static, ()>>) -> NestedX {
+        let name = match server {
             Server::Xvfb(_) => "Xvfb",
             Server::Xephyr => "Xephyr",
         };
-        let turn = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
-
         let (dir, base) = match std::env::var_os("BMUSTER_TEST_X_DIR") {
             Some(base) => {
                 let base = PathBuf::from(base);
@@ -183,7 +204,7 @@ impl NestedX {
                 .expect("server log");
 
             let display = format!(":{number}");
-            let mut command = match &server {
+            let mut command = match server {
                 Server::Xvfb(path) => {
                     let mut command = Command::new(path);
                     command.arg(&display).args(["-screen", "0", "1280x800x24"]);
@@ -223,7 +244,7 @@ impl NestedX {
             });
             match rx.recv_timeout(Duration::from_secs(15)) {
                 Ok(line) if line.trim() == number.to_string() => {
-                    return Some(NestedX {
+                    return NestedX {
                         target: X11Target {
                             display,
                             xauthority: Some(xauthority),
@@ -232,7 +253,7 @@ impl NestedX {
                         child,
                         _dir: dir,
                         _turn: turn,
-                    });
+                    };
                 }
                 _ => stop(&mut child),
             }
