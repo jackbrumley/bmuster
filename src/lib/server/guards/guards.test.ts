@@ -174,7 +174,8 @@ describe('every route is guarded (S7, hygiene route-guard-required)', () => {
 		for (const path of [
 			'src/routes/agent/v1/check-in/+server.ts',
 			'src/routes/agent/v1/leave/+server.ts',
-			'src/routes/agent/v1/local-page/+server.ts'
+			'src/routes/agent/v1/local-page/+server.ts',
+			'src/routes/agent/v1/local-events/+server.ts'
 		]) {
 			expect(text(path), path).toMatch(/route\.agent\(/);
 		}

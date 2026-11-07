@@ -288,6 +288,12 @@ fn rejoin(join: &Join, data_dir: Option<PathBuf>, insecure_dev_tls: bool) -> Res
             tls,
         },
         &session,
+        &|| {
+            // Local page events still waiting go to the old server before it is left.
+            if let Err(e) = local_page::journal::Journal::open(&dir).send(&session) {
+                log::warn!("Could not send the local page's waiting events: {e:#}");
+            }
+        },
     );
     if was_running {
         platform::start_service()?;

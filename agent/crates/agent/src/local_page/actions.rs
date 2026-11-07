@@ -10,7 +10,7 @@ use crate::status::RunMode;
 use crate::tls::{self, Check};
 use crate::trust;
 use crate::worker;
-use bmuster_protocol::{CertificatePin, LeaveReason, ServerTrust};
+use bmuster_protocol::{CertificatePin, CodeOwners, LeaveReason, LocalEvent, ServerTrust};
 use rustls::pki_types::ServerName;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs as _};
 use std::time::Duration;
@@ -133,10 +133,13 @@ pub fn test_connection(page: &Page) -> Vec<Step> {
 
     let mut probe = lock_probe(page);
     let probe = probe.get_or_insert_with(Probe::new);
-    let result = match worker::check_in(&page.session, probe, &mut None) {
+    let result = match worker::check_in(&page.session, probe, &mut None, &page.people) {
         Ok(Reply::Ok(reply)) => {
             let interval = page.board.snapshot().check_in_seconds;
             page.board.checked_in(&reply.machine_name, interval);
+            if let Err(e) = page.people.apply(&reply.local_users) {
+                log::warn!("Local page: could not save the list of people: {e:#}");
+            }
             StepResult::Pass("the server accepted this machine's signed check-in".into())
         }
         Ok(Reply::Refused(refusal)) => StepResult::Fail(format!(
@@ -199,7 +202,15 @@ pub enum MoveResult {
     Failed(String),
 }
 
-pub fn move_machine(page: &Page, form: &MoveForm) -> MoveResult {
+/// Sends waiting events to the current server before it is told the machine
+/// is leaving: it refuses the machine afterwards.
+fn send_events_before_leaving(page: &Page) {
+    if let Err(e) = page.journal.send(&page.session) {
+        log::warn!("Could not send the local page's events before leaving: {e:#}");
+    }
+}
+
+pub fn move_machine(page: &Page, form: &MoveForm, codes: &CodeOwners) -> MoveResult {
     let Ok(_busy) = page.busy.try_lock() else {
         return MoveResult::Failed("A move or uninstall is already running.".into());
     };
@@ -219,16 +230,33 @@ pub fn move_machine(page: &Page, form: &MoveForm) -> MoveResult {
         (None, false) => TlsMode::Checked(ServerTrust::Public),
     };
     let name = form.name.trim();
+    let url = form.url.trim();
+    page.journal.record(LocalEvent::MoveStarted {
+        codes: codes.clone(),
+        server_url: url.to_string(),
+    });
     page.board.begin_leaving();
+    let before_leave = || {
+        page.journal.record(LocalEvent::MoveFinished {
+            codes: codes.clone(),
+            server_url: url.to_string(),
+        });
+        page.journal.record(LocalEvent::Leaving {
+            codes: codes.clone(),
+            reason: LeaveReason::Moved,
+        });
+        send_events_before_leaving(page);
+    };
     let result = relocate::move_to(
         &page.data_dir,
         &MoveTarget {
-            url: form.url.trim(),
+            url,
             code: &form.code,
             name: (!name.is_empty()).then_some(name),
             tls,
         },
         &page.session,
+        &before_leave,
     );
     match result {
         Ok(moved) => MoveResult::Moved(moved),
@@ -236,6 +264,10 @@ pub fn move_machine(page: &Page, form: &MoveForm) -> MoveResult {
             if !relocate::move_pending(&page.data_dir) {
                 page.board.end_leaving();
             }
+            page.journal.record(LocalEvent::MoveFailed {
+                codes: codes.clone(),
+                reason: format!("{e:#}"),
+            });
             MoveResult::Failed(format!("{e:#}"))
         }
     }
@@ -269,10 +301,18 @@ pub enum Uninstall {
     Failed(String),
 }
 
-pub fn uninstall(page: &Page) -> Uninstall {
+pub fn uninstall(page: &Page, codes: CodeOwners) -> Uninstall {
     let Ok(_busy) = page.busy.try_lock() else {
         return Uninstall::Failed("A move or uninstall is already running.".into());
     };
+    page.journal.record(LocalEvent::Uninstalled {
+        codes: codes.clone(),
+    });
+    page.journal.record(LocalEvent::Leaving {
+        codes,
+        reason: LeaveReason::Uninstalled,
+    });
+    send_events_before_leaving(page);
     page.board.begin_leaving();
     let mut said = vec![match relocate::leave(&page.session, LeaveReason::Uninstalled) {
         Ok(()) => "The server was told this machine is leaving; it refuses the machine from now on.".to_string(),

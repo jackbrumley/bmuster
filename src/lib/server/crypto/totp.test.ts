@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { totpCode, totpSecondsLeft } from './totp.ts';
+import { z } from 'zod';
+import { localUserSecret, totpCode, totpSecondsLeft } from './totp.ts';
 
 /**
  * RFC 6238 Appendix B, SHA-1: the secret is the ASCII digits "12345678901234567890".
@@ -27,5 +29,45 @@ describe('TOTP (SPEC-AGENT-LOCAL)', () => {
 		expect(totpSecondsLeft(60)).toBe(30);
 		expect(totpSecondsLeft(61)).toBe(29);
 		expect(totpSecondsLeft(89.9)).toBe(1);
+	});
+});
+
+/** The vectors the agent's `totp::tests` checks too (SPEC-AGENT-LOCAL 7, P1). */
+const vectorsSchema = z.object({
+	localUserCodes: z.object({
+		machineSecretHex: z.string(),
+		users: z
+			.array(
+				z.object({
+					userId: z.string(),
+					userSecretHex: z.string(),
+					codes: z.array(z.object({ unixSeconds: z.number(), code: z.string() })).min(1)
+				})
+			)
+			.min(2)
+	})
+});
+
+describe('per-person local page codes (SPEC-AGENT-LOCAL 7)', () => {
+	it('P1: derives the same secrets and codes as the shared vectors', () => {
+		const vectors = vectorsSchema.parse(
+			JSON.parse(readFileSync('agent/crates/protocol/tests/vectors.json', 'utf8'))
+		).localUserCodes;
+		const machine = Buffer.from(vectors.machineSecretHex, 'hex');
+		for (const user of vectors.users) {
+			const secret = localUserSecret(machine, user.userId);
+			expect(secret.toString('hex')).toBe(user.userSecretHex);
+			for (const { unixSeconds, code } of user.codes) {
+				expect(totpCode(secret, unixSeconds)).toBe(code);
+			}
+		}
+	});
+
+	it("gives each person a different code from the machine's", () => {
+		const machine = Buffer.from('12345678901234567890', 'ascii');
+		const ann = localUserSecret(machine, 'ann');
+		expect(ann).toHaveLength(20);
+		expect(ann.equals(localUserSecret(machine, 'ben'))).toBe(false);
+		expect(ann.equals(machine)).toBe(false);
 	});
 });

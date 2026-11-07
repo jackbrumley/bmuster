@@ -5,7 +5,8 @@ import type { LocalCodeReply } from '#lib/schemas/machines/local-page.ts';
 import { machineLocalPages, machines } from '../../database/schema.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { openSecret, sealSecret } from '../../crypto/secret-box.ts';
-import { totpCode, totpSecondsLeft } from '../../crypto/totp.ts';
+import { localUserSecret, totpCode, totpSecondsLeft } from '../../crypto/totp.ts';
+import { localPagePeople } from '../access/access.ts';
 import { recordAudit } from '../audit/audit.ts';
 import type { AuthenticatedAgent } from './agent-auth.ts';
 
@@ -78,8 +79,10 @@ function auditDue(database: AppDatabase, key: string, now: number): boolean {
 
 /**
  * The local page's current code for an admin, and the seconds until it changes. Undefined for
- * an unknown or removed machine. The view is audited (`local-code-viewed`), at most once a
- * minute per admin and machine, so a countdown that fetches every 30 seconds is one entry.
+ * an unknown or removed machine. An agent that takes per-person codes gets the viewer's own code
+ * (SPEC-AGENT-LOCAL 7) and never the shared one; an older agent still gets the shared code. The
+ * view is audited (`local-code-viewed`), at most once a minute per admin and machine, so a
+ * countdown that fetches every 30 seconds is one entry.
  */
 export function viewLocalCode(
 	database: AppDatabase,
@@ -92,6 +95,7 @@ export function viewLocalCode(
 		.select({
 			name: machines.name,
 			hostname: machines.hostname,
+			localCodes: machines.localCodes,
 			sealed: machineLocalPages.totpSecretSealed
 		})
 		.from(machines)
@@ -104,6 +108,10 @@ export function viewLocalCode(
 	if (row.sealed === null) {
 		return { kind: 'not-reported' };
 	}
+	const perPerson = row.localCodes === 'per-person';
+	if (perPerson && !localPagePeople(database).some((person) => person.userId === viewerId)) {
+		return { kind: 'not-listed' };
+	}
 	if (auditDue(database, `${viewerId}:${machineId}`, now)) {
 		recordAudit(
 			database,
@@ -112,15 +120,17 @@ export function viewLocalCode(
 				kind: 'local-code-viewed',
 				target: row.name,
 				machineId,
-				detail: { hostname: row.hostname }
+				detail: { hostname: row.hostname, code: perPerson ? 'their own' : 'shared' }
 			},
 			now
 		);
 	}
 	const seconds = now / 1000;
+	const machineSecret = openSecret(row.sealed, secretsKey);
 	return {
 		kind: 'code',
-		code: totpCode(openSecret(row.sealed, secretsKey), seconds),
-		secondsLeft: totpSecondsLeft(seconds)
+		code: totpCode(perPerson ? localUserSecret(machineSecret, viewerId) : machineSecret, seconds),
+		secondsLeft: totpSecondsLeft(seconds),
+		scope: perPerson ? 'person' : 'machine'
 	};
 }

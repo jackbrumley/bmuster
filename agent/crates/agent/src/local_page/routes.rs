@@ -10,7 +10,9 @@ use super::Page;
 use crate::inventory::{self, Probe};
 use crate::logging;
 use crate::status::RunMode;
-use std::time::{SystemTime, UNIX_EPOCH};
+use bmuster_protocol::{CodeOwners, LocalEvent};
+use std::sync::Arc;
+use std::time::SystemTime;
 
 /// What to do once the reply has gone out.
 #[derive(Debug, PartialEq, Eq)]
@@ -20,13 +22,7 @@ pub enum After {
     RemoveDataAndStop,
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| {
-            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
-        })
-}
+use super::journal::now_ms;
 
 fn session_cookie(token: &str) -> String {
     format!(
@@ -89,7 +85,7 @@ pub fn handle(page: &Page, request: &Request) -> (Response, After) {
     if (method, path) == ("POST", "/sign-in") {
         return sign_in(page, request, now);
     }
-    if !page.gate.session(token, now) {
+    let Some(codes) = page.gate.session(token, now) else {
         return match (method, path) {
             ("GET", "/") => html(200, pages::sign_in(&hostname(), None)),
             ("GET", _) => (Response::redirect("/"), After::Nothing),
@@ -101,12 +97,12 @@ pub fn handle(page: &Page, request: &Request) -> (Response, After) {
                 ),
             ),
         };
-    }
+    };
 
     match (method, path) {
-        ("GET", "/") => html(200, status_page(page, notice(request))),
+        ("GET", "/") => html(200, status_page(page, notice(request), &codes)),
         ("POST", "/sign-out") => {
-            page.gate.sign_out(token);
+            page.gate.sign_out(token, now);
             (
                 Response::redirect("/").with_header("set-cookie", cleared_cookie()),
                 After::Nothing,
@@ -118,6 +114,12 @@ pub fn handle(page: &Page, request: &Request) -> (Response, After) {
         }
         ("POST", "/test-connection") => {
             let steps = actions::test_connection(page);
+            page.journal.record(LocalEvent::ConnectionTested {
+                codes,
+                passed: steps
+                    .iter()
+                    .all(|step| matches!(step.result, pages::StepResult::Pass(_))),
+            });
             let body = pages::layout(
                 "Test connection",
                 true,
@@ -138,13 +140,16 @@ pub fn handle(page: &Page, request: &Request) -> (Response, After) {
             );
             html(200, body)
         }
-        ("POST", "/restart") => (
-            Response::html(
-                200,
-                pages::message("Restarting", &[restart_text(page.mode)], false),
-            ),
-            After::Restart,
-        ),
+        ("POST", "/restart") => {
+            page.journal.record(LocalEvent::Restarted { codes });
+            (
+                Response::html(
+                    200,
+                    pages::message("Restarting", &[restart_text(page.mode)], false),
+                ),
+                After::Restart,
+            )
+        }
         ("GET", "/move") => {
             let name = current_name(page);
             html(
@@ -161,12 +166,12 @@ pub fn handle(page: &Page, request: &Request) -> (Response, After) {
                 ),
             )
         }
-        ("POST", "/move") => move_machine(page, request),
+        ("POST", "/move") => move_machine(page, request, codes),
         ("GET", "/uninstall") => html(
             200,
             pages::uninstall_form(&actions::uninstall_explanation(page), None),
         ),
-        ("POST", "/uninstall") => uninstall(page, request),
+        ("POST", "/uninstall") => uninstall(page, request, codes),
         _ => (Response::text(404, "Not found."), After::Nothing),
     }
 }
@@ -179,7 +184,6 @@ fn sign_in(page: &Page, request: &Request, now: u64) -> (Response, After) {
     let form = request.form();
     let problem = match page.gate.sign_in(field(&form, "code"), now) {
         SignIn::SignedIn { token } => {
-            log::info!("Local page: someone signed in with a code.");
             return (
                 Response::redirect("/").with_header("set-cookie", session_cookie(&token)),
                 After::Nothing,
@@ -192,7 +196,7 @@ fn sign_in(page: &Page, request: &Request, now: u64) -> (Response, After) {
                 if left == 1 { "try" } else { "tries" }
             ),
         ),
-        SignIn::Paused { seconds } => (
+        SignIn::Paused { seconds } | SignIn::LockedOut { seconds } => (
             429,
             format!(
                 "Too many wrong codes. Sign-in is paused; try again in {} minute{}.",
@@ -230,7 +234,7 @@ fn current_name(page: &Page) -> String {
     page.board.snapshot().machine_name.unwrap_or_else(hostname)
 }
 
-fn move_machine(page: &Page, request: &Request) -> (Response, After) {
+fn move_machine(page: &Page, request: &Request, codes: CodeOwners) -> (Response, After) {
     let fields = request.form();
     let form = MoveForm {
         url: field(&fields, "url").to_string(),
@@ -238,7 +242,7 @@ fn move_machine(page: &Page, request: &Request) -> (Response, After) {
         pin: field(&fields, "pin").to_string(),
         name: field(&fields, "name").to_string(),
     };
-    match actions::move_machine(page, &form) {
+    match actions::move_machine(page, &form, &codes) {
         MoveResult::Moved(moved) => {
             let said = vec![
                 format!(
@@ -277,7 +281,7 @@ fn move_machine(page: &Page, request: &Request) -> (Response, After) {
     }
 }
 
-fn uninstall(page: &Page, request: &Request) -> (Response, After) {
+fn uninstall(page: &Page, request: &Request, codes: CodeOwners) -> (Response, After) {
     if field(&request.form(), "confirm") != "yes" {
         return html(
             422,
@@ -287,7 +291,7 @@ fn uninstall(page: &Page, request: &Request) -> (Response, After) {
             ),
         );
     }
-    match actions::uninstall(page) {
+    match actions::uninstall(page, codes) {
         Uninstall::Scheduled(said) => html(200, pages::message("Uninstalling", &said, false)),
         Uninstall::RemoveDataAndStop(said) => (
             Response::html(200, pages::message("Uninstalling", &said, false)),
@@ -300,8 +304,29 @@ fn uninstall(page: &Page, request: &Request) -> (Response, After) {
     }
 }
 
+/// Sends waiting events on their own thread, so the page never waits for
+/// the server. Whatever fails stays queued for the next check-in.
+pub fn send_events_soon(page: &Page) {
+    if !page.journal.pending() {
+        return;
+    }
+    let session = Arc::clone(&page.session);
+    let journal = Arc::clone(&page.journal);
+    let spawned = std::thread::Builder::new()
+        .name("local-page events".into())
+        .spawn(move || {
+            if let Err(e) = journal.send(&session) {
+                log::debug!("Local page events wait for the next check-in: {e:#}");
+            }
+        });
+    if spawned.is_err() {
+        log::warn!("Local page: could not start a thread to send its events.");
+    }
+}
+
 /// Runs once the reply is sent, so the browser sees it before the agent goes.
 pub fn run_after(page: &Page, after: After) {
+    send_events_soon(page);
     match after {
         After::Nothing => {}
         After::Restart => page.send(crate::worker::Signal::Restart),
@@ -315,7 +340,7 @@ pub fn run_after(page: &Page, after: After) {
     }
 }
 
-fn status_page(page: &Page, notice: Option<&str>) -> String {
+fn status_page(page: &Page, notice: Option<&str>, codes: &CodeOwners) -> String {
     let now = SystemTime::now();
     let snapshot = page.board.snapshot();
     let healthy = page.board.healthy(now);
@@ -386,6 +411,7 @@ fn status_page(page: &Page, notice: Option<&str>) -> String {
             },
         ),
         pages::row("Data folder", &page.data_dir.display().to_string()),
+        pages::row("Signed in with", &super::gate::whose_code(codes)),
         pages::row("This page", &listen),
         Row {
             label: "Page certificate",
@@ -458,6 +484,8 @@ fn machine_card(page: &Page, host: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::super::gate::{Gate, Hosts};
+    use super::super::journal::Journal;
+    use super::super::people::People;
     use super::*;
     use crate::client::{Security, ServerUrl, Session, TlsMode, Transport};
     use crate::status::StatusBoard;
@@ -466,7 +494,7 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use std::sync::atomic::AtomicUsize;
     use std::sync::mpsc::{self, Receiver};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
 
     const SECRET: &[u8] = b"12345678901234567890";
     const HOST: &str = "localhost:47591";
@@ -474,6 +502,8 @@ mod tests {
 
     fn page(mode: RunMode) -> (Page, Receiver<crate::worker::Signal>, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
+        let people = Arc::new(People::load(dir.path()));
+        let journal = Arc::new(Journal::open(dir.path()));
         // Nothing listens on port 9 (discard); requests to the server fail fast.
         let transport = Transport::new(
             ServerUrl::parse("http://127.0.0.1:9").unwrap(),
@@ -491,7 +521,9 @@ mod tests {
             board: Arc::new(StatusBoard::new(60)),
             mode,
             insecure_dev_tls: false,
-            gate: Gate::new(SECRET),
+            gate: Gate::new(SECRET, Arc::clone(&people), Arc::clone(&journal)),
+            people,
+            journal,
             hosts: Hosts {
                 port: 47591,
                 loopback_only: true,
@@ -591,6 +623,7 @@ mod tests {
         assert!(text.contains("http://127.0.0.1:9"));
         assert!(text.contains("m-1"));
         assert!(text.contains("Recent log"));
+        assert!(text.contains("the shared machine code"));
     }
 
     #[test]
@@ -632,6 +665,24 @@ mod tests {
         assert!(body(&response).contains("service manager"));
         assert_eq!(after, After::Restart);
         assert!(signals.try_recv().is_err());
+        // E3: the restart is recorded with whose code the session used.
+        let recorded: Vec<LocalEvent> = page
+            .journal
+            .entries()
+            .into_iter()
+            .map(|entry| entry.event)
+            .collect();
+        assert_eq!(
+            recorded,
+            [
+                LocalEvent::SignedIn {
+                    codes: CodeOwners::Machine
+                },
+                LocalEvent::Restarted {
+                    codes: CodeOwners::Machine
+                }
+            ]
+        );
         run_after(&page, after);
         assert!(matches!(
             signals.try_recv(),

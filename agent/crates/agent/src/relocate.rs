@@ -61,7 +61,14 @@ pub fn move_pending(dir: &Path) -> bool {
 
 /// Moves this machine to another server. `old` is the session with the
 /// current server, used only for the `leave` after the new enrolment worked.
-pub fn move_to(dir: &Path, target: &MoveTarget<'_>, old: &Session) -> Result<Moved> {
+/// `before_leave` runs just before that `leave` (the local page sends its
+/// waiting events then, while the old server still takes them).
+pub fn move_to(
+    dir: &Path,
+    target: &MoveTarget<'_>,
+    old: &Session,
+    before_leave: &dyn Fn(),
+) -> Result<Moved> {
     if move_pending(dir) {
         bail!("a move to another server is already saved; restart the agent to finish it");
     }
@@ -97,6 +104,7 @@ pub fn move_to(dir: &Path, target: &MoveTarget<'_>, old: &Session) -> Result<Mov
         new_identity.machine_id
     );
 
+    before_leave();
     let old_server = match leave(old, LeaveReason::Moved) {
         Ok(()) => OldServer::Told,
         Err(e) => {
@@ -114,7 +122,7 @@ pub fn move_to(dir: &Path, target: &MoveTarget<'_>, old: &Session) -> Result<Mov
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::client::{Security, ServerUrl, Transport};
     use crate::paths::{IDENTITY_FILE, KEY_FILE, LOCAL_PAGE_SECRET_FILE};
@@ -125,12 +133,12 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     /// One request a fake server saw: which server and which path.
-    type Seen = Arc<Mutex<Vec<String>>>;
+    pub(crate) type Seen = Arc<Mutex<Vec<String>>>;
 
     /// A plain-HTTP server on 127.0.0.1 (the agent allows http:// only for
     /// loopback) answering every request with `status` and `body`, and
     /// recording `<name> <method> <path>` in `seen`.
-    fn fake_server(name: &'static str, status: u16, body: &str, seen: &Seen) -> String {
+    pub(crate) fn fake_server(name: &'static str, status: u16, body: &str, seen: &Seen) -> String {
         let body = body.to_string();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -234,11 +242,16 @@ mod tests {
         let new_url = fake_server("new", 200, &enrolled_reply(), &seen);
         let (dir, session) = enrolled(&old_url);
 
-        let moved = move_to(dir.path(), &target(&new_url), &session).unwrap();
+        let hook = || seen.lock().unwrap().push("before leave".into());
+        let moved = move_to(dir.path(), &target(&new_url), &session, &hook).unwrap();
 
         assert_eq!(
             *seen.lock().unwrap(),
-            ["new POST /agent/v1/enrol", "old POST /agent/v1/leave"]
+            [
+                "new POST /agent/v1/enrol",
+                "before leave",
+                "old POST /agent/v1/leave"
+            ]
         );
         assert_eq!(moved.machine_id, "new-machine");
         assert_eq!(moved.old_server, OldServer::Told);
@@ -271,7 +284,7 @@ mod tests {
         let (dir, session) = enrolled(&old_url);
         let before = std::fs::read(dir.path().join(IDENTITY_FILE)).unwrap();
 
-        let error = move_to(dir.path(), &target(&new_url), &session).unwrap_err();
+        let error = move_to(dir.path(), &target(&new_url), &session, &|| {}).unwrap_err();
 
         assert!(format!("{error:#}").contains("No such join code"));
         assert_eq!(*seen.lock().unwrap(), ["new POST /agent/v1/enrol"]);
@@ -296,7 +309,7 @@ mod tests {
         };
         let (dir, session) = enrolled(&gone);
 
-        let moved = move_to(dir.path(), &target(&new_url), &session).unwrap();
+        let moved = move_to(dir.path(), &target(&new_url), &session, &|| {}).unwrap();
 
         assert!(matches!(moved.old_server, OldServer::NotTold(_)));
         assert_eq!(

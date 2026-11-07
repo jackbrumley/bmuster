@@ -1,5 +1,5 @@
 {
-	"note": "Shared signing test vectors. Rust (crates/protocol) and TypeScript (src/lib/server/services/agents/signing.test.ts) must both reproduce these exactly.",
+	"note": "Shared test vectors. Rust (crates/protocol, and crates/agent totp.rs for localUserCodes) and TypeScript (signing.test.ts, crypto/totp.test.ts) must both reproduce these exactly.",
 	"seedHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
 	"publicKeyBase64": "ebVWLo/mVPlAeLES6KmLp5AfhTrmlb7X4OORC60ElmQ=",
 	"machineId": "3f0c2b1a-0000-4000-8000-000000000001",
@@ -22,5 +22,47 @@
 			"signatureBase64": "/Y6/h4KJuDkfa3DPZBfcRoprklkS9nMp7C5kN+YFxlLaC4lSFdb17q10ghY04wRMmmVkRYIVvp2vbfotDUBkBA==",
 			"authorization": "BMuster 3f0c2b1a-0000-4000-8000-000000000001:1794000000123:/Y6/h4KJuDkfa3DPZBfcRoprklkS9nMp7C5kN+YFxlLaC4lSFdb17q10ghY04wRMmmVkRYIVvp2vbfotDUBkBA=="
 		}
-	]
+	],
+	"localUserCodes": {
+		"note": "Per-person local page codes (SPEC-AGENT-LOCAL 7): userSecret = first 20 bytes of HMAC-SHA256(machineSecret, 'BMUSTER-LOCAL-USER-1\\n' + userId); codes are RFC 6238 (SHA-1, 6 digits, 30 s) with that key.",
+		"machineSecretHex": "3132333435363738393031323334353637383930",
+		"users": [
+			{
+				"userId": "3f0c2b1a-0000-4000-8000-0000000000aa",
+				"userSecretHex": "126453287b04afbe4b9c6edd5dab93b67474517a",
+				"codes": [
+					{
+						"unixSeconds": 59,
+						"code": "417536"
+					},
+					{
+						"unixSeconds": 1111111109,
+						"code": "835579"
+					},
+					{
+						"unixSeconds": 2000000000,
+						"code": "951014"
+					}
+				]
+			},
+			{
+				"userId": "9b1e7c44-1111-4111-8111-0000000000bb",
+				"userSecretHex": "2e9bf2c5fc24bda8d9803c674dde1dc174f96090",
+				"codes": [
+					{
+						"unixSeconds": 59,
+						"code": "108940"
+					},
+					{
+						"unixSeconds": 1111111109,
+						"code": "550716"
+					},
+					{
+						"unixSeconds": 2000000000,
+						"code": "598868"
+					}
+				]
+			}
+		]
+	}
 }

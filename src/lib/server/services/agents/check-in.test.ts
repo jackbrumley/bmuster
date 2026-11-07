@@ -16,7 +16,8 @@ function checkIn(
 		uptimeSeconds: 3600,
 		signedInUser: { kind: 'user' as const, name: 'jack' },
 		load: { cpuPercent: 12.5, memoryUsedBytes: 4 * 1024 ** 3 },
-		inventory
+		inventory,
+		localUsers: { kind: 'unsupported' as const }
 	};
 }
 
@@ -33,7 +34,8 @@ describe('check-in (A6)', () => {
 		expect(reply).toEqual({
 			checkInSeconds: 60,
 			inventoryWanted: false,
-			machineName: 'Test machine'
+			machineName: 'Test machine',
+			localUsers: { kind: 'unchanged' }
 		});
 
 		const machine = findMachine(database, agent.machineId, NOW + 1000);

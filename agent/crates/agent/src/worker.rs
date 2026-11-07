@@ -4,6 +4,8 @@
 use crate::client::{Reply, Security, ServerUrl, Session, Transport};
 use crate::identity;
 use crate::inventory::{self, Probe};
+use crate::local_page::journal::Journal;
+use crate::local_page::people::People;
 use crate::local_page::{self, Reporter};
 use crate::socket;
 use crate::status::{RunMode, StatusBoard};
@@ -16,7 +18,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// After the server would not take local page events (an older server), wait
+/// this long before offering them again.
+const EVENTS_RETRY: Duration = Duration::from_secs(3600);
 
 /// Messages to the check-in loop.
 pub enum Signal {
@@ -124,6 +130,8 @@ pub fn run(
     );
 
     let board = Arc::new(StatusBoard::new(identity.check_in_seconds));
+    let people = Arc::new(People::load(&options.data_dir));
+    let journal = Arc::new(Journal::open(&options.data_dir));
     let mut reporter = local_page::start(local_page::Setup {
         data_dir: options.data_dir.clone(),
         session: Arc::clone(&session),
@@ -132,6 +140,8 @@ pub fn run(
         mode: options.mode,
         insecure_dev_tls: options.insecure_dev_tls,
         port_override: options.local_page_port,
+        people: Arc::clone(&people),
+        journal: Arc::clone(&journal),
     });
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -152,12 +162,23 @@ pub fn run(
         &signals,
         &board,
         reporter.as_mut(),
+        &Local {
+            people: &people,
+            journal: &journal,
+        },
     );
     stop.store(true, Ordering::SeqCst);
     if socket_thread.join().is_err() {
         log::error!("the live socket thread failed");
     }
     outcome
+}
+
+/// The local page's list of people and its waiting events, which the
+/// check-in loop keeps up to date and sends.
+pub struct Local<'a> {
+    pub people: &'a People,
+    pub journal: &'a Journal,
 }
 
 pub fn check_in_loop(
@@ -167,14 +188,16 @@ pub fn check_in_loop(
     signals: &Receiver<Signal>,
     board: &StatusBoard,
     mut reporter: Option<&mut Reporter>,
+    local: &Local<'_>,
 ) -> Result<Outcome> {
     let mut probe = Probe::new();
+    let mut events_after = Instant::now();
     // The inventory hash the server is known to hold; `None` sends it in full.
     let mut server_hash: Option<String> = None;
     let mut backoff = Backoff::new(Duration::from_secs(5), Duration::from_secs(300));
 
     loop {
-        let wait = match check_in(session, &mut probe, &mut server_hash) {
+        let wait = match check_in(session, &mut probe, &mut server_hash, local.people) {
             Ok(Reply::Ok(reply)) => {
                 backoff.reset();
                 match identity::check_interval(reply.check_in_seconds) {
@@ -189,6 +212,20 @@ pub fn check_in_loop(
                 board.checked_in(&reply.machine_name, check_in_seconds);
                 if let Some(reporter) = reporter.as_deref_mut() {
                     reporter.after_check_in(session);
+                }
+                if let Err(e) = local.people.apply(&reply.local_users) {
+                    log::warn!("Local page: could not save the list of people: {e:#}");
+                }
+                if local.journal.pending() && Instant::now() >= events_after {
+                    match local.journal.send(session) {
+                        Ok(sent) => log::debug!("Sent {sent} local page events."),
+                        Err(e) => {
+                            log::warn!(
+                                "Could not send local page events (an older server does not take them): {e:#}"
+                            );
+                            events_after = Instant::now() + EVENTS_RETRY;
+                        }
+                    }
                 }
                 Duration::from_secs(u64::from(check_in_seconds))
             }
@@ -267,6 +304,7 @@ pub fn check_in(
     session: &Session,
     probe: &mut Probe,
     server_hash: &mut Option<String>,
+    people: &People,
 ) -> Result<Reply<CheckInReply>> {
     let inventory = probe.inventory()?;
     let hash = inventory.hash()?;
@@ -285,6 +323,7 @@ pub fn check_in(
         signed_in_user: inventory::signed_in_user(),
         load: probe.load(),
         inventory: report,
+        local_users: people.held(),
     };
     let body = serde_json::to_vec(&request)?;
     let reply = session.post_signed::<CheckInReply>(CHECK_IN_PATH, &body)?;
@@ -328,7 +367,20 @@ mod tests {
             sender.send(signal).unwrap();
         }
         let dir = tempfile::tempdir().unwrap();
-        check_in_loop(&unreachable(), dir.path(), 60, &signals, board, None).unwrap()
+        let local = Local {
+            people: &People::load(dir.path()),
+            journal: &Journal::open(dir.path()),
+        };
+        check_in_loop(
+            &unreachable(),
+            dir.path(),
+            60,
+            &signals,
+            board,
+            None,
+            &local,
+        )
+        .unwrap()
     }
 
     #[test]

@@ -105,6 +105,16 @@ function userView(database: Queryable, id: string): UserView {
 	return toUserView(row, links);
 }
 
+/** Admins who are not disabled, by id: who may sign in to local pages today (SPEC-AGENT-LOCAL 7). */
+export function enabledAdmins(database: Queryable): { id: string; name: string }[] {
+	return database
+		.select({ id: users.id, name: users.name })
+		.from(users)
+		.where(and(eq(users.role, 'admin'), isNull(users.disabledAt)))
+		.orderBy(users.id)
+		.all();
+}
+
 /** Names by id: actors on the Activity page, note authors on a machine. */
 export function userNames(database: Queryable, ids: string[]): Map<string, string> {
 	if (ids.length === 0) {

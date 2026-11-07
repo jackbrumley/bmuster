@@ -15,6 +15,7 @@ import {
 } from '../../database/schema.ts';
 import type { Queryable } from '../../database/connection.ts';
 import { activeMachineNames, isActiveMachine } from '../machines/machine-views.ts';
+import { enabledAdmins } from '../users/users.ts';
 
 /**
  * The one answer to "what may this person do on this machine" (SPEC-ACCESS
@@ -142,4 +143,12 @@ export function activityScopeFor(
 		case 'member':
 			return { kind: 'machines', machineIds: [...visibleMachineIds(database, user)] };
 	}
+}
+
+/**
+ * Who may sign in to a machine's local page with their own code (SPEC-AGENT-LOCAL 7), in
+ * userId order: admins who are not disabled. Later, whoever the access rules allow.
+ */
+export function localPagePeople(database: Queryable): { userId: string; name: string }[] {
+	return enabledAdmins(database).map((admin) => ({ userId: admin.id, name: admin.name }));
 }

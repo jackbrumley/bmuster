@@ -4,13 +4,17 @@
 //! to another server or uninstall it, even while the internet is down.
 //!
 //! Sign-in is a 6-digit code (TOTP) the console shows to admins; the secret
-//! is made here and sent once to the server in a signed request.
+//! is made here and sent once to the server in a signed request. Each person
+//! on the server's list has their own code derived from it, and what happens
+//! here is reported to the server's Activity (SPEC-AGENT-LOCAL 7).
 
 mod actions;
 mod certificate;
 mod gate;
 mod http;
+pub mod journal;
 mod pages;
+pub mod people;
 mod routes;
 
 use crate::client::{Reply, Session};
@@ -24,6 +28,8 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use bmuster_protocol::{LocalPageReport, LOCAL_PAGE_PATH};
 use gate::{Gate, Hosts};
+use journal::Journal;
+use people::People;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use serde::Deserialize;
@@ -42,6 +48,8 @@ const MAX_CONNECTIONS: usize = 16;
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
 /// After a failed report, wait this long before trying again.
 const REPORT_RETRY: Duration = Duration::from_secs(3600);
+/// How often sessions that ran out unused are ended and recorded.
+const SWEEP_EVERY: Duration = Duration::from_secs(60);
 
 /// What the worker hands the page.
 pub struct Setup {
@@ -52,6 +60,8 @@ pub struct Setup {
     pub mode: RunMode,
     pub insecure_dev_tls: bool,
     pub port_override: Option<u16>,
+    pub people: Arc<People>,
+    pub journal: Arc<Journal>,
 }
 
 /// The running page's shared state.
@@ -63,6 +73,8 @@ pub struct Page {
     mode: RunMode,
     insecure_dev_tls: bool,
     gate: Gate,
+    people: Arc<People>,
+    journal: Arc<Journal>,
     hosts: Hosts,
     listen: Vec<SocketAddr>,
     /// The certificate's SHA-256 as browsers show it.
@@ -209,7 +221,13 @@ fn try_start(setup: Setup) -> Result<Reporter> {
         board: setup.board,
         mode: setup.mode,
         insecure_dev_tls: setup.insecure_dev_tls,
-        gate: Gate::new(&secret),
+        gate: Gate::new(
+            &secret,
+            Arc::clone(&setup.people),
+            Arc::clone(&setup.journal),
+        ),
+        people: setup.people,
+        journal: setup.journal,
         hosts: listen.hosts,
         listen: listeners.iter().map(|(address, _)| *address).collect(),
         fingerprint: certificate::fingerprint(&cert.sha256_hex),
@@ -217,6 +235,18 @@ fn try_start(setup: Setup) -> Result<Reporter> {
         busy: Mutex::new(()),
         connections: AtomicUsize::new(0),
     });
+    {
+        let page = Arc::clone(&page);
+        std::thread::Builder::new()
+            .name("local-page sweep".into())
+            .spawn(move || loop {
+                std::thread::sleep(SWEEP_EVERY);
+                if page.gate.sweep(journal::now_ms()) {
+                    routes::send_events_soon(&page);
+                }
+            })
+            .context("could not start the local page")?;
+    }
     for (address, listener) in listeners {
         let page = Arc::clone(&page);
         let tls = Arc::clone(&tls);

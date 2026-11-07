@@ -8,6 +8,20 @@ pub const SECRET_BYTES: usize = 20;
 pub const STEP_SECONDS: u64 = 30;
 pub const DIGITS: u32 = 6;
 
+/// First line of the per-person derivation; bump it if the derivation changes.
+pub const USER_DOMAIN: &str = "BMUSTER-LOCAL-USER-1";
+
+/// A person's own key (SPEC-AGENT-LOCAL 7): the first 20 bytes of
+/// HMAC-SHA256(machine secret, "BMUSTER-LOCAL-USER-1\n" + user id). The
+/// server derives the same key to show that person their code.
+pub fn user_secret(machine_secret: &[u8], user_id: &str) -> [u8; SECRET_BYTES] {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, machine_secret);
+    let tag = hmac::sign(&key, format!("{USER_DOMAIN}\n{user_id}").as_bytes());
+    let mut secret = [0u8; SECRET_BYTES];
+    secret.copy_from_slice(&tag.as_ref()[..SECRET_BYTES]);
+    secret
+}
+
 /// The 30-second step a Unix time (seconds) falls in.
 pub fn step_at(unix_seconds: u64) -> u64 {
     unix_seconds / STEP_SECONDS
@@ -78,6 +92,28 @@ mod tests {
                 expected[2..],
                 "T={time}"
             );
+        }
+    }
+
+    /// P1: the same vectors the server's `totp.test.ts` checks.
+    #[test]
+    fn per_person_secrets_match_the_shared_vectors() {
+        let vectors: serde_json::Value =
+            serde_json::from_str(include_str!("../../protocol/tests/vectors.json")).unwrap();
+        let set = &vectors["localUserCodes"];
+        let machine = hex::decode(set["machineSecretHex"].as_str().unwrap()).unwrap();
+        let users = set["users"].as_array().unwrap();
+        assert_eq!(users.len(), 2);
+        for user in users {
+            let secret = user_secret(&machine, user["userId"].as_str().unwrap());
+            assert_eq!(hex::encode(secret), user["userSecretHex"].as_str().unwrap());
+            for code in user["codes"].as_array().unwrap() {
+                let time = code["unixSeconds"].as_u64().unwrap();
+                assert_eq!(
+                    code_for_step(&secret, step_at(time), DIGITS),
+                    code["code"].as_str().unwrap()
+                );
+            }
         }
     }
 

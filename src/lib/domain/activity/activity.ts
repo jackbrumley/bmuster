@@ -25,6 +25,19 @@ const AUDIT_KINDS = [
 	'machine-moved',
 	'machine-uninstalled',
 	'local-code-viewed',
+	'local-signed-in',
+	'local-signed-out',
+	'local-session-expired',
+	'local-wrong-code',
+	'local-locked-out',
+	'local-restarted',
+	'local-connection-tested',
+	'local-move-started',
+	'local-move-finished',
+	'local-move-failed',
+	'local-leaving',
+	'local-uninstalled',
+	'local-events-dropped',
 	'user-group-added',
 	'user-group-changed',
 	'user-group-deleted',
@@ -106,6 +119,32 @@ export function activityLabel(kind: AuditKind): string {
 			return "Recorded that a machine's agent was uninstalled";
 		case 'local-code-viewed':
 			return "Viewed a machine's local page code";
+		case 'local-signed-in':
+			return 'Signed in to a local page';
+		case 'local-signed-out':
+			return 'Signed out of a local page';
+		case 'local-session-expired':
+			return 'A local page session ended';
+		case 'local-wrong-code':
+			return 'A wrong local page code';
+		case 'local-locked-out':
+			return 'Local page sign-in paused';
+		case 'local-restarted':
+			return 'Restarted an agent from its local page';
+		case 'local-connection-tested':
+			return 'Tested the connection from a local page';
+		case 'local-move-started':
+			return 'Started a move from a local page';
+		case 'local-move-finished':
+			return 'Moved a machine from its local page';
+		case 'local-move-failed':
+			return 'A move from a local page failed';
+		case 'local-leaving':
+			return 'An agent told this server it is leaving';
+		case 'local-uninstalled':
+			return 'Uninstalled an agent from its local page';
+		case 'local-events-dropped':
+			return 'Local page events were lost';
 		case 'user-group-added':
 			return 'Added a group of people';
 		case 'user-group-changed':
