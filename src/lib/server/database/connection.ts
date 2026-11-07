@@ -5,7 +5,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import * as schema from './schema.ts';
 
-export type AppDatabase = BetterSQLite3Database<typeof schema>;
+/** Drizzle over better-sqlite3; `$client` is the connection itself (snapshots use its backup API). */
+export type AppDatabase = BetterSQLite3Database<typeof schema> & { $client: Database.Database };
 
 /** The database or an open transaction: what repositories take, so callers can group writes. */
 export type Queryable = AppDatabase | Parameters<Parameters<AppDatabase['transaction']>[0]>[0];

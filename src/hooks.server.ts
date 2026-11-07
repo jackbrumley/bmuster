@@ -3,6 +3,7 @@ import { sequence } from '@sveltejs/kit/hooks';
 import type { ServerInit } from '@sveltejs/kit/hooks';
 // Opening the database applies migrations before the first request.
 import { database } from '#lib/server/database/app-database.ts';
+import { scheduleSnapshots } from '#lib/server/database/snapshots.ts';
 import { env } from '#lib/server/env.ts';
 import { originCheck } from '#lib/server/hooks/origin-check.ts';
 import { session } from '#lib/server/hooks/session.ts';
@@ -24,7 +25,9 @@ import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts
  * installer's local network mode default is applied first (SPEC-SERVER-INSTALL
  * I12), then the first admin is created from the environment, or a setup code
  * is printed (SPEC-SIGN-IN S17, S18). The dev server registers Vite's own
- * certificate.
+ * certificate. A built server also schedules the nightly database snapshot
+ * (SPEC-HOSTING H3); the dev server does not, so it never writes backups
+ * beside a developer's database.
  */
 export const init: ServerInit = async () => {
 	registerSocketRoutes(SOCKET_ROUTES);
@@ -35,6 +38,9 @@ export const init: ServerInit = async () => {
 		);
 	}
 	await prepareFirstRun(database, env.firstAdmin, serverSetupCode, printToServerLog, Date.now());
+	if (!dev && env.databasePath !== ':memory:') {
+		scheduleSnapshots(database.$client, env.databasePath, env.backupSchedule, printToServerLog);
+	}
 };
 
 /**

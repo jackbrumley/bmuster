@@ -3,6 +3,7 @@
  * stops the server at start-up (fail hard), never later at first use.
  */
 import { existsSync } from 'node:fs';
+import type { SnapshotSchedule } from './database/snapshots.ts';
 
 // Variables already set (Docker, the shell) win over .env.
 if (existsSync('.env')) {
@@ -62,6 +63,36 @@ function localNetworkModeAtFirstRun(): boolean {
 	return true;
 }
 
+/**
+ * The nightly database snapshot (SPEC-HOSTING H3): BMUSTER_BACKUP_TIME is
+ * HH:MM in the server's time zone (TZ), 03:00 when left out;
+ * BMUSTER_BACKUP_KEEP is how many daily snapshots to keep, 14 when left
+ * out, and 0 turns snapshots off.
+ */
+function backupSchedule(): SnapshotSchedule {
+	const keepText = optional('BMUSTER_BACKUP_KEEP') ?? '14';
+	if (!/^\d{1,4}$/.test(keepText)) {
+		throw new Error(
+			`BMUSTER_BACKUP_KEEP must be a whole number (0 turns snapshots off), not ${keepText}`
+		);
+	}
+	const keep = Number.parseInt(keepText, 10);
+	const timeText = optional('BMUSTER_BACKUP_TIME') ?? '03:00';
+	const time = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(timeText);
+	if (time === null) {
+		throw new Error(`BMUSTER_BACKUP_TIME must be HH:MM (24-hour), not ${timeText}`);
+	}
+	if (keep === 0) {
+		return { kind: 'off' };
+	}
+	return {
+		kind: 'daily',
+		hour: Number.parseInt(time[1] ?? '', 10),
+		minute: Number.parseInt(time[2] ?? '', 10),
+		keep
+	};
+}
+
 function secretsKey(): Buffer {
 	const key = Buffer.from(required('SECRETS_KEY'), 'base64');
 	if (key.length !== 32) {
@@ -80,5 +111,7 @@ export const env = {
 	/** Optional: the admin to create on a server with no users (S18). */
 	firstAdmin: firstAdmin(),
 	/** Optional: turn local network mode on for a server with no users (I12). */
-	localNetworkModeAtFirstRun: localNetworkModeAtFirstRun()
+	localNetworkModeAtFirstRun: localNetworkModeAtFirstRun(),
+	/** Optional: when and how many nightly database snapshots (H3). */
+	backupSchedule: backupSchedule()
 };
