@@ -4,20 +4,24 @@
 //! browser's text frames ([`DesktopSession::handle_text`]) and calls
 //! [`DesktopSession::tick`] when [`DesktopSession::next_tick`] is due. Both
 //! return the messages to send. [`run`] is that loop over a channel, for the
-//! session socket code to drive.
+//! session socket code to drive. Frames come from [`video`], cursor
+//! messages from [`cursor`].
 
-use crate::capture::{Capturer, Damage, Frame};
+mod cursor;
+mod video;
+
+use crate::capture::Capturer;
 use crate::control::{
     self, AgentMessage, ClientMessage, Codec, EndReason, ErrorCode, Mode, Parsed, Scale, Viewport,
 };
-use crate::encode::{png, scale, tiles::TileEncoder};
-use crate::frame::{self, CursorContext, FrameInfo};
 use crate::input::{InputBackend, InputController, InputResult};
 use crate::pacing::{Pacer, TickDecision};
+use cursor::CursorTracker;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
+use video::Video;
 
 /// Desktop sessions allowed at once on one machine (R15).
 pub const MAX_SESSIONS: usize = 4;
@@ -71,43 +75,21 @@ pub enum Incoming {
     End(EndReason),
 }
 
-/// The stream parameters a `stream` message announces.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct StreamKey {
-    display: usize,
-    width: u32,
-    height: u32,
-    scale: f64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct CursorSent {
-    id: u32,
-    x: i32,
-    y: i32,
-    visible: bool,
-}
-
 pub struct DesktopSession {
     mode: Mode,
     capturer: Box<dyn Capturer>,
     /// Only built for a control session (SPEC-DESKTOP 7).
     input: Option<InputController>,
-    encoder: TileEncoder,
+    video: Video,
+    cursor: CursorTracker,
     pacer: Pacer,
     started: Instant,
     greeted: bool,
-    seq: u32,
     bad_messages: u32,
     told_not_allowed: bool,
     logged_types: HashSet<String>,
     viewport: Option<Viewport>,
     scale: Scale,
-    scaled: Frame,
-    stream: Option<StreamKey>,
-    shapes_sent: HashSet<u32>,
-    cursor_sent: Option<CursorSent>,
-    cursor_failed: bool,
     ended: Option<EndReason>,
 }
 
@@ -128,21 +110,16 @@ impl DesktopSession {
             mode,
             capturer,
             input,
-            encoder: TileEncoder::new(),
+            video: Video::new(),
+            cursor: CursorTracker::default(),
             pacer: Pacer::new(now, DEFAULT_TILE_FPS),
             started: now,
             greeted: false,
-            seq: 0,
             bad_messages: 0,
             told_not_allowed: false,
             logged_types: HashSet::new(),
             viewport: None,
             scale: Scale::Fit,
-            scaled: Frame::new(0, 0),
-            stream: None,
-            shapes_sent: HashSet::new(),
-            cursor_sent: None,
-            cursor_failed: false,
             ended: None,
         })
     }
@@ -236,17 +213,15 @@ impl DesktopSession {
                 self.greeted = true;
                 self.viewport = Some(viewport);
                 // A new page has no cursor shapes and no stream yet.
-                self.shapes_sent.clear();
-                self.cursor_sent = None;
-                self.stream = None;
-                self.encoder.reset();
+                self.cursor.restart();
+                self.video.restart();
                 self.pacer.force_keyframe();
                 out.push(self.displays_message());
                 out.push(text(AgentMessage::State(self.capturer.state())));
             }
             ClientMessage::Keyframe => {
                 if self.pacer.request_keyframe(now) {
-                    self.encoder.reset();
+                    self.video.refresh();
                 }
             }
             ClientMessage::Ack { seq } => {
@@ -267,9 +242,9 @@ impl DesktopSession {
                     out.push(error(ErrorCode::CaptureFailed, &err.0));
                     return;
                 }
-                self.encoder.reset();
+                self.video.refresh();
                 self.pacer.force_keyframe();
-                self.cursor_sent = None;
+                self.cursor.forget_position();
                 out.push(self.displays_message());
             }
             ClientMessage::Settings {
@@ -278,7 +253,7 @@ impl DesktopSession {
                 max_fps,
             } => {
                 if self.pacer.set_quality(quality, now) {
-                    self.encoder.reset();
+                    self.video.refresh();
                 }
                 self.pacer.set_max_fps(max_fps);
                 self.scale = scale;
@@ -367,7 +342,7 @@ impl DesktopSession {
         match self.capturer.poll_layout() {
             Ok(true) => {
                 self.release_all();
-                self.encoder.reset();
+                self.video.refresh();
                 self.pacer.force_keyframe();
                 out.push(self.displays_message());
             }
@@ -384,13 +359,32 @@ impl DesktopSession {
             }
             TickDecision::WindowFull => {}
             TickDecision::Capture { keyframe } => {
-                if let Err(message) = self.frame(now, keyframe, &mut out) {
-                    out.extend(self.capture_failed(&message));
-                    return out;
+                let factor = self.scale_factor();
+                let quality = self.pacer.jpeg_quality();
+                let pts = self.pts(now);
+                match self.video.produce(
+                    &mut *self.capturer,
+                    factor,
+                    keyframe,
+                    quality,
+                    pts,
+                    &mut out,
+                ) {
+                    Ok(Some(sent)) => self.pacer.sent(sent.seq, now, sent.keyframe),
+                    Ok(None) => {}
+                    Err(message) => {
+                        out.extend(self.capture_failed(&message));
+                        return out;
+                    }
                 }
             }
         }
-        self.cursor(now, &mut out);
+        if let Some(stream) = self.video.stream() {
+            let rect = self.current_rect();
+            let (seq, pts) = (self.video.seq(), self.pts(now));
+            self.cursor
+                .update(&mut *self.capturer, stream, rect, seq, pts, &mut out);
+        }
         out
     }
 
@@ -401,153 +395,8 @@ impl DesktopSession {
         out
     }
 
-    fn frame(
-        &mut self,
-        now: Instant,
-        keyframe: bool,
-        out: &mut Vec<Outgoing>,
-    ) -> Result<(), String> {
-        let damage = self.capturer.capture(keyframe).map_err(|e| e.0)?;
-        let factor = self.scale_factor();
-        let source = self.capturer.frame();
-        let (width, height) = scale::scaled_size(source.width, source.height, factor);
-        let scaled = (width, height) != (source.width, source.height);
-        let damage = if scaled {
-            if (self.scaled.width, self.scaled.height) != (width, height) {
-                self.scaled = Frame::new(width, height);
-            }
-            if damage != Damage::None {
-                scale::downscale(source, &mut self.scaled);
-            }
-            scale::scale_damage(&damage, (source.width, source.height), (width, height))
-        } else {
-            damage
-        };
-        let frame = if scaled { &self.scaled } else { source };
-
-        let key = StreamKey {
-            display: self.capturer.current(),
-            width,
-            height,
-            scale: if scaled { factor } else { 1.0 },
-        };
-        let new_stream = self.stream != Some(key);
-        let size_changed = self
-            .stream
-            .is_some_and(|old| (old.width, old.height) != (width, height));
-        let encoded = self
-            .encoder
-            .encode(
-                frame,
-                &damage,
-                keyframe || new_stream,
-                self.pacer.jpeg_quality(),
-            )
-            .map_err(|e| e.0)?;
-        if encoded.tiles.is_empty() && !encoded.keyframe {
-            return Ok(());
-        }
-        if new_stream {
-            let display = self
-                .capturer
-                .displays()
-                .get(key.display)
-                .map(|d| d.id.clone())
-                .unwrap_or_default();
-            out.push(text(AgentMessage::Stream {
-                display,
-                codec: Codec::Jpeg,
-                width,
-                height,
-                scale: key.scale,
-            }));
-            self.stream = Some(key);
-        }
-
-        self.seq = match self.seq.wrapping_add(1) {
-            0 => 1,
-            seq => seq,
-        };
-        let info = FrameInfo {
-            display: key.display as u8,
-            seq: self.seq,
-            pts: self.pts(now),
-            width: width as u16,
-            height: height as u16,
-            keyframe: encoded.keyframe,
-            size_changed,
-        };
-        for batch in frame::tile_batches(info, &encoded.tiles, frame::MAX_BATCH_BYTES) {
-            out.push(Outgoing::Binary(batch));
-        }
-        self.pacer.sent(self.seq, now, encoded.keyframe);
-        Ok(())
-    }
-
     fn pts(&self, now: Instant) -> u64 {
         now.saturating_duration_since(self.started).as_micros() as u64
-    }
-
-    fn cursor(&mut self, now: Instant, out: &mut Vec<Outgoing>) {
-        let state = match self.capturer.cursor() {
-            Ok(state) => state,
-            Err(err) => {
-                if !self.cursor_failed {
-                    self.cursor_failed = true;
-                    log::warn!("Reading the cursor failed: {}", err.0);
-                }
-                return;
-            }
-        };
-        let Some(stream) = self.stream else {
-            return;
-        };
-        let rect = self.current_rect();
-        let inside = state.x >= rect.x
-            && state.y >= rect.y
-            && i64::from(state.x) < i64::from(rect.x) + i64::from(rect.width)
-            && i64::from(state.y) < i64::from(rect.y) + i64::from(rect.height);
-        let sent = CursorSent {
-            id: state.id,
-            x: (f64::from(state.x - rect.x) * stream.scale).round() as i32,
-            y: (f64::from(state.y - rect.y) * stream.scale).round() as i32,
-            visible: state.visible && inside,
-        };
-        let context = CursorContext {
-            display: stream.display as u8,
-            seq: self.seq,
-            pts: self.pts(now),
-            width: stream.width as u16,
-            height: stream.height as u16,
-        };
-        if sent.visible && !self.shapes_sent.contains(&sent.id) {
-            match self.capturer.cursor_image(sent.id) {
-                Ok(Some(image)) => {
-                    let png = png::encode_rgba(image.width, image.height, &image.rgba);
-                    let hotspot = (image.hotspot_x as u16, image.hotspot_y as u16);
-                    out.push(Outgoing::Binary(frame::cursor_shape(
-                        context, sent.id, hotspot, &png,
-                    )));
-                    self.shapes_sent.insert(sent.id);
-                }
-                // The shape changed again before it was read: next tick.
-                Ok(None) => return,
-                Err(err) => {
-                    log::warn!("Reading the cursor shape failed: {}", err.0);
-                    return;
-                }
-            }
-        }
-        if self.cursor_sent != Some(sent) {
-            out.push(Outgoing::Binary(frame::cursor_position(
-                context,
-                sent.id,
-                sent.x,
-                sent.y,
-                sent.visible,
-            )));
-            self.cursor_sent = Some(sent);
-        }
     }
 }
 
@@ -613,5 +462,4 @@ pub fn run(
 }
 
 #[cfg(test)]
-#[path = "session_tests.rs"]
 mod tests;

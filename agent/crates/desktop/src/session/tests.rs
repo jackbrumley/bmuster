@@ -1,6 +1,7 @@
 use super::*;
 use crate::capture::{
-    CaptureResult, CursorImage, CursorState, DesktopKind, DesktopState, DisplayInfo, Rect,
+    CaptureResult, CursorImage, CursorState, Damage, DesktopKind, DesktopState, DisplayInfo, Frame,
+    Rect,
 };
 use crate::frame::{FLAG_KEYFRAME, FLAG_LAST_PART, HEADER_LEN};
 use crate::input::recording::{Call, Recorder};
