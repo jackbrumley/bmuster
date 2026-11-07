@@ -1,0 +1,65 @@
+{
+	"seedHex": "4242424242424242424242424242424242424242424242424242424242424242",
+	"publicKeyBase64": "IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
+	"machineId": "3f0c2a8e-8a8e-4c55-9d3c-2a4f1c1d7e10",
+	"nowMs": 1794000000000,
+	"tickets": [
+		{
+			"ticket": {
+				"sessionId": "5b8f9c1e-1d2a-4c3b-8e7f-0a1b2c3d4e5f",
+				"machineId": "3f0c2a8e-8a8e-4c55-9d3c-2a4f1c1d7e10",
+				"user": {
+					"id": "8d6c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
+					"name": "Jack Brumley"
+				},
+				"permissions": [
+					"view",
+					"terminal"
+				],
+				"runAs": {
+					"kind": "admin"
+				},
+				"issuedAtMs": 1794000000000,
+				"expiresAtMs": 1794000060000,
+				"purpose": {
+					"kind": "terminal",
+					"shell": "bash",
+					"cols": 80,
+					"rows": 24
+				}
+			},
+			"ticketJson": "{\"sessionId\":\"5b8f9c1e-1d2a-4c3b-8e7f-0a1b2c3d4e5f\",\"machineId\":\"3f0c2a8e-8a8e-4c55-9d3c-2a4f1c1d7e10\",\"user\":{\"id\":\"8d6c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b\",\"name\":\"Jack Brumley\"},\"permissions\":[\"view\",\"terminal\"],\"runAs\":{\"kind\":\"admin\"},\"issuedAtMs\":1794000000000,\"expiresAtMs\":1794000060000,\"purpose\":{\"kind\":\"terminal\",\"shell\":\"bash\",\"cols\":80,\"rows\":24}}",
+			"ticketBase64": "eyJzZXNzaW9uSWQiOiI1YjhmOWMxZS0xZDJhLTRjM2ItOGU3Zi0wYTFiMmMzZDRlNWYiLCJtYWNoaW5lSWQiOiIzZjBjMmE4ZS04YThlLTRjNTUtOWQzYy0yYTRmMWMxZDdlMTAiLCJ1c2VyIjp7ImlkIjoiOGQ2YzFhMmItM2M0ZC00ZTVmLThhOWItMGMxZDJlM2Y0YTViIiwibmFtZSI6IkphY2sgQnJ1bWxleSJ9LCJwZXJtaXNzaW9ucyI6WyJ2aWV3IiwidGVybWluYWwiXSwicnVuQXMiOnsia2luZCI6ImFkbWluIn0sImlzc3VlZEF0TXMiOjE3OTQwMDAwMDAwMDAsImV4cGlyZXNBdE1zIjoxNzk0MDAwMDYwMDAwLCJwdXJwb3NlIjp7ImtpbmQiOiJ0ZXJtaW5hbCIsInNoZWxsIjoiYmFzaCIsImNvbHMiOjgwLCJyb3dzIjoyNH19",
+			"signatureBase64": "BPZrodvtc1nKK3Za0cOC0F5OhrELdXXkknvYhNAUROSBgglYq6kxtKRgdHw7rjO982xvJJI9S2zWMHKqfle7BQ=="
+		},
+		{
+			"ticket": {
+				"sessionId": "6c9fad2f-2e3b-4d4c-9f80-1b2c3d4e5f60",
+				"machineId": "3f0c2a8e-8a8e-4c55-9d3c-2a4f1c1d7e10",
+				"user": {
+					"id": "8d6c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
+					"name": "Jack Brumley"
+				},
+				"permissions": [
+					"view",
+					"ai-commands"
+				],
+				"runAs": {
+					"kind": "admin"
+				},
+				"issuedAtMs": 1794000000000,
+				"expiresAtMs": 1794000060000,
+				"purpose": {
+					"kind": "exec",
+					"shell": "powershell",
+					"command": "Get-Service | Where-Object Status -eq \"Running\"",
+					"timeoutMs": 60000,
+					"maxOutputBytes": 1048576
+				}
+			},
+			"ticketJson": "{\"sessionId\":\"6c9fad2f-2e3b-4d4c-9f80-1b2c3d4e5f60\",\"machineId\":\"3f0c2a8e-8a8e-4c55-9d3c-2a4f1c1d7e10\",\"user\":{\"id\":\"8d6c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b\",\"name\":\"Jack Brumley\"},\"permissions\":[\"view\",\"ai-commands\"],\"runAs\":{\"kind\":\"admin\"},\"issuedAtMs\":1794000000000,\"expiresAtMs\":1794000060000,\"purpose\":{\"kind\":\"exec\",\"shell\":\"powershell\",\"command\":\"Get-Service | Where-Object Status -eq \\\"Running\\\"\",\"timeoutMs\":60000,\"maxOutputBytes\":1048576}}",
+			"ticketBase64": "eyJzZXNzaW9uSWQiOiI2YzlmYWQyZi0yZTNiLTRkNGMtOWY4MC0xYjJjM2Q0ZTVmNjAiLCJtYWNoaW5lSWQiOiIzZjBjMmE4ZS04YThlLTRjNTUtOWQzYy0yYTRmMWMxZDdlMTAiLCJ1c2VyIjp7ImlkIjoiOGQ2YzFhMmItM2M0ZC00ZTVmLThhOWItMGMxZDJlM2Y0YTViIiwibmFtZSI6IkphY2sgQnJ1bWxleSJ9LCJwZXJtaXNzaW9ucyI6WyJ2aWV3IiwiYWktY29tbWFuZHMiXSwicnVuQXMiOnsia2luZCI6ImFkbWluIn0sImlzc3VlZEF0TXMiOjE3OTQwMDAwMDAwMDAsImV4cGlyZXNBdE1zIjoxNzk0MDAwMDYwMDAwLCJwdXJwb3NlIjp7ImtpbmQiOiJleGVjIiwic2hlbGwiOiJwb3dlcnNoZWxsIiwiY29tbWFuZCI6IkdldC1TZXJ2aWNlIHwgV2hlcmUtT2JqZWN0IFN0YXR1cyAtZXEgXCJSdW5uaW5nXCIiLCJ0aW1lb3V0TXMiOjYwMDAwLCJtYXhPdXRwdXRCeXRlcyI6MTA0ODU3Nn19",
+			"signatureBase64": "Wpuk6Mhy6vYxEeJqlMztL8Culb6W+35jl5Y0U+cD3Mh5DSRfESQBtBJD2Co+YPcg+pEd9YResiq046th9Z8XDA=="
+		}
+	]
+}

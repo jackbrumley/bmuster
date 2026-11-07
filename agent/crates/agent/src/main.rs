@@ -2,6 +2,7 @@
 //! keeps a live socket open. See `docs/specs/SPEC-ENROLMENT.md`.
 
 mod client;
+mod exec;
 mod gpus;
 mod identity;
 mod inventory;
@@ -13,6 +14,7 @@ mod relocate;
 mod service_linux;
 #[cfg(windows)]
 mod service_windows;
+mod sessions;
 mod socket;
 mod status;
 mod tls;
