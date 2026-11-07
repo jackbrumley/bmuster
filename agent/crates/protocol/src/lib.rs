@@ -24,6 +24,8 @@ pub const SOCKET_PATH: &str = "/agent/v1/socket";
 pub const LEAVE_PATH: &str = "/agent/v1/leave";
 /// The local page's sign-in secret and certificate (SPEC-AGENT-LOCAL).
 pub const LOCAL_PAGE_PATH: &str = "/agent/v1/local-page";
+/// What happened on the local page, queued while offline (SPEC-AGENT-LOCAL 7).
+pub const LOCAL_EVENTS_PATH: &str = "/agent/v1/local-events";
 
 // ---------------------------------------------------------------------------
 // Signing
@@ -281,6 +283,9 @@ pub struct CheckInRequest {
     pub signed_in_user: SignedInUser,
     pub load: Load,
     pub inventory: InventoryReport,
+    /// The list of people who may sign in to the local page that the agent
+    /// holds (SPEC-AGENT-LOCAL 7). Older agents send none.
+    pub local_users: LocalUsersHeld,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -410,6 +415,10 @@ pub struct CheckInReply {
     /// from servers older than SPEC-AGENT-LOCAL.
     #[serde(default)]
     pub machine_name: String,
+    /// A new list of people for the local page, or `Unchanged` (also from
+    /// servers older than SPEC-AGENT-LOCAL 7).
+    #[serde(default)]
+    pub local_users: LocalUsersUpdate,
 }
 
 // ---------------------------------------------------------------------------
@@ -444,6 +453,120 @@ pub struct LocalPageReport {
     pub certificate_sha256: String,
     /// The port the page listens on.
     pub port: u16,
+}
+
+// ---------------------------------------------------------------------------
+// Per-person local page codes and local events (SPEC-AGENT-LOCAL 7)
+// ---------------------------------------------------------------------------
+
+/// Someone who may sign in to the local page with their own code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalUser {
+    pub user_id: String,
+    pub name: String,
+}
+
+/// What the agent holds, in each check-in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum LocalUsersHeld {
+    None,
+    /// The `hash` the server sent with the list, as it was sent.
+    Held {
+        hash: String,
+    },
+}
+
+/// What the check-in reply says about the list.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum LocalUsersUpdate {
+    #[default]
+    Unchanged,
+    List {
+        hash: String,
+        users: Vec<LocalUser>,
+    },
+}
+
+/// Whose code a local page session signed in with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum CodeOwners {
+    /// The shared machine code (no list held yet).
+    Machine,
+    /// Usually one person; more only if several codes matched at once.
+    People { people: Vec<LocalUser> },
+}
+
+/// Something that happened on the local page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum LocalEvent {
+    SignedIn {
+        codes: CodeOwners,
+    },
+    SignedOut {
+        codes: CodeOwners,
+    },
+    SessionExpired {
+        codes: CodeOwners,
+    },
+    WrongCode,
+    /// The fifth wrong code in a row: sign-in paused for 5 minutes.
+    LockedOut,
+    Restarted {
+        codes: CodeOwners,
+    },
+    ConnectionTested {
+        codes: CodeOwners,
+        passed: bool,
+    },
+    #[serde(rename_all = "camelCase")]
+    MoveStarted {
+        codes: CodeOwners,
+        server_url: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    MoveFinished {
+        codes: CodeOwners,
+        server_url: String,
+    },
+    MoveFailed {
+        codes: CodeOwners,
+        reason: String,
+    },
+    /// Just before the signed `leave` of a move or uninstall.
+    Leaving {
+        codes: CodeOwners,
+        reason: LeaveReason,
+    },
+    Uninstalled {
+        codes: CodeOwners,
+    },
+    /// The queue was full: this many older events were dropped.
+    Dropped {
+        count: u64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalEventEntry {
+    /// Increases with every event this agent records.
+    pub seq: u64,
+    /// When it happened, Unix milliseconds.
+    pub at_ms: u64,
+    pub event: LocalEvent,
+}
+
+/// `POST /agent/v1/local-events`, signed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalEventsReport {
+    pub sent_at_ms: u64,
+    pub events: Vec<LocalEventEntry>,
 }
 
 // ---------------------------------------------------------------------------
@@ -553,7 +676,8 @@ mod tests {
             CheckInReply {
                 check_in_seconds: 60,
                 inventory_wanted: true,
-                machine_name: String::new()
+                machine_name: String::new(),
+                local_users: LocalUsersUpdate::Unchanged
             }
         );
         assert_eq!(
@@ -578,6 +702,61 @@ mod tests {
             })
             .unwrap(),
             json!({ "totpSecret": "AAAA", "certificateSha256": "ab", "port": 47500 })
+        );
+    }
+
+    #[test]
+    fn local_users_and_events_match_the_spec_shapes() {
+        assert_eq!(
+            serde_json::to_value(LocalUsersHeld::Held { hash: "ab".into() }).unwrap(),
+            json!({ "kind": "held", "hash": "ab" })
+        );
+        assert_eq!(
+            serde_json::from_value::<LocalUsersUpdate>(json!({
+                "kind": "list",
+                "hash": "ab",
+                "users": [{ "userId": "u1", "name": "Jack Brumley" }]
+            }))
+            .unwrap(),
+            LocalUsersUpdate::List {
+                hash: "ab".into(),
+                users: vec![LocalUser {
+                    user_id: "u1".into(),
+                    name: "Jack Brumley".into()
+                }]
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(LocalEventEntry {
+                seq: 7,
+                at_ms: 1000,
+                event: LocalEvent::MoveStarted {
+                    codes: CodeOwners::Machine,
+                    server_url: "https://new.example".into()
+                }
+            })
+            .unwrap(),
+            json!({
+                "seq": 7,
+                "atMs": 1000,
+                "event": {
+                    "kind": "move-started",
+                    "codes": { "kind": "machine" },
+                    "serverUrl": "https://new.example"
+                }
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(LocalEvent::Leaving {
+                codes: CodeOwners::People { people: vec![] },
+                reason: LeaveReason::Uninstalled
+            })
+            .unwrap(),
+            json!({
+                "kind": "leaving",
+                "codes": { "kind": "people", "people": [] },
+                "reason": "uninstalled"
+            })
         );
     }
 
