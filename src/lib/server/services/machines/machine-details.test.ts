@@ -20,7 +20,8 @@ function checkIn(signedInUser: { kind: 'none' } | { kind: 'user'; name: string }
 		uptimeSeconds: 60,
 		signedInUser,
 		load: { cpuPercent: 5, memoryUsedBytes: 1024 },
-		inventory: { kind: 'full' as const, hash: HASH, data: SAMPLE_INVENTORY }
+		inventory: { kind: 'full' as const, hash: HASH, data: SAMPLE_INVENTORY },
+		localUsers: { kind: 'unsupported' as const }
 	};
 }
 

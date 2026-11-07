@@ -30,7 +30,16 @@ export const machines = sqliteTable('machines', {
 	lastUserName: text(),
 	lastUserSeenAt: integer({ mode: 'timestamp_ms' }),
 	/** When the agent said it moved to another server (signed leave); null otherwise. */
-	movedAt: integer({ mode: 'timestamp_ms' })
+	movedAt: integer({ mode: 'timestamp_ms' }),
+	/**
+	 * Which local page codes the agent takes, from its last check-in (SPEC-AGENT-LOCAL 7):
+	 * `shared` (one code per machine, older agents) or `per-person` (each person's own code).
+	 */
+	localCodes: text({ enum: ['shared', 'per-person'] })
+		.notNull()
+		.default('shared'),
+	/** The highest local page event sequence number taken; resent events at or below it are ignored. */
+	localEventsSeq: integer().notNull().default(0)
 });
 
 /**

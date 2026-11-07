@@ -3,6 +3,7 @@ import type { CheckInReply, CheckInRequest } from '#lib/schemas/agents/agent-pro
 import { machineInventory, machineStatus, machines } from '../../database/schema.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import type { AuthenticatedAgent } from './agent-auth.ts';
+import { localCodesFrom, localUsersUpdate } from './local-users.ts';
 
 /** Records a check-in (SPEC-ENROLMENT 7). */
 export function recordCheckIn(
@@ -20,7 +21,12 @@ export function recordCheckIn(
 				: {};
 		const machine = tx
 			.update(machines)
-			.set({ agentVersion: checkIn.agentVersion, lastSeenAt: at, ...lastUser })
+			.set({
+				agentVersion: checkIn.agentVersion,
+				lastSeenAt: at,
+				localCodes: localCodesFrom(checkIn.localUsers),
+				...lastUser
+			})
 			.where(eq(machines.id, agent.machineId))
 			.returning({ name: machines.name })
 			.get();
@@ -61,6 +67,11 @@ export function recordCheckIn(
 				break;
 			}
 		}
-		return { checkInSeconds: agent.checkInSeconds, inventoryWanted, machineName: machine.name };
+		return {
+			checkInSeconds: agent.checkInSeconds,
+			inventoryWanted,
+			machineName: machine.name,
+			localUsers: localUsersUpdate(tx, checkIn.localUsers)
+		};
 	});
 }

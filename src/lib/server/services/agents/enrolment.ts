@@ -129,7 +129,11 @@ function takeOver(
 			lastRequestMs: 0,
 			enrolledAt: new Date(now),
 			lastSeenAt: new Date(now),
-			joinCodeId
+			joinCodeId,
+			// The new agent says at its first check-in which codes it takes, and numbers its
+			// local page events afresh (SPEC-AGENT-LOCAL 7).
+			localCodes: 'shared',
+			localEventsSeq: 0
 		})
 		.where(eq(machines.id, machineId))
 		.run();
