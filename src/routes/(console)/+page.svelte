@@ -3,11 +3,16 @@
 	import { resolve } from '$app/paths';
 	import { IconDevices, IconLockAccess, IconSearch } from '@tabler/icons-svelte-runes';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
+	import type { DataTableSort } from '#lib/ui/data-table/data-table-types.ts';
 	import EmptyState from '#lib/ui/empty-state.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
-	import { matchesSearch } from '#lib/domain/machines/machine.ts';
+	import {
+		machinesMatching,
+		matchesFilter,
+		toMachineRow,
+		type MachineFilter
+	} from '#lib/domain/machines/machine-row.ts';
 	import MachineCards from './machine-cards.svelte';
-	import { matchesFilter, toMachineRow, type MachineFilter } from './machine-row.ts';
 	import MachineTable from './machine-table.svelte';
 	import { defaultView, readSavedView, saveView, type MachinesView } from './machines-view.ts';
 	import type { PageProps } from './$types';
@@ -42,9 +47,10 @@
 		}
 	}
 
-	const visible = $derived(
-		rows.filter((row) => matchesFilter(row, filter ?? 'all') && matchesSearch(row.machine, query))
-	);
+	const visible = $derived(machinesMatching(rows, query, filter ?? 'all'));
+
+	// The Table view's sort, kept here so the page knows the order on screen.
+	let sort = $state<DataTableSort>({ column: 'name', direction: 'asc' });
 
 	// A new search or filter starts the list again from the first batch.
 	const resetKey = $derived(`${filter ?? 'all'}|${query}`);
@@ -74,14 +80,14 @@
 	);
 </script>
 
-{#snippet viewSwitch()}
+{#snippet headerActions()}
 	<ChipGroup label="View" options={viewOptions} bind:value={() => view, pickView} />
 {/snippet}
 
 <PageHeader
 	title="Machines"
 	{summary}
-	actions={data.view.kind === 'machines' && machines.length > 0 ? viewSwitch : undefined}
+	actions={data.view.kind === 'machines' && machines.length > 0 ? headerActions : undefined}
 />
 
 {#if data.view.kind === 'awaiting-access'}
@@ -117,7 +123,7 @@
 			children={undefined}
 		/>
 	{:else if view === 'table'}
-		<MachineTable rows={visible} now={data.now} batchSize={BATCH_SIZE} {resetKey} />
+		<MachineTable rows={visible} now={data.now} batchSize={BATCH_SIZE} {resetKey} bind:sort />
 	{:else}
 		<MachineCards rows={visible} now={data.now} batchSize={BATCH_SIZE} {resetKey} />
 	{/if}

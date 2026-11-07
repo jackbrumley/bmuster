@@ -9,7 +9,7 @@
 	import { formatBytes, formatRelative } from '#lib/utils/format.ts';
 	import { osLabel } from '#lib/domain/machines/machine.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
-	import type { MachineRow } from './machine-row.ts';
+	import type { MachineRow } from '#lib/domain/machines/machine-row.ts';
 
 	/** The Cards view of the Machines page: one card per machine, a batch at a time. */
 	let {

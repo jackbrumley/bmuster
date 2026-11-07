@@ -1,4 +1,7 @@
-import type { CellValue, SortDirection } from './data-table-types.ts';
+export type SortDirection = 'asc' | 'desc';
+
+/** What sorting compares, and what a table column without a `cell` snippet shows. */
+export type CellValue = string | number | null;
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 

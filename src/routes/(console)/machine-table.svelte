@@ -2,21 +2,30 @@
 	import { resolve } from '$app/paths';
 	import { IconDeviceDesktop, IconTerminal2 } from '@tabler/icons-svelte-runes';
 	import DataTable from '#lib/ui/data-table/data-table.svelte';
-	import type { DataTableColumn } from '#lib/ui/data-table/data-table-types.ts';
+	import type { DataTableColumn, DataTableSort } from '#lib/ui/data-table/data-table-types.ts';
 	import OsIcon from '#lib/ui/os-icon.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import { formatBytes, formatRelative } from '#lib/utils/format.ts';
-	import { osLabel } from '#lib/domain/machines/machine.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
-	import type { MachineRow } from './machine-row.ts';
+	import { machineSortValue, type MachineRow } from '#lib/domain/machines/machine-row.ts';
 
-	/** The Table view of the Machines page: sortable columns, one line per machine on phones. */
+	/**
+	 * The Table view of the Machines page: sortable columns, one line per
+	 * machine on phones. `sort` is bound so the page's export keeps the order.
+	 */
 	let {
 		rows,
 		now,
 		batchSize,
-		resetKey
-	}: { rows: readonly MachineRow[]; now: number; batchSize: number; resetKey: string } = $props();
+		resetKey,
+		sort = $bindable()
+	}: {
+		rows: readonly MachineRow[];
+		now: number;
+		batchSize: number;
+		resetKey: string;
+		sort: DataTableSort;
+	} = $props();
 
 	function level(percent: number): 'normal' | 'raised' | 'high' {
 		return percent >= 90 ? 'high' : percent >= 75 ? 'raised' : 'normal';
@@ -29,18 +38,14 @@
 		return `${formatBytes(machine.live.memoryUsedBytes)} of ${formatBytes(machine.inventory.memoryTotalBytes)}`;
 	}
 
-	/** Online machines sort as seen now, ahead of every offline one. */
-	function lastSeenValue({ machine }: MachineRow): number {
-		return machine.status.kind === 'online' ? now : Date.parse(machine.lastSeenIso);
-	}
-
-	const columns: readonly DataTableColumn<MachineRow>[] = [
+	// Derived: the Last seen column compares online machines as seen `now`.
+	const columns: readonly DataTableColumn<MachineRow>[] = $derived([
 		{
 			key: 'name',
 			label: 'Name',
 			align: 'left',
 			sortable: true,
-			value: (row) => row.machine.name,
+			value: machineSortValue('name', now),
 			cell: nameCell,
 			link: true,
 			phone: 'primary',
@@ -51,7 +56,7 @@
 			label: 'Status',
 			align: 'left',
 			sortable: true,
-			value: (row) => row.machine.status.kind,
+			value: machineSortValue('status', now),
 			cell: statusCell,
 			link: true,
 			phone: 'badge',
@@ -62,7 +67,7 @@
 			label: 'OS',
 			align: 'left',
 			sortable: true,
-			value: (row) => osLabel(row.machine),
+			value: machineSortValue('os', now),
 			cell: undefined,
 			link: true,
 			phone: 'hidden',
@@ -73,7 +78,7 @@
 			label: 'CPU',
 			align: 'right',
 			sortable: true,
-			value: (row) => row.cpuPercent,
+			value: machineSortValue('cpu', now),
 			cell: cpuCell,
 			link: true,
 			phone: 'hidden',
@@ -84,7 +89,7 @@
 			label: 'Memory',
 			align: 'right',
 			sortable: true,
-			value: (row) => row.memoryPercent,
+			value: machineSortValue('memory', now),
 			cell: memoryCell,
 			link: true,
 			phone: 'hidden',
@@ -95,7 +100,7 @@
 			label: 'Disk',
 			align: 'right',
 			sortable: true,
-			value: (row) => row.disk?.percent ?? null,
+			value: machineSortValue('disk', now),
 			cell: diskCell,
 			link: true,
 			phone: 'hidden',
@@ -106,7 +111,7 @@
 			label: 'Last user',
 			align: 'left',
 			sortable: true,
-			value: (row) => (row.machine.lastUser.kind === 'user' ? row.machine.lastUser.name : null),
+			value: machineSortValue('lastUser', now),
 			cell: undefined,
 			link: true,
 			phone: 'hidden',
@@ -117,7 +122,7 @@
 			label: 'Last seen',
 			align: 'left',
 			sortable: true,
-			value: lastSeenValue,
+			value: machineSortValue('lastSeen', now),
 			cell: lastSeenCell,
 			link: true,
 			phone: 'hidden',
@@ -134,7 +139,7 @@
 			phone: 'hidden',
 			medium: 'show'
 		}
-	];
+	]);
 </script>
 
 {#snippet nameCell({ machine, updates }: MachineRow)}
@@ -214,7 +219,7 @@
 	{rows}
 	rowKey={(row: MachineRow) => row.machine.id}
 	rowHref={(row: MachineRow) => resolve('/(console)/machines/[id]', { id: row.machine.id })}
-	initialSort={{ column: 'name', direction: 'asc' }}
+	bind:sort
 	{batchSize}
 	{resetKey}
 />

@@ -1,13 +1,12 @@
 <script lang="ts" generics="T">
 	import type { ResolvedPathname } from '$app/types';
-	import { untrack } from 'svelte';
 	import { IconArrowDown, IconArrowUp, IconArrowsSort } from '@tabler/icons-svelte-runes';
 	import Panel from '../panel.svelte';
 	import ScrollBatches from '../scroll-batches.svelte';
 	import CellContent from './cell-content.svelte';
 	import DataTablePhoneList from './data-table-phone-list.svelte';
 	import type { DataTableColumn, DataTableSort } from './data-table-types.ts';
-	import { sortRows } from './sort-rows.ts';
+	import { sortRows } from '#lib/utils/sort-rows.ts';
 
 	/**
 	 * The records table (AGENTS.md §12), ported from the Wannon portal. Pass
@@ -16,7 +15,8 @@
 	 * by each column's `value`. Rows render a batch at a time as the person
 	 * scrolls (ScrollBatches), so hundreds of rows stay quick; `resetKey`
 	 * names the caller's search and filter, and a new one starts again from
-	 * the top. Below 640px the table becomes a one-line-per-row list.
+	 * the top. `sort` is bindable, so the page knows the order on screen
+	 * (Machines exports in it). Below 640px the table becomes a one-line-per-row list.
 	 */
 	let {
 		label,
@@ -24,7 +24,7 @@
 		rows,
 		rowKey,
 		rowHref,
-		initialSort,
+		sort = $bindable(),
 		batchSize,
 		resetKey
 	}: {
@@ -36,13 +36,11 @@
 		rowKey: (row: T) => string;
 		/** Where a row's link cells, and its phone line, go. */
 		rowHref: (row: T) => ResolvedPathname;
-		initialSort: DataTableSort;
+		/** The column and direction shown; a heading click changes it. */
+		sort: DataTableSort;
 		batchSize: number;
 		resetKey: string;
 	} = $props();
-
-	// The starting sort only: later prop changes do not undo what the person chose.
-	let sort = $state<DataTableSort>(untrack(() => initialSort));
 
 	const sortColumn = $derived.by(() => {
 		const column = columns.find((candidate) => candidate.key === sort.column);

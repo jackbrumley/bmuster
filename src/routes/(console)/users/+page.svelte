@@ -9,7 +9,12 @@
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { formatRelative } from '#lib/utils/format.ts';
-	import { roleLabel, type ConsoleRole, type UserView } from '#lib/domain/users/user.ts';
+	import {
+		roleLabel,
+		signInSummary,
+		type ConsoleRole,
+		type UserView
+	} from '#lib/domain/users/user.ts';
 	import UserForm from './user-form.svelte';
 	import Checkbox from '#lib/ui/checkbox.svelte';
 	import { addUser, sendInvitation, setUserGroups, updateUser } from './user-requests.ts';
@@ -198,11 +203,6 @@
 			result.ok ? 'success' : 'error'
 		);
 		await refreshAll();
-	}
-
-	function signInSummary(user: UserView): string {
-		const methods = [...(user.hasPassword ? ['Password'] : []), ...user.providerNames];
-		return methods.length === 0 ? 'Not signed in yet' : methods.join(', ');
 	}
 </script>
 

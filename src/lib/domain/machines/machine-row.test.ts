@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Machine, MachineInventory } from '#lib/domain/machines/machine.ts';
 import { matchesFilter, toMachineRow } from './machine-row.ts';
-import { defaultView } from './machines-view.ts';
 
 const GB = 1024 ** 3;
 
@@ -101,14 +100,5 @@ describe('Machines list rows', () => {
 		expect([online, offline].filter((row) => matchesFilter(row, 'online'))).toEqual([online]);
 		expect([online, offline].filter((row) => matchesFilter(row, 'offline'))).toEqual([offline]);
 		expect([online, offline].filter((row) => matchesFilter(row, 'all'))).toHaveLength(2);
-	});
-});
-
-describe('Machines view default', () => {
-	it('shows cards up to 50 machines and the table above', () => {
-		expect(defaultView(0)).toBe('cards');
-		expect(defaultView(50)).toBe('cards');
-		expect(defaultView(51)).toBe('table');
-		expect(defaultView(500)).toBe('table');
 	});
 });

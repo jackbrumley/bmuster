@@ -1,11 +1,7 @@
 import type { Snippet } from 'svelte';
-
-export type SortDirection = 'asc' | 'desc';
+import type { CellValue, SortDirection } from '#lib/utils/sort-rows.ts';
 
 export type DataTableSort = { column: string; direction: SortDirection };
-
-/** What sorting compares, and what a column without a `cell` snippet shows. */
-export type CellValue = string | number | null;
 
 export type DataTableColumn<T> = {
 	key: string;
