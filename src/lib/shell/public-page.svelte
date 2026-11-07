@@ -3,7 +3,7 @@
 	import Logo from '#lib/ui/logo.svelte';
 
 	/** Frame for pages outside the console (sign-in, setup): centred card, safe areas padded. */
-	let { children }: { children: Snippet } = $props();
+	let { children, width }: { children: Snippet; width: 'compact' | 'wide' } = $props();
 </script>
 
 <div class="public">
@@ -11,7 +11,7 @@
 		<Logo size={48} />
 		<span class="wordmark">BMuster</span>
 	</div>
-	<div class="card">
+	<div class="card" class:wide={width === 'wide'}>
 		{@render children()}
 	</div>
 </div>
@@ -39,6 +39,7 @@
 	}
 
 	.card {
+		min-width: 0;
 		width: 100%;
 		max-width: 26rem;
 		padding: var(--space-6);
@@ -46,5 +47,8 @@
 		border-radius: var(--radius-card);
 		background: var(--surface-elevated);
 		box-shadow: var(--shadow-popover);
+	}
+	.card.wide {
+		max-width: 48rem;
 	}
 </style>

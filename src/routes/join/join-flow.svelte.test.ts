@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import JoinFlow from './join-flow.svelte';
+import JoinPage from './+page.svelte';
 
 function stubJoin() {
 	const paths: string[] = [];
@@ -45,8 +45,15 @@ function stubJoin() {
 }
 
 async function enterCode() {
-	const screen = await render(JoinFlow, { organisation: 'Example IT' });
+	const screen = await render(JoinPage, {
+		data: { organisation: 'Example IT', signedIn: false },
+		params: {},
+		form: null
+	});
 	await screen.getByRole('textbox', { name: 'Support code' }).fill('123456');
+	await expect
+		.element(screen.getByRole('textbox', { name: 'Support code' }))
+		.toHaveValue('123\u2002456');
 	await screen.getByRole('button', { name: 'Continue', exact: true }).click();
 	await expect.element(screen.getByText('Ada Support', { exact: true })).toBeVisible();
 	return screen;

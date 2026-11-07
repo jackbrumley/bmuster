@@ -32,7 +32,7 @@
 	<title>{copy.title} · BMuster</title>
 </svelte:head>
 
-<PublicPage>
+<PublicPage width="compact">
 	<div class="error">
 		<ErrorArt kind={serverError ? 'fault' : 'empty'} />
 		<h1>{copy.title}</h1>

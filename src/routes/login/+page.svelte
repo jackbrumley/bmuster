@@ -18,7 +18,7 @@
 	<title>Sign in · BMuster</title>
 </svelte:head>
 
-<PublicPage>
+<PublicPage width="compact">
 	<h1>Sign in</h1>
 
 	{#if data.providers.length > 0}

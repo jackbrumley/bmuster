@@ -1,6 +1,12 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.2.1',
+		changes: [
+			'Keep support-code entry compact with grouped digits, and give the following steps more room.'
+		]
+	},
+	{
 		version: '0.2.0',
 		changes: [
 			'Add phone support enrolment at /join with short-lived codes and scam warnings.',

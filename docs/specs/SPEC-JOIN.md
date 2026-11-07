@@ -110,3 +110,7 @@ Recovered the interrupted implementation and added browser journey tests and pho
 The warning advises independent verification for unexpected calls rather than claiming legitimate companies never make unsolicited calls. The warning is guidance; possession of the support code remains the authorisation boundary.
 
 An isolated HTTP/browser smoke test created a support code as an admin, completed the public flow without signing in, enrolled a test identity and observed Connected. A used code was refused by the install endpoint. Existing development data and installed services were not used by the tests. The additive 0012 migration was recovered from the interrupted worktree without editing its SQL.
+
+### Layout refinement (v0.2.1)
+
+The public join flow uses the shared public frame at up to 48rem wide, rather than the compact 26rem sign-in width. The support-code entry stays compact; the card widens after the code is accepted. Phone gutters and safe-area insets remain owned by the frame. The code input displays the digits in two groups of three with a clear gap.

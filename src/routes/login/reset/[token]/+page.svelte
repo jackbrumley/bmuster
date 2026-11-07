@@ -18,7 +18,7 @@
 	<title>Choose a new password · BMuster</title>
 </svelte:head>
 
-<PublicPage>
+<PublicPage width="compact">
 	<h1>Choose a new password</h1>
 	{#if form !== null && 'done' in form}
 		<div class="done" role="status">

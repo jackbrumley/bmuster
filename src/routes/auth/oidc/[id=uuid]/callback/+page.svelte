@@ -11,7 +11,7 @@
 	<title>Sign-in did not work · BMuster</title>
 </svelte:head>
 
-<PublicPage>
+<PublicPage width="compact">
 	<div class="problem">
 		<IconAlertTriangle size={32} />
 		<h1>Sign-in did not work</h1>

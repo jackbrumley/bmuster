@@ -20,7 +20,7 @@
 	<title>Forgot password · BMuster</title>
 </svelte:head>
 
-<PublicPage>
+<PublicPage width="compact">
 	<h1>Forgot your password?</h1>
 	{#if form !== null && 'sent' in form}
 		<div class="sent" role="status">

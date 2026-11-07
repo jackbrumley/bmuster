@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import type { ScamQuestionId } from '#lib/domain/machines/phone-support.ts';
 	import {
 		joinCheckReplySchema,
@@ -18,7 +19,13 @@
 	 * scam check, the command, then Connected. The code stays in this page's
 	 * memory only; a reload starts again.
 	 */
-	let { organisation }: { organisation: string } = $props();
+	let {
+		organisation,
+		frame
+	}: {
+		organisation: string;
+		frame: Snippet<[width: 'compact' | 'wide', children: Snippet]>;
+	} = $props();
 
 	type Who = {
 		code: string;
@@ -141,42 +148,46 @@
 	});
 </script>
 
-{#if step.kind === 'code'}
-	<CodeStep
-		{organisation}
-		problem={step.problem}
-		busy={step.busy}
-		submit={(typed: string) => void check(typed)}
-	/>
-{:else if step.kind === 'scam'}
-	{@const who = step.who}
-	<ScamStep
-		supportPerson={who.supportPerson}
-		organisation={who.organisation}
-		impersonators={who.impersonators}
-		stop={(question: ScamQuestionId) => {
-			stop(who, question);
-		}}
-		proceed={() => {
-			void install(who);
-		}}
-	/>
-{:else if step.kind === 'stopped'}
-	{@const who = step.who}
-	<StopStep
-		reportAdvice={who.reportAdvice}
-		back={() => {
-			step = { kind: 'scam', who };
-		}}
-	/>
-{:else if step.kind === 'install'}
-	<InstallStep commands={step.commands} supportPerson={step.who.supportPerson} />
-	{#if step.problem !== undefined}
-		<p class="problem" role="alert">{step.problem}</p>
+{#snippet content()}
+	{#if step.kind === 'code'}
+		<CodeStep
+			{organisation}
+			problem={step.problem}
+			busy={step.busy}
+			submit={(typed: string) => void check(typed)}
+		/>
+	{:else if step.kind === 'scam'}
+		{@const who = step.who}
+		<ScamStep
+			supportPerson={who.supportPerson}
+			organisation={who.organisation}
+			impersonators={who.impersonators}
+			stop={(question: ScamQuestionId) => {
+				stop(who, question);
+			}}
+			proceed={() => {
+				void install(who);
+			}}
+		/>
+	{:else if step.kind === 'stopped'}
+		{@const who = step.who}
+		<StopStep
+			reportAdvice={who.reportAdvice}
+			back={() => {
+				step = { kind: 'scam', who };
+			}}
+		/>
+	{:else if step.kind === 'install'}
+		<InstallStep commands={step.commands} supportPerson={step.who.supportPerson} />
+		{#if step.problem !== undefined}
+			<p class="problem" role="alert">{step.problem}</p>
+		{/if}
+	{:else}
+		<ConnectedStep supportPerson={step.supportPerson} />
 	{/if}
-{:else}
-	<ConnectedStep supportPerson={step.supportPerson} />
-{/if}
+{/snippet}
+
+{@render frame(step.kind === 'code' ? 'compact' : 'wide', content)}
 
 <style>
 	.problem {

@@ -19,6 +19,9 @@
 	} = $props();
 
 	let typed = $state('');
+	const displayCode = $derived(
+		typed.length > 3 ? `${typed.slice(0, 3)}\u2002${typed.slice(3)}` : typed
+	);
 	const problemId = $props.id();
 
 	function send(event: SubmitEvent): void {
@@ -40,10 +43,15 @@
 			inputmode="numeric"
 			autocomplete="one-time-code"
 			maxlength="12"
-			placeholder="000 000"
+			placeholder="000&#8194;000"
 			aria-invalid={problem !== undefined}
 			aria-describedby={problem !== undefined ? problemId : undefined}
-			bind:value={typed}
+			bind:value={
+				() => displayCode,
+				(value: string) => {
+					typed = value.replace(/\D/g, '').slice(0, 6);
+				}
+			}
 		/>
 	</label>
 	{#if problem !== undefined}

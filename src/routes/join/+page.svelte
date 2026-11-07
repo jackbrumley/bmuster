@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import PublicPage from '#lib/shell/public-page.svelte';
 	import JoinFlow from './join-flow.svelte';
 	import type { PageProps } from './$types';
@@ -11,6 +12,10 @@
 	<title>Get help · BMuster</title>
 </svelte:head>
 
-<PublicPage>
-	<JoinFlow organisation={data.organisation} />
-</PublicPage>
+<JoinFlow organisation={data.organisation}>
+	{#snippet frame(width: 'compact' | 'wide', children: Snippet)}
+		<PublicPage {width}>
+			{@render children()}
+		</PublicPage>
+	{/snippet}
+</JoinFlow>

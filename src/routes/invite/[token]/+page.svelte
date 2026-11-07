@@ -16,7 +16,7 @@
 	<title>Accept your invitation · BMuster</title>
 </svelte:head>
 
-<PublicPage>
+<PublicPage width="compact">
 	<h1>Welcome to BMuster</h1>
 	{#if data.invitation.kind === 'unusable'}
 		<p class="intro">

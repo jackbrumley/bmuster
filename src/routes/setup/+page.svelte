@@ -23,7 +23,7 @@
 	<title>Set up · BMuster</title>
 </svelte:head>
 
-<PublicPage>
+<PublicPage width="compact">
 	<h1>Set up BMuster</h1>
 	<p class="intro">
 		Enter the setup code BMuster printed in its log when it started, then make the first admin
