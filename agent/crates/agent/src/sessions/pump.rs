@@ -10,7 +10,7 @@
 
 use crate::socket::{tcp_of, Socket};
 use anyhow::{bail, Context as _, Result};
-use bmuster_protocol::session::{SessionControl, SessionEvent};
+use bmuster_protocol::session::SessionEvent;
 use std::io::ErrorKind;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -29,14 +29,17 @@ const CLOSE_WAIT: Duration = Duration::from_secs(2);
 /// What the session sends.
 pub enum Outgoing {
     Bytes(Vec<u8>),
+    /// A JSON message (a file session's replies).
+    Text(String),
     /// The last message: sent, then the socket is closed.
     Done(SessionEvent),
 }
 
-/// What the server sent.
+/// What the server sent. Text frames are JSON whose meaning depends on the
+/// session kind, so each kind reads them itself.
 pub enum Incoming {
     Bytes(Vec<u8>),
-    Control(SessionControl),
+    Text(String),
 }
 
 /// Why the pump stopped.
@@ -103,6 +106,7 @@ pub fn pump(
                         budget = budget.saturating_sub(bytes.len());
                         Message::Binary(bytes.into())
                     }
+                    Ok(Outgoing::Text(text)) => Message::text(text),
                     Ok(Outgoing::Done(event)) => {
                         finishing = true;
                         Message::text(serde_json::to_string(&event)?)
@@ -147,10 +151,7 @@ pub fn pump(
         last_heard = Instant::now();
         match message {
             Message::Binary(bytes) => incoming(Incoming::Bytes(bytes.to_vec()))?,
-            Message::Text(text) => match serde_json::from_str::<SessionControl>(text.as_str()) {
-                Ok(control) => incoming(Incoming::Control(control))?,
-                Err(e) => log::warn!("Ignoring a session message this agent does not know: {e}"),
-            },
+            Message::Text(text) => incoming(Incoming::Text(text.as_str().to_string()))?,
             Message::Close(_) => {
                 close(socket);
                 return Ok(Ended::ServerClosed);
@@ -179,6 +180,7 @@ fn close(socket: &mut Socket) {
 mod tests {
     use super::super::testing::{socket_pair, Server};
     use super::*;
+    use bmuster_protocol::session::SessionControl;
     use std::sync::atomic::AtomicUsize;
     use std::sync::{mpsc, Arc};
 
@@ -255,8 +257,13 @@ mod tests {
                 |message| {
                     let text = match message {
                         Incoming::Bytes(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-                        Incoming::Control(SessionControl::Resize { cols, rows }) => {
-                            format!("{cols}x{rows}")
+                        Incoming::Text(text) => {
+                            match serde_json::from_str::<SessionControl>(&text) {
+                                Ok(SessionControl::Resize { cols, rows }) => {
+                                    format!("{cols}x{rows}")
+                                }
+                                Err(_) => return Ok(()),
+                            }
                         }
                     };
                     heard.send(text)?;

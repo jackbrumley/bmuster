@@ -5,9 +5,10 @@
 //!
 //! Every session kind shares this path: [`Sessions::open`] checks the
 //! ticket, [`pump`] moves the bytes, and the kind's module (terminal, exec;
-//! files later) decides what the bytes mean.
+//! files) decides what the bytes mean.
 
 mod exec;
+mod files;
 mod pump;
 mod terminal;
 #[cfg(test)]
@@ -157,6 +158,7 @@ fn purpose_label(purpose: &SessionPurpose) -> String {
     match purpose {
         SessionPurpose::Terminal { shell, .. } => format!("terminal, {}", shell.as_str()),
         SessionPurpose::Exec { shell, .. } => format!("command, {}", shell.as_str()),
+        SessionPurpose::Files {} => "files".into(),
     }
 }
 
@@ -198,6 +200,7 @@ fn serve(inner: &Inner, ticket: &SessionTicket) -> Result<Ended> {
                 Err(e) => fail(&mut socket, &e),
             }
         }
+        SessionPurpose::Files {} => files::run(&mut socket, &inner.stop),
     }
 }
 

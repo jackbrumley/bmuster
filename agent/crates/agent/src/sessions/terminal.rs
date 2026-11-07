@@ -106,9 +106,14 @@ pub fn run(socket: &mut Socket, spawned: Spawned, stop: &AtomicBool) -> Result<E
                     // waiter then ends the session.
                     let _ = input.send(bytes);
                 }
-                Incoming::Control(SessionControl::Resize { cols, rows }) => {
-                    pty.resize(PtySize::clamped(cols, rows))?;
-                }
+                Incoming::Text(text) => match serde_json::from_str::<SessionControl>(&text) {
+                    Ok(SessionControl::Resize { cols, rows }) => {
+                        pty.resize(PtySize::clamped(cols, rows))?;
+                    }
+                    Err(e) => {
+                        log::warn!("Ignoring a session message this agent does not know: {e}");
+                    }
+                },
             }
             Ok(())
         },
