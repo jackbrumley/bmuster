@@ -22,7 +22,7 @@ describe('console frame (S14)', () => {
 	});
 
 	it('shows the signed-in person, with a sign-out that posts to /logout', async () => {
-		const screen = await render(ShellFrame, { user: ADMIN, children });
+		const screen = await render(ShellFrame, { user: ADMIN, localNetworkMode: false, children });
 		await expect.element(screen.getByText('Ada Lovelace')).toBeInTheDocument();
 		await expect.element(screen.getByText('Admin · ada@example.com')).toBeInTheDocument();
 		const signOut = screen.getByRole('button', { name: 'Sign out' });
@@ -33,11 +33,23 @@ describe('console frame (S14)', () => {
 	});
 
 	it('hides the admin pages from members', async () => {
-		const screen = await render(ShellFrame, { user: MEMBER, children });
+		const screen = await render(ShellFrame, { user: MEMBER, localNetworkMode: false, children });
 		await expect.element(screen.getByText('Mo Member')).toBeInTheDocument();
 		expect(screen.container.querySelector('nav[aria-label="Administration"]')).toBeNull();
 		expect(screen.container.textContent).not.toContain('Add machine');
-		const admin = await render(ShellFrame, { user: ADMIN, children });
+		const admin = await render(ShellFrame, { user: ADMIN, localNetworkMode: false, children });
 		expect(admin.container.querySelector('nav[aria-label="Administration"]')).not.toBeNull();
+	});
+
+	it('L3: shows a thin banner on every page while local network mode is on', async () => {
+		const off = await render(ShellFrame, { user: MEMBER, localNetworkMode: false, children });
+		expect(off.container.textContent).not.toContain('Local network mode');
+		await off.unmount();
+		const on = await render(ShellFrame, { user: MEMBER, localNetworkMode: true, children });
+		await expect
+			.element(
+				on.getByRole('status').filter({ hasText: 'Local network mode: self-signed certificate' })
+			)
+			.toBeVisible();
 	});
 });

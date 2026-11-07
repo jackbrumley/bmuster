@@ -4,6 +4,8 @@ import { database } from '../database/app-database.ts';
 import { machines } from '../database/schema.ts';
 import { isRefusal } from '../services/agents/agent-refusal.ts';
 import { authenticateAgent } from '../services/agents/agent-auth.ts';
+import { pinUpdate } from '../services/agents/local-tls.ts';
+import { servedCertificate } from '../tls/served-certificate.ts';
 import {
 	agentConnected,
 	agentDisconnected,
@@ -52,6 +54,8 @@ export const agentSocketRoute = defineSocketRoute<{
 		};
 		peer.context.peer = live;
 		agentConnected(peer.context.machineId, live);
+		// Every connection hears which certificate to expect next (SPEC-INSTALL-OPTIONS L7).
+		live.send(pinUpdate(database, servedCertificate()));
 		touch(peer.context.machineId);
 	},
 	message(peer, data) {

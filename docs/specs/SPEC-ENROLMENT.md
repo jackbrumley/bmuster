@@ -84,9 +84,9 @@ signature = Ed25519( "BMUSTER-REQ-1\n" + METHOD + "\n" + path + "\n" + timestamp
 
 ### 6.2 Agent commands
 
-- `bmuster-agent install --url <server> --code <code> [--name <name>]`: copies itself into place, enrols, writes and starts the service. Needs root or Administrator. The install scripts download, check the SHA-256 and run this.
+- `bmuster-agent install --url <server> --code <code> [--name <name>] [--pin-cert sha256:<b64>]`: copies itself into place, enrols, writes and starts the service. Needs root or Administrator. The install scripts download, check the SHA-256 and run this.
 - `bmuster-agent run [--data-dir <dir>]`: the service entry point. `--data-dir` lets a developer run an unprivileged copy (default: `/var/lib/bmuster` or `C:\ProgramData\BMuster`).
-- `bmuster-agent enrol --url <server> --code <code> [--name <name>] [--data-dir <dir>]`: enrol only (for development).
+- `bmuster-agent enrol --url <server> --code <code> [--name <name>] [--pin-cert sha256:<b64>] [--data-dir <dir>]`: enrol only (for development). `--pin-cert` is local network mode (SPEC-INSTALL-OPTIONS L5).
 - `bmuster-agent status [--data-dir <dir>]`, `bmuster-agent uninstall [--purge]`, `bmuster-agent --version`.
 
 ## 7. Check-in and inventory
@@ -120,7 +120,7 @@ Inventory = {
 
 `GET /agent/v1/socket`, signed upgrade, kept open with pings every 30 seconds.
 
-- Server → agent: `{ type: 'check-in-now' }`, `{ type: 'watch', intervalMs }`, `{ type: 'unwatch' }`. Later: `session-open`.
+- Server → agent: `{ type: 'check-in-now' }`, `{ type: 'watch', intervalMs }`, `{ type: 'unwatch' }`, `{ type: 'pin-update', next }` (local network mode certificate changes, SPEC-INSTALL-OPTIONS L7). Later: `session-open`.
 - Agent → server: `{ type: 'live', cpuPercent, memoryUsedBytes }` every `intervalMs` while watched (a console page is open on that machine).
 - The agent reconnects with back-off (1 s doubling to 60 s).
 - Online = socket open, or a check-in within 3 intervals.

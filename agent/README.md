@@ -9,7 +9,9 @@ agent/
   Cargo.toml              workspace (AGPL-3.0-only, exact versions, small release build)
   crates/protocol/        wire types, request signing, shared test vectors (tests/vectors.json)
   crates/agent/           the `bmuster-agent` binary
-    src/client.rs         server URL, TLS, signed HTTP, clock-drift correction
+    src/client.rs         server URL, HTTP and socket channels, signed requests, clock-drift correction
+    src/tls.rs            rustls set-up: trust store, pinned key (--pin-cert) or --insecure-dev-tls
+    src/trust.rs          the current and announced certificate check (pin rollover)
     src/identity.rs       Ed25519 key, identity.json, enrolment
     src/inventory.rs      inventory, load and signed-in user (sysinfo)
     src/worker.rs         `run`: the check-in loop
@@ -22,12 +24,14 @@ agent/
 
 | Command | What it does |
 | :-- | :-- |
-| `bmuster-agent install --url <server> --code <code> [--name <name>]` | Needs root or Administrator. Copies the binary into place, enrols, then installs and starts the service. |
-| `bmuster-agent enrol --url <server> --code <code> [--name <name>] [--data-dir <dir>] [--insecure-dev-tls]` | Enrols only. Use it for development. |
+| `bmuster-agent install --url <server> --code <code> [--name <name>] [--pin-cert <pin>]` | Needs root or Administrator. Copies the binary into place, enrols, then installs and starts the service. |
+| `bmuster-agent enrol --url <server> --code <code> [--name <name>] [--pin-cert <pin>] [--data-dir <dir>] [--insecure-dev-tls]` | Enrols only. Use it for development. |
 | `bmuster-agent run [--data-dir <dir>] [--insecure-dev-tls]` | The service entry point. It runs the check-in loop and the live socket. |
 | `bmuster-agent status [--data-dir <dir>]` | Shows the enrolment and the service state. It does not contact the server. |
 | `bmuster-agent uninstall [--purge]` | Stops and removes the service and the binary. `--purge` also deletes the data folder (identity and key). |
 | `bmuster-agent --version` | Prints the version. |
+
+`--pin-cert sha256:<base64>` is for a server in local network mode (its own self-signed certificate; the pin is on Add machine). The agent then accepts only a server certificate whose public key has that SHA-256, for HTTPS and the live socket, and ignores the host name and issuer. The pin is saved in `identity.json` (`serverPin`), so `run` and the service need no flag. When the server announces a new certificate (`pin-update` on the live socket) the agent saves it as `nextPin` and switches to it only once a connection with it works.
 
 Exit codes for `run`: `0` stopped, `1` error, `3` the server removed this machine (`revoked`). The systemd unit sets `RestartPreventExitStatus=3`, so a removed machine stays stopped.
 
@@ -51,7 +55,7 @@ cargo run -p bmuster-agent -- enrol --url https://localhost:5173 --code XXX-XXX-
 cargo run -p bmuster-agent -- run --data-dir ./dev-data --insecure-dev-tls
 ```
 
-The dev server uses a self-signed certificate. Without the `--insecure-dev-tls` flag the agent refuses it. With the flag, the agent accepts any certificate and logs a loud warning. Never use it against a real server. Plain `http://` works only for `localhost` and loopback addresses. `./dev-data` is git-ignored. To enrol again, delete it.
+The dev server uses a self-signed certificate. Without the `--insecure-dev-tls` flag the agent refuses it. With the flag, the agent accepts any certificate and logs a loud warning. Never use it against a real server. To test certificate pinning instead, turn on local network mode in the dev server's Settings and enrol with the `--pin-cert` shown on Add machine (no `--insecure-dev-tls` on `enrol` or `run`). Plain `http://` works only for `localhost` and loopback addresses. `./dev-data` is git-ignored. To enrol again, delete it.
 
 ## Offer a release build from a local server
 

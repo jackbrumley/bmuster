@@ -98,9 +98,20 @@ export const agentSocketMessageSchema = z.discriminatedUnion('type', [
 	})
 ]);
 
+/**
+ * How an agent checks the server's certificate (SPEC-INSTALL-OPTIONS L5, L7):
+ * the operating system's trust store, or exactly one public key
+ * (`sha256:<base64 of the SubjectPublicKeyInfo's SHA-256>`).
+ */
+export type ServerTrust = { kind: 'public' } | { kind: 'pin'; pin: string };
+
 /** Messages the server sends on an agent's live socket. */
 export type ServerSocketMessage =
-	{ type: 'check-in-now' } | { type: 'watch'; intervalMs: number } | { type: 'unwatch' };
+	| { type: 'check-in-now' }
+	| { type: 'watch'; intervalMs: number }
+	| { type: 'unwatch' }
+	/** The certificate the server will serve after its next restart (L7). */
+	| { type: 'pin-update'; next: ServerTrust };
 
 export type RefusalReason =
 	| 'bad-request'

@@ -295,6 +295,7 @@ export function isUiSourceFile(relPath: string): boolean {
 /** Shared components that are the standard controls themselves (AGENTS.md §12). */
 const STANDARD_CONTROL_FILES: ReadonlySet<string> = new Set([
 	'src/lib/ui/button.svelte',
+	'src/lib/ui/checkbox.svelte',
 	'src/lib/ui/text-field.svelte'
 ]);
 

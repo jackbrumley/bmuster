@@ -79,6 +79,12 @@ function sendToAgent(machineId: string, message: ServerSocketMessage): boolean {
 	return true;
 }
 
+export function sendToAllAgents(message: ServerSocketMessage): void {
+	for (const peer of peers.values()) {
+		peer.send(message);
+	}
+}
+
 /** Closes an agent's socket, e.g. when its machine is removed. */
 export function disconnectAgent(machineId: string, code: number, reason: string): void {
 	peers.get(machineId)?.close(code, reason);

@@ -19,12 +19,14 @@ import { recordAudit } from '../audit/audit.ts';
 /** Each setting's declared type, keyed so the compiler ties every key to its value type. */
 const PARSE: { [K in SettingKey]: (value: unknown) => SettingValues[K] } = {
 	defaultConsent: (value) => SETTING_DEFINITIONS.defaultConsent.schema.parse(value),
-	connectedNotice: (value) => SETTING_DEFINITIONS.connectedNotice.schema.parse(value)
+	connectedNotice: (value) => SETTING_DEFINITIONS.connectedNotice.schema.parse(value),
+	localNetworkMode: (value) => SETTING_DEFINITIONS.localNetworkMode.schema.parse(value)
 };
 
 const DEFAULTS: SettingValues = {
 	defaultConsent: SETTING_DEFINITIONS.defaultConsent.defaultValue,
-	connectedNotice: SETTING_DEFINITIONS.connectedNotice.defaultValue
+	connectedNotice: SETTING_DEFINITIONS.connectedNotice.defaultValue,
+	localNetworkMode: SETTING_DEFINITIONS.localNetworkMode.defaultValue
 };
 
 export function getSetting<K extends SettingKey>(database: Queryable, key: K): SettingValues[K] {

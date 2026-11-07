@@ -97,6 +97,102 @@ pub fn decode_public_key(text: &str) -> Result<VerifyingKey, KeyError> {
 }
 
 // ---------------------------------------------------------------------------
+// Certificate pins (SPEC-INSTALL-OPTIONS L5, L7)
+// ---------------------------------------------------------------------------
+
+/// A server certificate pin: the SHA-256 of the certificate's DER
+/// SubjectPublicKeyInfo, written `sha256:<standard base64>`. The same value
+/// curl's `--pinnedpubkey sha256//<base64>` checks.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CertificatePin([u8; 32]);
+
+const PIN_PREFIX: &str = "sha256:";
+
+/// Why a pin could not be read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PinError {
+    MissingPrefix,
+    NotBase64,
+    WrongLength(usize),
+}
+
+impl fmt::Display for PinError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PinError::MissingPrefix => write!(f, "a certificate pin starts with sha256:"),
+            PinError::NotBase64 => write!(f, "the certificate pin is not standard base64"),
+            PinError::WrongLength(n) => {
+                write!(f, "the certificate pin is {n} bytes long; a SHA-256 is 32")
+            }
+        }
+    }
+}
+
+impl std::error::Error for PinError {}
+
+impl CertificatePin {
+    /// The pin of a DER-encoded SubjectPublicKeyInfo.
+    pub fn of_public_key_info(spki_der: &[u8]) -> Self {
+        Self(Sha256::digest(spki_der).into())
+    }
+
+    pub fn parse(text: &str) -> Result<Self, PinError> {
+        let encoded = text
+            .trim()
+            .strip_prefix(PIN_PREFIX)
+            .ok_or(PinError::MissingPrefix)?;
+        let bytes = BASE64.decode(encoded).map_err(|_| PinError::NotBase64)?;
+        let raw: [u8; 32] = bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| PinError::WrongLength(bytes.len()))?;
+        Ok(Self(raw))
+    }
+}
+
+impl fmt::Display for CertificatePin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{PIN_PREFIX}{}", BASE64.encode(self.0))
+    }
+}
+
+impl fmt::Debug for CertificatePin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+impl std::str::FromStr for CertificatePin {
+    type Err = PinError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        Self::parse(text)
+    }
+}
+
+impl Serialize for CertificatePin {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for CertificatePin {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).map_err(serde::de::Error::custom)
+    }
+}
+
+/// How the agent checks the server's certificate: the operating system's
+/// trust store, or exactly one pinned public key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum ServerTrust {
+    Public,
+    Pin { pin: CertificatePin },
+}
+
+// ---------------------------------------------------------------------------
 // Refusals
 // ---------------------------------------------------------------------------
 
@@ -300,6 +396,10 @@ pub enum ServerMessage {
         interval_ms: u64,
     },
     Unwatch,
+    /// The certificate the server serves after its next restart (L7).
+    PinUpdate {
+        next: ServerTrust,
+    },
 }
 
 /// Agent to server.
@@ -372,6 +472,57 @@ mod tests {
                 inventory_wanted: true
             }
         );
+    }
+
+    #[test]
+    fn pins_parse_print_and_travel_as_the_server_sends_them() {
+        // sha256 of the empty input, in base64.
+        let text = "sha256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=";
+        let pin = CertificatePin::parse(text).unwrap();
+        assert_eq!(pin, CertificatePin::of_public_key_info(b""));
+        assert_eq!(pin.to_string(), text);
+        assert_eq!(CertificatePin::parse(&format!(" {text}\n")).unwrap(), pin);
+        assert_eq!(
+            CertificatePin::parse("47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="),
+            Err(PinError::MissingPrefix)
+        );
+        assert_eq!(
+            CertificatePin::parse("sha256//47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="),
+            Err(PinError::MissingPrefix)
+        );
+        assert_eq!(
+            CertificatePin::parse("sha256:not base64!"),
+            Err(PinError::NotBase64)
+        );
+        assert_eq!(
+            CertificatePin::parse("sha256:AAAA"),
+            Err(PinError::WrongLength(3))
+        );
+
+        assert_eq!(
+            serde_json::from_value::<ServerMessage>(json!({
+                "type": "pin-update",
+                "next": { "kind": "pin", "pin": text }
+            }))
+            .unwrap(),
+            ServerMessage::PinUpdate {
+                next: ServerTrust::Pin { pin }
+            }
+        );
+        assert_eq!(
+            serde_json::from_value::<ServerMessage>(
+                json!({ "type": "pin-update", "next": { "kind": "public" } })
+            )
+            .unwrap(),
+            ServerMessage::PinUpdate {
+                next: ServerTrust::Public
+            }
+        );
+        assert!(serde_json::from_value::<ServerMessage>(json!({
+            "type": "pin-update",
+            "next": { "kind": "pin", "pin": "sha256:AAAA" }
+        }))
+        .is_err());
     }
 
     #[test]

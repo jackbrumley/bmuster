@@ -1,7 +1,7 @@
 //! The live socket: a signed WebSocket the server uses to ask for a check-in
 //! now and to watch the machine's load while a console page is open.
 
-use crate::client::{parse_reply, Reply, Session, USER_AGENT};
+use crate::client::{parse_reply, Channel, Reply, Session, USER_AGENT};
 use crate::inventory::Probe;
 use crate::worker::{Backoff, Signal};
 use anyhow::{bail, Context as _, Result};
@@ -53,7 +53,7 @@ pub fn run(session: &Session, signals: &Sender<Signal>, stop: &AtomicBool) {
         let result = match connect(session) {
             Ok(Connect::Open(socket)) => {
                 log::info!("Live socket connected.");
-                serve(*socket, signals, stop, &mut probe)
+                serve(*socket, session, signals, stop, &mut probe)
             }
             Ok(Connect::Revoked(message)) => Ok(Ended::Revoked(message)),
             Err(e) => Err(e),
@@ -116,8 +116,15 @@ fn tcp_of(socket: &mut Socket) -> Result<&mut TcpStream> {
     }
 }
 
-/// Opens the socket with a signed upgrade request (`GET`, empty body).
+/// Opens the socket, following a planned certificate change (L7).
 fn connect(session: &Session) -> Result<Connect> {
+    session
+        .transport
+        .exchange(|channel| connect_with(session, channel))
+}
+
+/// Opens the socket with a signed upgrade request (`GET`, empty body).
+fn connect_with(session: &Session, channel: &Channel) -> Result<Connect> {
     let server = &session.transport.server;
     let mut request = server
         .ws_url(SOCKET_PATH)
@@ -136,7 +143,7 @@ fn connect(session: &Session) -> Result<Connect> {
     request
         .headers_mut()
         .insert("user-agent", HeaderValue::from_static(USER_AGENT));
-    let connector = Connector::Rustls(session.transport.websocket_tls.clone());
+    let connector = Connector::Rustls(channel.websocket_tls.clone());
     let result = tungstenite::client_tls_with_config(request, tcp, None, Some(connector));
     drop(signed);
 
@@ -184,6 +191,7 @@ fn is_timeout(error: &tungstenite::Error) -> bool {
 
 fn serve(
     mut socket: Socket,
+    session: &Session,
     signals: &Sender<Signal>,
     stop: &AtomicBool,
     probe: &mut Probe,
@@ -256,6 +264,7 @@ fn serve(
                     log::debug!("No longer watched.");
                     watch = None;
                 }
+                Ok(ServerMessage::PinUpdate { next }) => session.transport.announce(next),
                 Err(e) => log::warn!("Ignoring a socket message this agent does not know: {e}"),
             },
             Message::Close(frame) => {

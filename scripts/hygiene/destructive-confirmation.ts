@@ -18,7 +18,8 @@ const DESTRUCTIVE_REQUEST_EXEMPTIONS: Readonly<Record<string, string>> = {};
 
 const destructiveRequestRegex =
 	/method:\s*["']DELETE["']|action:\s*["'](?:DELETE|REVOKE)[A-Z_]*["']|action=["'][^"']*\?\/(?:delete|remove|revoke)\w*["']|formaction=["'][^"']*\?\/(?:delete|remove|revoke)\w*["']/i;
-const confirmationRegex = /\bconfirmAction\s*\(/;
+/** Either shared confirmation: `confirmAction(` or the typed one, `confirmByTyping(`. */
+const confirmationRegex = /\bconfirm(?:Action|ByTyping)\s*\(/;
 
 /** The rule's message for a file, or null when it passes. */
 function scanDestructiveConfirmation(relPath: string, text: string): string | null {
@@ -26,7 +27,7 @@ function scanDestructiveConfirmation(relPath: string, text: string): string | nu
 	if (relPath in DESTRUCTIVE_REQUEST_EXEMPTIONS) return null;
 	const request = destructiveRequestRegex.exec(text);
 	if (!request || confirmationRegex.test(text)) return null;
-	return `Sends a destructive request (${request[0]}) without confirmAction(). Confirm it with the shared dialog, or, if a caller confirms it, list the file in DESTRUCTIVE_REQUEST_EXEMPTIONS (scripts/hygiene/destructive-confirmation.ts) with the reason.`;
+	return `Sends a destructive request (${request[0]}) without confirmAction() or confirmByTyping(). Confirm it with the shared dialog, or, if a caller confirms it, list the file in DESTRUCTIVE_REQUEST_EXEMPTIONS (scripts/hygiene/destructive-confirmation.ts) with the reason.`;
 }
 
 export function checkDestructiveConfirmation(relPath: string, text: string, report: Report): void {

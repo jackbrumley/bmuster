@@ -8,7 +8,18 @@ import { z } from 'zod';
  */
 
 type SettingControl =
-	{ kind: 'switch' } | { kind: 'choice'; options: readonly { value: string; label: string }[] };
+	| { kind: 'switch' }
+	| { kind: 'choice'; options: readonly { value: string; label: string }[] }
+	/** On and off, with the confirmation and certificate details of SPEC-INSTALL-OPTIONS L2. */
+	| { kind: 'local-network-mode' };
+
+/** Where the Settings page lists a setting. */
+export type SettingSection = 'general' | 'security';
+
+export const SETTING_SECTIONS: readonly { id: SettingSection; title: string }[] = [
+	{ id: 'general', title: 'General' },
+	{ id: 'security', title: 'Security' }
+];
 
 type SettingDefinition<T> = {
 	label: string;
@@ -17,6 +28,7 @@ type SettingDefinition<T> = {
 	defaultValue: T;
 	/** Who may change it. Only admins so far. */
 	changedBy: 'admin';
+	section: SettingSection;
 	control: SettingControl;
 };
 
@@ -30,6 +42,7 @@ export const SETTING_DEFINITIONS = {
 		schema: consentSchema,
 		defaultValue: 'unattended',
 		changedBy: 'admin',
+		section: 'general',
 		control: {
 			kind: 'choice',
 			options: [
@@ -45,7 +58,18 @@ export const SETTING_DEFINITIONS = {
 		schema: z.boolean(),
 		defaultValue: true,
 		changedBy: 'admin',
+		section: 'general',
 		control: { kind: 'switch' }
+	} satisfies SettingDefinition<boolean>,
+	localNetworkMode: {
+		label: 'Local network mode',
+		description:
+			'For a server used only inside your own network, with no domain: BMuster serves HTTPS itself with a certificate it makes, and agents trust only that certificate. Takes effect when BMuster restarts.',
+		schema: z.boolean(),
+		defaultValue: false,
+		changedBy: 'admin',
+		section: 'security',
+		control: { kind: 'local-network-mode' }
 	} satisfies SettingDefinition<boolean>
 } as const;
 

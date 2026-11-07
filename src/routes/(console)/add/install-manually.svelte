@@ -7,6 +7,7 @@
 		type AgentTarget
 	} from '#lib/domain/machines/agent-release.ts';
 	import type { OsFamily } from '#lib/domain/machines/machine.ts';
+	import type { ServedPin } from '#lib/domain/settings/local-tls.ts';
 	import CopyField from '#lib/ui/copy-field.svelte';
 	import SegmentedControl from '#lib/ui/segmented-control.svelte';
 	import { formatBytes } from '#lib/utils/format.ts';
@@ -23,7 +24,8 @@
 		origin,
 		joinCode,
 		downloads,
-		devServer
+		devServer,
+		pin
 	}: {
 		os: OsFamily;
 		origin: string;
@@ -31,6 +33,8 @@
 		joinCode: CodeState;
 		downloads: AgentDownload[];
 		devServer: boolean;
+		/** The certificate pin the command carries in local network mode. */
+		pin: ServedPin;
 	} = $props();
 
 	let linuxTarget = $state<AgentTarget>('x86_64-unknown-linux-gnu');
@@ -105,7 +109,7 @@
 				</p>
 				{#if joinCode.kind === 'ready'}
 					<CopyField
-						value={manualInstallCommand(os, origin, joinCode.code)}
+						value={manualInstallCommand(os, origin, joinCode.code, pin)}
 						label="manual install command"
 					/>
 				{:else}
@@ -113,7 +117,7 @@
 				{/if}
 			</div>
 
-			<RolloutCode {os} {origin} />
+			<RolloutCode {os} {origin} {pin} />
 		{/if}
 	</div>
 </details>

@@ -11,9 +11,12 @@ mod service_linux;
 #[cfg(windows)]
 mod service_windows;
 mod socket;
+mod tls;
+mod trust;
 mod worker;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
+use bmuster_protocol::{CertificatePin, ServerTrust};
 use clap::{Args, Parser, Subcommand};
 use client::TlsMode;
 use std::path::PathBuf;
@@ -41,6 +44,19 @@ struct Join {
     /// Name shown in the console (default: this machine's hostname)
     #[arg(long)]
     name: Option<String>,
+    /// Local network mode: trust only the server certificate with this key,
+    /// like sha256:<base64> (shown on the console's Add machine page)
+    #[arg(long, value_name = "PIN")]
+    pin_cert: Option<CertificatePin>,
+}
+
+impl Join {
+    fn trust(&self) -> ServerTrust {
+        match self.pin_cert {
+            Some(pin) => ServerTrust::Pin { pin },
+            None => ServerTrust::Public,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -85,11 +101,11 @@ enum Command {
     },
 }
 
-fn tls_mode(insecure_dev_tls: bool) -> TlsMode {
-    if insecure_dev_tls {
-        TlsMode::InsecureDev
-    } else {
-        TlsMode::Verify
+fn enrol_tls(join: &Join, insecure_dev_tls: bool) -> Result<TlsMode> {
+    match (insecure_dev_tls, join.pin_cert) {
+        (false, _) => Ok(TlsMode::Checked(join.trust())),
+        (true, None) => Ok(TlsMode::InsecureDev),
+        (true, Some(_)) => bail!("use either --pin-cert or --insecure-dev-tls, not both"),
     }
 }
 
@@ -133,7 +149,7 @@ fn run_windows_service() -> ExitCode {
 fn dispatch(command: Command) -> Result<ExitCode> {
     match command {
         Command::Install(join) => {
-            platform::install(&join.url, &join.code, join.name.as_deref())?;
+            platform::install(&join.url, &join.code, join.name.as_deref(), join.trust())?;
             Ok(ExitCode::SUCCESS)
         }
         Command::Enrol {
@@ -147,7 +163,7 @@ fn dispatch(command: Command) -> Result<ExitCode> {
                     url: &join.url,
                     code: &join.code,
                     name: join.name.as_deref(),
-                    tls: tls_mode(insecure_dev_tls),
+                    tls: enrol_tls(&join, insecure_dev_tls)?,
                 },
             )?;
             Ok(ExitCode::SUCCESS)
@@ -159,7 +175,7 @@ fn dispatch(command: Command) -> Result<ExitCode> {
         } => {
             let options = worker::RunOptions {
                 data_dir: paths::data_dir(data_dir)?,
-                tls: tls_mode(insecure_dev_tls),
+                insecure_dev_tls,
             };
             let (sender, signals) = mpsc::channel();
             match worker::run(&options, sender, signals)? {
@@ -187,6 +203,13 @@ fn status(data_dir: &std::path::Path) -> Result<ExitCode> {
     println!("Enrolled:      yes");
     println!("Machine id:    {}", identity.machine_id);
     println!("Server:        {}", identity.server_url);
+    println!(
+        "Certificate:   {}",
+        trust::describe(&identity.server_trust())
+    );
+    if let Some(next) = identity.next_pin {
+        println!("Announced:     {}", trust::describe(&next));
+    }
     println!("Check-in:      every {} s", identity.check_in_seconds);
     Ok(ExitCode::SUCCESS)
 }
@@ -208,8 +231,14 @@ mod platform {
 #[cfg(not(any(target_os = "linux", windows)))]
 mod platform {
     use anyhow::{bail, Result};
+    use bmuster_protocol::ServerTrust;
 
-    pub fn install(_url: &str, _code: &str, _name: Option<&str>) -> Result<()> {
+    pub fn install(
+        _url: &str,
+        _code: &str,
+        _name: Option<&str>,
+        _trust: ServerTrust,
+    ) -> Result<()> {
         bail!("installing as a service is supported on Linux and Windows only")
     }
 

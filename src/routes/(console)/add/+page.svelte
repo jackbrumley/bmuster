@@ -7,4 +7,9 @@
 	let { data }: PageProps = $props();
 </script>
 
-<AddMachine origin={page.url.origin} downloads={data.downloads} devServer={dev} />
+<AddMachine
+	origin={page.url.origin}
+	downloads={data.downloads}
+	devServer={dev}
+	localTls={data.localTls}
+/>

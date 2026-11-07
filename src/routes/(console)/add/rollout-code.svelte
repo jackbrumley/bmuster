@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { IconKey } from '@tabler/icons-svelte-runes';
 	import { manualInstallCommand } from '#lib/domain/machines/agent-release.ts';
+	import type { ServedPin } from '#lib/domain/settings/local-tls.ts';
 	import Button from '#lib/ui/button.svelte';
 	import CopyField from '#lib/ui/copy-field.svelte';
 	import SegmentedControl from '#lib/ui/segmented-control.svelte';
@@ -11,7 +12,7 @@
 	 * many machines, each running the same command with one roll-out code
 	 * (up to 100 machines, up to 7 days; SPEC-ENROLMENT decision 13.2).
 	 */
-	let { os, origin }: { os: 'linux' | 'windows'; origin: string } = $props();
+	let { os, origin, pin }: { os: 'linux' | 'windows'; origin: string; pin: ServedPin } = $props();
 
 	const useOptions = [
 		{ value: '10', label: '10' },
@@ -67,7 +68,7 @@
 			{expiry(rollout.expiresAtIso)}.
 		</p>
 		<CopyField
-			value={manualInstallCommand(os, origin, rollout.code)}
+			value={manualInstallCommand(os, origin, rollout.code, pin)}
 			label="roll-out install command"
 		/>
 	{:else if rollout.kind === 'failed'}

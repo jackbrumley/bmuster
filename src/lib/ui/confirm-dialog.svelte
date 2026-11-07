@@ -1,5 +1,7 @@
 <script lang="ts">
 	import Button from './button.svelte';
+	import CopyField from './copy-field.svelte';
+	import TextField from './text-field.svelte';
 	import { confirmation } from './confirm-action.svelte.ts';
 
 	/** Shows the question `confirmAction()` asks. Mounted once, in the console frame. */
@@ -20,7 +22,16 @@
 		}
 	});
 
+	let typedText = $state('');
+	let typedError = $state<string | undefined>(undefined);
+
 	function answer(yes: boolean): void {
+		if (yes && asking?.typed.kind === 'text' && typedText.trim() !== asking.typed.text) {
+			typedError = 'Type the name exactly as shown to confirm.';
+			return;
+		}
+		typedText = '';
+		typedError = undefined;
 		asking?.answer(yes);
 	}
 </script>
@@ -37,6 +48,21 @@
 	{#if asking !== undefined}
 		<h2 id="confirm-title">{asking.options.title}</h2>
 		<p>{asking.options.message}</p>
+		{#if asking.typed.kind === 'text'}
+			<div class="typed">
+				<CopyField value={asking.typed.text} label="name" />
+				<TextField
+					label="Type the name above to confirm"
+					name="confirm-name"
+					type="text"
+					autocomplete="off"
+					autocapitalize="off"
+					required={true}
+					error={typedError}
+					bind:value={typedText}
+				/>
+			</div>
+		{/if}
 		<div class="actions">
 			<Button
 				variant="secondary"
@@ -87,6 +113,13 @@
 		margin-bottom: var(--space-6);
 		color: var(--text-soft);
 		font-size: var(--text-sm);
+	}
+
+	.typed {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--space-2);
+		margin-bottom: var(--space-6);
 	}
 
 	.actions {

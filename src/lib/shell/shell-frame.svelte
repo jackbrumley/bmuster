@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { IconDots } from '@tabler/icons-svelte-runes';
+	import { IconCertificate, IconDots } from '@tabler/icons-svelte-runes';
 	import type { ConsoleUser } from '#lib/domain/users/user.ts';
 	import ConfirmDialog from '#lib/ui/confirm-dialog.svelte';
 	import ToastHost from '#lib/ui/toast-host.svelte';
@@ -12,9 +12,14 @@
 	/**
 	 * The console frame: a sidebar on wide screens, a bottom tab bar on phones.
 	 * Every console page renders inside it; it owns the safe-area padding, the
-	 * shared confirmation dialog and the toasts.
+	 * shared confirmation dialog and the toasts. In local network mode every
+	 * page carries a banner (SPEC-INSTALL-OPTIONS L3).
 	 */
-	let { user, children }: { user: ConsoleUser; children: Snippet } = $props();
+	let {
+		user,
+		localNetworkMode,
+		children
+	}: { user: ConsoleUser; localNetworkMode: boolean; children: Snippet } = $props();
 
 	const main = $derived(mainNav(user.role));
 	const admin = $derived(adminNav(user.role));
@@ -64,6 +69,12 @@
 	</aside>
 
 	<main class="content">
+		{#if localNetworkMode}
+			<p class="mode-banner" role="status">
+				<IconCertificate size={16} stroke={1.75} />
+				Local network mode: self-signed certificate
+			</p>
+		{/if}
 		{@render children()}
 	</main>
 
@@ -105,6 +116,19 @@
 		margin: 0 auto;
 		padding: var(--space-4) var(--space-4)
 			calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-6));
+	}
+
+	.mode-banner {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		margin-bottom: var(--space-4);
+		padding: var(--space-1) var(--space-3);
+		border-radius: var(--radius-pill);
+		background: var(--warning-bg);
+		color: var(--warning);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
 	}
 
 	.tabbar {

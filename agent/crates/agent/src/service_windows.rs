@@ -6,6 +6,7 @@ use crate::identity::{self, EnrolOptions};
 use crate::paths;
 use crate::worker::{self, Outcome, RunOptions, Signal};
 use anyhow::{bail, Context as _, Result};
+use bmuster_protocol::ServerTrust;
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::process::Command;
@@ -65,7 +66,7 @@ fn restrict_data_dir(dir: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-pub fn install(url: &str, code: &str, name: Option<&str>) -> Result<()> {
+pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) -> Result<()> {
     let manager = manager(ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE)?;
     if manager
         .open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS)
@@ -92,7 +93,7 @@ pub fn install(url: &str, code: &str, name: Option<&str>) -> Result<()> {
             url,
             code,
             name,
-            tls: TlsMode::Verify,
+            tls: TlsMode::Checked(trust),
         },
     )?;
 
@@ -255,7 +256,7 @@ fn service_body() -> Result<()> {
 
     let options = RunOptions {
         data_dir: paths::default_data_dir()?,
-        tls: TlsMode::Verify,
+        insecure_dev_tls: false,
     };
     let exit_code = match worker::run(&options, sender, signals) {
         Ok(Outcome::Stopped) => 0,

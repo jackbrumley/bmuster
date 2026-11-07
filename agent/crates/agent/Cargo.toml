@@ -25,6 +25,8 @@ serde_json.workspace = true
 sha2.workspace = true
 rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-platform-verifier = "=0.7.1"
+# Already in the build through rustls; used directly to read a certificate's public key for pinning.
+webpki = { package = "rustls-webpki", version = "=0.103.16", default-features = false, features = ["alloc"] }
 sysinfo = { version = "=0.38.4", default-features = false, features = ["system", "disk", "network"] }
 tungstenite = { version = "=0.30.0", default-features = false, features = ["handshake", "rustls-tls-native-roots"] }
 ureq = { version = "=3.5.1", default-features = false, features = ["rustls-no-provider", "platform-verifier", "win-system-proxy"] }

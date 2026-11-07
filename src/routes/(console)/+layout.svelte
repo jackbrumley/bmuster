@@ -5,6 +5,6 @@
 	let { data, children }: LayoutProps = $props();
 </script>
 
-<ShellFrame user={data.user}>
+<ShellFrame user={data.user} localNetworkMode={data.localNetworkMode}>
 	{@render children()}
 </ShellFrame>

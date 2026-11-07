@@ -15,6 +15,13 @@
       "when": 1794012679309,
       "tag": "0001_shallow_dust",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794015551008,
+      "tag": "0002_foamy_wild_pack",
+      "breakpoints": true
     }
   ]
 }

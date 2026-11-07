@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { AgentDownload } from '#lib/domain/machines/agent-release.ts';
+import type { LocalTlsStatus } from '#lib/domain/settings/local-tls.ts';
 import AddMachine from './add-machine.svelte';
 
 const ORIGIN = 'https://bmuster.example';
@@ -49,8 +50,21 @@ function stubJoinCodes(): { bodies: unknown[] } {
 	return { bodies };
 }
 
-async function renderPage(downloads: AgentDownload[], devServer: boolean) {
-	return render(AddMachine, { origin: ORIGIN, downloads, devServer });
+const PUBLIC_TLS: LocalTlsStatus = { on: false, restartNeeded: false, served: { kind: 'none' } };
+const PIN = `sha256:${'A'.repeat(43)}=`;
+const FINGERPRINT = Array.from({ length: 32 }, () => 'AB').join(':');
+const LOCAL_TLS: LocalTlsStatus = {
+	on: true,
+	restartNeeded: false,
+	served: { kind: 'pin', pin: PIN, fingerprint: FINGERPRINT }
+};
+
+async function renderPage(
+	downloads: AgentDownload[],
+	devServer: boolean,
+	localTls: LocalTlsStatus = PUBLIC_TLS
+) {
+	return render(AddMachine, { origin: ORIGIN, downloads, devServer, localTls });
 }
 
 function manualSection(container: HTMLElement): HTMLDetailsElement {
@@ -163,6 +177,89 @@ describe('Add machine: install manually', () => {
 				screen.getByText(
 					`chmod +x bmuster-agent && sudo ./bmuster-agent install --url ${ORIGIN} --code RLL-OUT-234`
 				)
+			)
+			.toBeVisible();
+	});
+});
+
+describe('Add machine: local network mode', () => {
+	it('L5: shows the pin and the browser fingerprint, and every command carries the pin', async () => {
+		const { bodies } = stubJoinCodes();
+		const screen = await renderPage(DOWNLOADS, false, LOCAL_TLS);
+		await expect.element(screen.getByText(PIN, { exact: true }).first()).toBeVisible();
+		await expect.element(screen.getByText(FINGERPRINT)).toBeVisible();
+		await expect
+			.element(screen.getByText(/against your browser's certificate details/))
+			.toBeVisible();
+
+		await screen.getByRole('button', { name: 'Make a join code' }).click();
+		// L6: the download itself is pinned (curl --pinnedpubkey), and the agent gets --pin-cert.
+		await expect
+			.element(
+				screen.getByText(
+					`curl -fsSL --pinnedpubkey 'sha256//${'A'.repeat(43)}=' -k ${ORIGIN}/install.sh | sudo sh -s -- --code ABC-DEF-GHJ --pin-cert ${PIN}`
+				)
+			)
+			.toBeVisible();
+		await screen.getByText('Install manually').click();
+		await expect
+			.element(
+				screen.getByText(
+					`chmod +x bmuster-agent && sudo ./bmuster-agent install --url ${ORIGIN} --code ABC-DEF-GHJ --pin-cert ${PIN}`
+				)
+			)
+			.toBeVisible();
+
+		await screen.getByRole('button', { name: 'Windows' }).click();
+		await expect
+			.element(
+				screen.getByText(
+					`& ([scriptblock]::Create((curl.exe -fsSL --pinnedpubkey 'sha256//${'A'.repeat(43)}=' -k ${ORIGIN}/install.ps1) -join "\`n")) -Code ABC-DEF-GHJ -PinCert '${PIN}'`
+				)
+			)
+			.toBeVisible();
+		await expect
+			.element(
+				screen.getByText(
+					`.\\bmuster-agent.exe install --url ${ORIGIN} --code ABC-DEF-GHJ --pin-cert '${PIN}'`
+				)
+			)
+			.toBeVisible();
+		await screen.getByRole('button', { name: 'Make a roll-out code' }).click();
+		await expect
+			.element(
+				screen.getByText(
+					`.\\bmuster-agent.exe install --url ${ORIGIN} --code RLL-OUT-234 --pin-cert '${PIN}'`
+				)
+			)
+			.toBeVisible();
+		expect(bodies).toHaveLength(2);
+	});
+
+	it('L5: without local network mode no command carries a pin', async () => {
+		stubJoinCodes();
+		const screen = await renderPage(DOWNLOADS, false);
+		await screen.getByRole('button', { name: 'Make a join code' }).click();
+		await expect
+			.element(
+				screen.getByText(`curl -fsSL ${ORIGIN}/install.sh | sudo sh -s -- --code ABC-DEF-GHJ`)
+			)
+			.toBeVisible();
+		expect(screen.container.textContent).not.toContain('--pin-cert');
+	});
+
+	it('L4: says to restart when the mode is on but the server is not serving its certificate yet', async () => {
+		stubJoinCodes();
+		const screen = await renderPage(DOWNLOADS, false, {
+			on: true,
+			restartNeeded: true,
+			served: { kind: 'none' }
+		});
+		await expect.element(screen.getByText(/Restart\s+BMuster to apply it/)).toBeVisible();
+		await screen.getByRole('button', { name: 'Make a join code' }).click();
+		await expect
+			.element(
+				screen.getByText(`curl -fsSL ${ORIGIN}/install.sh | sudo sh -s -- --code ABC-DEF-GHJ`)
 			)
 			.toBeVisible();
 	});

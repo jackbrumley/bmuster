@@ -8,39 +8,35 @@
 		IconRefresh
 	} from '@tabler/icons-svelte-runes';
 	import CopyField from '#lib/ui/copy-field.svelte';
-	import type { AgentDownload } from '#lib/domain/machines/agent-release.ts';
+	import { oneLineInstallCommand, type AgentDownload } from '#lib/domain/machines/agent-release.ts';
 	import type { OsFamily } from '#lib/domain/machines/machine.ts';
+	import { installPin, type LocalTlsStatus } from '#lib/domain/settings/local-tls.ts';
+	import CertificatePin from './certificate-pin.svelte';
 	import InstallManually from './install-manually.svelte';
 	import { makeJoinCode, type CodeState } from './join-code.ts';
 
 	/**
 	 * Add machine (SPEC-ENROLMENT 4): a join code and the one-line install
 	 * command, with a manual install underneath (SPEC-INSTALL-OPTIONS M1–M4).
+	 * In local network mode the commands carry the certificate pin (L5, L6).
 	 */
 	let {
 		origin,
 		downloads,
-		devServer
+		devServer,
+		localTls
 	}: {
 		/** This server's address, as the machine will reach it. */
 		origin: string;
 		downloads: AgentDownload[];
 		/** Running under `npm run dev`: hints name the developer's commands. */
 		devServer: boolean;
+		localTls: LocalTlsStatus;
 	} = $props();
 
 	let joinCode = $state<CodeState>({ kind: 'none' });
 	let target = $state<OsFamily>('linux');
-
-	function commandFor(code: string): string {
-		switch (target) {
-			case 'linux':
-			case 'macos':
-				return `curl -fsSL ${origin}/install.sh | sudo sh -s -- --code ${code}`;
-			case 'windows':
-				return `& ([scriptblock]::Create((irm ${origin}/install.ps1))) -Code ${code}`;
-		}
-	}
+	const pin = $derived(installPin(localTls));
 
 	const targets: { id: OsFamily; label: string; icon: typeof IconBrandUbuntu }[] = [
 		{ id: 'linux', label: 'Linux', icon: IconBrandUbuntu },
@@ -109,6 +105,10 @@
 		{/each}
 	</div>
 
+	{#if localTls.on}
+		<CertificatePin {localTls} />
+	{/if}
+
 	{#if target === 'macos'}
 		<p class="hint">The macOS agent is not built yet.</p>
 	{:else if joinCode.kind === 'ready'}
@@ -116,11 +116,14 @@
 			<p class="label">
 				{target === 'windows' ? 'Run in PowerShell as administrator' : 'Run in a terminal'}
 			</p>
-			<CopyField value={commandFor(joinCode.code)} label="install command" />
+			<CopyField
+				value={oneLineInstallCommand(target, origin, joinCode.code, pin)}
+				label="install command"
+			/>
 		</div>
 	{/if}
 
-	<InstallManually os={target} {origin} {joinCode} {downloads} {devServer} />
+	<InstallManually os={target} {origin} {joinCode} {downloads} {devServer} {pin} />
 </section>
 
 <style>

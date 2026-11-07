@@ -7,7 +7,7 @@ import { getSetting, listSettings, updateSetting } from './settings.ts';
 
 describe('server settings (S16)', () => {
 	it('declares each setting once, with a default its own type accepts, changed by admins', () => {
-		expect(SETTING_KEYS).toEqual(['defaultConsent', 'connectedNotice']);
+		expect(SETTING_KEYS).toEqual(['defaultConsent', 'connectedNotice', 'localNetworkMode']);
 		for (const key of SETTING_KEYS) {
 			const definition = SETTING_DEFINITIONS[key];
 			expect(definition.schema.safeParse(definition.defaultValue).success, key).toBe(true);
@@ -15,10 +15,16 @@ describe('server settings (S16)', () => {
 		}
 	});
 
-	it('starts with new rules unattended and the notice on', () => {
+	it('starts with new rules unattended, the notice on and local network mode off (L1)', () => {
 		const database = testDatabase();
 		expect(getSetting(database, 'defaultConsent')).toBe('unattended');
 		expect(getSetting(database, 'connectedNotice')).toBe(true);
+		expect(getSetting(database, 'localNetworkMode')).toBe(false);
+		expect(SETTING_DEFINITIONS.localNetworkMode).toMatchObject({
+			label: 'Local network mode',
+			section: 'security',
+			control: { kind: 'local-network-mode' }
+		});
 		expect(listSettings(database).every((setting) => setting.isDefault)).toBe(true);
 	});
 

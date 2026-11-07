@@ -6,6 +6,7 @@
 		IconDeviceDesktop,
 		IconFolder,
 		IconInfoCircle,
+		IconSettings,
 		IconTerminal2
 	} from '@tabler/icons-svelte-runes';
 	import OsIcon from '#lib/ui/os-icon.svelte';
@@ -28,7 +29,12 @@
 			label: 'Desktop',
 			icon: IconDeviceDesktop
 		},
-		{ href: resolve('/(console)/machines/[id]/files', params), label: 'Files', icon: IconFolder }
+		{ href: resolve('/(console)/machines/[id]/files', params), label: 'Files', icon: IconFolder },
+		{
+			href: resolve('/(console)/machines/[id]/manage', params),
+			label: 'Manage',
+			icon: IconSettings
+		}
 	]);
 </script>
 

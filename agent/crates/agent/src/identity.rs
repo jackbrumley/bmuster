@@ -1,17 +1,19 @@
 //! The machine's identity: its Ed25519 key, and what enrolment returned.
 
-use crate::client::{Reply, ServerUrl, TlsMode, Transport};
+use crate::client::{Reply, Security, ServerUrl, TlsMode, Transport};
 use crate::inventory;
 use crate::paths::{IDENTITY_FILE, KEY_FILE};
 use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::{
-    decode_public_key, encode_public_key, EnrolReply, EnrolRequest, ENROL_PATH,
+    decode_public_key, encode_public_key, CertificatePin, EnrolReply, EnrolRequest, ServerTrust,
+    ENROL_PATH,
 };
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write as _;
 use std::path::Path;
+use std::sync::Mutex;
 
 /// Bounds on the check-in interval the server may set.
 pub const MIN_CHECK_IN_SECONDS: u32 = 10;
@@ -26,6 +28,31 @@ pub struct Identity {
     pub server_url: String,
     pub server_public_key: String,
     pub check_in_seconds: u32,
+    /// Local network mode: the only server certificate key this agent
+    /// accepts. Absent: the system's trust store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_pin: Option<CertificatePin>,
+    /// A certificate change the server announced, not yet seen working.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_pin: Option<ServerTrust>,
+}
+
+impl Identity {
+    /// How this agent checks the server's certificate.
+    pub fn server_trust(&self) -> ServerTrust {
+        match self.server_pin {
+            Some(pin) => ServerTrust::Pin { pin },
+            None => ServerTrust::Public,
+        }
+    }
+
+    pub fn set_server_trust(&mut self, current: ServerTrust, next: Option<ServerTrust>) {
+        self.server_pin = match current {
+            ServerTrust::Pin { pin } => Some(pin),
+            ServerTrust::Public => None,
+        };
+        self.next_pin = next;
+    }
 }
 
 pub fn check_interval(seconds: u32) -> Result<u32> {
@@ -173,6 +200,21 @@ pub fn save(dir: &Path, identity: &Identity) -> Result<()> {
     write_private(&identity_path(dir), &json)
 }
 
+/// Serialises read-change-write of identity.json between the check-in loop
+/// (interval) and the live socket (certificate pins).
+static UPDATES: Mutex<()> = Mutex::new(());
+
+/// Changes identity.json in place and saves it.
+pub fn update(dir: &Path, change: impl FnOnce(&mut Identity)) -> Result<Identity> {
+    let _guard = UPDATES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut identity = load(dir)?;
+    change(&mut identity);
+    save(dir, &identity)?;
+    Ok(identity)
+}
+
 pub struct EnrolOptions<'a> {
     pub url: &'a str,
     pub code: &'a str,
@@ -210,27 +252,33 @@ pub fn enrol(dir: &Path, options: &EnrolOptions<'_>) -> Result<Identity> {
     };
     let body = serde_json::to_vec(&request)?;
 
-    let transport = Transport::new(server.clone(), options.tls)?;
+    let transport = Transport::new(server.clone(), Security::once(options.tls));
     log::info!("Enrolling with {} as \"{}\"", server.base(), request.name);
-    let reply: EnrolReply = match transport.post(ENROL_PATH, &body, None, |_| {})? {
-        Reply::Ok(reply) => reply,
-        Reply::Refused(refusal) => bail!(
-            "the server refused enrolment: {} ({})",
-            refusal.message,
-            refusal.reason
-        ),
-    };
+    let reply: EnrolReply =
+        match transport.exchange(|channel| channel.post(ENROL_PATH, &body, None, |_| {}))? {
+            Reply::Ok(reply) => reply,
+            Reply::Refused(refusal) => bail!(
+                "the server refused enrolment: {} ({})",
+                refusal.message,
+                refusal.reason
+            ),
+        };
     if reply.machine_id.trim().is_empty() {
         bail!("the server's enrolment reply has an empty machineId");
     }
     decode_public_key(&reply.server_public_key)
         .context("the server's enrolment reply has a bad serverPublicKey")?;
-    let identity = Identity {
+    let mut identity = Identity {
         machine_id: reply.machine_id,
         server_url: server.base(),
         server_public_key: reply.server_public_key,
         check_in_seconds: check_interval(reply.check_in_seconds)?,
+        server_pin: None,
+        next_pin: None,
     };
+    if let TlsMode::Checked(trust) = options.tls {
+        identity.set_server_trust(trust, None);
+    }
     save(dir, &identity)?;
     log::info!(
         "Enrolled as machine {}; identity saved in {}",
@@ -265,9 +313,14 @@ mod tests {
             server_url: "https://example.com".into(),
             server_public_key: encode_public_key(&SigningKey::from_bytes(&[9; 32]).verifying_key()),
             check_in_seconds: 60,
+            server_pin: None,
+            next_pin: None,
         };
         save(dir.path(), &identity).unwrap();
         assert_eq!(load(dir.path()).unwrap(), identity);
+        // Without a pin the file has no pin fields (as written before pinning existed).
+        let text = fs::read_to_string(identity_path(dir.path())).unwrap();
+        assert!(!text.contains("Pin"));
 
         let key = load_or_create_key(dir.path()).unwrap();
         assert_eq!(load_key(dir.path()).unwrap().to_bytes(), key.to_bytes());
@@ -283,6 +336,35 @@ mod tests {
             fs::set_permissions(&key_path, fs::Permissions::from_mode(0o644)).unwrap();
             assert!(load_key(dir.path()).is_err());
         }
+    }
+
+    #[test]
+    fn pins_are_stored_in_identity_json() {
+        let dir = tempfile::tempdir().unwrap();
+        prepare_data_dir(dir.path()).unwrap();
+        let pin =
+            CertificatePin::parse("sha256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=").unwrap();
+        let mut identity = Identity {
+            machine_id: "m".into(),
+            server_url: "https://192.168.1.20:3000".into(),
+            server_public_key: encode_public_key(&SigningKey::from_bytes(&[9; 32]).verifying_key()),
+            check_in_seconds: 60,
+            server_pin: None,
+            next_pin: None,
+        };
+        identity.set_server_trust(ServerTrust::Pin { pin }, Some(ServerTrust::Public));
+        save(dir.path(), &identity).unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(identity_path(dir.path())).unwrap()).unwrap();
+        assert_eq!(json["serverPin"], pin.to_string());
+        assert_eq!(json["nextPin"], serde_json::json!({ "kind": "public" }));
+
+        let updated = update(dir.path(), |identity| {
+            identity.set_server_trust(ServerTrust::Public, None);
+        })
+        .unwrap();
+        assert_eq!(updated.server_trust(), ServerTrust::Public);
+        assert_eq!(load(dir.path()).unwrap(), updated);
     }
 
     #[test]

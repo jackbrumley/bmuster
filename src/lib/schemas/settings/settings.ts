@@ -18,3 +18,6 @@ const settingViewSchema = z.object({
 });
 
 export const settingsReplySchema = z.object({ settings: z.array(settingViewSchema) });
+
+/** POST /api/local-certificate (SPEC-INSTALL-OPTIONS L7). */
+export const renewCertificateReplySchema = z.object({ renewed: z.literal(true) });

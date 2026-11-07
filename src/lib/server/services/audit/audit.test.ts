@@ -4,6 +4,7 @@ import { addTestUser, CLIENT, NOW, PASSWORD } from '#tests/helpers/people.ts';
 import { addProvider, deleteProvider, updateProvider } from '../auth/identity-providers.ts';
 import { signInWithPassword } from '../auth/password-sign-in.ts';
 import { signOut } from '../auth/sessions.ts';
+import { updateSetting } from '../settings/settings.ts';
 import { activityFeed } from '../users/activity-feed.ts';
 import { addUser, disableUser, setRole } from '../users/users.ts';
 import { listAudit } from './audit.ts';
@@ -115,5 +116,30 @@ describe('audit log (S13)', () => {
 			['sign-in-failed', { kind: 'system' }]
 		]);
 		expect(feed[0]?.detail).toContainEqual({ label: 'method', value: 'password' });
+	});
+
+	it('L8: turning local network mode on and off is audited', async () => {
+		const database = testDatabase();
+		const admin = await addTestUser(database, {
+			email: 'jack@example.com',
+			role: 'admin',
+			password: null
+		});
+		updateSetting(database, admin.id, 'localNetworkMode', true, NOW);
+		updateSetting(database, admin.id, 'localNetworkMode', false, NOW + 1);
+		expect(listAudit(database, 10)).toEqual([
+			expect.objectContaining({
+				kind: 'setting-changed',
+				actorUserId: admin.id,
+				target: 'Local network mode',
+				detail: { from: 'true', to: 'false' }
+			}),
+			expect.objectContaining({
+				kind: 'setting-changed',
+				actorUserId: admin.id,
+				target: 'Local network mode',
+				detail: { from: 'false', to: 'true' }
+			})
+		]);
 	});
 });

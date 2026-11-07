@@ -5,6 +5,7 @@ use crate::client::TlsMode;
 use crate::identity::{self, EnrolOptions};
 use crate::paths;
 use anyhow::{bail, Context as _, Result};
+use bmuster_protocol::ServerTrust;
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
@@ -104,7 +105,7 @@ fn copy_binary() -> Result<()> {
     Ok(())
 }
 
-pub fn install(url: &str, code: &str, name: Option<&str>) -> Result<()> {
+pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) -> Result<()> {
     require_root()?;
     require_systemd()?;
     if Path::new(UNIT_PATH).exists() {
@@ -119,7 +120,7 @@ pub fn install(url: &str, code: &str, name: Option<&str>) -> Result<()> {
             url,
             code,
             name,
-            tls: TlsMode::Verify,
+            tls: TlsMode::Checked(trust),
         },
     )?;
     fs::write(UNIT_PATH, unit_file()).with_context(|| format!("could not write {UNIT_PATH}"))?;

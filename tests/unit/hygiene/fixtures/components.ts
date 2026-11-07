@@ -75,6 +75,15 @@ export const componentFixtures: readonly RuleFixture[] = [
 	{
 		rule: 'destructive-request-confirmation',
 		bad: destructive(
+			"<script lang=\"ts\">\n\tasync function remove() {\n\t\tawait api('/api/machines/1', { method: 'DELETE' });\n\t}\n</script>"
+		),
+		good: destructive(
+			"<script lang=\"ts\">\n\tasync function remove() {\n\t\tif (!(await confirmByTyping({ title: 'Remove?', text: 'PC-1' }))) return;\n\t\tawait api('/api/machines/1', { method: 'DELETE' });\n\t}\n</script>"
+		)
+	},
+	{
+		rule: 'destructive-request-confirmation',
+		bad: destructive(
 			'<form method="POST" action="?/revoke"><button type="submit">Revoke</button></form>'
 		),
 		good: destructive(

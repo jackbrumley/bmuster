@@ -2,6 +2,7 @@
 export { auditEntries } from './schema/audit.ts';
 export { identityProviders } from './schema/identity-providers.ts';
 export { joinCodes } from './schema/join-codes.ts';
+export { localCertificates } from './schema/local-certificates.ts';
 export { machineInventory, machineStatus, machines } from './schema/machines.ts';
 export { serverKeys } from './schema/server-keys.ts';
 export { consoleSessions, signInFailures } from './schema/sessions.ts';

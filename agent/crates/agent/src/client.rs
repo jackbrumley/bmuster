@@ -1,19 +1,21 @@
-//! Talking to the server: the server URL, TLS, signed HTTP requests and the
-//! clock correction that keeps signed timestamps inside the server's window.
+//! Talking to the server: the server URL, the HTTP and socket clients (TLS is
+//! in `tls.rs`, trust changes in `trust.rs`), signed requests and the clock
+//! correction that keeps signed timestamps inside the server's window.
 
+use crate::tls::{self, Check};
+use crate::trust::{Trust, TrustState};
 use anyhow::{anyhow, bail, Context as _, Result};
+use bmuster_protocol::ServerTrust;
 use bmuster_protocol::{authorization_header, sign_request, Refusal};
 use ed25519_dalek::SigningKey;
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, CryptoProvider};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{ClientConfig, DigitallySignedStruct, SignatureScheme};
-use rustls_platform_verifier::BuilderVerifierExt as _;
+use rustls::crypto::CryptoProvider;
+use rustls::ClientConfig;
 use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ureq::http::Uri;
-use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
+use ureq::unversioned::resolver::DefaultResolver;
+use ureq::unversioned::transport::{ConnectProxyConnector, Connector as _, TcpConnector};
 
 pub const USER_AGENT: &str = concat!("bmuster-agent/", env!("CARGO_PKG_VERSION"));
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -118,91 +120,37 @@ fn is_loopback(host: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// TLS
+// Transport
 // ---------------------------------------------------------------------------
 
+/// How a command checks the server's certificate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TlsMode {
-    /// Certificates checked against the operating system's trust store.
-    Verify,
+    /// The system's trust store, or a pinned key (`--pin-cert`).
+    Checked(ServerTrust),
     /// `--insecure-dev-tls`: any certificate is accepted. Development only.
     InsecureDev,
 }
 
-fn crypto_provider() -> Arc<CryptoProvider> {
-    Arc::new(rustls::crypto::ring::default_provider())
+/// How a transport checks the server: a trust that can follow a planned
+/// certificate change (L7), or none at all (`--insecure-dev-tls`).
+pub enum Security {
+    Checked(Trust),
+    InsecureDev,
 }
 
-fn websocket_tls(mode: TlsMode, provider: Arc<CryptoProvider>) -> Result<Arc<ClientConfig>> {
-    let builder = ClientConfig::builder_with_provider(provider.clone())
-        .with_safe_default_protocol_versions()
-        .context("could not set up TLS")?;
-    let config = match mode {
-        TlsMode::Verify => builder
-            .with_platform_verifier()
-            .context("could not load the system's trusted certificates")?
-            .with_no_client_auth(),
-        TlsMode::InsecureDev => builder
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(AcceptAnyCertificate(provider)))
-            .with_no_client_auth(),
-    };
-    Ok(Arc::new(config))
-}
-
-/// Accepts any server certificate but still checks the handshake signatures.
-/// Only reachable through `--insecure-dev-tls`.
-#[derive(Debug)]
-struct AcceptAnyCertificate(Arc<CryptoProvider>);
-
-impl ServerCertVerifier for AcceptAnyCertificate {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &self.0.signature_verification_algorithms,
-        )
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &self.0.signature_verification_algorithms,
-        )
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.0.signature_verification_algorithms.supported_schemes()
+impl Security {
+    /// A one-off trust that is never saved (enrolment).
+    pub fn once(mode: TlsMode) -> Self {
+        match mode {
+            TlsMode::Checked(trust) => Security::Checked(Trust::new(
+                TrustState::new(trust, None),
+                Box::new(|_| Ok(())),
+            )),
+            TlsMode::InsecureDev => Security::InsecureDev,
+        }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Transport
-// ---------------------------------------------------------------------------
 
 /// What came back from the server.
 pub enum Reply<T> {
@@ -210,49 +158,32 @@ pub enum Reply<T> {
     Refused(Refusal),
 }
 
-/// HTTP and WebSocket settings for one server.
-pub struct Transport {
-    pub server: ServerUrl,
+/// HTTP and WebSocket clients for one way of checking the server.
+pub struct Channel {
+    server: ServerUrl,
     http: ureq::Agent,
     pub websocket_tls: Arc<ClientConfig>,
 }
 
-impl Transport {
-    pub fn new(server: ServerUrl, mode: TlsMode) -> Result<Self> {
-        if mode == TlsMode::InsecureDev {
-            log::warn!("**************************************************************");
-            log::warn!("--insecure-dev-tls: the server's certificate is NOT checked.");
-            log::warn!("Anyone on the network path can pretend to be the server.");
-            log::warn!("Use this only against a development server on your own machine.");
-            log::warn!("**************************************************************");
-        }
-        if !server.secure {
-            log::warn!(
-                "Talking to {} over plain http://; traffic is not encrypted.",
-                server.base()
-            );
-        }
-        let provider = crypto_provider();
-        let tls = TlsConfig::builder()
-            .provider(TlsProvider::Rustls)
-            .unversioned_rustls_crypto_provider(provider.clone())
-            .root_certs(RootCerts::PlatformVerifier)
-            .disable_verification(mode == TlsMode::InsecureDev)
-            .build();
+impl Channel {
+    fn new(server: &ServerUrl, check: Check, provider: Arc<CryptoProvider>) -> Result<Self> {
+        let config = tls::client_config(check, provider)?;
         // Proxies come from HTTPS_PROXY / ALL_PROXY / NO_PROXY, and on Windows
         // from the system proxy setting (ureq's default).
-        let http = ureq::Agent::config_builder()
+        let settings = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .max_redirects(0)
             .timeout_global(Some(HTTP_TIMEOUT))
             .user_agent(USER_AGENT)
-            .tls_config(tls)
-            .build()
-            .new_agent();
+            .build();
+        let connector =
+            ().chain(ConnectProxyConnector::default())
+                .chain(TcpConnector::default())
+                .chain(tls::RustlsConnector(config.clone()));
         Ok(Self {
-            server,
-            http,
-            websocket_tls: websocket_tls(mode, provider)?,
+            server: server.clone(),
+            http: ureq::Agent::with_parts(settings, connector, DefaultResolver::default()),
+            websocket_tls: config,
         })
     }
 
@@ -288,6 +219,80 @@ impl Transport {
             .read_to_string()
             .with_context(|| format!("could not read the reply from {url}"))?;
         parse_reply(status, &text).with_context(|| format!("unexpected reply from {url}"))
+    }
+}
+
+/// Talks to one server, checking its certificate the way `Security` says.
+pub struct Transport {
+    pub server: ServerUrl,
+    provider: Arc<CryptoProvider>,
+    security: Security,
+    /// The channel for the check last used; rebuilt when the check changes.
+    cached: Mutex<Option<(Check, Arc<Channel>)>>,
+}
+
+impl Transport {
+    pub fn new(server: ServerUrl, security: Security) -> Self {
+        match &security {
+            Security::InsecureDev => {
+                log::warn!("**************************************************************");
+                log::warn!("--insecure-dev-tls: the server's certificate is NOT checked.");
+                log::warn!("Anyone on the network path can pretend to be the server.");
+                log::warn!("Use this only against a development server on your own machine.");
+                log::warn!("**************************************************************");
+            }
+            Security::Checked(trust) => {
+                if let ServerTrust::Pin { pin } = trust.state().current {
+                    log::info!("Trusting only the server certificate key {pin}.");
+                }
+            }
+        }
+        if !server.secure {
+            log::warn!(
+                "Talking to {} over plain http://; traffic is not encrypted.",
+                server.base()
+            );
+        }
+        Self {
+            server,
+            provider: tls::crypto_provider(),
+            security,
+            cached: Mutex::new(None),
+        }
+    }
+
+    fn channel(&self, check: Check) -> Result<Arc<Channel>> {
+        let mut cached = lock(&self.cached);
+        if let Some((cached_check, channel)) = cached.as_ref() {
+            if *cached_check == check {
+                return Ok(Arc::clone(channel));
+            }
+        }
+        let channel = Arc::new(Channel::new(&self.server, check, self.provider.clone())?);
+        *cached = Some((check, Arc::clone(&channel)));
+        Ok(channel)
+    }
+
+    /// Runs one exchange with the server. If it fails under the current
+    /// certificate check and the server announced a change, it is tried once
+    /// more under the announced check, which is adopted if it works (L7).
+    pub fn exchange<T>(&self, mut attempt: impl FnMut(&Channel) -> Result<T>) -> Result<T> {
+        match &self.security {
+            Security::InsecureDev => attempt(&*self.channel(Check::AnyCertificate)?),
+            Security::Checked(trust) => {
+                trust.with_fallback(|check| attempt(&*self.channel(Check::Trust(*check))?))
+            }
+        }
+    }
+
+    /// The server announced the certificate it serves after its next restart.
+    pub fn announce(&self, next: ServerTrust) {
+        match &self.security {
+            Security::Checked(trust) => trust.announce(next),
+            Security::InsecureDev => {
+                log::debug!("Ignoring a certificate pin announcement (--insecure-dev-tls).");
+            }
+        }
     }
 }
 
@@ -476,9 +481,8 @@ mod tests {
     fn session() -> Session {
         let transport = Transport::new(
             ServerUrl::parse("https://example.com").unwrap(),
-            TlsMode::Verify,
-        )
-        .unwrap();
+            Security::once(TlsMode::Checked(ServerTrust::Public)),
+        );
         Session::new(transport, "m".into(), SigningKey::from_bytes(&[1; 32]))
     }
 

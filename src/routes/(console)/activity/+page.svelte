@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		IconAdjustments,
+		IconCertificate,
 		IconKey,
 		IconLogin2,
 		IconLogout,
@@ -41,6 +42,8 @@
 				return IconShieldLock;
 			case 'setting-changed':
 				return IconAdjustments;
+			case 'local-certificate-renewed':
+				return IconCertificate;
 		}
 	}
 </script>
