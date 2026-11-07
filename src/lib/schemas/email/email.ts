@@ -33,7 +33,7 @@ const hostSchema = z
 	.max(253)
 	.regex(/^[A-Za-z0-9.:[\]-]*$/, 'Enter a host name, such as smtp.example.com.');
 
-/** PUT /api/email/settings: every email setting at once (E1). The password is write-only. */
+/** PATCH /api/email/settings: every email setting at once (E1). The password is write-only. */
 export const updateEmailSettingsRequestSchema = z
 	.object({
 		enabled: z.boolean(),

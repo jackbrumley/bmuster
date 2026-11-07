@@ -83,7 +83,7 @@ function eventKindOf(row: RuleRow): NotificationEventKind {
 	return row.eventKind;
 }
 
-export function toRuleView(row: RuleRow, known: Names): NotificationRuleView {
+function toRuleView(row: RuleRow, known: Names): NotificationRuleView {
 	return {
 		id: row.id,
 		eventKind: eventKindOf(row),
