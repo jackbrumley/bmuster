@@ -107,6 +107,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bmuster-protocol",
+ "bmuster-service",
  "clap",
  "ed25519-dalek",
  "getrandom 0.2.17",
@@ -142,6 +143,15 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "bmuster-service"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "windows-service",
 ]
 
 [[package]]

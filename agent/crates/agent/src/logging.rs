@@ -9,7 +9,7 @@
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use std::collections::VecDeque;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::Write as _;
 use std::path::Path;
 use std::sync::Mutex;
@@ -39,10 +39,6 @@ pub fn recent_lines() -> Vec<String> {
         .cloned()
         .collect()
 }
-
-/// Above this size the file log is moved to `agent.log.old` at start-up.
-#[cfg_attr(not(windows), allow(dead_code))]
-const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
 
 enum Sink {
     Stderr,
@@ -135,17 +131,8 @@ pub fn init_stderr() -> Result<(), String> {
 /// File log for the Windows service, which has no console.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn init_file(path: &Path) -> Result<(), String> {
-    if let Ok(meta) = std::fs::metadata(path) {
-        if meta.len() > MAX_FILE_BYTES {
-            std::fs::rename(path, path.with_extension("log.old"))
-                .map_err(|e| format!("could not rotate {}: {e}", path.display()))?;
-        }
-    }
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|e| format!("could not open the log file {}: {e}", path.display()))?;
+    // Moved to `agent.log.old` at start-up once it is over 10 MB.
+    let file = bmuster_service::log_file::open_rotated(path)?;
     install(Logger {
         level: level_from_env()?,
         sink: Sink::File(Mutex::new(file)),

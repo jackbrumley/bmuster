@@ -6,6 +6,7 @@ use crate::identity::{self, EnrolOptions};
 use crate::paths;
 use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::ServerTrust;
+use bmuster_service::systemd::{require_root, require_systemd, Unit};
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
@@ -13,8 +14,9 @@ use std::process::Command;
 
 const INSTALL_DIR: &str = "/opt/bmuster";
 const BINARY: &str = "/opt/bmuster/bmuster-agent";
-const UNIT_NAME: &str = "bmuster-agent.service";
-const UNIT_PATH: &str = "/etc/systemd/system/bmuster-agent.service";
+const UNIT: Unit = Unit {
+    name: "bmuster-agent.service",
+};
 
 /// Exit code `run` uses when the machine was removed; systemd must not
 /// restart the agent for it.
@@ -69,32 +71,6 @@ pub fn require_admin() -> Result<()> {
     require_root()
 }
 
-fn require_root() -> Result<()> {
-    // SAFETY: geteuid has no preconditions and cannot fail.
-    if unsafe { libc::geteuid() } != 0 {
-        bail!("this command needs root; run it with sudo");
-    }
-    Ok(())
-}
-
-fn require_systemd() -> Result<()> {
-    if !Path::new("/run/systemd/system").is_dir() {
-        bail!("systemd is not running on this machine; BMuster needs it to run the agent");
-    }
-    Ok(())
-}
-
-fn systemctl(args: &[&str]) -> Result<()> {
-    let status = Command::new("systemctl")
-        .args(args)
-        .status()
-        .with_context(|| format!("could not run systemctl {}", args.join(" ")))?;
-    if !status.success() {
-        bail!("systemctl {} failed ({status})", args.join(" "));
-    }
-    Ok(())
-}
-
 fn copy_binary(source: Option<&Path>) -> Result<()> {
     let current = match source {
         Some(path) => path.to_path_buf(),
@@ -119,27 +95,26 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
     let data_dir = paths::default_data_dir()?;
     // A fresh install replaces any earlier agent completely (service, program,
     // identity), so a half-finished or old install never gets in the way.
-    let staged =
-        if Path::new(UNIT_PATH).exists() || Path::new(INSTALL_DIR).exists() || data_dir.exists() {
-            log::info!(
-                "Found an earlier BMuster agent on this machine; removing it before installing."
-            );
-            // This program may itself live in INSTALL_DIR, which uninstall deletes.
-            let staged =
-                std::env::temp_dir().join(format!("bmuster-agent-install-{}", std::process::id()));
-            let current = std::env::current_exe().context("could not find this program's path")?;
-            fs::copy(&current, &staged).with_context(|| {
-                format!(
-                    "could not copy {} to {}",
-                    current.display(),
-                    staged.display()
-                )
-            })?;
-            uninstall(true)?;
-            Some(staged)
-        } else {
-            None
-        };
+    let staged = if UNIT.exists() || Path::new(INSTALL_DIR).exists() || data_dir.exists() {
+        log::info!(
+            "Found an earlier BMuster agent on this machine; removing it before installing."
+        );
+        // This program may itself live in INSTALL_DIR, which uninstall deletes.
+        let staged =
+            std::env::temp_dir().join(format!("bmuster-agent-install-{}", std::process::id()));
+        let current = std::env::current_exe().context("could not find this program's path")?;
+        fs::copy(&current, &staged).with_context(|| {
+            format!(
+                "could not copy {} to {}",
+                current.display(),
+                staged.display()
+            )
+        })?;
+        uninstall(true)?;
+        Some(staged)
+    } else {
+        None
+    };
     let copied = copy_binary(staged.as_deref());
     if let Some(path) = &staged {
         let _ = fs::remove_file(path);
@@ -155,21 +130,15 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
             tls: TlsMode::Checked(trust),
         },
     )?;
-    fs::write(UNIT_PATH, unit_file()).with_context(|| format!("could not write {UNIT_PATH}"))?;
-    fs::set_permissions(UNIT_PATH, fs::Permissions::from_mode(0o644))?;
-    systemctl(&["daemon-reload"])?;
-    systemctl(&["enable", "--now", UNIT_NAME])?;
-    log::info!("Installed and started {UNIT_NAME}.");
+    UNIT.install(&unit_file())?;
+    log::info!("Installed and started {}.", UNIT.name);
     Ok(())
 }
 
 pub fn uninstall(purge: bool) -> Result<()> {
     require_root()?;
-    if Path::new(UNIT_PATH).exists() {
-        systemctl(&["disable", "--now", UNIT_NAME])?;
-        fs::remove_file(UNIT_PATH).with_context(|| format!("could not remove {UNIT_PATH}"))?;
-        systemctl(&["daemon-reload"])?;
-        log::info!("Removed {UNIT_NAME}.");
+    if UNIT.remove()? {
+        log::info!("Removed {}.", UNIT.name);
     }
     if Path::new(INSTALL_DIR).exists() {
         fs::remove_dir_all(INSTALL_DIR)
@@ -194,18 +163,11 @@ pub fn uninstall(purge: bool) -> Result<()> {
 
 /// Stops the service if it runs; returns whether it was running (`rejoin`).
 pub fn stop_service() -> Result<bool> {
-    if !Path::new(UNIT_PATH).exists() {
-        return Ok(false);
-    }
-    if service_state() != "active" {
-        return Ok(false);
-    }
-    systemctl(&["stop", UNIT_NAME])?;
-    Ok(true)
+    UNIT.stop_if_active()
 }
 
 pub fn start_service() -> Result<()> {
-    systemctl(&["start", UNIT_NAME])
+    UNIT.start()
 }
 
 /// The local page's Uninstall, from inside the service: the unit's sandbox
@@ -235,16 +197,7 @@ pub fn schedule_uninstall() -> Result<()> {
 
 /// One line about the service, for `status`.
 pub fn service_state() -> String {
-    if !Path::new(UNIT_PATH).exists() {
-        return "not installed".into();
-    }
-    match Command::new("systemctl")
-        .args(["is-active", UNIT_NAME])
-        .output()
-    {
-        Ok(output) => String::from_utf8_lossy(&output.stdout).trim().to_string(),
-        Err(e) => format!("unknown (could not run systemctl: {e})"),
-    }
+    UNIT.state()
 }
 
 #[cfg(test)]
