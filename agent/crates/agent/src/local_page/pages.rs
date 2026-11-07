@@ -124,7 +124,7 @@ pub fn sign_in(hostname: &str, problem: Option<&str>) -> String {
     let body = format!(
         r#"{problem}<section class="card">
 <h2>Sign in on {host}</h2>
-<p>Enter the 6-digit code from the BMuster console: open this machine, go to the <strong>Manage</strong> tab and choose <strong>Show local page code</strong>. The code changes every 30 seconds and works even while this machine is offline.</p>
+<p>Enter your 6-digit code from the BMuster console: open this machine, go to the <strong>Manage</strong> tab and choose <strong>Show local page code</strong>. Each person has their own code, and the server's Activity records whose code signed in. The code changes every 30 seconds and works even while this machine is offline.</p>
 <form method="post" action="/sign-in" class="fields">
 <label>Code <input class="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{{6,7}}" maxlength="7" required autofocus></label>
 <div><button class="primary" type="submit">Sign in</button></div>

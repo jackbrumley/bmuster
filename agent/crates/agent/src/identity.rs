@@ -3,7 +3,8 @@
 use crate::client::{Reply, Security, ServerUrl, TlsMode, Transport};
 use crate::inventory;
 use crate::paths::{
-    IDENTITY_FILE, KEY_FILE, LOCAL_PAGE_REPORTED_FILE, LOCAL_PAGE_SECRET_FILE, MOVE_PENDING_DIR,
+    IDENTITY_FILE, KEY_FILE, LOCAL_EVENTS_FILE, LOCAL_PAGE_REPORTED_FILE, LOCAL_PAGE_SECRET_FILE,
+    LOCAL_USERS_FILE, MOVE_PENDING_DIR,
 };
 use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::{
@@ -221,8 +222,9 @@ pub fn update(dir: &Path, change: impl FnOnce(&mut Identity)) -> Result<Identity
 /// identity in `move-pending` replace the current ones. Each rename is atomic
 /// and the folder goes last, so a crash part-way is finished at the next
 /// start. The local page's secret is dropped too: the old server knew it, so
-/// a new one is made and sent to the new server. Returns whether a move was
-/// pending.
+/// a new one is made and sent to the new server. The old server's list of
+/// people and any local page events it never received go with it. Returns
+/// whether a move was pending.
 pub fn finish_pending_move(dir: &Path) -> Result<bool> {
     let pending = dir.join(MOVE_PENDING_DIR);
     if !pending.is_dir() {
@@ -235,7 +237,12 @@ pub fn finish_pending_move(dir: &Path) -> Result<bool> {
                 .with_context(|| format!("could not move {} into place", staged.display()))?;
         }
     }
-    for name in [LOCAL_PAGE_SECRET_FILE, LOCAL_PAGE_REPORTED_FILE] {
+    for name in [
+        LOCAL_PAGE_SECRET_FILE,
+        LOCAL_PAGE_REPORTED_FILE,
+        LOCAL_USERS_FILE,
+        LOCAL_EVENTS_FILE,
+    ] {
         let path = dir.join(name);
         if path.exists() {
             fs::remove_file(&path)

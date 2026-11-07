@@ -15,6 +15,11 @@ pub const LOCAL_PAGE_REPORTED_FILE: &str = "local-page.reported";
 /// The local page's self-signed certificate (DER) and its private key (PKCS #8 DER, private).
 pub const LOCAL_PAGE_CERT_FILE: &str = "local-page.crt";
 pub const LOCAL_PAGE_KEY_FILE: &str = "local-page.key";
+/// The people who may sign in to the local page with their own code, from
+/// the server (private; SPEC-AGENT-LOCAL 7).
+pub const LOCAL_USERS_FILE: &str = "local-users.json";
+/// Local page events waiting to be sent to the server (private).
+pub const LOCAL_EVENTS_FILE: &str = "local-events.json";
 
 /// A move to another server enrols here first, with a fresh key.
 pub const MOVE_STAGING_DIR: &str = "move-staging";
