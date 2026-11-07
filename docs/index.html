@@ -23,22 +23,23 @@ canonical: https://bmuster.com/
 </header>
 
 <main class="page">
-  <section class="panel install" aria-label="Add a machine">
+  <section class="panel install" aria-label="Install the BMuster server">
     <div class="install-variants" role="group" aria-label="Operating system">
       <button type="button" class="install-variant-btn active" data-variant="linux" aria-pressed="true">Linux</button>
       <button type="button" class="install-variant-btn" data-variant="windows" aria-pressed="false">Windows</button>
     </div>
-    <p class="command-hint" id="install-variant-hint">Add a machine with one command in <strong>Terminal</strong>:</p>
+    <p class="command-hint" id="install-variant-hint">Install the server with one command in <strong>Terminal</strong>:</p>
     <div class="command-shell">
-      <code id="install-command">curl -fsSL https://bmuster.example.com/install.sh | sudo sh -s -- --code YOUR-JOIN-CODE</code>
+      <code id="install-command">curl -fsSL https://bmuster.com/install.sh | sudo sh</code>
       <button id="copy-command" class="copy-btn" type="button">Copy</button>
     </div>
     <p class="command-note command-note-center">
-      Your own BMuster server shows this command, with its address and a fresh join code, on <strong>Add machine</strong>.
+      Run it on the machine that will host BMuster: a Raspberry Pi, a virtual machine or a spare PC.
+      It installs BMuster as a service and shows the address to open.
     </p>
     <div class="panel-foot">
       <p class="command-note">
-        BMuster is in early development. There is no release to install yet; follow along on
+        BMuster is in early development. There is no release yet, so this command does not work yet; follow along on
         <a href="{{ site.repo_url }}">GitHub</a>.
       </p>
     </div>
@@ -66,13 +67,13 @@ canonical: https://bmuster.com/
     <div class="steps">
       <article class="step">
         <p class="step-kicker">Step 1</p>
-        <h3>Host the server</h3>
-        <p>Run BMuster on your own hardware: a small server, a virtual machine or a Raspberry Pi.</p>
+        <h3>Install the server</h3>
+        <p>Run the command above on a Raspberry Pi, a virtual machine or a spare PC, Linux or Windows. Then open it and create your admin account.</p>
       </article>
       <article class="step">
         <p class="step-kicker">Step 2</p>
         <h3>Add your machines</h3>
-        <p>Copy the one-line command from <strong>Add machine</strong> and run it on each computer. A join code links it to your server.</p>
+        <p>Your server's <strong>Add machine</strong> page gives a one-line command with a join code. Run it on each computer to install the agent.</p>
       </article>
       <article class="step">
         <p class="step-kicker">Step 3</p>
@@ -115,15 +116,15 @@ canonical: https://bmuster.com/
   const hint = document.getElementById("install-variant-hint");
   const variantButtons = document.querySelectorAll(".install-variant-btn");
 
-  // Example commands, in the same shape the console's Add machine page builds.
+  // Server install commands (docs/install.sh and docs/install.ps1, once the first release is out).
   const installVariants = {
     linux: {
-      command: "curl -fsSL https://bmuster.example.com/install.sh | sudo sh -s -- --code YOUR-JOIN-CODE",
-      hint: "Add a machine with one command in <strong>Terminal</strong>:",
+      command: "curl -fsSL https://bmuster.com/install.sh | sudo sh",
+      hint: "Install the server with one command in <strong>Terminal</strong>:",
     },
     windows: {
-      command: "& ([scriptblock]::Create((irm https://bmuster.example.com/install.ps1))) -Code YOUR-JOIN-CODE",
-      hint: "Add a machine with one command in <strong>PowerShell</strong>, run as administrator:",
+      command: "irm https://bmuster.com/install.ps1 | iex",
+      hint: "Install the server with one command in <strong>PowerShell</strong>, run as administrator:",
     },
   };
 
