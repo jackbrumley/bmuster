@@ -33,8 +33,14 @@ export const openSessionReplySchema = z.object({
 
 export type OpenSessionReply = z.infer<typeof openSessionReplySchema>;
 
-/** `POST /api/sessions/[id]/browser-ticket`: a fresh ticket to reattach after a reload. */
-export const browserTicketReplySchema = z.object({ browserTicket: z.string().min(1) });
+/**
+ * `POST /api/sessions/[id]/browser-ticket`: a fresh ticket to reattach after
+ * a reload, or how the session ended.
+ */
+export const browserTicketReplySchema = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('issued'), browserTicket: z.string().min(1) }),
+	z.object({ kind: z.literal('ended'), message: z.string() })
+]);
 
 export type BrowserTicketReply = z.infer<typeof browserTicketReplySchema>;
 
@@ -67,5 +73,3 @@ export const agentSessionEventSchema = z.discriminatedUnion('type', [
 		timedOut: z.boolean()
 	})
 ]);
-
-export type AgentSessionEvent = z.infer<typeof agentSessionEventSchema>;

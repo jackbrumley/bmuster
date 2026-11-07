@@ -18,7 +18,7 @@ const TICKET_DOMAIN = 'BMUSTER-TICKET-1';
 /** How long the agent has to start the session. */
 export const TICKET_LIFETIME_MS = 60_000;
 
-export type TicketPurpose =
+type TicketPurpose =
 	| { kind: 'terminal'; shell: TerminalShell; cols: number; rows: number }
 	| {
 			kind: 'exec';

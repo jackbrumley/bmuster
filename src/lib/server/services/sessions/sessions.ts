@@ -1,7 +1,11 @@
 import { shellsFor } from '#lib/domain/machines/machine.ts';
 import { endReasonLabel } from '#lib/domain/sessions/session.ts';
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
-import type { OpenSessionReply, OpenSessionRequest } from '#lib/schemas/sessions/sessions.ts';
+import type {
+	BrowserTicketReply,
+	OpenSessionReply,
+	OpenSessionRequest
+} from '#lib/schemas/sessions/sessions.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { permissionsFor } from '../access/access.ts';
 import { isAgentConnected, sendToAgent } from '../agents/live-agents.ts';
@@ -118,15 +122,12 @@ export function openTerminalSession(
 	return { kind: 'opened', reply: { sessionId, browserTicket } };
 }
 
-export type BrowserTicketResult =
-	{ kind: 'issued'; browserTicket: string } | { kind: 'ended'; message: string };
-
 /** A fresh browser ticket for this person's own running session (a reload reattaches). */
 export function browserTicketFor(
 	relay: Relay,
 	user: ConsoleUser,
 	sessionId: string
-): BrowserTicketResult {
+): BrowserTicketReply {
 	const browserTicket = relay.issueBrowserTicket(sessionId, user.id);
 	if (browserTicket !== undefined) {
 		return { kind: 'issued', browserTicket };

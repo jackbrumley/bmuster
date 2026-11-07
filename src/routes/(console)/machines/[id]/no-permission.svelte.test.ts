@@ -54,7 +54,7 @@ describe('machine tabs without the permission (SPEC-ACCESS A6)', () => {
 			TerminalTab,
 			props([...VIEW_ONLY, { permission: 'terminal', consent: 'ask' }])
 		);
-		await expect.element(terminal.getByLabelText('Command')).toBeVisible();
+		await expect.element(terminal.getByRole('group', { name: 'Shell' })).toBeVisible();
 		expect(terminal.container.textContent).not.toContain(NO_PERMISSION);
 		await terminal.unmount();
 		const desktop = await render(
