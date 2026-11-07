@@ -475,6 +475,11 @@ export function areChosenMachineGroups(database: Queryable, groupIds: readonly s
 	});
 }
 
+/** The chosen groups a machine is in, removed machines included (for notification scopes). */
+export function machineGroupIdsOf(database: Queryable, machineId: string): string[] {
+	return machineStore.groupIdsOf(database, machineId);
+}
+
 /**
  * Puts a newly enrolled machine into the groups its join code named (A7).
  * Groups deleted since the code was made, and All machines, are skipped.

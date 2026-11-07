@@ -16,6 +16,7 @@
 		type SettingView
 	} from '#lib/domain/settings/settings-definitions.ts';
 	import LocalNetworkMode from './local-network-mode.svelte';
+	import SettingsTabs from './settings-tabs.svelte';
 	import type { PageProps } from './$types';
 
 	/** Server settings (SPEC-SIGN-IN S16): each one saves when changed, and is audited. */
@@ -93,6 +94,8 @@
 	summary="How this server behaves. Every change is in Activity."
 	actions={undefined}
 />
+
+<SettingsTabs />
 
 {#snippet settingRow(setting: SettingView)}
 	{@const definition = SETTING_DEFINITIONS[setting.key]}

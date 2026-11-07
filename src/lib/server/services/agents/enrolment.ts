@@ -9,6 +9,7 @@ import {
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { joinGroupsAtEnrolment } from '../access/groups.ts';
 import { recordAudit } from '../audit/audit.ts';
+import { raiseNotification } from '../notifications/events.ts';
 import { isRefusal, type AgentRefusal } from './agent-refusal.ts';
 import { redeemJoinCode, type RedeemedCode } from './join-codes.ts';
 import { disconnectAgent } from './live-agents.ts';
@@ -78,6 +79,17 @@ function enrolNew(
 		})
 		.run();
 	const groups = joinGroupsAtEnrolment(tx, machineId, redeemed.machineGroupIds);
+	const system = `${request.osFamily} (${request.target})`;
+	const groupList = groups.length === 0 ? 'none' : groups.join(', ');
+	raiseNotification(
+		tx,
+		{
+			kind: 'machine-enrolled',
+			machineId,
+			detail: { machineName: request.name, hostname: request.hostname, system, groups: groupList }
+		},
+		now
+	);
 	recordAudit(
 		tx,
 		{
@@ -87,9 +99,9 @@ function enrolNew(
 			machineId,
 			detail: {
 				hostname: request.hostname,
-				system: `${request.osFamily} (${request.target})`,
+				system,
 				code: redeemed.maxUses === 1 ? 'single use' : 'roll-out',
-				groups: groups.length === 0 ? 'none' : groups.join(', ')
+				groups: groupList
 			}
 		},
 		now

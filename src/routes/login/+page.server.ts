@@ -7,6 +7,7 @@ import { signInClient } from '#lib/server/services/auth/client.ts';
 import { signInProviders } from '#lib/server/services/auth/identity-providers.ts';
 import { signInWithPassword, WRONG_DETAILS } from '#lib/server/services/auth/password-sign-in.ts';
 import { SESSION_COOKIE, sessionCookieOptions } from '#lib/server/services/auth/sessions.ts';
+import { emailReadiness } from '#lib/server/services/settings/email-settings.ts';
 import { formText } from '#lib/utils/form-data.ts';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -16,7 +17,12 @@ export const load: PageServerLoad = page.public(({ locals, url }) => {
 	if (locals.session.kind === 'signed-in') {
 		redirect(303, returnTo);
 	}
-	return { providers: signInProviders(database), returnTo };
+	return {
+		providers: signInProviders(database),
+		returnTo,
+		// Forgot password is offered only when the server can send the email (SPEC-EMAIL E4).
+		canResetByEmail: emailReadiness(database).kind === 'ready'
+	};
 });
 
 export const actions = {

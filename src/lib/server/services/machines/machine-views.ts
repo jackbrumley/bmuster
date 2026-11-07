@@ -9,6 +9,7 @@ import type {
 import { machineInventory, machineStatus, machines } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
+import { raiseNotification } from '../notifications/events.ts';
 import { disconnectAgent, isAgentConnected, liveFigures } from '../agents/live-agents.ts';
 import { sessionRelay } from '../sessions/relay.ts';
 
@@ -100,6 +101,15 @@ export function removeMachine(
 			.set({ removedAt: new Date(now) })
 			.where(eq(machines.id, id))
 			.run();
+		raiseNotification(
+			tx,
+			{
+				kind: 'machine-removed',
+				machineId: id,
+				detail: { machineName: row.name, hostname: row.hostname, removedByUserId: removedBy }
+			},
+			now
+		);
 		recordAudit(
 			tx,
 			{

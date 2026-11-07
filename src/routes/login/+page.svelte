@@ -78,6 +78,9 @@
 		/>
 		<Button variant="primary" size="large" type="submit" onclick={undefined}>Sign in</Button>
 	</form>
+	{#if data.canResetByEmail}
+		<p class="forgot"><a href={resolve('/login/forgot')}>Forgot your password?</a></p>
+	{/if}
 </PublicPage>
 
 <style>
@@ -113,6 +116,16 @@
 	.form {
 		display: grid;
 		gap: var(--space-4);
+	}
+
+	.forgot {
+		margin-top: var(--space-4);
+		font-size: var(--text-sm);
+		text-align: center;
+	}
+
+	.forgot a {
+		color: var(--brand);
 	}
 
 	.problem {

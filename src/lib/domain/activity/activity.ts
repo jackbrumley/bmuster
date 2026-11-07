@@ -52,7 +52,17 @@ const AUDIT_KINDS = [
 	'access-rule-changed',
 	'access-rule-deleted',
 	'session-opened',
-	'session-ended'
+	'session-ended',
+	// SPEC-EMAIL
+	'email-sent',
+	'email-failed',
+	'password-reset-requested',
+	'password-reset',
+	'invitation-created',
+	'invitation-accepted',
+	'notification-rule-added',
+	'notification-rule-changed',
+	'notification-rule-deleted'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -177,5 +187,23 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Opened a terminal';
 		case 'session-ended':
 			return 'Closed a terminal';
+		case 'email-sent':
+			return 'Sent an email';
+		case 'email-failed':
+			return 'Could not send an email';
+		case 'password-reset-requested':
+			return 'Asked for a password reset';
+		case 'password-reset':
+			return 'Reset a password by email';
+		case 'invitation-created':
+			return 'Invited someone to set a password';
+		case 'invitation-accepted':
+			return 'Accepted an invitation';
+		case 'notification-rule-added':
+			return 'Added a notification rule';
+		case 'notification-rule-changed':
+			return 'Changed a notification rule';
+		case 'notification-rule-deleted':
+			return 'Deleted a notification rule';
 	}
 }

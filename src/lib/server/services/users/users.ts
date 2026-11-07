@@ -115,6 +115,17 @@ export function enabledAdmins(database: Queryable): { id: string; name: string }
 		.all();
 }
 
+/** The providers someone has signed in with, by name (none for a password-only account). */
+export function providerNamesOf(database: Queryable, userId: string): string[] {
+	return database
+		.select({ providerName: identityProviders.name })
+		.from(userIdentities)
+		.innerJoin(identityProviders, eq(identityProviders.id, userIdentities.providerId))
+		.where(eq(userIdentities.userId, userId))
+		.all()
+		.map((row) => row.providerName);
+}
+
 /** Names by id: actors on the Activity page, note authors on a machine. */
 export function userNames(database: Queryable, ids: string[]): Map<string, string> {
 	if (ids.length === 0) {

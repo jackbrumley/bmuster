@@ -68,6 +68,8 @@
 	},
 	"dependencies": {
 		"@node-rs/argon2": "2.2.2",
+		"@upyo/core": "0.6.0",
+		"@upyo/smtp": "0.6.0",
 		"better-sqlite3": "13.0.3",
 		"drizzle-orm": "0.45.4",
 		"openid-client": "6.8.9",

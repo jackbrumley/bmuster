@@ -1,13 +1,13 @@
 <script lang="ts">
 	import SegmentedControl from '#lib/ui/segmented-control.svelte';
 	import TextField from '#lib/ui/text-field.svelte';
-	import { MIN_PASSWORD_LENGTH } from '#lib/schemas/auth/sign-in.ts';
 	import type { ConsoleRole } from '#lib/domain/users/user.ts';
 
 	/**
 	 * The fields of the add and edit forms. `email` is read-only for someone a
-	 * provider signs in (the provider keeps it); `password` is offered only
-	 * where an admin may set one.
+	 * provider signs in (the provider keeps it); a password is offered only
+	 * where an admin may reset one. A new user's sign-in is chosen in
+	 * sign-in-choice.svelte.
 	 */
 	let {
 		name = $bindable(),
@@ -23,7 +23,9 @@
 		password: string;
 		emailEditable: { kind: 'yes' } | { kind: 'no'; providerNames: string[] };
 		passwordMode:
-			{ kind: 'optional-new' } | { kind: 'optional-reset' } | { kind: 'not-here'; reason: string };
+			| { kind: 'chosen-separately' }
+			| { kind: 'optional-reset' }
+			| { kind: 'not-here'; reason: string };
 	} = $props();
 
 	const roles: { value: ConsoleRole; label: string }[] = [
@@ -63,11 +65,9 @@
 <SegmentedControl label="Role" options={roles} bind:value={role} />
 {#if passwordMode.kind === 'not-here'}
 	<p class="hint">{passwordMode.reason}</p>
-{:else}
+{:else if passwordMode.kind === 'optional-reset'}
 	<TextField
-		label={passwordMode.kind === 'optional-new'
-			? `Password (optional, at least ${MIN_PASSWORD_LENGTH} characters)`
-			: `New password (leave empty to keep the current one)`}
+		label="New password (leave empty to keep the current one)"
 		name="password"
 		type="password"
 		autocomplete="new-password"
@@ -76,9 +76,6 @@
 		error={undefined}
 		bind:value={password}
 	/>
-	{#if passwordMode.kind === 'optional-new'}
-		<p class="hint">With no password they sign in through a provider, with this email.</p>
-	{/if}
 {/if}
 
 <style>

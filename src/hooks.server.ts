@@ -13,6 +13,7 @@ import {
 	startupServedCertificate
 } from '#lib/server/services/agents/local-tls.ts';
 import { applyFirstRunLocalNetworkMode, prepareFirstRun } from '#lib/server/services/auth/setup.ts';
+import { startEmailWorker } from '#lib/server/services/email/email-worker.ts';
 import { printToServerLog, serverSetupCode } from '#lib/server/services/auth/setup-code.ts';
 import { registerSocketRoutes } from '#lib/server/sockets/socket-registry.ts';
 import { SOCKET_ROUTES } from '#lib/server/sockets/socket-route-table.ts';
@@ -24,10 +25,11 @@ import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts
  * server.ts before the server takes requests; on a server with no users the
  * installer's local network mode default is applied first (SPEC-SERVER-INSTALL
  * I12), then the first admin is created from the environment, or a setup code
- * is printed (SPEC-SIGN-IN S17, S18). The dev server registers Vite's own
- * certificate. A built server also schedules the nightly database snapshot
- * (SPEC-HOSTING H3); the dev server does not, so it never writes backups
- * beside a developer's database.
+ * is printed (SPEC-SIGN-IN S17, S18); the email queue starts working
+ * (SPEC-EMAIL E3). The dev server registers Vite's own certificate. A
+ * built server also schedules the nightly database snapshot (SPEC-HOSTING
+ * H3); the dev server does not, so it never writes backups beside a
+ * developer's database.
  */
 export const init: ServerInit = async () => {
 	registerSocketRoutes(SOCKET_ROUTES);
@@ -41,6 +43,7 @@ export const init: ServerInit = async () => {
 	if (!dev && env.databasePath !== ':memory:') {
 		scheduleSnapshots(database.$client, env.databasePath, env.backupSchedule, printToServerLog);
 	}
+	startEmailWorker(database, env.secretsKey);
 };
 
 /**
