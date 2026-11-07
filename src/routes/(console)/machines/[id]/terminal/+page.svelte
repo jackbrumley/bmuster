@@ -322,6 +322,16 @@
 {/if}
 
 <style>
+	/*
+	 * xterm.js types through a hidden textarea. iPhones zoom the page in when a
+	 * text box under 16px gets focus, so tapping the terminal zoomed it; at the
+	 * base size (1rem, 16px) the page stays put. The box is invisible, so its
+	 * size changes nothing else.
+	 */
+	.session :global(.xterm-helper-textarea) {
+		font-size: var(--text-base);
+	}
+
 	.session {
 		position: relative;
 		display: grid;
