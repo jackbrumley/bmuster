@@ -3,6 +3,7 @@ import { database } from '../database/app-database.ts';
 import { isRefusal } from '../services/agents/agent-refusal.ts';
 import { authenticateAgent } from '../services/agents/agent-auth.ts';
 import { pinUpdate } from '../services/agents/local-tls.ts';
+import { receiveAgentDiagnostics } from '../services/agents/diagnostics.ts';
 import { servedCertificate } from '../tls/served-certificate.ts';
 import {
 	agentConnected,
@@ -63,6 +64,10 @@ export const agentSocketRoute = defineSocketRoute<{
 		socketOpened(database, peer.context.machineId, Date.now());
 	},
 	message(peer, data) {
+		if (new TextEncoder().encode(data).byteLength > 256 * 1024) {
+			peer.close(4002, 'Message too large');
+			return;
+		}
 		let json: unknown;
 		try {
 			json = JSON.parse(data);
@@ -89,6 +94,9 @@ export const agentSocketRoute = defineSocketRoute<{
 					peer.context.machineId,
 					parsed.data.message
 				);
+				return;
+			case 'diagnostics':
+				receiveAgentDiagnostics(peer.context.machineId, parsed.data);
 				return;
 		}
 	},

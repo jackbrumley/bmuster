@@ -31,9 +31,11 @@ it('J12: makes a code for the chosen groups and shows its address, expiry and li
 	const group = '33333333-3333-4333-8333-333333333333';
 	const screen = await render(PhoneSupport, {
 		origin: 'https://support.example.test',
-		machineGroupIds: [group]
+		machineGroupIds: [group],
+		machineGroups: [{ id: group, name: 'Support' }],
+		onMachineGroupsChange: () => undefined
 	});
-	await screen.getByRole('button', { name: 'Start phone support' }).click();
+	await screen.getByRole('button', { name: 'Create Quick join code' }).click();
 	await expect.element(screen.getByText('123 456')).toBeVisible();
 	await expect
 		.element(screen.getByText('support.example.test/join', { exact: true }))
@@ -51,10 +53,14 @@ describe('J12: starting phone support fails visibly', () => {
 		);
 		const screen = await render(PhoneSupport, {
 			origin: 'https://support.example.test',
-			machineGroupIds: []
+			machineGroupIds: [],
+			machineGroups: [],
+			onMachineGroupsChange: () => undefined
 		});
-		await screen.getByRole('button', { name: 'Start phone support' }).click();
+		await screen.getByRole('button', { name: 'Create Quick join code' }).click();
 		await expect.element(screen.getByText('Sign in again.')).toBeVisible();
-		await expect.element(screen.getByRole('button', { name: 'Start phone support' })).toBeVisible();
+		await expect
+			.element(screen.getByRole('button', { name: 'Create Quick join code' }))
+			.toBeVisible();
 	});
 });

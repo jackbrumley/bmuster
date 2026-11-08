@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { IconPhone, IconPhoneOff } from '@tabler/icons-svelte-runes';
+	import { IconLink, IconX } from '@tabler/icons-svelte-runes';
 	import { formatSupportCode, SUPPORT_CODE_MINUTES } from '#lib/domain/machines/phone-support.ts';
 	import {
 		cancelSupportCodeReplySchema,
@@ -12,19 +12,24 @@
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import JoinCodeStatus from './join-code-status.svelte';
+	import MachineGroupPicker from './machine-group-picker.svelte';
 
 	/**
-	 * Phone support on Add machine (SPEC-JOIN J12): a 6-digit support code
+	 * Quick join on Add machine (SPEC-JOIN J12): a 6-digit one-time code
 	 * and the address to read out, both large; the live status of the join
 	 * code behind it; Cancel. It carries the machine groups picked above.
 	 */
 	let {
 		origin,
-		machineGroupIds
+		machineGroupIds,
+		machineGroups,
+		onMachineGroupsChange
 	}: {
 		/** This server's address, as the caller will reach it. */
 		origin: string;
 		machineGroupIds: readonly string[];
+		machineGroups: { id: string; name: string }[];
+		onMachineGroupsChange: (ids: string[]) => void;
 	} = $props();
 
 	type Support =
@@ -86,7 +91,12 @@
 	}
 </script>
 
-<Panel heading="Phone support" actions={undefined} tone="normal" padding="normal">
+<Panel heading="Quick join" actions={undefined} tone="normal" padding="normal">
+	<MachineGroupPicker
+		groups={machineGroups}
+		selected={machineGroupIds}
+		onchange={onMachineGroupsChange}
+	/>
 	{#if support.kind === 'active'}
 		<div class="read-out">
 			<p class="label">Ask them to go to</p>
@@ -115,14 +125,14 @@
 					}
 				}}
 			>
-				<IconPhoneOff size={18} /> Cancel code
+				<IconX size={18} /> Cancel code
 			</Button>
 		</div>
 	{:else}
 		<p class="intro">
-			Helping someone over the phone? Give them a short code to type at <strong>{address}</strong>.
-			It works once, for {SUPPORT_CODE_MINUTES} minutes, and warns them about scams before showing the
-			install command.
+			With the person at their computer or helping from elsewhere, give them a short code for
+			<strong>{address}</strong>. It works once, for {SUPPORT_CODE_MINUTES} minutes, and shows a scam
+			warning before the install command.
 		</p>
 		{#if support.kind === 'failed'}
 			<p class="error">{support.message}</p>
@@ -138,8 +148,8 @@
 					}
 				}}
 			>
-				<IconPhone size={18} />
-				{support.kind === 'making' ? 'Starting…' : 'Start phone support'}
+				<IconLink size={18} />
+				{support.kind === 'making' ? 'Creating code…' : 'Create Quick join code'}
 			</Button>
 		</div>
 	{/if}

@@ -61,6 +61,7 @@ export class DesktopSession {
 	#frames = 0;
 	#bytes = 0;
 	#clock: ReturnType<typeof setInterval> | undefined;
+	#approvalTimer: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(
 		machineId: string,
@@ -81,6 +82,7 @@ export class DesktopSession {
 				this.#onText(text);
 			},
 			ended: () => {
+				this.#clearApprovalTimer();
 				// The next session is a fresh choice: only a reattach keeps the mode.
 				this.mode = undefined;
 				this.screen = undefined;
@@ -90,7 +92,23 @@ export class DesktopSession {
 	}
 
 	askApproval(): void {
+		if (this.screen?.kind !== 'approval' || this.screen.phase === 'pending') {
+			return;
+		}
+		this.#clearApprovalTimer();
+		const requestMessage = 'Requesting approval on the machine…';
+		this.screen = { kind: 'approval', phase: 'pending', message: requestMessage };
 		this.#send({ type: 'ask-approval' });
+		this.#approvalTimer = setTimeout(() => {
+			if (this.screen?.kind === 'approval' && this.screen.message === requestMessage) {
+				this.screen = {
+					kind: 'approval',
+					phase: 'declined',
+					message: 'The agent did not respond. Refresh agent diagnostics in Manage and try again.'
+				};
+			}
+			this.#approvalTimer = undefined;
+		}, 15_000);
 	}
 
 	get connection(): Connection {
@@ -115,6 +133,7 @@ export class DesktopSession {
 	}
 
 	async start(mode: DesktopMode): Promise<void> {
+		this.#clearApprovalTimer();
 		this.problem = undefined;
 		this.stalled = false;
 		this.screen = undefined;
@@ -183,6 +202,7 @@ export class DesktopSession {
 	detach(): void {
 		this.input({ type: 'release-all' });
 		this.#stopClock();
+		this.#clearApprovalTimer();
 		this.#link.detach();
 	}
 
@@ -215,6 +235,11 @@ export class DesktopSession {
 		this.throughput = { fps: 0, bytesPerSecond: 0 };
 	}
 
+	#clearApprovalTimer(): void {
+		clearTimeout(this.#approvalTimer);
+		this.#approvalTimer = undefined;
+	}
+
 	#onText(text: string): void {
 		this.#bytes += text.length;
 		let json: unknown;
@@ -236,12 +261,17 @@ export class DesktopSession {
 			case 'stream':
 				return;
 			case 'state':
+				this.#clearApprovalTimer();
 				this.screen = message.screen;
 				return;
 			case 'stalled':
 				this.stalled = true;
 				return;
 			case 'error':
+				this.#clearApprovalTimer();
+				if (this.screen?.kind === 'approval' && this.screen.phase === 'pending') {
+					this.screen = { kind: 'approval', phase: 'declined', message: message.message };
+				}
 				this.problem = message.message;
 				return;
 		}

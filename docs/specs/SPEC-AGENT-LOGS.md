@@ -1,6 +1,6 @@
 # SPEC-AGENT-LOGS: Recent diagnostics in Manage
 
-**Status:** DRAFT · 2026-11-08 · requested during the first Fedora test.
+**Status:** Implementation built for v0.3.1 candidate · 2026-11-08. Native Fedora diagnostics check remains outstanding.
 
 ## Problem
 
@@ -26,20 +26,28 @@ This is security work because logs may reveal machine details and this extends t
 
 ## Acceptance criteria
 
-| #   | Criterion                                                                                                                         | Named test                                        |
-| :-- | :-------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------ |
-| AL1 | An admin requests recent logs only for a real, non-removed machine; members and signed-out callers are refused.                   | `agent-logs.test.ts`, `guards.test.ts`            |
-| AL2 | A reply must match the pending request and authenticated machine; timeout, disconnect, unknown id and size limits are enforced.   | `agent-logs.test.ts`                              |
-| AL3 | Agent returns timestamped buffer lines with explicit truncation and version; known credentials never appear.                      | Rust `logging::diagnostics_tests`                 |
-| AL4 | Linux query is fixed, excludes exec commands, times out and bounds output; unavailable sources give a typed error.                | Rust `diagnostics::journal_tests`                 |
-| AL5 | Panel refreshes, preserves labelled old data on failure, copies all lines and downloads plain text. Phone layout has no overflow. | `agent-logs.svelte.test.ts`, browser smoke test   |
-| AL6 | Requests are audited without log contents; output is never rendered as HTML.                                                      | `agent-logs.test.ts`, `agent-logs.svelte.test.ts` |
-| AL7 | A scratch agent's deliberately failed terminal startup is visible and can be copied from Manage.                                  | scratch-server/agent integration test             |
+| #   | Criterion                                                                                                                         | Named test                                                                                    |
+| :-- | :-------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------- |
+| AL1 | An admin requests recent logs only for a real, non-removed machine; members and signed-out callers are refused.                   | admin route guard; `diagnostics.test.ts`                                                      |
+| AL2 | A reply must match the pending request and authenticated machine; timeout, disconnect, unknown id and size limits are enforced.   | `diagnostics.test.ts`; socket size guard                                                      |
+| AL3 | Agent returns timestamped buffer lines with explicit truncation and version; known credentials never appear.                      | Rust `diagnostics::diagnostics_tests`; `diagnostics_messages_match_the_agent_socket_contract` |
+| AL4 | Linux query uses only fixed approved units, excludes exec commands, has a five-second deadline and bounded output.                | Rust `journal_query_is_fixed_and_excludes_arbitrary_commands`; collector caps                 |
+| AL5 | Panel refreshes, preserves labelled old data on failure, copies all lines and downloads plain text. Phone layout has no overflow. | `recent-agent-logs.svelte.test.ts`; responsive preformatted output                            |
+| AL6 | Requests are audited without log contents; output is never rendered as HTML.                                                      | `diagnostics.test.ts`, `recent-agent-logs.svelte.test.ts`                                     |
+| AL7 | A real failed terminal startup appears in Manage and can be copied from a Fedora agent.                                           | Manual release check on Fedora; still outstanding                                             |
 
 ## Schema and routes
 
-No new database schema. Add `POST /api/machines/[id]/logs` and bounded request/reply messages on the live agent channel. Reuse the existing log buffer and clipboard helper. Add an access-service capability for administrator diagnostic reads and an audit kind for fetching diagnostics.
+No new database schema. Add `POST /api/machines/[id]/logs` and bounded `diagnostics-request` / `diagnostics` messages on the live agent channel. Reuse the existing log buffer and clipboard helper. The route is admin-only and the viewing audit excludes log content.
 
-## Open decision
+## Decision
 
-Approve this scope, including fixed Linux session-start diagnostics alongside the existing recent-log buffer. This requires an agent update; rebuilding the signed local release is part of completion.
+Jack approved this scope, including fixed Linux session-start diagnostics alongside the existing recent-log buffer, on 2026-11-08.
+
+## As built (v0.3.1 candidate)
+
+- `POST /api/machines/[id]/logs` is protected by the admin route guard and returns `Cache-Control: no-store`. It sends one UUID-correlated request over the authenticated live agent socket; replies from another machine are ignored. Requests are limited to one per user/machine every 10 seconds and time out after 10 seconds.
+- The agent returns its 200-line in-memory buffer and, on Linux, queries only the agent, terminal and file systemd units for the last 15 minutes. It does not include exec units, shell history, terminal output, or arbitrary paths or commands. The journal command has a fixed five-second timeout, 192 KiB output cap and 250-line cap; the full response is capped below the socket's 256 KiB message limit.
+- Manage offers manual refresh, copy-all and text download. Results are rendered as escaped text; a failed refresh leaves the earlier report visible and labels it as previous.
+- Auditing records the machine and line counts, not log contents. Known authentication-material lines are redacted before transmission.
+- Unit, protocol, UI and full build checks are run for the release. AL7 remains a manual verification: the Fedora machine must be upgraded, then its captured diagnostics must show the cause of exit 208. This release does not claim that the Fedora terminal itself is fixed without that evidence.

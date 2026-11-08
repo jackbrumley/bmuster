@@ -180,6 +180,8 @@
 			case 'agent-pinned':
 			case 'agent-unpinned':
 				return IconPin;
+			case 'agent-logs-viewed':
+				return IconTerminal2;
 			case 'list-exported':
 				return IconDownload;
 			case 'file-downloaded':

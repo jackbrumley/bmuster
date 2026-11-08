@@ -187,6 +187,23 @@ describe('the desktop tab', () => {
 		expect(sentTypes(socket).filter((type) => input.includes(type))).toEqual([]);
 	});
 
+	it('Wayland approval: clicking Ask for approval shows immediate progress and sends the request', async () => {
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		socket.receive(
+			JSON.stringify({
+				type: 'state',
+				screen: {
+					kind: 'approval',
+					phase: 'needed',
+					message: 'Allow screen sharing on this computer before connecting'
+				}
+			})
+		);
+		await screen.getByRole('button', { name: 'Ask for approval' }).click();
+		expect(screen.getByText('Requesting approval on the machine…')).toBeTruthy();
+		expect(sentTypes(socket)).toContain('ask-approval');
+	});
+
 	it('R10: picture settings go to the agent as one settings message', async () => {
 		const { screen, socket } = await open(CONTROL, 'Connect');
 		await screen.getByRole('button', { name: 'Picture settings' }).click();

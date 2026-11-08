@@ -67,7 +67,7 @@
 <details class="manual">
 	<summary>
 		<IconChevronRight size={18} />
-		Install manually
+		Download the agent file
 	</summary>
 
 	<div class="body">

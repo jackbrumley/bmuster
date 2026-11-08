@@ -77,6 +77,7 @@ const AUDIT_KINDS = [
 	'agent-unpinned',
 	'agent-rollout-paused',
 	'agent-rollout-resumed',
+	'agent-logs-viewed',
 	// SPEC-CSV-EXPORT
 	'list-exported',
 	// SPEC-FILES
@@ -259,6 +260,8 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Paused the agent roll-out';
 		case 'agent-rollout-resumed':
 			return 'Resumed the agent roll-out';
+		case 'agent-logs-viewed':
+			return 'Viewed agent diagnostics';
 		case 'list-exported':
 			return 'Exported a list';
 		case 'file-downloaded':

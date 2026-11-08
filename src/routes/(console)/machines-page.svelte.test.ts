@@ -202,6 +202,22 @@ describe('Machines views: cards and table', () => {
 		await expect.element(table.getByRole('link', { name: /Machine 002/ }).first()).toBeVisible();
 	});
 
+	it('keeps the Machines table focused on identity and status, without resource columns', async () => {
+		localStorage.setItem('bmuster-machines-view', 'table');
+		const screen = await renderPage(fleet(3));
+		const table = tableOf(screen);
+		for (const heading of ['Name', 'Status', 'OS', 'Last user', 'Last seen', 'Open']) {
+			await expect.element(table.getByRole('columnheader', { name: heading })).toBeVisible();
+		}
+		for (const heading of ['CPU', 'Memory', 'Disk']) {
+			expect(
+				[...table.element().querySelectorAll('th')].some(
+					(cell) => cell.textContent.trim() === heading
+				)
+			).toBe(false);
+		}
+	});
+
 	it('the table sorts by status and opens machines, with Terminal and Desktop per row', async () => {
 		localStorage.setItem('bmuster-machines-view', 'table');
 		const screen = await renderPage(fleet(4));

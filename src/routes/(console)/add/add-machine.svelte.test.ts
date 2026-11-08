@@ -121,27 +121,60 @@ async function renderPage(
 
 function manualSection(container: HTMLElement): HTMLDetailsElement {
 	const details = container.querySelector('details');
-	if (!(details instanceof HTMLDetailsElement)) throw new Error('no Install manually section');
+	if (!(details instanceof HTMLDetailsElement)) throw new Error('no agent download section');
 	return details;
 }
 
 describe('Add machine: install manually', () => {
-	it('M1: a collapsed Install manually section under the command, on every OS tab', async () => {
+	it('presents Quick join before the secondary manual install method', async () => {
+		const screen = await renderPage(DOWNLOADS, false);
+		const headings = [...screen.container.querySelectorAll('h2')].map(
+			(heading) => heading.textContent
+		);
+		expect(headings.indexOf('Quick join')).toBeGreaterThanOrEqual(0);
+		expect(headings.indexOf('Quick join')).toBeLessThan(headings.indexOf('Manual install'));
+		await expect
+			.element(screen.getByText(/With the person at their computer or helping from elsewhere/))
+			.toBeVisible();
+	});
+
+	it('M1: a collapsed agent-download section for every selected OS', async () => {
 		const screen = await renderPage(DOWNLOADS, false);
 		for (const os of ['Linux', 'Windows', 'macOS']) {
 			await screen.getByRole('button', { name: os }).click();
-			await expect.element(screen.getByText('Install manually')).toBeVisible();
+			await expect.element(screen.getByText('Download the agent file')).toBeVisible();
 			expect(manualSection(screen.container).open, os).toBe(false);
 		}
-		await screen.getByText('Install manually').click();
+		await screen.getByText('Download the agent file').click();
 		await expect
 			.element(screen.getByText('The macOS agent is not built yet.').last())
 			.toBeVisible();
 	});
 
+	it('requires an explicit OS choice before showing any install command', async () => {
+		stubJoinCodes();
+		const screen = await renderPage(DOWNLOADS, false);
+		await expect
+			.element(
+				screen.getByText("Choose the computer's operating system to see its install options.")
+			)
+			.toBeVisible();
+		for (const name of ['Linux', 'Windows', 'macOS']) {
+			await expect
+				.element(screen.getByRole('button', { name }))
+				.toHaveAttribute('aria-pressed', 'false');
+		}
+		expect(screen.container.textContent).not.toContain('Run in a terminal');
+		expect(screen.container.textContent).not.toContain('Run in PowerShell as administrator');
+		expect(screen.container.querySelector('details')).toBeNull();
+		await screen.getByRole('button', { name: 'Windows' }).click();
+		await expect.element(screen.getByText('Run in PowerShell as administrator')).toBeVisible();
+	});
+
 	it('M2: Download agent for the chosen OS, with version, size and SHA-256', async () => {
 		const screen = await renderPage(DOWNLOADS, false);
-		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Linux' }).click();
+		await screen.getByText('Download the agent file').click();
 		await screen.getByRole('button', { name: 'x86_64 (Intel, AMD)' }).click();
 		const link = screen.getByRole('link', { name: 'Download agent' });
 		await expect
@@ -162,7 +195,8 @@ describe('Add machine: install manually', () => {
 
 	it('M2: says plainly when the server has no build (and, in dev, how to make one)', async () => {
 		const screen = await renderPage(DOWNLOADS, true);
-		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Linux' }).click();
+		await screen.getByText('Download the agent file').click();
 		await screen.getByRole('button', { name: 'aarch64 (ARM)' }).click();
 		await expect
 			.element(
@@ -174,7 +208,8 @@ describe('Add machine: install manually', () => {
 
 		await screen.unmount();
 		const production = await renderPage([], false);
-		await production.getByText('Install manually').click();
+		await production.getByRole('button', { name: 'Linux' }).click();
+		await production.getByText('Download the agent file').click();
 		await production.getByRole('button', { name: 'x86_64 (Intel, AMD)' }).click();
 		await expect
 			.element(
@@ -188,6 +223,8 @@ describe('Add machine: install manually', () => {
 		stubJoinCodes();
 		const linuxOnly = DOWNLOADS.filter((download) => download.target !== 'x86_64-pc-windows-msvc');
 		const screen = await renderPage(linuxOnly, false);
+		expect(screen.container.textContent).not.toContain('Run in a terminal');
+		await screen.getByRole('button', { name: 'Linux' }).click();
 		await expect.element(screen.getByText('Run in a terminal')).toBeVisible();
 		await screen.getByRole('button', { name: 'Windows' }).click();
 		await expect.element(screen.getByText(/This server has no Windows agent yet/)).toBeVisible();
@@ -196,7 +233,8 @@ describe('Add machine: install manually', () => {
 
 	it('M2: no processor is chosen for Linux until the admin picks one', async () => {
 		const screen = await renderPage(DOWNLOADS, false);
-		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Linux' }).click();
+		await screen.getByText('Download the agent file').click();
 		await expect
 			.element(screen.getByText("Choose the machine's processor to see its download."))
 			.toBeVisible();
@@ -221,7 +259,8 @@ describe('Add machine: install manually', () => {
 
 	it('M2: Windows has one build, so its download shows straight away', async () => {
 		const screen = await renderPage(DOWNLOADS, false);
-		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Linux' }).click();
+		await screen.getByText('Download the agent file').click();
 		await screen.getByRole('button', { name: 'Windows' }).click();
 		await expect
 			.element(screen.getByRole('link', { name: 'Download agent' }))
@@ -232,7 +271,8 @@ describe('Add machine: install manually', () => {
 	it('M3: the command beside the file, with the server and a join code made when the page opens', async () => {
 		stubJoinCodes();
 		const screen = await renderPage(DOWNLOADS, false);
-		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Linux' }).click();
+		await screen.getByText('Download the agent file').click();
 		await expect
 			.element(
 				screen.getByText(
@@ -255,7 +295,8 @@ describe('Add machine: install manually', () => {
 	it('M4: a deployment tools note, and a control that makes a roll-out code', async () => {
 		const { bodies } = stubJoinCodes();
 		const screen = await renderPage(DOWNLOADS, false);
-		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Linux' }).click();
+		await screen.getByText('Download the agent file').click();
 		await expect.element(screen.getByText('For deployment tools')).toBeVisible();
 		await expect
 			.element(screen.getByText(/up to 100 machines,\s+for\s+up\s+to 7 days/))
@@ -264,7 +305,14 @@ describe('Add machine: install manually', () => {
 		await screen.getByRole('button', { name: '100' }).click();
 		await screen.getByRole('button', { name: '7 days' }).click();
 		await screen.getByRole('button', { name: 'Make a roll-out code' }).click();
-		await expect.element(screen.getByText('RLL-OUT-234')).toBeVisible();
+		const rolloutCode = screen.getByText('RLL-OUT-234');
+		await expect.element(rolloutCode).toBeVisible();
+		const joinCode = rolloutCode.element().closest('.join-code');
+		expect(joinCode).not.toBeNull();
+		if (joinCode === null) {
+			throw new Error('Roll-out code should be inside its centred container');
+		}
+		expect(getComputedStyle(joinCode).textAlign).toBe('center');
 		// The first request is the code made when the page opens; the second is the roll-out code.
 		expect(bodies).toEqual([
 			{ maxUses: 1, minutes: 60, machineGroupIds: [] },
@@ -290,7 +338,8 @@ describe('Add machine: machine groups (SPEC-ACCESS A7)', () => {
 		await expect.poll(() => bodies).toHaveLength(2);
 		expect(bodies[1]).toEqual({ maxUses: 1, minutes: 60, machineGroupIds: [OFFICE] });
 
-		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Linux' }).click();
+		await screen.getByText('Download the agent file').click();
 		await screen.getByRole('checkbox', { name: 'Lab' }).last().click();
 		await screen.getByRole('button', { name: 'Make a roll-out code' }).click();
 		await expect.poll(() => bodies).toHaveLength(3);
@@ -302,6 +351,7 @@ describe('Add machine: local network mode', () => {
 	it('L5: shows the pin and the browser fingerprint, and every command carries the pin', async () => {
 		const { bodies } = stubJoinCodes();
 		const screen = await renderPage(DOWNLOADS, false, LOCAL_TLS);
+		await screen.getByRole('button', { name: 'Linux' }).click();
 		await expect.element(screen.getByText(PIN, { exact: true }).first()).toBeVisible();
 		await expect.element(screen.getByText(FINGERPRINT)).toBeVisible();
 		await expect
@@ -316,7 +366,8 @@ describe('Add machine: local network mode', () => {
 				)
 			)
 			.toBeVisible();
-		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Linux' }).click();
+		await screen.getByText('Download the agent file').click();
 		await expect
 			.element(
 				screen.getByText(
@@ -354,6 +405,7 @@ describe('Add machine: local network mode', () => {
 	it('L5: without local network mode no command carries a pin', async () => {
 		stubJoinCodes();
 		const screen = await renderPage(DOWNLOADS, false);
+		await screen.getByRole('button', { name: 'Linux' }).click();
 		await expect
 			.element(
 				screen.getByText(`curl -fsSL ${ORIGIN}/install.sh | sudo sh -s -- --code ABC-DEF-GHJ`)
@@ -369,6 +421,7 @@ describe('Add machine: local network mode', () => {
 			restartNeeded: true,
 			served: { kind: 'none' }
 		});
+		await screen.getByRole('button', { name: 'Linux' }).click();
 		await expect.element(screen.getByText(/Restart\s+BMuster to apply it/)).toBeVisible();
 		await expect
 			.element(
@@ -432,7 +485,8 @@ describe('Add machine: what happened to the join code', () => {
 			}))
 		});
 		const screen = await renderPage(DOWNLOADS, false);
-		await screen.getByText('Install manually').click();
+		await screen.getByRole('button', { name: 'Linux' }).click();
+		await screen.getByText('Download the agent file').click();
 		await screen.getByRole('button', { name: 'Make a roll-out code' }).click();
 		await expect.element(screen.getByText('7 of 100 machines joined')).toBeVisible();
 		const names = screen.getByRole('list', { name: 'Machines that joined, newest first' });

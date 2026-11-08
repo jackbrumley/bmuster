@@ -1,6 +1,6 @@
 # SPEC-WAYLAND-PORTAL: Signed-in Linux desktop access
 
-**Status:** Implementation built for v0.3.0 candidate, 2026-11-08. Native Fedora/GNOME and KDE portal validation remains outstanding.
+**Status:** Implementation built for v0.3.1 candidate, 2026-11-08. Native Fedora/GNOME and KDE portal validation remains outstanding.
 
 ## Scope and security decisions
 
@@ -69,6 +69,10 @@ After approval: write failing named tests, implement helper and capture, run ful
   approval action. Locked Wayland sessions and greeters are reported
   unavailable; this implementation does not capture them. Unlocking at the
   machine is required before sharing resumes.
+- The “Ask for approval” overlay now receives pointer events, displays pending
+  feedback immediately and reports when the agent does not respond. The prior
+  overlay blocked pointer input to its own button; a browser UI regression test
+  covers the click and outgoing request.
 - Unit tests cover session parsing/lifecycle, token rotation/isolation, helper
   display selection, frame bounds and pointer coordinate mapping. No native
   portal was available during implementation, so approval persistence,

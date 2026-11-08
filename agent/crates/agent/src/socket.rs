@@ -12,7 +12,7 @@ use bmuster_protocol::{AgentMessage, RefusalReason, ServerMessage, SOCKET_PATH};
 use std::io::ErrorKind;
 use std::net::{TcpStream, ToSocketAddrs as _};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{self, Sender};
 use std::time::{Duration, Instant};
 use tungstenite::client::IntoClientRequest as _;
 use tungstenite::handshake::HandshakeError;
@@ -246,8 +246,14 @@ fn serve(
     let mut last_heard = Instant::now();
     // (interval, next send) while a console page is watching.
     let mut watch: Option<(Duration, Instant)> = None;
+    let (diagnostics_send, diagnostics_receive) = mpsc::channel();
 
     loop {
+        while let Ok(message) = diagnostics_receive.try_recv() {
+            socket
+                .send(Message::text(serde_json::to_string(&message)?))
+                .context("could not send agent diagnostics")?;
+        }
         if stop.load(Ordering::SeqCst) {
             let _ = socket.close(None);
             let _ = socket.flush();
@@ -312,6 +318,34 @@ fn serve(
                 }
                 Ok(ServerMessage::PinUpdate { next }) => session.transport.announce(next),
                 Ok(ServerMessage::UserMessage { from, text }) => show_user_message(from, text),
+                Ok(ServerMessage::DiagnosticsRequest { request_id }) => {
+                    if request_id.len() != 36
+                        || !request_id
+                            .bytes()
+                            .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
+                    {
+                        log::warn!("Ignoring malformed diagnostics request id");
+                        continue;
+                    }
+                    let sender = diagnostics_send.clone();
+                    if let Err(error) = std::thread::Builder::new()
+                        .name("agent diagnostics".into())
+                        .spawn(move || {
+                            let report = crate::diagnostics::collect();
+                            let message = AgentMessage::Diagnostics {
+                                request_id,
+                                agent_version: env!("CARGO_PKG_VERSION").to_string(),
+                                captured_at_ms: report.captured_at_ms,
+                                lines: report.lines,
+                                truncated: report.truncated,
+                                journal: report.journal,
+                            };
+                            let _ = sender.send(message);
+                        })
+                    {
+                        log::warn!("Could not start agent diagnostics: {error}");
+                    }
+                }
                 Ok(ServerMessage::SessionOpen { ticket, signature }) => {
                     if let Err(refused) = sessions.open(&ticket, &signature) {
                         log::warn!("{}", refused.message);

@@ -4,6 +4,7 @@
  * change together.
  */
 import { z } from 'zod';
+import { diagnosticJournalSchema } from '#lib/schemas/agents/diagnostics.ts';
 
 const osFamilySchema = z.enum(['windows', 'linux', 'macos']);
 
@@ -250,6 +251,15 @@ export const agentSocketMessageSchema = z.discriminatedUnion('type', [
 		type: z.literal('session-refused'),
 		sessionId: z.string().max(64),
 		message: z.string().max(2000)
+	}),
+	z.object({
+		type: z.literal('diagnostics'),
+		requestId: z.uuid(),
+		agentVersion: z.string().min(1).max(64),
+		capturedAtMs: z.int().min(0),
+		lines: z.array(z.string().max(4096)).max(200),
+		truncated: z.boolean(),
+		journal: diagnosticJournalSchema
 	})
 ]);
 
@@ -270,7 +280,8 @@ export type ServerSocketMessage =
 	/** Start a session: a ticket (base64 JSON) and the server's signature over it (SPEC-SESSIONS T3). */
 	| { type: 'session-open'; ticket: string; signature: string }
 	/** A message box on the console session's screen, from `from` (Windows). */
-	| { type: 'user-message'; from: string; text: string };
+	| { type: 'user-message'; from: string; text: string }
+	| { type: 'diagnostics-request'; requestId: string };
 
 export type RefusalReason =
 	| 'bad-request'

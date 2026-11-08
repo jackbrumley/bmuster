@@ -15,6 +15,7 @@
 	import LocalPage from './local-page.svelte';
 	import MachineDetails from './machine-details.svelte';
 	import MachineGroups from './machine-groups.svelte';
+	import RecentAgentLogs from './recent-agent-logs.svelte';
 	import ReinstallAgent from './reinstall-agent.svelte';
 	import type { PageProps } from './$types';
 
@@ -92,6 +93,8 @@
 	downloads={data.downloads}
 	localTls={data.localTls}
 />
+
+<RecentAgentLogs machineId={machine.id} />
 
 <Panel heading="Danger zone" actions={undefined} tone="danger" padding="normal">
 	<div class="danger-row">

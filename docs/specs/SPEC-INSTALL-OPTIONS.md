@@ -4,6 +4,8 @@
 
 ## Part 1: Manual install (always available)
 
+The Add machine OS picker starts with no selection. No OS-specific command, certificate pin or download appears until the admin explicitly chooses Linux, Windows or macOS.
+
 ### Why
 
 The one-line `curl … | sudo sh` (or `irm … | iex`) does not suit every machine: deployment tools (Intune, Group Policy, Ansible) push a file and run a command; locked-down Windows blocks piped scripts; some machines have no curl or sit behind proxies; offline networks need a USB stick; careful admins want to inspect the file first.
@@ -12,7 +14,7 @@ The one-line `curl … | sudo sh` (or `irm … | iex`) does not suit every machi
 
 | #   | Criterion                                                                                                                                                                                                                                                                                                                              | Test                         |
 | :-- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------- |
-| M1  | Add machine has a collapsed **Install manually** section under the one-line command, for every OS tab.                                                                                                                                                                                                                                 | `add-machine.svelte.test.ts` |
+| M1  | After an OS is explicitly selected, Add machine has a collapsed **Download the agent file** section beneath its one-line command.                                                                                                                                                                                                      | `add-machine.svelte.test.ts` |
 | M2  | It offers **Download agent** for the chosen OS (version, size and SHA-256 shown) from `/agent/v1/releases/<version>/<target>`. With no build on the server it says so plainly.                                                                                                                                                         | `add-machine.svelte.test.ts` |
 | M3  | It shows the one command to run beside the downloaded file, with the server address and join code filled in (and the certificate pin in local network mode). Linux: `chmod +x bmuster-agent && sudo ./bmuster-agent install --url … --code …`. Windows: `.\bmuster-agent.exe install --url … --code …` in PowerShell as Administrator. | `add-machine.svelte.test.ts` |
 | M4  | A "For deployment tools" note explains using one download and a roll-out join code (up to 100 machines, 7 days), with a control to make one.                                                                                                                                                                                           | `add-machine.svelte.test.ts` |

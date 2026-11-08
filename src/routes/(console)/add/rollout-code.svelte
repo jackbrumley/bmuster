@@ -83,10 +83,12 @@
 		</Button>
 	</div>
 	{#if rollout.kind === 'ready'}
-		<p class="hint">
-			<span class="code">{rollout.code}</span> works for {rollout.maxUses} machines until
-			{expiry(rollout.expiresAtIso)}.
-		</p>
+		<div class="join-code">
+			<p class="code">{rollout.code}</p>
+			<p class="hint">
+				Works for {rollout.maxUses} machines until {expiry(rollout.expiresAtIso)}.
+			</p>
+		</div>
 		<JoinCodeStatus codeId={rollout.id} mode={{ kind: 'rollout' }} />
 		<CopyField
 			value={manualInstallCommand(os, origin, rollout.code, pin)}
@@ -123,6 +125,11 @@
 		font-size: var(--text-sm);
 		font-weight: var(--weight-bold);
 		letter-spacing: var(--tracking-caps);
+		text-align: center;
+	}
+
+	.join-code {
+		text-align: center;
 	}
 
 	.error {

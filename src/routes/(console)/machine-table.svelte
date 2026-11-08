@@ -6,7 +6,7 @@
 	import OsIcon from '#lib/ui/os-icon.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import UpdateBadge from '#lib/ui/update-badge.svelte';
-	import { formatBytes, formatRelative } from '#lib/utils/format.ts';
+	import { formatRelative } from '#lib/utils/format.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import { machineSortValue, type MachineRow } from '#lib/domain/machines/machine-row.ts';
 
@@ -27,17 +27,6 @@
 		resetKey: string;
 		sort: DataTableSort;
 	} = $props();
-
-	function level(percent: number): 'normal' | 'raised' | 'high' {
-		return percent >= 90 ? 'high' : percent >= 75 ? 'raised' : 'normal';
-	}
-
-	function memoryDetail({ machine }: MachineRow): string {
-		if (machine.live.kind !== 'known' || machine.inventory.kind !== 'known') {
-			return '';
-		}
-		return `${formatBytes(machine.live.memoryUsedBytes)} of ${formatBytes(machine.inventory.memoryTotalBytes)}`;
-	}
 
 	// Derived: the Last seen column compares online machines as seen `now`.
 	const columns: readonly DataTableColumn<MachineRow>[] = $derived([
@@ -73,39 +62,6 @@
 			link: true,
 			phone: 'hidden',
 			medium: 'hide'
-		},
-		{
-			key: 'cpu',
-			label: 'CPU',
-			align: 'right',
-			sortable: true,
-			value: machineSortValue('cpu', now),
-			cell: cpuCell,
-			link: true,
-			phone: 'hidden',
-			medium: 'show'
-		},
-		{
-			key: 'memory',
-			label: 'Memory',
-			align: 'right',
-			sortable: true,
-			value: machineSortValue('memory', now),
-			cell: memoryCell,
-			link: true,
-			phone: 'hidden',
-			medium: 'show'
-		},
-		{
-			key: 'disk',
-			label: 'Disk',
-			align: 'right',
-			sortable: true,
-			value: machineSortValue('disk', now),
-			cell: diskCell,
-			link: true,
-			phone: 'hidden',
-			medium: 'show'
 		},
 		{
 			key: 'lastUser',
@@ -165,29 +121,6 @@
 	{#if machine.inUse.length > 0}
 		<span class="in-use">In use: {inUseLabel(machine.inUse)}</span>
 	{/if}
-{/snippet}
-
-{#snippet percentText(percent: number | null, detail: string)}
-	{#if percent === null}
-		<span class="unknown">–</span>
-	{:else}
-		<span class="figure {level(percent)}" title={detail}>{percent}%</span>
-	{/if}
-{/snippet}
-
-{#snippet cpuCell(row: MachineRow)}
-	{@render percentText(row.cpuPercent, 'CPU')}
-{/snippet}
-
-{#snippet memoryCell(row: MachineRow)}
-	{@render percentText(row.memoryPercent, memoryDetail(row))}
-{/snippet}
-
-{#snippet diskCell({ disk }: MachineRow)}
-	{@render percentText(
-		disk?.percent ?? null,
-		disk === undefined ? '' : `${disk.mount}: ${disk.detail}`
-	)}
 {/snippet}
 
 {#snippet lastSeenCell({ machine }: MachineRow)}
@@ -279,24 +212,6 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: var(--space-1);
-	}
-
-	.figure {
-		font-variant-numeric: tabular-nums;
-	}
-
-	.figure.raised {
-		color: var(--warning);
-		font-weight: var(--weight-semibold);
-	}
-
-	.figure.high {
-		color: var(--danger);
-		font-weight: var(--weight-semibold);
-	}
-
-	.unknown {
-		color: var(--muted);
 	}
 
 	.actions {

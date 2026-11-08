@@ -20,15 +20,14 @@
 	import CertificatePin from './certificate-pin.svelte';
 	import InstallManually from './install-manually.svelte';
 	import JoinCodeStatus from './join-code-status.svelte';
-	import MachineGroupPicker from './machine-group-picker.svelte';
 	import PhoneSupport from './phone-support.svelte';
 	import { makeJoinCode, type CodeState } from './join-code.ts';
 
 	/**
-	 * Add machine (SPEC-ENROLMENT 4): a join code and the one-line install
-	 * command, with a manual install underneath (SPEC-INSTALL-OPTIONS M1–M4).
+	 * Manual install (SPEC-ENROLMENT 4): a join code and one-line install
+	 * command, with a downloadable-agent option underneath (SPEC-INSTALL-OPTIONS M1–M4).
 	 * In local network mode the commands carry the certificate pin (L5, L6).
-	 * Phone support (SPEC-JOIN J12) sits underneath, with the same groups.
+	 * Quick join (SPEC-JOIN J12) is the primary path and carries its own groups.
 	 */
 	let {
 		origin,
@@ -49,7 +48,7 @@
 
 	let joinCode = $state<CodeState>({ kind: 'none' });
 	let groupIds = $state<string[]>([]);
-	let target = $state<OsFamily>('linux');
+	let target = $state<OsFamily | undefined>(undefined);
 	const pin = $derived(installPin(localTls));
 
 	const targets: { id: OsFamily; label: string; icon: typeof IconBrandUbuntu }[] = [
@@ -80,9 +79,18 @@
 	}
 </script>
 
-<Panel heading={undefined} actions={undefined} tone="normal" padding="normal">
-	<MachineGroupPicker groups={machineGroups} selected={groupIds} onchange={chooseGroups} />
+<PhoneSupport
+	{origin}
+	machineGroupIds={groupIds}
+	{machineGroups}
+	onMachineGroupsChange={chooseGroups}
+/>
 
+<Panel heading="Manual install" actions={undefined} tone="normal" padding="normal">
+	<p class="intro">
+		Use this when you can run an administrator command on the computer. For a code-based setup, use
+		Quick join above.
+	</p>
 	<div class="code-row">
 		<div>
 			<p class="label">Join code</p>
@@ -135,46 +143,61 @@
 		{/each}
 	</div>
 
-	{#if localTls.on}
-		<CertificatePin {localTls} />
-	{/if}
+	{#if target === undefined}
+		<p class="hint">Choose the computer's operating system to see its install options.</p>
+	{:else}
+		{#if localTls.on}
+			<CertificatePin {localTls} />
+		{/if}
 
-	{#if target === 'macos'}
-		<p class="hint">The macOS agent is not built yet.</p>
-	{:else if !hasBuildFor(target, downloads)}
-		<div class="step">
-			<p class="error">
-				This server has no {target === 'windows' ? 'Windows' : 'Linux'} agent yet, so the install command
-				would fail.
-			</p>
-			<p class="hint">
-				{#if target === 'windows'}
-					Windows agents are built by the release workflow on GitHub.
-				{:else if devServer}
-					Run <code>npm run agent:release-local</code> to build one for this computer.
-				{:else}
-					Install a release of BMuster that includes the agents.
-				{/if}
-			</p>
-		</div>
-	{:else if joinCode.kind === 'ready'}
-		<div class="step">
-			<p class="label">
-				{target === 'windows' ? 'Run in PowerShell as administrator' : 'Run in a terminal'}
-			</p>
-			<CopyField
-				value={oneLineInstallCommand(target, origin, joinCode.code, pin)}
-				label="install command"
-			/>
-		</div>
-	{/if}
+		{#if target === 'macos'}
+			<p class="hint">The macOS agent is not built yet.</p>
+		{:else if !hasBuildFor(target, downloads)}
+			<div class="step">
+				<p class="error">
+					This server has no {target === 'windows' ? 'Windows' : 'Linux'} agent yet, so the install command
+					would fail.
+				</p>
+				<p class="hint">
+					{#if target === 'windows'}
+						Windows agents are built by the release workflow on GitHub.
+					{:else if devServer}
+						Run <code>npm run agent:release-local</code> to build one for this computer.
+					{:else}
+						Install a release of BMuster that includes the agents.
+					{/if}
+				</p>
+			</div>
+		{:else if joinCode.kind === 'ready'}
+			<div class="step">
+				<p class="label">
+					{target === 'windows' ? 'Run in PowerShell as administrator' : 'Run in a terminal'}
+				</p>
+				<CopyField
+					value={oneLineInstallCommand(target, origin, joinCode.code, pin)}
+					label="install command"
+				/>
+			</div>
+		{/if}
 
-	<InstallManually os={target} {origin} {joinCode} {downloads} {devServer} {pin} {machineGroups} />
+		<InstallManually
+			os={target}
+			{origin}
+			{joinCode}
+			{downloads}
+			{devServer}
+			{pin}
+			{machineGroups}
+		/>
+	{/if}
 </Panel>
 
-<PhoneSupport {origin} machineGroupIds={groupIds} />
-
 <style>
+	.intro {
+		color: var(--text-soft);
+		font-size: var(--text-sm);
+	}
+
 	.code-row {
 		display: flex;
 		flex-wrap: wrap;
@@ -194,6 +217,7 @@
 		font-size: var(--text-2xl);
 		font-weight: var(--weight-bold);
 		letter-spacing: var(--tracking-caps);
+		text-align: center;
 	}
 
 	.hint {

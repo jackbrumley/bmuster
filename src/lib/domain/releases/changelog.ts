@@ -1,6 +1,15 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.3.1',
+		changes: [
+			'Make Quick join the primary path on Add a machine, with manual installation kept below it.',
+			'Add recent agent logs and bounded Linux service diagnostics to each machine’s Manage page.',
+			'Fix the Wayland approval action so its request reaches the agent and shows progress.',
+			'Simplify the Machines table by removing CPU, memory and disk columns.'
+		]
+	},
+	{
 		version: '0.3.0',
 		changes: [
 			'Add a user-session tray shortcut to local agent management.',

@@ -611,6 +611,11 @@ pub enum ServerMessage {
         from: String,
         text: String,
     },
+    /// A bounded diagnostics request from an authenticated administrator.
+    DiagnosticsRequest {
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
 }
 
 /// Agent to server.
@@ -629,6 +634,27 @@ pub enum AgentMessage {
         session_id: String,
         message: String,
     },
+    /// A response to one diagnostics request, containing only agent logs and
+    /// fixed service startup diagnostics (never shell output or history).
+    Diagnostics {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "agentVersion")]
+        agent_version: String,
+        #[serde(rename = "capturedAtMs")]
+        captured_at_ms: u64,
+        lines: Vec<String>,
+        truncated: bool,
+        journal: DiagnosticJournal,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum DiagnosticJournal {
+    Available { lines: Vec<String>, truncated: bool },
+    Unavailable { reason: String },
+    Unsupported,
 }
 
 #[cfg(test)]
@@ -884,6 +910,43 @@ mod tests {
                 from: "Jack".into(),
                 text: "Rebooting at 5".into()
             }
+        );
+    }
+
+    #[test]
+    fn diagnostics_messages_match_the_agent_socket_contract() {
+        assert_eq!(
+            serde_json::to_value(ServerMessage::DiagnosticsRequest {
+                request_id: "11111111-1111-4111-8111-111111111111".into()
+            })
+            .unwrap(),
+            json!({
+                "type": "diagnostics-request",
+                "requestId": "11111111-1111-4111-8111-111111111111"
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(AgentMessage::Diagnostics {
+                request_id: "11111111-1111-4111-8111-111111111111".into(),
+                agent_version: "0.3.1".into(),
+                captured_at_ms: 1_000,
+                lines: vec!["agent started".into()],
+                truncated: false,
+                journal: DiagnosticJournal::Available {
+                    lines: vec!["terminal failed".into()],
+                    truncated: false
+                }
+            })
+            .unwrap(),
+            json!({
+                "type": "diagnostics",
+                "requestId": "11111111-1111-4111-8111-111111111111",
+                "agentVersion": "0.3.1",
+                "capturedAtMs": 1_000,
+                "lines": ["agent started"],
+                "truncated": false,
+                "journal": { "kind": "available", "lines": ["terminal failed"], "truncated": false }
+            })
         );
     }
 }

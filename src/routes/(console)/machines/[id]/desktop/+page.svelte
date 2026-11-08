@@ -572,7 +572,6 @@
 		margin: 0;
 		color: var(--terminal-text);
 		font-size: var(--text-sm);
-		pointer-events: none;
 	}
 
 	.waiting.unavailable {

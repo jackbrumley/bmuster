@@ -10,7 +10,7 @@
 
 <PageHeader
 	title="Add a machine"
-	summary="Run one command on the machine. It joins this server and shows up under Machines."
+	summary="Use Quick join for the easiest setup, or install the agent manually."
 	actions={undefined}
 />
 
