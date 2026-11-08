@@ -156,6 +156,37 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		await expect.element(screen.getByText(/no signed agent build yet/)).toBeVisible();
 	});
 
+	it('shows an inconclusive latest-release state after a failed check', async () => {
+		const screen = await renderPage({
+			server: {
+				installedVersion: '0.3.0',
+				deployment: 'installed',
+				launcherVersion: '0.3.0',
+				checkedAtIso: '2026-11-08T09:19:25.000Z',
+				lastSuccessAtIso: '2026-11-08T09:13:52.000Z',
+				release: null,
+				problem: 'Update check returned HTTP 504.',
+				install: {
+					allowed: false,
+					reason:
+						'Could not confirm whether a newer signed release is available. Check for updates again.'
+				},
+				operation: {
+					current: null,
+					previous: null,
+					pending: null,
+					phase: 'idle',
+					message: ''
+				}
+			}
+		});
+		await expect
+			.element(screen.getByText('Latest signed release: Unable to confirm'))
+			.toBeVisible();
+		await expect.element(screen.getByText('Update check returned HTTP 504.')).toBeVisible();
+		await expect.element(screen.getByText('No newer release found')).not.toBeInTheDocument();
+	});
+
 	it('U8: links to the built-in Early updates group, inviting a first machine when it is empty', async () => {
 		const screen = await renderPage({ earlyGroup: { ...EARLY_GROUP, machines: 0 } });
 		await expect

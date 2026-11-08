@@ -1,6 +1,6 @@
 # SPEC-SERVER-UPDATES: Check, install and recover server updates
 
-**Status:** Implementation built for v0.3.0 candidate · 2026-11-08 · release/update integration gates remain pending.
+**Status:** Implemented in v0.3.0; check reliability improvements in progress for the next release · 2026-11-08.
 
 ## Open decisions and security
 
@@ -24,19 +24,19 @@ For Docker/Coolify, the image is the box. BMuster reports the newer version and 
 
 ## Acceptance criteria
 
-| #    | Behaviour                                                                                                                                                                                                                      | Named test                                                          |
-| :--- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------ |
-| SU1  | Check GitHub daily when enabled; Check now performs a new check immediately. Coalesce concurrent requests and show rate-limit/network errors with the last successful result labelled by time.                                 | `server-update-check.test.ts`                                       |
-| SU2  | Only newer, supported releases are offered; drafts and prereleases are excluded on the stable channel; validate repository, asset names, sizes and metadata.                                                                   | `server-release.test.ts`                                            |
-| SU3  | Admin-only check/install endpoints; no install for Docker, source dev runs or incompatible launcher versions. Changes are audited and origin checked.                                                                          | `server-update-guards.test.ts`                                      |
-| SU4  | Banner and modal show installed/new versions, release notes, interruption of sessions and staged agent rollout. Installation requires confirmation.                                                                            | `server-update-panel.svelte.test.ts`                                |
-| SU5  | Launcher verifies the signed manifest, version, target, size and SHA-256 before activation; bounded HTTPS downloads and extraction reject traversal, links and unexpected files.                                               | Rust `server::updates::verification` and `server::updates::archive` |
-| SU6  | Fixed launcher supervises current/previous/incoming application slots with a durable switch record; interruption at every switch step recovers deterministically. Runtime/launcher changes require administrator installation. | Rust `server::updates::recovery`                                    |
-| SU7  | Staged application must answer readiness with its expected version within 120 seconds; compatible failure restores the previous application and records the reason. Database is never replaced automatically.                  | Rust `server::updates::health`, scratch-server rollback test        |
-| SU8  | Only one updater runs; active sessions are ended with a clear update reason; the database lock is handed over before the next app starts.                                                                                      | `server-update-handover.test.ts`                                    |
-| SU9  | Updates page refreshes every visible few seconds and shows every machine's version, stage/estimated turn, pins, failures and offline state; filters preserve scroll and selection.                                             | `updates-live.svelte.test.ts`                                       |
-| SU10 | Release workflow signs server manifests and agent builds and tests compatible A→B and broken B→A before publication. No unsigned release fallback.                                                                             | release dry run and scratch install/update test                     |
-| SU11 | Docker notice gives tag/deploy instructions and has no self-update action; checks can be disabled and manually requested.                                                                                                      | `server-update-panel.svelte.test.ts`, `server-update-check.test.ts` |
+| #    | Behaviour                                                                                                                                                                                                                                                                                                                                    | Named test                                                                 |
+| :--- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------- |
+| SU1  | Check GitHub daily when enabled; Check now performs a new check immediately. Coalesce concurrent requests, retry transient network/gateway failures a bounded number of times, retry failed scheduled checks after five minutes, and never report “no newer release” after a failed check. Show the last successful result labelled by time. | `server-release.test.ts`, `service.test.ts`, `updates-page.svelte.test.ts` |
+| SU2  | Only newer, supported releases are offered; drafts and prereleases are excluded on the stable channel; validate repository, asset names, sizes and metadata.                                                                                                                                                                                 | `server-release.test.ts`                                                   |
+| SU3  | Admin-only check/install endpoints; no install for Docker, source dev runs or incompatible launcher versions. Changes are audited and origin checked.                                                                                                                                                                                        | `server-update-guards.test.ts`                                             |
+| SU4  | Banner and modal show installed/new versions, release notes, interruption of sessions and staged agent rollout. Installation requires confirmation.                                                                                                                                                                                          | `server-update-panel.svelte.test.ts`                                       |
+| SU5  | Launcher verifies the signed manifest, version, target, size and SHA-256 before activation; bounded HTTPS downloads and extraction reject traversal, links and unexpected files.                                                                                                                                                             | Rust `server::updates::verification` and `server::updates::archive`        |
+| SU6  | Fixed launcher supervises current/previous/incoming application slots with a durable switch record; interruption at every switch step recovers deterministically. Runtime/launcher changes require administrator installation.                                                                                                               | Rust `server::updates::recovery`                                           |
+| SU7  | Staged application must answer readiness with its expected version within 120 seconds; compatible failure restores the previous application and records the reason. Database is never replaced automatically.                                                                                                                                | Rust `server::updates::health`, scratch-server rollback test               |
+| SU8  | Only one updater runs; active sessions are ended with a clear update reason; the database lock is handed over before the next app starts.                                                                                                                                                                                                    | `server-update-handover.test.ts`                                           |
+| SU9  | Updates page refreshes every visible few seconds and shows every machine's version, stage/estimated turn, pins, failures and offline state; filters preserve scroll and selection.                                                                                                                                                           | `updates-live.svelte.test.ts`                                              |
+| SU10 | Release workflow signs server manifests and agent builds and tests compatible A→B and broken B→A before publication. No unsigned release fallback.                                                                                                                                                                                           | release dry run and scratch install/update test                            |
+| SU11 | Docker notice gives tag/deploy instructions and has no self-update action; checks can be disabled and manually requested.                                                                                                                                                                                                                    | `server-update-panel.svelte.test.ts`, `server-update-check.test.ts`        |
 
 ## Schema and routes
 
@@ -70,6 +70,11 @@ The v0.3.0 candidate introduces the first server self-update-capable launcher. T
   The console shows a global notice, confirmation panel and live agent rollout
   rows. Docker/source runs explain that an installer or image deployment is
   required.
+- Transient HTTP 408/5xx responses and network timeouts are retried up to three
+  times with bounded backoff. Failed scheduled checks become due again after
+  five minutes; successful checks retain the daily interval. A failed check
+  with no cached release is shown as inconclusive, never as confirmation that
+  no update exists. Signature, metadata and asset validation remain fail-closed.
 - The release workflow builds Linux x64, Linux arm64 and Windows x64 bundles,
   signs agent and app manifests, and uploads dry-run artifacts on manual
   dispatch. The initial v0.3.0 manifest intentionally has no rollback source;
@@ -77,7 +82,8 @@ The v0.3.0 candidate introduces the first server self-update-capable launcher. T
   explicitly declares tested compatibility.
 - Automated unit coverage exercises manifest verification, extraction
   restrictions, updater state recovery, preparation requests, check coalescing
-  and cached-release handling. The existing workflow install test verifies
+  and cached-release handling, transient HTTP retry bounds and truthful display
+  after check failures. The existing workflow install test verifies
   install/reinstall/uninstall, but does **not yet** exercise a real app A→B
   update followed by failed-readiness rollback. Native Windows service
   update/recovery has not been run. These remain release gates and are not

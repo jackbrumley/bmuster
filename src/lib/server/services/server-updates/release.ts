@@ -11,6 +11,8 @@ import {
 export const RELEASE_PUBLIC_KEY = '4fsv0lh4Z/b/FM4RTf65gzD2la6wUJyfYcWto3RIXjs=';
 export const SERVER_SIGNING_DOMAIN = 'BMUSTER-SERVER-UPDATE-1\n';
 const REPOSITORY = 'jackbrumley/bmuster';
+const DOWNLOAD_ATTEMPTS = 3;
+const RETRYABLE_STATUSES = new Set([408, 500, 502, 503, 504]);
 export type Download = (url: string, limit: number) => Promise<Uint8Array>;
 const envelopeSchema = z.strictObject({
 	payload: z.string().max(24_000),
@@ -47,10 +49,23 @@ export function verifyManifest(bytes: Uint8Array, publicKey: string): ServerMani
 }
 
 export async function download(url: string, limit: number): Promise<Uint8Array> {
-	const response = await fetch(url, {
-		headers: { 'user-agent': 'BMuster server update check', accept: 'application/json' },
-		signal: AbortSignal.timeout(20_000)
-	});
+	let response: Response | undefined;
+	for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt += 1) {
+		try {
+			response = await fetch(url, {
+				headers: { 'user-agent': 'BMuster server update check', accept: 'application/json' },
+				signal: AbortSignal.timeout(20_000)
+			});
+		} catch (error) {
+			if (!isRetryableNetworkError(error) || attempt === DOWNLOAD_ATTEMPTS) throw error;
+			await waitBeforeRetry(attempt);
+			continue;
+		}
+		if (!RETRYABLE_STATUSES.has(response.status) || attempt === DOWNLOAD_ATTEMPTS) break;
+		await response.body?.cancel();
+		await waitBeforeRetry(attempt);
+	}
+	if (response === undefined) throw new Error('Update check did not receive a response.');
 	if (!response.ok)
 		throw new Error(
 			`Update check returned HTTP ${String(response.status)}${response.status === 403 || response.status === 429 ? ' (GitHub rate limit)' : ''}.`
@@ -82,6 +97,17 @@ export async function download(url: string, limit: number): Promise<Uint8Array> 
 		await reader.cancel();
 	}
 	return Buffer.concat(parts);
+}
+
+function isRetryableNetworkError(error: unknown): boolean {
+	return (
+		error instanceof TypeError ||
+		(error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'))
+	);
+}
+
+function waitBeforeRetry(attempt: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, attempt * 250));
 }
 
 export async function newestRelease(

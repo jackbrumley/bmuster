@@ -1,12 +1,13 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	RELEASE_PUBLIC_KEY,
 	SERVER_SIGNING_DOMAIN,
 	verifyManifest,
 	newestRelease
 } from './release.ts';
+import { download } from './release.ts';
 
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
 const key = publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64');
@@ -21,6 +22,17 @@ const manifest = {
 	nodeMajor: 26,
 	rollbackFrom: ['0.3.0']
 };
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
+});
+
+function response(status: number, body = ''): Response {
+	const result = new Response(body, { status });
+	Object.defineProperty(result, 'url', { value: 'https://api.github.com/releases/latest' });
+	return result;
+}
 function signed() {
 	const payload = Buffer.from(JSON.stringify(manifest));
 	return Buffer.from(
@@ -69,5 +81,35 @@ describe('SU2 signed stable server releases', () => {
 		await expect(newestRelease('0.3.0', 'aarch64-unknown-linux-gnu', get, key)).rejects.toThrow(
 			'manifest'
 		);
+	});
+	it('retries transient GitHub gateway failures and returns the successful response', async () => {
+		const fetchMock = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(response(504, 'gateway timeout'))
+			.mockResolvedValueOnce(response(200, 'release metadata'));
+		vi.stubGlobal('fetch', fetchMock);
+
+		await expect(download('https://api.github.com/releases/latest', 256 * 1024)).resolves.toEqual(
+			Buffer.from('release metadata')
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+	it('stops after the bounded retry budget for persistent gateway failures', async () => {
+		const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response(504, 'gateway timeout'));
+		vi.stubGlobal('fetch', fetchMock);
+
+		await expect(download('https://api.github.com/releases/latest', 256 * 1024)).rejects.toThrow(
+			'HTTP 504'
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+	it('does not retry non-transient HTTP errors', async () => {
+		const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response(404, 'not found'));
+		vi.stubGlobal('fetch', fetchMock);
+
+		await expect(download('https://api.github.com/releases/latest', 256 * 1024)).rejects.toThrow(
+			'HTTP 404'
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 });

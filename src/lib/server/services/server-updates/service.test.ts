@@ -99,4 +99,36 @@ describe('server update service (SU1, SU3)', () => {
 			rmSync(folder, { recursive: true, force: true });
 		}
 	});
+
+	it('does not claim that no update exists when the latest check failed', async () => {
+		const database = testDatabase();
+		const folder = mkdtempSync(join(tmpdir(), 'bmuster-update-failed-check-'));
+		try {
+			const service = new ServerUpdates(
+				database,
+				{
+					kind: 'installed',
+					dataDir: folder,
+					version: '0.3.0',
+					target: release.manifest.target,
+					nonce: 'c'.repeat(64)
+				},
+				'0.3.0',
+				() => Promise.reject(new Error('Update check returned HTTP 504.'))
+			);
+			await service.check(null, NOW);
+			expect(service.due(NOW + 5 * 60 * 1000 - 1)).toBe(false);
+			expect(service.due(NOW + 5 * 60 * 1000)).toBe(true);
+			expect(service.view()).toMatchObject({
+				problem: 'Update check returned HTTP 504.',
+				install: {
+					allowed: false,
+					reason:
+						'Could not confirm whether a newer signed release is available. Check for updates again.'
+				}
+			});
+		} finally {
+			rmSync(folder, { recursive: true, force: true });
+		}
+	});
 });

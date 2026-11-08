@@ -71,7 +71,13 @@
 
 <Panel heading="Server" actions={undefined} tone="normal" padding="normal">
 	<p>Installed version: <strong>{view.installedVersion}</strong></p>
-	<p>Latest signed release: {view.release?.version ?? 'No newer release found'}</p>
+	<p>
+		{view.problem !== null && view.release !== null
+			? 'Last known signed release'
+			: 'Latest signed release'}:
+		{view.release?.version ??
+			(view.problem === null ? 'No newer release found' : 'Unable to confirm')}
+	</p>
 	<p>
 		Last checked: {view.checkedAtIso === null
 			? 'Never'

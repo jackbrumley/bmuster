@@ -16,6 +16,7 @@ import { download, newestRelease, RELEASE_PUBLIC_KEY } from './release.ts';
 import { readBounded } from './files.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
+const FAILED_CHECK_RETRY = 5 * 60 * 1000;
 const EMPTY: UpdateCache = {
 	checkedAtIso: null,
 	lastSuccessAtIso: null,
@@ -71,7 +72,11 @@ export class ServerUpdates {
 			compareAgentVersions(this.#cache.release.version, this.#current) > 0
 				? this.#cache.release
 				: null;
-		if (reason === '' && release === null) reason = 'No newer signed release is available.';
+		if (reason === '' && release === null)
+			reason =
+				this.#cache.problem === null
+					? 'No newer signed release is available.'
+					: 'Could not confirm whether a newer signed release is available. Check for updates again.';
 		if (reason === '' && release !== null && config.kind === 'installed') {
 			if (compareAgentVersions(release.manifest.minimumLauncher, config.version) > 0)
 				reason = 'This release needs a newer launcher. Rerun the administrator installer.';
@@ -162,9 +167,11 @@ export class ServerUpdates {
 		);
 	}
 	due(now: number): boolean {
+		const checkedAt = this.#cache.checkedAtIso;
 		return (
 			getSetting(this.#database, 'serverUpdateChecks') &&
-			(this.#cache.checkedAtIso === null || now - Date.parse(this.#cache.checkedAtIso) >= DAY)
+			(checkedAt === null ||
+				now - Date.parse(checkedAt) >= (this.#cache.problem === null ? DAY : FAILED_CHECK_RETRY))
 		);
 	}
 }

@@ -1,6 +1,13 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.3.2',
+		changes: [
+			'Retry temporary server update check failures and make failed checks retry automatically.',
+			'Show an inconclusive update status when GitHub cannot confirm the latest release.'
+		]
+	},
+	{
 		version: '0.3.1',
 		changes: [
 			'Make Quick join the primary path on Add a machine, with manual installation kept below it.',
