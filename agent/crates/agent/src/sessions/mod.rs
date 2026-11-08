@@ -47,6 +47,8 @@ pub struct Sessions {
 }
 
 struct Inner {
+    #[cfg(target_os = "linux")]
+    data_dir: std::path::PathBuf,
     session: Arc<Session>,
     server_key: VerifyingKey,
     /// Session ids already started, until their ticket expires: a ticket
@@ -86,11 +88,16 @@ impl Sessions {
         server_key: VerifyingKey,
         stop: Arc<AtomicBool>,
         mode: SessionMode,
+        data_dir: std::path::PathBuf,
     ) -> Self {
+        #[cfg(not(target_os = "linux"))]
+        let _ = data_dir;
         log::info!("{}", mode.describe());
         mode.sweep();
         Self {
             inner: Arc::new(Inner {
+                #[cfg(target_os = "linux")]
+                data_dir,
                 session,
                 server_key,
                 seen: Mutex::new(HashMap::new()),
@@ -256,7 +263,16 @@ fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<End
                 consent: *consent,
                 notice: *notice,
             };
-            match desktop::prepare(&request, bmuster_desktop::open_console) {
+            #[cfg(target_os = "linux")]
+            let open = || {
+                let mode = bmuster_desktop::Mode::from_permissions(&ticket.permissions)?;
+                Ok(bmuster_desktop::Console::Following(Box::new(
+                    crate::wayland::Watch::new(&inner.data_dir, mode),
+                )))
+            };
+            #[cfg(not(target_os = "linux"))]
+            let open = bmuster_desktop::open_console;
+            match desktop::prepare(&request, open) {
                 Ok(desktop::Prepared::Ready(ready)) => {
                     desktop::run(&mut socket, *ready, &ticket.user.name, &inner.stop)
                 }
@@ -304,6 +320,7 @@ mod tests {
             server.verifying_key(),
             Arc::new(AtomicBool::new(false)),
             SessionMode::InProcess,
+            std::env::temp_dir(),
         )
     }
 

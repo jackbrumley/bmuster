@@ -59,8 +59,20 @@ function renderPage(overrides: Partial<Data>) {
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
 			localNetworkMode: false,
+			serverUpdate: null,
 			signedIn: true,
 			now: NOW,
+			server: {
+				installedVersion: '0.3.0',
+				deployment: 'source',
+				launcherVersion: null,
+				checkedAtIso: null,
+				lastSuccessAtIso: null,
+				release: null,
+				problem: null,
+				install: { allowed: false, reason: 'Source run' },
+				operation: { current: null, previous: null, pending: null, phase: 'idle', message: '' }
+			},
 			policy: 'automatic',
 			rollout: ROLLOUT,
 			earlyGroup: EARLY_GROUP,

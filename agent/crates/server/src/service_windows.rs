@@ -4,7 +4,7 @@
 
 use crate::config;
 use crate::layout::Layout;
-use crate::node;
+use crate::updates::Supervisor;
 use anyhow::{bail, Context as _, Result};
 use bmuster_service::windows::{self as service, status, Account, ServiceSpec, LOCAL_SERVICE_SID};
 use std::ffi::OsString;
@@ -208,12 +208,7 @@ fn service_body(layout: &Layout, log: &mut File) -> Result<()> {
     })
     .context("could not register with the service manager")?;
 
-    let mut child = node::command(layout)
-        .stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log.try_clone()?)
-        .spawn()
-        .with_context(|| format!("could not start {}", layout.node().display()))?;
+    let mut supervisor = Supervisor::new(layout, Some(log))?;
     handle.set_service_status(status(ServiceState::Running, 0))?;
 
     loop {
@@ -221,21 +216,15 @@ fn service_body(layout: &Layout, log: &mut File) -> Result<()> {
             Ok(Signal::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
                 // Windows has no SIGTERM for a console-less child; SQLite's
                 // write-ahead log keeps the database whole.
-                let _ = child.kill();
-                let _ = child.wait();
+                supervisor.stop();
                 note(log, "stopped");
                 handle.set_service_status(status(ServiceState::Stopped, 0))?;
                 return Ok(());
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                if let Some(exit) = child.try_wait()? {
-                    note(
-                        log,
-                        &format!("Node exited ({exit}); the service manager will restart it"),
-                    );
-                    // Ending without reporting "stopped" counts as a failure,
-                    // so the failure actions start the service again.
-                    std::process::exit(1);
+                if let Err(error) = supervisor.tick() {
+                    note(log, &format!("Server supervisor failed: {error:#}"));
+                    return Err(error);
                 }
             }
         }

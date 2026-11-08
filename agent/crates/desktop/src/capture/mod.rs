@@ -203,6 +203,19 @@ pub enum DesktopState {
     /// Nothing BMuster can show: a Wayland or text session, or no session
     /// at all. The session stays open and resumes when a screen comes back.
     Unavailable { reason: String },
+    /// Sharing requires an explicit action or local portal approval.
+    Approval {
+        phase: ApprovalPhase,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ApprovalPhase {
+    Needed,
+    Pending,
+    Declined,
 }
 
 /// A failure that ends capture; the message is for the admin.

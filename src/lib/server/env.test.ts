@@ -8,6 +8,7 @@ describe('environment (S15)', () => {
 		const { env } = await import('#lib/server/env.ts');
 		expect(env.databasePath).toBe(':memory:');
 		expect(Object.keys(env)).toEqual([
+			'launcher',
 			'databasePath',
 			'secretsKey',
 			'releasesPath',

@@ -165,3 +165,8 @@ export function activityScopeFor(
 export function localPagePeople(database: Queryable): { userId: string; name: string }[] {
 	return enabledAdmins(database).map((admin) => ({ userId: admin.id, name: admin.name }));
 }
+
+/** Managing the server and viewing release/update metadata is admin-only. */
+export function canManageServer(user: ConsoleUser): boolean {
+	return user.role === 'admin';
+}

@@ -476,7 +476,7 @@ fn notice_bar_disconnect_through_xtest_ends_the_session() {
     let Some(x) = NestedX::start() else { return };
     let client = Client::new(&x);
     let (end, inbox) = std::sync::mpsc::channel();
-    let shown = notice::show(Some(&x.target), "Kim", end);
+    let shown = notice::show(Some(&x.target.clone().into()), "Kim", end);
     client.sync();
     let window = notice_window(&client).expect("the bar is mapped on the nested server");
     let geometry = client

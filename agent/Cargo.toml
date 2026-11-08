@@ -3,11 +3,11 @@ resolver = "2"
 members = ["crates/protocol", "crates/service", "crates/agent", "crates/server", "crates/desktop"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 license = "AGPL-3.0-only"
 publish = false
-rust-version = "1.88"
+rust-version = "1.89"
 
 [workspace.dependencies]
 bmuster-protocol = { path = "crates/protocol" }

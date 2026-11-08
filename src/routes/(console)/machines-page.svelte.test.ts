@@ -103,6 +103,7 @@ function renderPage(machines: Machine[] = MACHINES, rollout: Rollout = { kind: '
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
 			localNetworkMode: false,
+			serverUpdate: null,
 			signedIn: true,
 			now: NOW,
 			rollout,

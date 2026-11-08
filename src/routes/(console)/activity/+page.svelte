@@ -89,6 +89,8 @@
 			case 'provider-changed':
 			case 'provider-deleted':
 				return IconShieldLock;
+			case 'server-update-checked':
+			case 'server-update-requested':
 			case 'setting-changed':
 				return IconAdjustments;
 			case 'local-certificate-renewed':

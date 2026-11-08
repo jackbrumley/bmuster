@@ -10,17 +10,17 @@ use std::process::Command;
 /// BODY_SIZE_LIMIT is adapter-node's request size limit (512 KB by default):
 /// Files uploads come in 8 MB pieces (SPEC-FILES F6), so it is 16 MB, as in
 /// the container image.
-pub fn command(layout: &Layout) -> Command {
+pub fn command_for(layout: &Layout, source: &std::path::Path) -> Command {
     let mut env_file = OsString::from("--env-file=");
     env_file.push(layout.env_file());
     let mut command = Command::new(layout.node());
     command
         .arg(env_file)
-        .arg(layout.entry())
-        .current_dir(layout.app())
+        .arg(source.join("app/server.js"))
+        .current_dir(source.join("app"))
         .env("NODE_ENV", "production")
         .env("DATABASE_PATH", layout.database())
-        .env("RELEASES_PATH", layout.releases())
+        .env("RELEASES_PATH", source.join("releases"))
         .env("BODY_SIZE_LIMIT", "16M");
     command
 }
@@ -37,16 +37,17 @@ mod tests {
             program: PathBuf::from("/opt/bmuster-server"),
             data: PathBuf::from("/var/lib/bmuster-server"),
         };
-        let command = command(&layout);
+        let command = command_for(&layout, &layout.program);
         assert_eq!(command.get_program(), layout.node().as_os_str());
         let arguments: Vec<&OsStr> = command.get_args().collect();
         let mut env_file = OsString::from("--env-file=");
         env_file.push(Path::new("/var/lib/bmuster-server").join("server.env"));
+        let entry = Path::new("/opt/bmuster-server/app/server.js");
+        assert_eq!(arguments, [env_file.as_os_str(), entry.as_os_str()]);
         assert_eq!(
-            arguments,
-            [env_file.as_os_str(), layout.entry().as_os_str()]
+            command.get_current_dir(),
+            Some(Path::new("/opt/bmuster-server/app"))
         );
-        assert_eq!(command.get_current_dir(), Some(layout.app().as_path()));
         let envs: Vec<(&OsStr, Option<&OsStr>)> = command.get_envs().collect();
         assert!(envs.contains(&(
             OsStr::new("DATABASE_PATH"),
@@ -54,7 +55,7 @@ mod tests {
         )));
         assert!(envs.contains(&(
             OsStr::new("RELEASES_PATH"),
-            Some(layout.releases().as_os_str())
+            Some(Path::new("/opt/bmuster-server/releases").as_os_str())
         )));
         assert!(envs.contains(&(OsStr::new("NODE_ENV"), Some(OsStr::new("production")))));
         assert!(envs.contains(&(OsStr::new("BODY_SIZE_LIMIT"), Some(OsStr::new("16M")))));

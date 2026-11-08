@@ -55,6 +55,7 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
     }
 
     let binary = binary_path()?;
+    crate::tray::windows::install(&binary)?;
     let current = std::env::current_exe().context("could not find this program's path")?;
     std::fs::create_dir_all(install_dir()?).context("could not create the program folder")?;
     if current.canonicalize().ok() != binary.canonicalize().ok() {
@@ -98,6 +99,8 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
 }
 
 pub fn uninstall(purge: bool) -> Result<()> {
+    service::require_admin()?;
+    crate::tray::windows::uninstall()?;
     if service::stop_and_delete(SERVICE_NAME)? {
         log::info!("Removed the \"{DISPLAY_NAME}\" service.");
     }

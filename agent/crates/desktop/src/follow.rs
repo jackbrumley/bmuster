@@ -28,6 +28,9 @@ pub struct Look {
 
 /// What a following session asks of the platform.
 pub trait ScreenWatch: Send {
+    fn request_approval(&mut self) -> Result<(), String> {
+        Err("This screen does not use portal approval".into())
+    }
     /// What the screen shows now. Cheap enough to call once a second.
     fn look(&mut self) -> Look;
 

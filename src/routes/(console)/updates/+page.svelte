@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import ServerUpdatePanel from './server-update-panel.svelte';
 	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import {
@@ -27,6 +29,16 @@
 	 * roll-out has got, every machine's version and update state, Pause and Update now.
 	 */
 	let { data }: PageProps = $props();
+	onMount(() => {
+		const timer = setInterval(() => {
+			if (document.visibilityState === 'visible') {
+				void refreshAll();
+			}
+		}, 3000);
+		return () => {
+			clearInterval(timer);
+		};
+	});
 
 	const earlyCount = $derived(
 		`${String(data.earlyGroup.machines)} ${data.earlyGroup.machines === 1 ? 'machine' : 'machines'}`
@@ -62,6 +74,8 @@
 	summary="Keep every agent on the newest signed version: in stages, automatically, with a pause for anything that goes wrong."
 	actions={undefined}
 />
+
+<ServerUpdatePanel view={data.server} />
 
 <Panel heading="Release notes" actions={undefined} tone="normal" padding="normal">
 	{#each CHANGELOG as release (release.version)}

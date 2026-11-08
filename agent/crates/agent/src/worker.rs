@@ -172,6 +172,7 @@ pub fn run(
         server_key,
         Arc::clone(&stop),
         options.sessions,
+        options.data_dir.clone(),
     );
     let socket_thread = {
         let session = Arc::clone(&session);

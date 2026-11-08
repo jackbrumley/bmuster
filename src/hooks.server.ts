@@ -1,7 +1,10 @@
-import { dev } from '$app/env';
+import { dev, building } from '$app/env';
 import { sequence } from '@sveltejs/kit/hooks';
 import type { HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 // Opening the database applies migrations before the first request.
+import { startUpdateChecks } from '#lib/server/services/server-updates/live.ts';
+import { startPreparation } from '#lib/server/services/server-updates/preparation.ts';
+import { sessionRelay } from '#lib/server/services/sessions/relay.ts';
 import { database } from '#lib/server/database/app-database.ts';
 import { scheduleSnapshots } from '#lib/server/database/snapshots.ts';
 import { env } from '#lib/server/env.ts';
@@ -45,6 +48,10 @@ export const init: ServerInit = async () => {
 	await prepareFirstRun(database, env.firstAdmin, serverSetupCode, printToServerLog, Date.now());
 	if (!dev && env.databasePath !== ':memory:') {
 		scheduleSnapshots(database.$client, env.databasePath, env.backupSchedule, printToServerLog);
+	}
+	if (!dev && !building) {
+		startUpdateChecks(printToServerLog);
+		startPreparation(database, env.databasePath, env.launcher, sessionRelay(), printToServerLog);
 	}
 	startEmailWorker(database, env.secretsKey);
 	restorePresence(database, Date.now());

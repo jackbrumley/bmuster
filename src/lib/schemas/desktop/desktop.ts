@@ -33,7 +33,12 @@ const screenSchema = z.discriminatedUnion('kind', [
 	z.object({ kind: z.literal('sign-in') }),
 	z.object({ kind: z.literal('locked'), user: z.string().nullable() }),
 	z.object({ kind: z.literal('desktop'), user: z.string().nullable() }),
-	z.object({ kind: z.literal('unavailable'), reason: z.string() })
+	z.object({ kind: z.literal('unavailable'), reason: z.string() }),
+	z.object({
+		kind: z.literal('approval'),
+		phase: z.enum(['needed', 'pending', 'declined']),
+		message: z.string()
+	})
 ]) satisfies z.ZodType<DesktopScreen>;
 
 export const agentDesktopMessageSchema = z.discriminatedUnion('type', [

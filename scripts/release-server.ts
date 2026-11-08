@@ -299,8 +299,13 @@ if (spec.archive === 'zip') {
 } else {
 	run(TAR, ['-czf', archive, '-C', STAGE, 'bmuster-server']);
 }
+const appArchive = join(OUT, `bmuster-app-${target}.tar.gz`);
+rmSync(appArchive, { force: true });
+run(TAR, ['-czf', appArchive, '-C', BUNDLE, 'app', 'releases', 'VERSION']);
 console.log(
 	`release:server: BMuster Server ${serverVersion} for ${platform} (Node ${nodeVersion})`
 );
 console.log(`  ${archive}`);
 console.log(`  SHA-256 ${sha256(archive)}`);
+console.log(`  ${appArchive}`);
+console.log(`  SHA-256 ${sha256(appArchive)}`);

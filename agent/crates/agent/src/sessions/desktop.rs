@@ -282,6 +282,7 @@ mod tests {
             display: ":99999".into(),
             xauthority: None,
         }
+        .into()
     }
 
     fn request<'a>(permissions: &'a [String], consent: Consent) -> Request<'a> {

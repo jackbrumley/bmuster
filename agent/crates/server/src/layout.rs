@@ -30,21 +30,6 @@ impl Layout {
         node_in(&self.program)
     }
 
-    /// The Node app; also the working directory, since the server finds its
-    /// migrations relative to it.
-    pub fn app(&self) -> PathBuf {
-        self.program.join("app")
-    }
-
-    pub fn entry(&self) -> PathBuf {
-        self.app().join("server.js")
-    }
-
-    /// Agent builds: `<version>/<target>/bmuster-agent[.exe]` (RELEASES_PATH).
-    pub fn releases(&self) -> PathBuf {
-        self.program.join("releases")
-    }
-
     pub fn launcher(&self) -> PathBuf {
         self.program.join(LAUNCHER)
     }
@@ -182,11 +167,6 @@ pub mod tests {
         };
         assert_eq!(layout.env_file(), Path::new("/d").join("server.env"));
         assert_eq!(layout.database(), Path::new("/d").join("bmuster.db"));
-        assert_eq!(layout.releases(), Path::new("/p").join("releases"));
-        assert_eq!(
-            layout.entry(),
-            Path::new("/p").join("app").join("server.js")
-        );
     }
 
     /// An empty folder for one test, under the system temp folder.

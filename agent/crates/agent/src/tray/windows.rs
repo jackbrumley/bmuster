@@ -1,0 +1,381 @@
+//! Windows notification area and read-only, ACL-checked status.
+use super::status::{self, Snapshot};
+use anyhow::{bail, Context as _, Result};
+use std::fs::{File, OpenOptions};
+use std::os::windows::fs::{MetadataExt as _, OpenOptionsExt as _};
+use std::os::windows::io::AsRawHandle as _;
+use std::path::Path;
+use windows::core::{w, PCWSTR, PWSTR};
+use windows::Win32::Foundation::{LocalFree, HANDLE, HLOCAL, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Security::Authorization::{
+    ConvertSidToStringSidW, GetSecurityInfo, SE_FILE_OBJECT,
+};
+use windows::Win32::Security::{
+    GetAce, ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, DACL_SECURITY_INFORMATION,
+    OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
+};
+use windows::Win32::Storage::FileSystem::{
+    MoveFileExW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_EXECUTE,
+    FILE_GENERIC_READ, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+};
+use windows::Win32::UI::Shell::*;
+use windows::Win32::UI::WindowsAndMessaging::*;
+
+const CALLBACK: u32 = WM_APP + 1;
+const OPEN: usize = 1;
+const COPY: usize = 2;
+
+fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt as _;
+    value.encode_wide().chain(Some(0)).collect()
+}
+
+unsafe fn sid_text(sid: PSID) -> Result<String> {
+    let mut text = PWSTR::null();
+    unsafe {
+        ConvertSidToStringSidW(sid, &mut text)?;
+    }
+    let value = unsafe { text.to_string() };
+    unsafe {
+        LocalFree(Some(HLOCAL(text.0.cast())));
+    }
+    Ok(value?)
+}
+
+fn verify_acl(file: &File) -> Result<()> {
+    let mut owner = PSID::default();
+    let mut acl: *mut ACL = std::ptr::null_mut();
+    let mut descriptor = PSECURITY_DESCRIPTOR::default();
+    unsafe {
+        GetSecurityInfo(
+            HANDLE(file.as_raw_handle()),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            Some(&mut owner),
+            None,
+            Some(&mut acl),
+            None,
+            Some(&mut descriptor),
+        )
+        .ok()?;
+    }
+    let checked = (|| -> Result<()> {
+        let owner = unsafe { sid_text(owner)? };
+        if !matches!(owner.as_str(), "S-1-5-18" | "S-1-5-32-544") || acl.is_null() {
+            bail!("Untrusted status owner or missing DACL");
+        }
+        for index in 0..unsafe { (*acl).AceCount } {
+            let mut ace = std::ptr::null_mut();
+            unsafe {
+                GetAce(acl, u32::from(index), &mut ace)?;
+            }
+            let header = unsafe { &*ace.cast::<ACE_HEADER>() };
+            if header.AceType == 1 {
+                continue;
+            }
+            if header.AceType != 0 {
+                bail!("Unsupported status ACL entry");
+            }
+            let allowed = unsafe { &*ace.cast::<ACCESS_ALLOWED_ACE>() };
+            let sid = PSID(std::ptr::addr_of!(allowed.SidStart).cast_mut().cast());
+            let name = unsafe { sid_text(sid)? };
+            if !matches!(name.as_str(), "S-1-5-18" | "S-1-5-32-544")
+                && allowed.Mask & !(FILE_GENERIC_READ.0 | FILE_GENERIC_EXECUTE.0) != 0
+            {
+                bail!("A non-administrator can alter tray status");
+            }
+        }
+        Ok(())
+    })();
+    unsafe {
+        LocalFree(Some(HLOCAL(descriptor.0)));
+    }
+    checked
+}
+
+pub fn open_status(dir: &Path) -> Result<File> {
+    let directory = OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0 | FILE_FLAG_OPEN_REPARSE_POINT.0)
+        .open(dir)?;
+    if directory.metadata()?.file_attributes() & 0x400 != 0 {
+        bail!("Status directory is a reparse point");
+    }
+    verify_acl(&directory)?;
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0)
+        .open(dir.join("status.json"))?;
+    if !file.metadata()?.is_file() || file.metadata()?.file_attributes() & 0x400 != 0 {
+        bail!("Status file is not a regular file");
+    }
+    verify_acl(&file)?;
+    Ok(file)
+}
+
+pub fn publish(board: std::sync::Arc<crate::status::StatusBoard>, port: u16) -> Result<()> {
+    let dir = status::directory()?;
+    let directory = OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0 | FILE_FLAG_OPEN_REPARSE_POINT.0)
+        .open(&dir)?;
+    verify_acl(&directory)?;
+    std::thread::Builder::new()
+        .name("tray status".into())
+        .spawn(move || loop {
+            let result = (|| -> Result<()> {
+                let next = dir.join(format!("status-{}.new", std::process::id()));
+                std::fs::write(
+                    &next,
+                    serde_json::to_vec(&Snapshot::new(&board.snapshot(), port))?,
+                )?;
+                let source = wide(next.as_os_str());
+                let destination = wide(dir.join("status.json").as_os_str());
+                unsafe {
+                    MoveFileExW(
+                        PCWSTR(source.as_ptr()),
+                        PCWSTR(destination.as_ptr()),
+                        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+                    )?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = result {
+                log::warn!("Cannot publish tray status: {error:#}");
+            }
+            std::thread::sleep(std::time::Duration::from_secs(5));
+        })?;
+    Ok(())
+}
+
+fn icon_data(window: HWND) -> NOTIFYICONDATAW {
+    let mut data = NOTIFYICONDATAW {
+        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: window,
+        uID: 1,
+        uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
+        uCallbackMessage: CALLBACK,
+        ..Default::default()
+    };
+    data.hIcon = unsafe { LoadIconW(None, IDI_INFORMATION) }.unwrap_or_default();
+    let label = match status::read() {
+        Ok(s) => format!("BMuster: {}", s.state.label()),
+        Err(_) => "BMuster: Agent not running".into(),
+    };
+    for (to, from) in data.szTip.iter_mut().take(127).zip(label.encode_utf16()) {
+        *to = from;
+    }
+    data
+}
+
+unsafe extern "system" fn procedure(window: HWND, message: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    match message {
+        _ if message == unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) } => {
+            unsafe {
+                let _ = Shell_NotifyIconW(NIM_ADD, &icon_data(window));
+            }
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            unsafe {
+                let _ = Shell_NotifyIconW(NIM_MODIFY, &icon_data(window));
+            }
+            LRESULT(0)
+        }
+        CALLBACK => {
+            let event = lp.0 as u32;
+            if event == WM_LBUTTONUP {
+                if let Err(error) = super::open_management() {
+                    log::warn!("Open management: {error:#}");
+                }
+            } else if event == WM_RBUTTONUP {
+                let result = unsafe { menu(window) };
+                if let Err(error) = result {
+                    log::warn!("Tray menu: {error:#}");
+                }
+            }
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            unsafe {
+                let _ = Shell_NotifyIconW(NIM_DELETE, &icon_data(window));
+                PostQuitMessage(0);
+            }
+            LRESULT(0)
+        }
+        _ => unsafe { DefWindowProcW(window, message, wp, lp) },
+    }
+}
+
+unsafe fn menu(window: HWND) -> Result<()> {
+    let menu = unsafe { CreatePopupMenu()? };
+    let snapshot = status::read();
+    let label = snapshot
+        .as_ref()
+        .map(|s| s.state.label())
+        .unwrap_or("Agent not running");
+    let label = wide(std::ffi::OsStr::new(label));
+    let flags = if snapshot.is_ok() {
+        MF_STRING
+    } else {
+        MF_STRING | MF_GRAYED
+    };
+    let result = (|| -> Result<()> {
+        unsafe {
+            AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(label.as_ptr()))?;
+            AppendMenuW(menu, flags, OPEN, w!("Open local management"))?;
+            AppendMenuW(menu, flags, COPY, w!("Copy local URL"))?;
+            let mut point = POINT::default();
+            GetCursorPos(&mut point)?;
+            let _ = SetForegroundWindow(window);
+            let choice = TrackPopupMenu(
+                menu,
+                TPM_RETURNCMD | TPM_NONOTIFY,
+                point.x,
+                point.y,
+                None,
+                window,
+                None,
+            )
+            .0 as usize;
+            if choice == OPEN {
+                super::open_management()?;
+            } else if choice == COPY {
+                super::copy_url(&mut None)?;
+            }
+        }
+        Ok(())
+    })();
+    unsafe {
+        DestroyMenu(menu)?;
+    }
+    result
+}
+
+pub fn run() -> Result<()> {
+    unsafe {
+        let instance = windows::Win32::System::LibraryLoader::GetModuleHandleW(None)?;
+        let class = w!("BMusterAgentTray");
+        let info = WNDCLASSW {
+            lpfnWndProc: Some(procedure),
+            hInstance: instance.into(),
+            lpszClassName: class,
+            ..Default::default()
+        };
+        if RegisterClassW(&info) == 0 {
+            bail!("Could not register the tray window");
+        }
+        let window = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            class,
+            w!("BMuster"),
+            WINDOW_STYLE(0),
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Some(instance.into()),
+            None,
+        )?;
+        if !Shell_NotifyIconW(NIM_ADD, &icon_data(window)).as_bool() {
+            let _ = DestroyWindow(window);
+            bail!("Could not add the notification icon");
+        }
+        if SetTimer(Some(window), 1, 5000, None) == 0 {
+            let _ = DestroyWindow(window);
+            bail!("Could not start the tray timer");
+        }
+        let mut message = MSG::default();
+        loop {
+            let result = GetMessageW(&mut message, None, 0, 0).0;
+            if result == -1 {
+                bail!("Tray message loop failed");
+            }
+            if result == 0 {
+                break;
+            }
+            let _ = TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+    Ok(())
+}
+
+pub fn install(binary: &Path) -> Result<()> {
+    let dir = status::directory()?;
+    std::fs::create_dir_all(&dir)?;
+    for arguments in [
+        vec![dir.as_os_str().to_owned(), "/reset".into()],
+        bmuster_service::windows::restrict_dir_arguments(
+            &dir,
+            &["*S-1-5-32-545:(OI)(CI)RX".into()],
+        ),
+        vec![
+            dir.as_os_str().to_owned(),
+            "/setowner".into(),
+            "*S-1-5-18".into(),
+        ],
+    ] {
+        if !std::process::Command::new("icacls")
+            .args(arguments)
+            .status()?
+            .success()
+        {
+            bail!("Could not protect the public status folder");
+        }
+    }
+    let path = format!("\"{}\" tray", binary.display());
+    if !std::process::Command::new("reg")
+        .args([
+            "add",
+            r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run",
+            "/v",
+            "BMusterAgent",
+            "/t",
+            "REG_SZ",
+            "/d",
+            &path,
+            "/f",
+        ])
+        .status()?
+        .success()
+    {
+        bail!("Could not install the tray autostart entry");
+    }
+    // The shortcut opens management directly, even without a tray host.
+    let programs = bmuster_service::windows::known_folder("ProgramData")?
+        .join(r"Microsoft\Windows\Start Menu\Programs");
+    std::fs::create_dir_all(&programs)?;
+    let script = format!("$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{}');$s.TargetPath='{}';$s.Arguments='tray --open';$s.Save()", programs.join("BMuster.lnk").display().to_string().replace('\'', "''"), binary.display().to_string().replace('\'', "''"));
+    if !std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .status()?
+        .success()
+    {
+        bail!("Could not create BMuster's Start menu shortcut");
+    }
+    Ok(())
+}
+
+pub fn uninstall() -> Result<()> {
+    let key = r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run";
+    let query = std::process::Command::new("reg")
+        .args(["query", key, "/v", "BMusterAgent"])
+        .output()?;
+    if query.status.success()
+        && !std::process::Command::new("reg")
+            .args(["delete", key, "/v", "BMusterAgent", "/f"])
+            .status()?
+            .success()
+    {
+        bail!("Could not remove the tray autostart entry");
+    }
+    let shortcut = bmuster_service::windows::known_folder("ProgramData")?
+        .join(r"Microsoft\Windows\Start Menu\Programs\BMuster.lnk");
+    if shortcut.exists() {
+        std::fs::remove_file(shortcut).context("Could not remove the BMuster shortcut")?;
+    }
+    Ok(())
+}

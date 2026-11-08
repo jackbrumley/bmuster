@@ -10,6 +10,7 @@ mod node;
 mod service_linux;
 #[cfg(windows)]
 mod service_windows;
+mod updates;
 
 use anyhow::{bail, Context as _, Result};
 use clap::{Args, Parser, Subcommand};
@@ -151,24 +152,8 @@ fn run(layout: &Layout) -> Result<ExitCode> {
             layout.env_file().display()
         );
     }
-    let mut command = node::command(layout);
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        let error = command.exec();
-        Err(error).with_context(|| format!("could not start {}", layout.node().display()))
-    }
-    #[cfg(not(unix))]
-    {
-        let status = command
-            .status()
-            .with_context(|| format!("could not start {}", layout.node().display()))?;
-        Ok(match status.code() {
-            Some(0) => ExitCode::SUCCESS,
-            Some(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
-            None => ExitCode::FAILURE,
-        })
-    }
+    updates::run(layout)?;
+    Ok(ExitCode::SUCCESS)
 }
 
 fn install(layout: &Layout, port: Option<u16>, no_service: bool) -> Result<()> {
@@ -181,6 +166,7 @@ fn install(layout: &Layout, port: Option<u16>, no_service: bool) -> Result<()> {
         println!("Stopped the running server for the upgrade.");
     }
     bundle::replace_dir(&source, &layout.program)?;
+    updates::reset_for_installer(layout)?;
     println!(
         "Installed BMuster Server {} in {}.",
         layout::bundle_version(&layout.program),

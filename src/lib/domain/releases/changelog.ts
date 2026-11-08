@@ -1,6 +1,14 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.3.0',
+		changes: [
+			'Add a user-session tray shortcut to local agent management.',
+			'Add approved screen sharing and remote input for signed-in Wayland desktops.',
+			'Add signed server application updates with manual checks, startup recovery and live agent rollout status.'
+		]
+	},
+	{
 		version: '0.2.1',
 		changes: [
 			'Keep support-code entry compact with grouped digits, and give the following steps more room.'

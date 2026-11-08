@@ -120,9 +120,7 @@ jobs:
           done
 
       # Release signature for automatic agent updates (SPEC-AGENT-UPDATES).
-      # After the glibc check, so its objdump loop never meets the .sig file.
-      # Without the secret (a fork, or before it is set) the build stays
-      # unsigned: it installs, but agents will not take it as an update.
+      # A release or dry run without the offline key must fail closed.
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -132,8 +130,8 @@ jobs:
           BMUSTER_RELEASE_SIGNING_KEY: ${{ secrets.BMUSTER_RELEASE_SIGNING_KEY }}
         run: |
           if [ -z "$BMUSTER_RELEASE_SIGNING_KEY" ]; then
-            echo "::warning::BMUSTER_RELEASE_SIGNING_KEY is not set; the agent is not signed"
-            exit 0
+            echo "::error::BMUSTER_RELEASE_SIGNING_KEY is required for every release build"
+            exit 1
           fi
           ext=""
           if [ "$RUNNER_OS" = "Windows" ]; then ext=".exe"; fi
@@ -153,10 +151,13 @@ jobs:
         include:
           - runner: ubuntu-24.04
             platform: linux-x64
+            target: x86_64-unknown-linux-gnu
           - runner: ubuntu-24.04-arm
             platform: linux-arm64
+            target: aarch64-unknown-linux-gnu
           - runner: windows-latest
             platform: windows-x64
+            target: x86_64-pc-windows-msvc
     # Native runners: node_modules holds native modules for its platform.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -184,10 +185,15 @@ jobs:
       - name: Build the archive
         run: node scripts/release-server.ts --binaries dist/binaries
 
+      - name: Sign the server update
+        env:
+          BMUSTER_RELEASE_SIGNING_KEY: ${{ secrets.BMUSTER_RELEASE_SIGNING_KEY }}
+        run: node scripts/server-update-sign.ts --target "${{ matrix.target }}" --archive "dist/release/bmuster-app-${{ matrix.target }}.tar.gz"
+
       - uses: actions/upload-artifact@v7
         with:
           name: archive-${{ matrix.platform }}
-          path: dist/release/bmuster-server-${{ matrix.platform }}.*
+          path: dist/release/*
           retention-days: 7
 
   sums:
@@ -204,7 +210,7 @@ jobs:
       - name: Write SHA256SUMS
         working-directory: release
         run: |
-          sha256sum bmuster-server-* > SHA256SUMS
+          sha256sum bmuster-server-* bmuster-app-*.tar.gz > SHA256SUMS
           cat SHA256SUMS
 
       - uses: actions/upload-artifact@v7

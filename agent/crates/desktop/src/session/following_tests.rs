@@ -147,6 +147,7 @@ fn notice_target() -> crate::notice::Target {
         display: ":99999".into(),
         xauthority: None,
     }
+    .into()
 }
 
 #[cfg(not(target_os = "linux"))]

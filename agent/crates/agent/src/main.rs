@@ -21,8 +21,11 @@ mod socket;
 mod status;
 mod tls;
 mod totp;
+mod tray;
 mod trust;
 mod updates;
+#[cfg(target_os = "linux")]
+mod wayland;
 mod worker;
 
 use anyhow::{bail, Context as _, Result};
@@ -79,6 +82,14 @@ impl Join {
 
 #[derive(Subcommand)]
 enum Command {
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    WaylandHelper,
+    /// Show the user-session tray; --open opens local management without a tray host
+    Tray {
+        #[arg(long)]
+        open: bool,
+    },
     /// Copy the agent into place, enrol, and start the service (needs root or Administrator)
     Install(Join),
     /// Enrol only, without installing a service (for development)
@@ -244,6 +255,15 @@ fn run_windows_service() -> ExitCode {
 
 fn dispatch(command: Command) -> Result<ExitCode> {
     match command {
+        #[cfg(target_os = "linux")]
+        Command::WaylandHelper => {
+            wayland::helper::run()?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Tray { open } => {
+            tray::run(open)?;
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Install(join) => {
             platform::install(&join.url, &join.code, join.name.as_deref(), join.trust())?;
             Ok(ExitCode::SUCCESS)

@@ -10,6 +10,7 @@
  * the first has stopped. Nothing listens while it waits, so /healthz and
  * /readyz answer only once the lock is held and the migrations are applied.
  */
+import { publishReady } from './src/lib/server/services/server-updates/preparation.ts';
 import { createServer, type RequestListener } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
 import { acquireDataLock } from './src/lib/server/database/data-lock.ts';
@@ -59,6 +60,7 @@ const server =
 		: createServer(handler);
 attachSocketRoutes(server, () => Promise.resolve(registeredSocketRoutes()), 'refuse');
 server.listen(port, host, () => {
+	publishReady(env.launcher);
 	const scheme = served.kind === 'own' ? 'https' : 'http';
 	const note = served.kind === 'own' ? ' (local network mode: its own certificate)' : '';
 	const lock = dataLock === undefined ? '' : `, holding ${dataLock.path}`;

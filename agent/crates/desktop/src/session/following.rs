@@ -74,6 +74,22 @@ impl DesktopSession {
         self.follow.as_ref().is_some_and(|f| f.open.is_some())
     }
 
+    pub(super) fn request_screen_approval(&mut self, now: Instant, out: &mut Vec<Outgoing>) {
+        let result = self
+            .follow
+            .as_mut()
+            .ok_or_else(|| "This screen has no portal".to_string())
+            .and_then(|follow| follow.watch.request_approval());
+        if let Err(reason) = result {
+            out.push(super::error(
+                crate::control::ErrorCode::CaptureFailed,
+                &reason,
+            ));
+        } else {
+            self.look(now, out);
+        }
+    }
+
     /// The next look, while there is no screen to capture (frames wait).
     pub(super) fn waiting_for_screen(&self) -> Option<Instant> {
         self.follow
@@ -126,7 +142,7 @@ impl DesktopSession {
             self.close_screen();
         }
         let state = match look.state {
-            DesktopState::Unavailable { .. } => {
+            DesktopState::Unavailable { .. } | DesktopState::Approval { .. } => {
                 notice::keep_on(None);
                 look.state
             }
@@ -195,7 +211,10 @@ impl DesktopSession {
         };
         if follow.state != state {
             log::info!("The screen at the machine shows {state:?}");
-            let nothing = matches!(state, DesktopState::Unavailable { .. });
+            let nothing = matches!(
+                state,
+                DesktopState::Unavailable { .. } | DesktopState::Approval { .. }
+            );
             follow.state = state;
             if nothing {
                 out.push(self.displays_message());

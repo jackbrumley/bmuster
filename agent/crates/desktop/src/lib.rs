@@ -84,7 +84,7 @@ pub fn x11_platform(target: capture::x11_session::X11Target) -> Result<Platform,
         make_input: Box::new(move || {
             Ok(Box::new(input::x11::XTestInput::open(&target)?) as Box<dyn InputBackend>)
         }),
-        notice_target,
+        notice_target: notice_target.into(),
     })
 }
 

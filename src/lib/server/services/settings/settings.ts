@@ -18,6 +18,7 @@ import { recordAudit, type AuditActor } from '../audit/audit.ts';
  */
 /** Each setting's declared type, keyed so the compiler ties every key to its value type. */
 const PARSE: { [K in SettingKey]: (value: unknown) => SettingValues[K] } = {
+	serverUpdateChecks: (value) => SETTING_DEFINITIONS.serverUpdateChecks.schema.parse(value),
 	defaultConsent: (value) => SETTING_DEFINITIONS.defaultConsent.schema.parse(value),
 	connectedNotice: (value) => SETTING_DEFINITIONS.connectedNotice.schema.parse(value),
 	agentUpdatePolicy: (value) => SETTING_DEFINITIONS.agentUpdatePolicy.schema.parse(value),
@@ -29,6 +30,7 @@ const PARSE: { [K in SettingKey]: (value: unknown) => SettingValues[K] } = {
 };
 
 const DEFAULTS: SettingValues = {
+	serverUpdateChecks: SETTING_DEFINITIONS.serverUpdateChecks.defaultValue,
 	defaultConsent: SETTING_DEFINITIONS.defaultConsent.defaultValue,
 	connectedNotice: SETTING_DEFINITIONS.connectedNotice.defaultValue,
 	agentUpdatePolicy: SETTING_DEFINITIONS.agentUpdatePolicy.defaultValue,

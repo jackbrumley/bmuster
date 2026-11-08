@@ -1,6 +1,6 @@
 # SPEC-SERVER-UPDATES: Check, install and recover server updates
 
-**Status:** DRAFT for review · 2026-11-08 · implementation not started.
+**Status:** Implementation built for v0.3.0 candidate · 2026-11-08 · release/update integration gates remain pending.
 
 ## Open decisions and security
 
@@ -54,4 +54,31 @@ Proposed admin endpoints: `POST /api/server-updates/check`, `POST /api/server-up
 
 ## Current limits
 
-No server self-update code survived the interrupted session. The existing installer remains the update mechanism. No release is tagged or published by this document. The release key's presence in GitHub must be checked without revealing its contents before a release dry run.
+The v0.3.0 candidate introduces the first server self-update-capable launcher. The existing administrator installer remains required to move from earlier versions whose launcher has no update supervisor. No release is tagged or published by this document. The release key's presence in GitHub must be checked without revealing its contents before a release dry run.
+
+## As built
+
+- The Rust launcher supervisor has bounded downloads, Ed25519 manifest
+  verification, archive validation, version slots, health/readiness confirmation,
+  durable recovery state and rollback to the prior application slot. The
+  launcher and bundled Node runtime remain fixed; an administrator installer
+  is required when either changes. Existing database files are never rolled
+  back automatically.
+- The Node app checks GitHub's latest stable release daily and on an
+  administrator-triggered request, stores bounded release metadata, audits
+  checks and update requests, and serves admin-guarded check/install/view APIs.
+  The console shows a global notice, confirmation panel and live agent rollout
+  rows. Docker/source runs explain that an installer or image deployment is
+  required.
+- The release workflow builds Linux x64, Linux arm64 and Windows x64 bundles,
+  signs agent and app manifests, and uploads dry-run artifacts on manual
+  dispatch. The initial v0.3.0 manifest intentionally has no rollback source;
+  the first supported self-update is from v0.3.0 to a later release that
+  explicitly declares tested compatibility.
+- Automated unit coverage exercises manifest verification, extraction
+  restrictions, updater state recovery, preparation requests, check coalescing
+  and cached-release handling. The existing workflow install test verifies
+  install/reinstall/uninstall, but does **not yet** exercise a real app A→B
+  update followed by failed-readiness rollback. Native Windows service
+  update/recovery has not been run. These remain release gates and are not
+  claimed as verified behaviour.

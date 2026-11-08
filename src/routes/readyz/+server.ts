@@ -1,3 +1,4 @@
+import { CHANGELOG } from '#lib/domain/releases/changelog.ts';
 import { database } from '#lib/server/database/app-database.ts';
 import { MIGRATIONS_FOLDER } from '#lib/server/database/connection.ts';
 import { databaseReadiness } from '#lib/server/database/readiness.ts';
@@ -14,7 +15,7 @@ export const GET: RequestHandler = route.public(() => {
 	const headers = { 'cache-control': 'no-store' };
 	switch (readiness.kind) {
 		case 'ready':
-			return Response.json({ status: 'ready' }, { headers });
+			return Response.json({ status: 'ready', version: CHANGELOG[0].version }, { headers });
 		case 'not-ready':
 			process.stderr.write(`GET /readyz: not ready (${readiness.reason})\n`);
 			return Response.json({ status: 'not-ready' }, { status: 503, headers });

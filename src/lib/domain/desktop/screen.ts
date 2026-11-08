@@ -8,7 +8,8 @@ export type DesktopScreen =
 	| { kind: 'sign-in' }
 	| { kind: 'locked'; user: string | null }
 	| { kind: 'desktop'; user: string | null }
-	| { kind: 'unavailable'; reason: string };
+	| { kind: 'unavailable'; reason: string }
+	| { kind: 'approval'; phase: 'needed' | 'pending' | 'declined'; message: string };
 
 /** The status line on the Desktop tab: "Sign-in screen", "jack's desktop · locked". */
 export function screenLabel(screen: DesktopScreen): string {
@@ -19,6 +20,8 @@ export function screenLabel(screen: DesktopScreen): string {
 			return screen.user === null ? 'Desktop · locked' : `${screen.user}'s desktop · locked`;
 		case 'desktop':
 			return screen.user === null ? 'Desktop' : `${screen.user}'s desktop`;
+		case 'approval':
+			return screen.message;
 		case 'unavailable':
 			return `Screen not available: ${screen.reason}`;
 	}

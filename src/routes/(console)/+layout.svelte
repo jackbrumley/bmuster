@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ServerUpdateNotice from '#lib/shell/server-update-notice.svelte';
 	import ShellFrame from '#lib/shell/shell-frame.svelte';
 	import type { LayoutProps } from './$types';
 
@@ -6,5 +7,6 @@
 </script>
 
 <ShellFrame user={data.user} localNetworkMode={data.localNetworkMode}>
+	<ServerUpdateNotice initial={data.serverUpdate} />
 	{@render children()}
 </ShellFrame>

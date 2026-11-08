@@ -3,6 +3,7 @@
  * stops the server at start-up (fail hard), never later at first use.
  */
 import { existsSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import type { SnapshotSchedule } from './database/snapshots.ts';
 
 // Variables already set (Docker, the shell) win over .env.
@@ -101,7 +102,45 @@ function secretsKey(): Buffer {
 	return key;
 }
 
+export type LauncherConfig =
+	| { kind: 'source' | 'docker' }
+	| {
+			kind: 'installed';
+			dataDir: string;
+			version: string;
+			target: 'x86_64-unknown-linux-gnu' | 'aarch64-unknown-linux-gnu' | 'x86_64-pc-windows-msvc';
+			nonce: string;
+	  };
+
+function launcherConfig(): LauncherConfig {
+	const kind = optional('BMUSTER_DEPLOYMENT') ?? 'source';
+	const dataDir = optional('BMUSTER_UPDATE_DATA');
+	const version = optional('BMUSTER_LAUNCHER_VERSION');
+	const target = optional('BMUSTER_LAUNCHER_TARGET');
+	const nonce = optional('BMUSTER_READINESS_NONCE');
+	if (kind === 'source' || kind === 'docker') {
+		if ([dataDir, version, target, nonce].some((value) => value !== undefined))
+			throw new Error('Launcher settings require BMUSTER_DEPLOYMENT=installed');
+		return { kind };
+	}
+	if (
+		kind !== 'installed' ||
+		dataDir === undefined ||
+		!isAbsolute(dataDir) ||
+		version === undefined ||
+		!/^\d+\.\d+\.\d+$/.test(version) ||
+		nonce === undefined ||
+		!/^[a-f0-9]{64}$/.test(nonce) ||
+		(target !== 'x86_64-unknown-linux-gnu' &&
+			target !== 'aarch64-unknown-linux-gnu' &&
+			target !== 'x86_64-pc-windows-msvc')
+	)
+		throw new Error('Installed server launcher settings are incomplete or invalid');
+	return { kind, dataDir, version, target, nonce };
+}
+
 export const env = {
+	launcher: launcherConfig(),
 	/** Path to the SQLite database file, e.g. ./data/bmuster.db */
 	databasePath: required('DATABASE_PATH'),
 	/** Encrypts secrets at rest (the server's signing key, provider secrets). */

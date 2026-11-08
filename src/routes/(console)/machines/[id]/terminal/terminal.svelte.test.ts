@@ -51,6 +51,7 @@ function props() {
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
 			localNetworkMode: false,
+			serverUpdate: null,
 			signedIn: true,
 			now: Date.parse('2026-11-07T12:00:00.000Z'),
 			machine: MACHINE,

@@ -25,7 +25,17 @@ use std::time::{Duration, Instant};
 
 /// Where the bar is drawn: the X display on Linux.
 #[cfg(target_os = "linux")]
-pub type Target = crate::capture::x11_session::X11Target;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Target {
+    X11(crate::capture::x11_session::X11Target),
+    Portal,
+}
+#[cfg(target_os = "linux")]
+impl From<crate::capture::x11_session::X11Target> for Target {
+    fn from(target: crate::capture::x11_session::X11Target) -> Self {
+        Self::X11(target)
+    }
+}
 /// Elsewhere one place: the helper's own (Default) desktop on Windows.
 #[cfg(not(target_os = "linux"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,6 +146,10 @@ impl Board {
         let Some(screen) = self.screen.clone() else {
             return;
         };
+        #[cfg(target_os = "linux")]
+        if matches!(screen, Target::Portal) {
+            return;
+        }
         if self.failed_at.is_some_and(|at| at.elapsed() < RETRY) {
             return;
         }
@@ -211,6 +225,9 @@ pub fn disconnect_all() -> usize {
 
 #[cfg(target_os = "linux")]
 fn start_bar(target: &Target, names: Vec<String>) -> Option<Sender<BarCommand>> {
+    let Target::X11(target) = target else {
+        return None;
+    };
     match x11::start(target.clone(), names) {
         Ok(bar) => Some(bar),
         Err(error) => {
@@ -344,6 +361,7 @@ mod tests {
             display: ":99999".into(),
             xauthority: None,
         }
+        .into()
     }
 
     #[cfg(not(target_os = "linux"))]

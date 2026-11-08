@@ -397,7 +397,19 @@
 		>
 			<canvas class="screen" bind:this={screenCanvas} aria-hidden="true"></canvas>
 			<canvas class="cursor" bind:this={cursorCanvas} aria-hidden="true"></canvas>
-			{#if screenState?.kind === 'unavailable'}
+			{#if screenState?.kind === 'approval'}
+				<div class="waiting">
+					<p>{screenLabel(screenState)}</p>
+					{#if screenState.phase !== 'pending'}
+						<Button
+							type="button"
+							variant="primary"
+							size="compact"
+							onclick={() => session?.askApproval()}>Ask for approval</Button
+						>
+					{/if}
+				</div>
+			{:else if screenState?.kind === 'unavailable'}
 				<p class="waiting unavailable">{screenLabel(screenState)}</p>
 			{:else if frame === undefined && running}
 				<p class="waiting">{status}</p>

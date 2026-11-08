@@ -89,6 +89,10 @@ export class DesktopSession {
 		});
 	}
 
+	askApproval(): void {
+		this.#send({ type: 'ask-approval' });
+	}
+
 	get connection(): Connection {
 		return this.#link.connection;
 	}

@@ -8,6 +8,7 @@ import { getSetting, listSettings, organisationName, updateSetting } from './set
 describe('server settings (S16)', () => {
 	it('declares each setting once, with a default its own type accepts, changed by admins', () => {
 		expect(SETTING_KEYS).toEqual([
+			'serverUpdateChecks',
 			'defaultConsent',
 			'connectedNotice',
 			'agentUpdatePolicy',

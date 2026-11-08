@@ -61,6 +61,16 @@ export function maxUploadBytes(gigabytes: z.infer<typeof uploadLimitSchema>): nu
 }
 
 export const SETTING_DEFINITIONS = {
+	serverUpdateChecks: {
+		label: 'Check for server updates daily',
+		description:
+			'Ask GitHub once a day for a newer signed server release. Check for updates still works when this is off.',
+		schema: z.boolean(),
+		defaultValue: true,
+		changedBy: 'admin',
+		section: 'general',
+		control: { kind: 'switch' }
+	} satisfies SettingDefinition<boolean>,
 	defaultConsent: {
 		label: 'Default for new access rules',
 		description:

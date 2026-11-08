@@ -1,6 +1,8 @@
 /** One line of the audit log, as the Activity page shows it. Browser-safe. */
 
 const AUDIT_KINDS = [
+	'server-update-checked',
+	'server-update-requested',
 	'setup',
 	'sign-in',
 	'sign-in-failed',
@@ -137,6 +139,10 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Changed a sign-in provider';
 		case 'provider-deleted':
 			return 'Deleted a sign-in provider';
+		case 'server-update-checked':
+			return 'Checked for server updates';
+		case 'server-update-requested':
+			return 'Requested a server update';
 		case 'setting-changed':
 			return 'Changed a setting';
 		case 'local-certificate-renewed':

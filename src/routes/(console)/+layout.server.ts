@@ -1,3 +1,5 @@
+import { canManageServer } from '#lib/server/services/access/access.ts';
+import { serverUpdates } from '#lib/server/services/server-updates/live.ts';
 import { database } from '#lib/server/database/app-database.ts';
 import { page } from '#lib/server/guards/page.ts';
 import { getSetting } from '#lib/server/services/settings/settings.ts';
@@ -9,5 +11,6 @@ import type { LayoutServerLoad } from './$types';
  */
 export const load: LayoutServerLoad = page.user((_event, { user }) => ({
 	user,
+	serverUpdate: canManageServer(user) ? serverUpdates().view() : null,
 	localNetworkMode: getSetting(database, 'localNetworkMode')
 }));

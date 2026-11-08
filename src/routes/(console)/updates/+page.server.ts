@@ -1,3 +1,4 @@
+import { serverUpdates } from '#lib/server/services/server-updates/live.ts';
 import { AGENT_TARGETS } from '#lib/domain/machines/agent-release.ts';
 import { database } from '#lib/server/database/app-database.ts';
 import { env } from '#lib/server/env.ts';
@@ -22,6 +23,7 @@ export const load: PageServerLoad = page.admin(() => {
 	const newest = newestVersion(releases, AGENT_TARGETS);
 	return {
 		now,
+		server: serverUpdates().view(),
 		policy: getSetting(database, 'agentUpdatePolicy'),
 		rollout: rolloutView(database, newest?.version, now),
 		earlyGroup: earlyUpdatesGroup(database),

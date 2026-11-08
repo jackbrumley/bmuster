@@ -69,6 +69,7 @@ ENV ADDRESS_HEADER=X-Forwarded-For \
 # bounds what one request can make the server hold in memory.
 ENV BODY_SIZE_LIMIT=16M
 
+ENV BMUSTER_DEPLOYMENT=docker
 WORKDIR /opt/bmuster/app
 USER node
 VOLUME /data

@@ -1,6 +1,6 @@
 {
 	"name": "bmuster-server",
-	"version": "0.2.1",
+	"version": "0.3.0",
 	"private": true,
 	"type": "module",
 	"imports": {
@@ -15,6 +15,7 @@
 		"agent:dev": "node scripts/agent-dev.ts",
 		"agent:release-local": "node scripts/agent-release-local.ts",
 		"release:server-local": "node scripts/release-server.ts",
+		"server:sign-update": "node scripts/server-update-sign.ts",
 		"docker:local": "node scripts/docker-local.ts",
 		"agent:release-key": "node scripts/agent-release-key.ts",
 		"agent:sign": "node scripts/agent-sign.ts",

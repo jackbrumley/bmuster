@@ -42,6 +42,7 @@ export type ViewerMessage =
 			viewport: { width: number; height: number; pixelRatio: number };
 	  }
 	| { type: 'keyframe' }
+	| { type: 'ask-approval' }
 	| { type: 'ack'; seq: number }
 	| { type: 'select-display'; display: string }
 	| ({ type: 'settings' } & DesktopSettings)

@@ -1,0 +1,425 @@
+//! Root-side capture/input adapters for the private user-session bridge.
+use super::{
+    png_stream,
+    wire::{self, Command, Event, Packet},
+};
+use anyhow::{bail, Context as _, Result};
+use bmuster_desktop::capture::{
+    CaptureError, CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState,
+    DisplayInfo, Frame,
+};
+use bmuster_desktop::input::{
+    keymap::KeyPosition, Axis, Button, InputBackend, InputError, InputResult,
+};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Stdio};
+use std::sync::{
+    mpsc::{self, SyncSender},
+    Arc, Mutex,
+};
+
+#[derive(Default)]
+pub struct State {
+    pub frame: Option<Frame>,
+    pub ready: bool,
+    pub geometry: Option<(i32, i32, i32, i32)>,
+    pub error: Option<String>,
+}
+pub struct Bridge {
+    pub state: Arc<Mutex<State>>,
+    commands: SyncSender<Command>,
+    child: Mutex<Child>,
+    unit: String,
+    _reservation: Reservation,
+}
+
+static ACTIVE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<(u32, bool)>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+struct Reservation(u32, bool);
+impl Reservation {
+    fn acquire(uid: u32, control: bool) -> Result<Self> {
+        let mut active = ACTIVE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !active.insert((uid, control)) {
+            bail!(
+                "A Wayland {} session is already active for this user",
+                if control { "control" } else { "watch" }
+            );
+        }
+        Ok(Self(uid, control))
+    }
+}
+impl Drop for Reservation {
+    fn drop(&mut self) {
+        ACTIVE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&(self.0, self.1));
+    }
+}
+impl Drop for Bridge {
+    fn drop(&mut self) {
+        let _ = self.commands.try_send(Command::Stop);
+        let _ = std::process::Command::new("systemctl")
+            .args(["stop", "--no-block", &self.unit])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if let Ok(child) = self.child.get_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+pub fn token_path(dir: &Path, uid: u32, control: bool) -> PathBuf {
+    dir.join(format!(
+        "wayland-{uid}-{}.json",
+        if control { "control" } else { "watch" }
+    ))
+}
+
+pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
+    if uid == 0 {
+        bail!("A Wayland helper cannot run as root");
+    }
+    let reservation = Reservation::acquire(uid, control)?;
+    let program = super::helper_program()?;
+    let unit = format!(
+        "bmuster-wayland-{}-{}",
+        std::process::id(),
+        super::next_id()
+    );
+    let mut child = ChildGuard(Some(
+        std::process::Command::new("systemd-run")
+            .args([
+                "--quiet",
+                "--pipe",
+                "--wait",
+                "--collect",
+                "--service-type=exec",
+                &format!("--unit={unit}"),
+                &format!("--uid={uid}"),
+                "--property=KillMode=control-group",
+                "--property=TimeoutStopSec=3",
+                "--property=NoNewPrivileges=yes",
+                "--property=UMask=0077",
+                &format!("--setenv=XDG_RUNTIME_DIR=/run/user/{uid}"),
+                &format!("--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus"),
+                "--",
+            ])
+            .arg(program)
+            .arg("wayland-helper")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .context("Could not launch the Wayland user helper")?,
+    ));
+    let result = (|| -> Result<Arc<Bridge>> {
+        let token_file = token_path(dir, uid, control);
+        let restore_token = match std::fs::read(&token_file) {
+            Ok(bytes) => Some(
+                serde_json::from_slice::<String>(&bytes)
+                    .context("Cannot read saved Wayland permission")?,
+            ),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        let process = child.0.as_mut().context("Helper process absent")?;
+        let mut input = process.stdin.take().context("Helper stdin absent")?;
+        let mut output = process.stdout.take().context("Helper stdout absent")?;
+        wire::json(
+            &mut input,
+            &Command::Configure {
+                control,
+                restore_token,
+            },
+        )?;
+        let (send, commands) = mpsc::sync_channel(32);
+        let state = Arc::new(Mutex::new(State::default()));
+        let writing_state = Arc::clone(&state);
+        std::thread::Builder::new()
+            .name("wayland commands".into())
+            .spawn(move || {
+                while let Ok(command) = commands.recv() {
+                    if let Err(error) = wire::json(&mut input, &command) {
+                        writing_state
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .error = Some(format!("Wayland input stopped: {error:#}"));
+                        break;
+                    }
+                }
+            })?;
+        let reading_state = Arc::clone(&state);
+        std::thread::Builder::new()
+            .name("wayland frames".into())
+            .spawn(move || {
+                let result = (|| -> Result<()> {
+                    loop {
+                        match wire::read(&mut output)? {
+                            Packet::Json(bytes) if bytes.len() <= 8192 => {
+                                match serde_json::from_slice::<Event>(&bytes)? {
+                                    Event::Token { token: Some(token) } => {
+                                        crate::identity::write_private(
+                                            &token_file,
+                                            &serde_json::to_vec(&token)?,
+                                        )?
+                                    }
+                                    Event::Token { token: None } => {
+                                        match std::fs::remove_file(&token_file) {
+                                            Ok(()) => {}
+                                            Err(error)
+                                                if error.kind() == std::io::ErrorKind::NotFound => {
+                                            }
+                                            Err(error) => return Err(error.into()),
+                                        }
+                                    }
+                                    Event::Ready {
+                                        x,
+                                        y,
+                                        width,
+                                        height,
+                                    } => {
+                                        let mut state =
+                                            reading_state.lock().unwrap_or_else(|p| p.into_inner());
+                                        state.geometry = Some((x, y, width, height));
+                                        state.ready = true;
+                                    }
+                                    Event::Failed { message } => bail!("{message}"),
+                                }
+                            }
+                            Packet::Png(bytes) => {
+                                let frame = png_stream::decode(&bytes)?;
+                                reading_state
+                                    .lock()
+                                    .unwrap_or_else(|p| p.into_inner())
+                                    .frame = Some(frame);
+                            }
+                            _ => bail!("Invalid helper event"),
+                        }
+                    }
+                })();
+                if let Err(error) = result {
+                    reading_state
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .error = Some(format!("{error:#}"));
+                }
+            })?;
+        Ok(Arc::new(Bridge {
+            state,
+            commands: send,
+            child: Mutex::new(child.0.take().context("Helper process absent")?),
+            unit: unit.clone(),
+            _reservation: reservation,
+        }))
+    })();
+    result
+}
+
+struct ChildGuard(Option<Child>);
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(child) = &mut self.0 {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+impl Bridge {
+    fn send(&self, command: Command) -> InputResult<()> {
+        self.commands
+            .try_send(command)
+            .map_err(|_| InputError("The Wayland input queue is busy or closed".into()))
+    }
+}
+
+pub struct Screen {
+    bridge: Arc<Bridge>,
+    frame: Frame,
+    displays: Vec<DisplayInfo>,
+    changed: bool,
+    dirty: bool,
+}
+impl Screen {
+    pub fn new(bridge: Arc<Bridge>) -> Result<Self> {
+        let frame = bridge
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .frame
+            .clone()
+            .context("Waiting for the first Wayland frame")?;
+        let displays = vec![display(&frame)];
+        Ok(Self {
+            bridge,
+            frame,
+            displays,
+            changed: true,
+            dirty: true,
+        })
+    }
+    fn refresh(&mut self) -> CaptureResult<Damage> {
+        let state = self.bridge.state.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(error) = &state.error {
+            return Err(CaptureError::new(error));
+        }
+        if let Some(frame) = state.frame.as_ref().filter(|frame| *frame != &self.frame) {
+            self.changed |= (frame.width, frame.height) != (self.frame.width, self.frame.height);
+            self.frame = frame.clone();
+            self.dirty = true;
+            self.displays = vec![display(&self.frame)];
+            Ok(Damage::Unknown)
+        } else {
+            Ok(Damage::None)
+        }
+    }
+}
+fn display(frame: &Frame) -> DisplayInfo {
+    DisplayInfo {
+        id: "wayland-monitor".into(),
+        name: "Shared Wayland monitor".into(),
+        x: 0,
+        y: 0,
+        width: frame.width,
+        height: frame.height,
+        scale: 1.0,
+        primary: true,
+    }
+}
+impl Capturer for Screen {
+    fn displays(&self) -> &[DisplayInfo] {
+        &self.displays
+    }
+    fn current(&self) -> usize {
+        0
+    }
+    fn select(&mut self, index: usize) -> CaptureResult<()> {
+        if index != 0 {
+            return Err(CaptureError::new(
+                "Choose the monitor in the desktop's sharing dialog",
+            ));
+        }
+        Ok(())
+    }
+    fn poll_layout(&mut self) -> CaptureResult<bool> {
+        self.refresh()?;
+        Ok(std::mem::take(&mut self.changed))
+    }
+    fn capture(&mut self, full: bool) -> CaptureResult<Damage> {
+        self.refresh()?;
+        Ok(if std::mem::take(&mut self.dirty) || full {
+            Damage::Unknown
+        } else {
+            Damage::None
+        })
+    }
+    fn frame(&self) -> &Frame {
+        &self.frame
+    }
+    fn cursor(&mut self) -> CaptureResult<CursorState> {
+        Ok(CursorState {
+            id: 0,
+            x: 0,
+            y: 0,
+            visible: false,
+        })
+    }
+    fn cursor_image(&mut self, _: u32) -> CaptureResult<Option<CursorImage>> {
+        Ok(None)
+    }
+    fn state(&self) -> DesktopState {
+        DesktopState::Desktop { user: None }
+    }
+}
+
+pub struct Input {
+    pub bridge: Arc<Bridge>,
+    pub physical: (i32, i32),
+}
+impl InputBackend for Input {
+    fn move_pointer(&mut self, x: i32, y: i32) -> InputResult<()> {
+        let geometry = self
+            .bridge
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .geometry
+            .ok_or_else(|| InputError("The Wayland monitor geometry is unavailable".into()))?;
+        if self.physical.0 <= 0 || self.physical.1 <= 0 {
+            return Err(InputError(
+                "The Wayland frame has invalid dimensions".into(),
+            ));
+        }
+        let (mapped_x, mapped_y) = map_pointer(x, y, self.physical, geometry);
+        self.bridge.send(Command::Pointer {
+            x: mapped_x,
+            y: mapped_y,
+        })
+    }
+    fn button(&mut self, button: Button, down: bool) -> InputResult<()> {
+        let code = match button {
+            Button::Left => 272,
+            Button::Right => 273,
+            Button::Middle => 274,
+            Button::Back => 275,
+            Button::Forward => 276,
+        };
+        self.bridge.send(Command::Button { code, down })
+    }
+    fn scroll(&mut self, axis: Axis, units: i32) -> InputResult<()> {
+        let amount = f64::from(units) / 120.0 * 15.0;
+        let (dx, dy) = match axis {
+            Axis::Horizontal => (amount, 0.0),
+            Axis::Vertical => (0.0, amount),
+        };
+        self.bridge.send(Command::Scroll { dx, dy })
+    }
+    fn key(&mut self, key: &KeyPosition, down: bool) -> InputResult<()> {
+        self.bridge.send(Command::Key {
+            code: i32::from(key.evdev),
+            down,
+        })
+    }
+    fn alt_gr(&mut self, down: bool) -> InputResult<()> {
+        self.bridge.send(Command::Key { code: 100, down })
+    }
+    fn type_char(&mut self, character: char) -> InputResult<()> {
+        self.bridge.send(Command::Character { character })
+    }
+    fn secure_attention(&mut self) -> InputResult<bool> {
+        Ok(false)
+    }
+    fn flush(&mut self) -> InputResult<()> {
+        Ok(())
+    }
+}
+
+fn map_pointer(x: i32, y: i32, physical: (i32, i32), geometry: (i32, i32, i32, i32)) -> (i32, i32) {
+    let local_x = x.clamp(0, physical.0 - 1);
+    let local_y = y.clamp(0, physical.1 - 1);
+    (
+        geometry.0 + (i64::from(local_x) * i64::from(geometry.2) / i64::from(physical.0)) as i32,
+        geometry.1 + (i64::from(local_y) * i64::from(geometry.3) / i64::from(physical.1)) as i32,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::map_pointer;
+
+    #[test]
+    fn pointer_maps_pixels_to_portal_coordinates_and_clamps_edges() {
+        let physical = (3840, 2160);
+        let geometry = (1920, 0, 1920, 1080);
+        assert_eq!(map_pointer(0, 0, physical, geometry), (1920, 0));
+        assert_eq!(map_pointer(1920, 1080, physical, geometry), (2880, 540));
+        assert_eq!(map_pointer(3840, 2160, physical, geometry), (3839, 1079));
+        assert_eq!(map_pointer(-1, -1, physical, geometry), (1920, 0));
+    }
+}

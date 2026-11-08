@@ -41,6 +41,8 @@ Restart=always
 RestartSec=10
 RestartPreventExitStatus={REVOKED_EXIT_CODE}
 UMask=0077
+RuntimeDirectory=bmuster
+RuntimeDirectoryMode=0755
 # Terminal, command and files sessions run as their own transient services
 # (systemd-run), outside this sandbox (SPEC-SESSION-UNITS). systemd-run
 # reaches the service manager through its socket in /run, which a read-only
@@ -136,6 +138,7 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
             tls: TlsMode::Checked(trust),
         },
     )?;
+    crate::tray::linux::install()?;
     UNIT.install(&unit_file())?;
     log::info!("Installed and started {}.", UNIT.name);
     Ok(())
@@ -143,6 +146,7 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
 
 pub fn uninstall(purge: bool) -> Result<()> {
     require_root()?;
+    crate::tray::linux::uninstall()?;
     if UNIT.remove()? {
         log::info!("Removed {}.", UNIT.name);
     }

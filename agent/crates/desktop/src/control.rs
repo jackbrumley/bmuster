@@ -106,6 +106,7 @@ pub enum ClientMessage {
         viewport: Viewport,
     },
     Keyframe,
+    AskApproval,
     Ack {
         seq: u32,
     },
@@ -147,9 +148,10 @@ pub enum ClientMessage {
     Disconnect,
 }
 
-const KNOWN_TYPES: [&str; 14] = [
+const KNOWN_TYPES: [&str; 15] = [
     "hello",
     "keyframe",
+    "ask-approval",
     "ack",
     "select-display",
     "settings",

@@ -235,6 +235,7 @@ impl DesktopSession {
                 out.push(self.displays_message());
                 out.push(self.state_message());
             }
+            ClientMessage::AskApproval => self.request_screen_approval(now, out),
             ClientMessage::Keyframe => {
                 if self.pacer.request_keyframe(now) {
                     self.video.refresh();
