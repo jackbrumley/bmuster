@@ -3,15 +3,20 @@
 //! and the worker's part: download and check an offered build and hand it to
 //! the launcher (`launcher.rs`), which switches and rolls back.
 //!
-//! On disk, under the data folder (only root or SYSTEM can write there):
+//! On disk (only root or SYSTEM can write either folder). The versions are
+//! program files: on Linux they live in `/opt/bmuster/versions`, because
+//! systemd may not run programs from `/var/lib` (SPEC-SESSION-UNITS,
+//! Version 3); on Windows in `C:\ProgramData\BMuster\versions`.
 //!
 //! ```text
-//! versions/current/   bmuster-agent[.exe] + release.json   the running worker
-//! versions/previous/  the version before, kept for a rollback
-//! versions/incoming/  a downloaded build, checked, waiting for the switch
-//! versions/switch.json   a switch on trial (from, to): the commit point
-//! versions/checked-in    written by a worker after its first check-in
-//! update-state.json      the last update event, reported in every check-in
+//! versions/<version>/  bmuster-agent + release.json   one per version (Unix)
+//! versions/current     link to the running worker's folder (Unix; a folder on Windows)
+//! versions/previous    link to the version before, kept for a rollback
+//! versions/incoming/   a downloaded build, checked, waiting for the switch
+//! <state>/switch.json   a switch on trial (from, to): the commit point
+//! <state>/checked-in    written by a worker after its first check-in (<state>:
+//!                       the data folder; on Windows its versions folder)
+//! <data>/update-state.json   the last update event, reported in every check-in
 //! ```
 
 use crate::client::{Channel, Session};
@@ -46,8 +51,7 @@ pub const BINARY_NAME: &str = if cfg!(windows) {
 } else {
     "bmuster-agent"
 };
-const VERSIONS_DIR: &str = "versions";
-const RELEASE_FILE: &str = "release.json";
+pub const RELEASE_FILE: &str = "release.json";
 const SWITCH_FILE: &str = "switch.json";
 const CHECKED_IN_FILE: &str = "checked-in";
 const STATE_FILE: &str = "update-state.json";
@@ -183,10 +187,22 @@ pub enum Slot {
     Incoming,
 }
 
-/// The version folders under one data folder.
+impl Slot {
+    fn name(self) -> &'static str {
+        match self {
+            Slot::Current => "current",
+            Slot::Previous => "previous",
+            Slot::Incoming => "incoming",
+        }
+    }
+}
+
+/// The version folders (under [`crate::paths::versions_dir`]) and the
+/// update state kept beside the data (switch record, check-in marker).
 #[derive(Debug, Clone)]
 pub struct Layout {
     root: PathBuf,
+    data: PathBuf,
 }
 
 /// A switch waiting for its health check: the commit point of an update.
@@ -200,20 +216,18 @@ pub struct Switch {
 impl Layout {
     pub fn new(data_dir: &Path) -> Self {
         Self {
-            root: data_dir.join(VERSIONS_DIR),
+            root: crate::paths::versions_dir(data_dir),
+            data: state_dir(data_dir),
         }
     }
 
+    #[cfg(test)]
     pub fn root(&self) -> &Path {
         &self.root
     }
 
     pub fn dir(&self, slot: Slot) -> PathBuf {
-        self.root.join(match slot {
-            Slot::Current => "current",
-            Slot::Previous => "previous",
-            Slot::Incoming => "incoming",
-        })
+        self.root.join(slot.name())
     }
 
     pub fn binary(&self, slot: Slot) -> PathBuf {
@@ -221,11 +235,11 @@ impl Layout {
     }
 
     pub fn checked_in_marker(&self) -> PathBuf {
-        self.root.join(CHECKED_IN_FILE)
+        self.data.join(CHECKED_IN_FILE)
     }
 
     fn switch_path(&self) -> PathBuf {
-        self.root.join(SWITCH_FILE)
+        self.data.join(SWITCH_FILE)
     }
 
     pub fn release(&self, slot: Slot) -> Result<Release> {
@@ -235,25 +249,34 @@ impl Layout {
         serde_json::from_str(&text).with_context(|| format!("{} is damaged", path.display()))
     }
 
-    /// Writes a build and its release.json into a fresh folder for `slot`.
-    pub fn store(&self, slot: Slot, release: &Release, bytes: &[u8]) -> Result<()> {
-        let dir = self.dir(slot);
-        if dir.exists() {
-            fs::remove_dir_all(&dir)
-                .with_context(|| format!("could not clear {}", dir.display()))?;
-        }
-        fs::create_dir_all(&dir).with_context(|| format!("could not create {}", dir.display()))?;
-        let binary = dir.join(BINARY_NAME);
-        fs::write(&binary, bytes)
-            .with_context(|| format!("could not write {}", binary.display()))?;
+    /// Makes the versions folder, readable by everyone: user helpers run
+    /// the current binary as the signed-in person (the agent's own umask
+    /// is 0077).
+    pub fn create_root(&self) -> Result<()> {
+        fs::create_dir_all(&self.root)
+            .with_context(|| format!("could not create {}", self.root.display()))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
-            fs::set_permissions(&binary, fs::Permissions::from_mode(0o700))?;
+            fs::set_permissions(&self.root, fs::Permissions::from_mode(0o755))?;
         }
-        let mut json = serde_json::to_vec_pretty(release)?;
-        json.push(b'\n');
-        write_private(&dir.join(RELEASE_FILE), &json)
+        Ok(())
+    }
+
+    /// Writes a downloaded build into `incoming`.
+    pub fn store_incoming(&self, release: &Release, bytes: &[u8]) -> Result<()> {
+        self.create_root()?;
+        write_version(&self.dir(Slot::Incoming), release, bytes)
+    }
+
+    /// Removes a downloaded build that was refused.
+    pub fn remove_incoming(&self) -> Result<()> {
+        let dir = self.dir(Slot::Incoming);
+        if dir.exists() {
+            fs::remove_dir_all(&dir)
+                .with_context(|| format!("could not remove {}", dir.display()))?;
+        }
+        Ok(())
     }
 
     pub fn switch(&self) -> Result<Option<Switch>> {
@@ -280,9 +303,159 @@ impl Layout {
         }
         Ok(())
     }
+}
 
-    /// Renames one version folder onto another, replacing what was there.
-    pub fn rename(&self, from: Slot, to: Slot) -> Result<()> {
+/// Where the switch record, the check-in marker and the rescue copy's
+/// record live. Unix: the data folder, because on Linux the versions are
+/// program files under /opt. Windows: the versions folder in the data
+/// folder, as before, because the launcher there is the Program Files copy,
+/// which may be older than the worker and looks for them there.
+pub fn state_dir(data_dir: &Path) -> PathBuf {
+    if cfg!(windows) {
+        crate::paths::versions_dir(data_dir)
+    } else {
+        data_dir.to_path_buf()
+    }
+}
+
+/// One version's binary (0755: user helpers run it) and release.json, in a
+/// fresh `dir`. The bytes are written there, never renamed in from another
+/// folder, so on Linux they take the folder's SELinux label.
+fn write_version(dir: &Path, release: &Release, bytes: &[u8]) -> Result<()> {
+    if dir.exists() {
+        fs::remove_dir_all(dir).with_context(|| format!("could not clear {}", dir.display()))?;
+    }
+    fs::create_dir_all(dir).with_context(|| format!("could not create {}", dir.display()))?;
+    let binary = dir.join(BINARY_NAME);
+    fs::write(&binary, bytes).with_context(|| format!("could not write {}", binary.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o755))?;
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))?;
+    }
+    let mut json = serde_json::to_vec_pretty(release)?;
+    json.push(b'\n');
+    write_private(&dir.join(RELEASE_FILE), &json)
+}
+
+/// A version as a folder name: only what [`AgentVersion`] accepts (digits,
+/// letters, dots and dashes), so it can never name another path.
+#[cfg(unix)]
+fn version_folder(version: &str) -> Result<String> {
+    Ok(AgentVersion::parse(version)?.as_str().to_string())
+}
+
+/// Unix: each version in its own folder, `versions/<version>/`, and
+/// `current` and `previous` are links to them, switched by renaming a new
+/// link over the old one (atomic: `current` always names a version).
+#[cfg(unix)]
+impl Layout {
+    /// The version a link names, if it is there.
+    fn linked(&self, slot: Slot) -> Option<String> {
+        let target = fs::read_link(self.dir(slot)).ok()?;
+        Some(target.to_str()?.to_string())
+    }
+
+    fn link(&self, slot: Slot, version: &str) -> Result<()> {
+        let link = self.dir(slot);
+        let temp = self.root.join(format!(".{}.new", slot.name()));
+        if fs::symlink_metadata(&temp).is_ok() {
+            fs::remove_file(&temp)
+                .with_context(|| format!("could not remove {}", temp.display()))?;
+        }
+        std::os::unix::fs::symlink(version, &temp)
+            .with_context(|| format!("could not make {}", temp.display()))?;
+        fs::rename(&temp, &link).with_context(|| format!("could not replace {}", link.display()))
+    }
+
+    fn unlink(&self, slot: Slot) -> Result<()> {
+        let link = self.dir(slot);
+        if fs::symlink_metadata(&link).is_ok() {
+            fs::remove_file(&link)
+                .with_context(|| format!("could not remove {}", link.display()))?;
+        }
+        Ok(())
+    }
+
+    /// Removes version folders no link names (and a seed left by a crash).
+    fn prune(&self) -> Result<()> {
+        let keep = [self.linked(Slot::Current), self.linked(Slot::Previous)];
+        for entry in fs::read_dir(&self.root)
+            .with_context(|| format!("could not read {}", self.root.display()))?
+        {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let is_dir = entry.file_type()?.is_dir();
+            let named = keep
+                .iter()
+                .any(|kept| kept.as_deref() == Some(name.as_str()));
+            if is_dir && !named && AgentVersion::parse(&name).is_ok() {
+                fs::remove_dir_all(entry.path())
+                    .with_context(|| format!("could not remove {}", entry.path().display()))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Puts `bytes` in `versions/<version>` and points `current` at it.
+    pub fn seed_current(&self, release: &Release, bytes: &[u8]) -> Result<()> {
+        self.create_root()?;
+        let version = version_folder(&release.version)?;
+        write_version(&self.root.join(&version), release, bytes)?;
+        self.link(Slot::Current, &version)?;
+        self.prune()
+    }
+
+    /// The switch: the build in `incoming` (or already moved to its own
+    /// folder by an interrupted switch) becomes `current`, and what was
+    /// `current` becomes `previous`. The folder is renamed within the
+    /// versions folder only, so it keeps the label it was written with.
+    pub fn promote(&self, version: &str) -> Result<()> {
+        let version = version_folder(version)?;
+        let target = self.root.join(&version);
+        let incoming = self.release(Slot::Incoming).ok();
+        if incoming.is_some_and(|release| release.version == version) {
+            if self.linked(Slot::Current).as_deref() == Some(version.as_str()) {
+                bail!("version {version} is already current");
+            }
+            if target.exists() {
+                fs::remove_dir_all(&target)
+                    .with_context(|| format!("could not clear {}", target.display()))?;
+            }
+            fs::rename(self.dir(Slot::Incoming), &target)
+                .with_context(|| format!("could not move the build to {}", target.display()))?;
+        }
+        if !target.join(BINARY_NAME).exists() {
+            bail!("{} is missing", target.join(BINARY_NAME).display());
+        }
+        if let Some(current) = self
+            .linked(Slot::Current)
+            .filter(|current| *current != version)
+        {
+            self.link(Slot::Previous, &current)?;
+        }
+        self.link(Slot::Current, &version)?;
+        self.prune()
+    }
+
+    /// The rollback: `previous` becomes `current` again, and the failed
+    /// version's folder goes.
+    pub fn restore_previous(&self) -> Result<()> {
+        let previous = self
+            .linked(Slot::Previous)
+            .with_context(|| format!("{} is missing", self.dir(Slot::Previous).display()))?;
+        self.link(Slot::Current, &previous)?;
+        self.unlink(Slot::Previous)?;
+        self.prune()
+    }
+}
+
+/// Windows: `current`, `previous` and `incoming` are folders, switched by
+/// renaming (the service runs the Program Files copy, not `current`).
+#[cfg(not(unix))]
+impl Layout {
+    fn rename(&self, from: Slot, to: Slot) -> Result<()> {
         let (source, target) = (self.dir(from), self.dir(to));
         if target.exists() {
             fs::remove_dir_all(&target)
@@ -297,13 +470,29 @@ impl Layout {
         })
     }
 
-    pub fn remove(&self, slot: Slot) -> Result<()> {
-        let dir = self.dir(slot);
-        if dir.exists() {
-            fs::remove_dir_all(&dir)
-                .with_context(|| format!("could not remove {}", dir.display()))?;
+    pub fn seed_current(&self, release: &Release, bytes: &[u8]) -> Result<()> {
+        self.create_root()?;
+        write_version(&self.dir(Slot::Current), release, bytes)
+    }
+
+    /// The switch: `current` becomes `previous` and `incoming` `current`.
+    /// After a crash between the two, only the second is left to do.
+    pub fn promote(&self, version: &str) -> Result<()> {
+        let incoming = self.release(Slot::Incoming)?;
+        if incoming.version != version {
+            bail!("the waiting build is {}, not {version}", incoming.version);
         }
-        Ok(())
+        if self.binary(Slot::Current).exists() {
+            self.rename(Slot::Current, Slot::Previous)?;
+        }
+        self.rename(Slot::Incoming, Slot::Current)
+    }
+
+    pub fn restore_previous(&self) -> Result<()> {
+        if !self.binary(Slot::Previous).exists() {
+            bail!("{} is missing", self.dir(Slot::Previous).display());
+        }
+        self.rename(Slot::Previous, Slot::Current)
     }
 }
 
@@ -317,15 +506,30 @@ pub fn seed_current(layout: &Layout, bytes: &[u8], version: &str) -> Result<()> 
         sha256: sha256_hex(bytes),
         signature: String::new(),
     };
-    layout.store(Slot::Current, &release, bytes)
+    layout.seed_current(&release, bytes)
 }
 
-/// Removes every version folder (uninstall without --purge keeps only the identity).
+/// Removes every version and the update state that goes with them
+/// (uninstall without --purge keeps only the identity).
 pub fn remove_versions(data_dir: &Path) -> Result<()> {
-    let root = Layout::new(data_dir).root;
-    if root.exists() {
-        fs::remove_dir_all(&root)
-            .with_context(|| format!("could not remove {}", root.display()))?;
+    let layout = Layout::new(data_dir);
+    // Also the folder Linux installs used before SPEC-SESSION-UNITS
+    // Version 3 (the same folder elsewhere).
+    for folder in [layout.root.clone(), data_dir.join("versions")] {
+        if folder.exists() {
+            fs::remove_dir_all(&folder)
+                .with_context(|| format!("could not remove {}", folder.display()))?;
+        }
+    }
+    for file in [
+        layout.switch_path(),
+        layout.checked_in_marker(),
+        crate::rescue::record_path(data_dir),
+    ] {
+        if file.exists() {
+            fs::remove_file(&file)
+                .with_context(|| format!("could not remove {}", file.display()))?;
+        }
     }
     Ok(())
 }
@@ -480,6 +684,8 @@ impl WorkerUpdates {
             Ok(()) => self.marked.store(true, Ordering::SeqCst),
             Err(e) => log::error!("Could not tell the launcher this version works: {e:#}"),
         }
+        #[cfg(target_os = "linux")]
+        crate::move_to_opt::checked_in(&self.data_dir);
     }
 
     /// Downloads and checks an offered build. A build that fails a check is
@@ -492,6 +698,14 @@ impl WorkerUpdates {
         if !self.launched {
             log::debug!(
                 "Version {} is on offer, but this agent runs without the launcher.",
+                release.version
+            );
+            return Considered::Nothing;
+        }
+        #[cfg(target_os = "linux")]
+        if crate::move_to_opt::pending(&self.data_dir) {
+            log::debug!(
+                "Version {} is on offer; it is taken once the agent runs from /opt/bmuster.",
                 release.version
             );
             return Considered::Nothing;
@@ -519,7 +733,7 @@ impl WorkerUpdates {
             self.refuse(key, &release.version, &reason);
             return Considered::Nothing;
         }
-        match Layout::new(&self.data_dir).store(Slot::Incoming, &release, &bytes) {
+        match Layout::new(&self.data_dir).store_incoming(&release, &bytes) {
             Ok(()) => {
                 log::info!(
                     "Version {} is downloaded and its signature checks out; handing over to the launcher.",
@@ -674,6 +888,71 @@ pub mod tests {
         assert_eq!(last_event(dir.path()), event);
         fs::write(dir.path().join(STATE_FILE), "{").unwrap();
         assert_eq!(last_event(dir.path()), UpdateEvent::None);
+    }
+
+    /// SPEC-SESSION-UNITS O1: the installed agent's versions are program
+    /// files under /opt/bmuster; each is written into its own folder there
+    /// (never renamed in from elsewhere), and `current` and `previous` are
+    /// links to version folders.
+    #[cfg(unix)]
+    #[test]
+    fn versions_are_written_under_opt() {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        #[cfg(target_os = "linux")]
+        {
+            let installed = Layout::new(Path::new("/var/lib/bmuster"));
+            assert_eq!(installed.root(), Path::new("/opt/bmuster/versions"));
+            assert_eq!(
+                installed.binary(Slot::Current),
+                Path::new(crate::paths::CURRENT_PROGRAM)
+            );
+            assert_eq!(
+                installed.checked_in_marker(),
+                Path::new("/var/lib/bmuster/checked-in")
+            );
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path());
+        let key = test_key();
+        seed_current(&layout, b"agent 1", "1.0.0").unwrap();
+        let incoming = signed("2.0.0", b"agent 2", &key);
+        layout.store_incoming(&incoming, b"agent 2").unwrap();
+        assert!(layout.dir(Slot::Incoming).starts_with(layout.root()));
+        let written = fs::metadata(layout.binary(Slot::Incoming)).unwrap();
+        layout.promote("2.0.0").unwrap();
+
+        let link = |slot| fs::read_link(layout.dir(slot)).unwrap();
+        assert_eq!(link(Slot::Current), Path::new("2.0.0"));
+        assert_eq!(link(Slot::Previous), Path::new("1.0.0"));
+        assert!(!layout.dir(Slot::Incoming).exists());
+        let binary = layout.root().join("2.0.0").join(BINARY_NAME);
+        let metadata = fs::symlink_metadata(&binary).unwrap();
+        assert!(metadata.is_file());
+        // The same file that was written in the versions folder.
+        assert_eq!(metadata.ino(), written.ino());
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o755);
+        assert_eq!(fs::read(layout.binary(Slot::Current)).unwrap(), b"agent 2");
+        assert_eq!(layout.release(Slot::Current).unwrap(), incoming);
+        assert_eq!(layout.release(Slot::Previous).unwrap().version, "1.0.0");
+
+        // The next switch keeps two versions; the oldest folder goes.
+        let third = signed("3.0.0", b"agent 3", &key);
+        layout.store_incoming(&third, b"agent 3").unwrap();
+        layout.promote("3.0.0").unwrap();
+        assert_eq!(link(Slot::Previous), Path::new("2.0.0"));
+        assert!(!layout.root().join("1.0.0").exists());
+
+        // A rollback points `current` back and removes the failed version.
+        layout.restore_previous().unwrap();
+        assert_eq!(link(Slot::Current), Path::new("2.0.0"));
+        assert!(fs::symlink_metadata(layout.dir(Slot::Previous)).is_err());
+        assert!(!layout.root().join("3.0.0").exists());
+        assert!(layout.restore_previous().is_err());
+
+        // A release can never name a folder outside the versions.
+        let mut sneaky = incoming.clone();
+        sneaky.version = "../../etc".into();
+        assert!(layout.seed_current(&sneaky, b"x").is_err());
     }
 
     #[test]

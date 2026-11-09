@@ -1,7 +1,7 @@
 //! Where the agent keeps its files.
 
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const KEY_FILE: &str = "agent.key";
 pub const IDENTITY_FILE: &str = "identity.json";
@@ -26,6 +26,34 @@ pub const MOVE_STAGING_DIR: &str = "move-staging";
 /// The staged enrolment once it worked: the commit point of a move. Its files
 /// replace the identity, at once or at the next start after a crash.
 pub const MOVE_PENDING_DIR: &str = "move-pending";
+
+/// The installed agent's program folder on Linux: the rescue copy and the
+/// versions (SPEC-SESSION-UNITS, Version 3). systemd may run programs from
+/// here; SELinux does not let it run them from /var/lib (`var_lib_t`).
+#[cfg(target_os = "linux")]
+pub const PROGRAM_DIR: &str = "/opt/bmuster";
+/// What the service and every unit run: the current version's binary.
+#[cfg(target_os = "linux")]
+pub const CURRENT_PROGRAM: &str = "/opt/bmuster/versions/current/bmuster-agent";
+/// Under the program folder (Linux, installed) or the data folder.
+const VERSIONS_DIR: &str = "versions";
+
+/// Where the program versions live: `/opt/bmuster/versions` for the
+/// installed Linux agent, `<data>/versions` otherwise (Windows, and
+/// development runs with a data folder of their own).
+pub fn versions_dir(data_dir: &Path) -> PathBuf {
+    #[cfg(target_os = "linux")]
+    if is_installed_data_dir(data_dir) {
+        return Path::new(PROGRAM_DIR).join(VERSIONS_DIR);
+    }
+    data_dir.join(VERSIONS_DIR)
+}
+
+/// Whether `data_dir` is the installed agent's (`/var/lib/bmuster`).
+#[cfg(target_os = "linux")]
+pub fn is_installed_data_dir(data_dir: &Path) -> bool {
+    default_data_dir().is_ok_and(|installed| data_dir == installed)
+}
 
 /// `/var/lib/bmuster` on Linux, `C:\ProgramData\BMuster` on Windows.
 pub fn default_data_dir() -> Result<PathBuf> {

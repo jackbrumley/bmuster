@@ -19,32 +19,35 @@ fn next_id() -> u64 {
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Publish only the executable, never a private key or identity file. Installed
-/// agents update in a private folder that a user-session process cannot traverse.
-pub fn publish_helper() -> Result<()> {
-    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-    let dir = crate::tray::status_directory()?;
-    let metadata = std::fs::symlink_metadata(&dir)?;
-    if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
-        bail!("Insecure helper runtime directory");
-    }
-    let next = dir.join(format!("helper-{}.new", std::process::id()));
-    std::fs::copy(std::env::current_exe()?, &next)?;
-    std::fs::set_permissions(&next, std::fs::Permissions::from_mode(0o555))?;
-    std::fs::rename(next, dir.join("bmuster-user-helper"))?;
-    Ok(())
-}
-/// The root-owned copy of this program that helpers run (never the
-/// install folder, which holds the agent's identity).
+/// The program the console and Wayland helpers run: the current version
+/// under /opt (SPEC-SESSION-UNITS, Version 3), which systemd may run and a
+/// user-session process may read, and which holds no identity or key. It
+/// and every folder above it must be root's and writable by nobody else.
 pub(crate) fn helper_program() -> Result<PathBuf> {
-    let path = crate::tray::status_directory()?.join("bmuster-user-helper");
+    helper_program_at(Path::new(crate::paths::CURRENT_PROGRAM), 0)
+}
+
+/// [`helper_program`] for `path`, owned by `owner` (tests use their own).
+fn helper_program_at(path: &Path, owner: u32) -> Result<PathBuf> {
     use std::os::unix::fs::MetadataExt as _;
-    let metadata = std::fs::symlink_metadata(&path)
-        .context("Rerun the administrator installer to enable the Wayland helper")?;
-    if !metadata.is_file() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
-        bail!("Insecure Wayland helper executable");
+    let resolved = path
+        .canonicalize()
+        .with_context(|| format!("{} is missing; reinstall the agent", path.display()))?;
+    let metadata = std::fs::metadata(&resolved)?;
+    if !metadata.is_file() || metadata.uid() != owner || metadata.mode() & 0o022 != 0 {
+        bail!("Insecure helper program {}", resolved.display());
     }
-    Ok(path)
+    for folder in resolved.ancestors().skip(1) {
+        let metadata = std::fs::metadata(folder)?;
+        let owned = metadata.uid() == owner || metadata.uid() == 0;
+        if !owned || metadata.mode() & 0o022 != 0 {
+            bail!(
+                "Insecure folder {} above the helper program",
+                folder.display()
+            );
+        }
+    }
+    Ok(path.to_path_buf())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,5 +299,22 @@ mod tests {
             capture::token_path(dir.path(), 1000, true),
             capture::token_path(dir.path(), 1000, false)
         );
+    }
+
+    #[test]
+    fn helpers_run_only_a_program_nobody_else_can_change() {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("bmuster-agent");
+        std::fs::write(&program, b"agent").unwrap();
+        let me = std::fs::metadata(&program).unwrap().uid();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o775)).unwrap();
+        let error = helper_program_at(&program, me).unwrap_err().to_string();
+        assert!(error.contains("Insecure helper program"), "{error}");
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
+        let error = helper_program_at(&program, me).unwrap_err().to_string();
+        assert!(error.contains("Insecure folder"), "{error}");
+        assert!(helper_program_at(&dir.path().join("missing"), me).is_err());
     }
 }

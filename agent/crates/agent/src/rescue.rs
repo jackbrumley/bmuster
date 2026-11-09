@@ -16,12 +16,12 @@ use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::UpdateEvent;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// How long a version must run healthily before it becomes the rescue copy.
 pub const REFRESH_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
-/// Under `versions/`: the rescue copy's version.
+/// Beside the update state (`updates::state_dir`): the rescue copy's version.
 const RECORD_FILE: &str = "rescue-copy.json";
 
 #[derive(Serialize, Deserialize)]
@@ -32,21 +32,26 @@ struct Record {
 
 /// The rescue copy's version, as last recorded; `None` before the first.
 pub fn recorded_version(data_dir: &Path) -> Option<String> {
-    let path = Layout::new(data_dir).root().join(RECORD_FILE);
-    let text = fs::read_to_string(path).ok()?;
+    let text = fs::read_to_string(record_path(data_dir)).ok()?;
     serde_json::from_str::<Record>(&text)
         .ok()
         .map(|record| record.version)
 }
 
+pub fn record_path(data_dir: &Path) -> PathBuf {
+    updates::state_dir(data_dir).join(RECORD_FILE)
+}
+
 pub fn record_version(data_dir: &Path, version: &str) -> Result<()> {
-    let layout = Layout::new(data_dir);
-    fs::create_dir_all(layout.root())
-        .with_context(|| format!("could not create {}", layout.root().display()))?;
     let json = serde_json::to_vec(&Record {
         version: version.to_string(),
     })?;
-    write_private(&layout.root().join(RECORD_FILE), &json)
+    let path = record_path(data_dir);
+    if let Some(folder) = path.parent() {
+        fs::create_dir_all(folder)
+            .with_context(|| format!("could not create {}", folder.display()))?;
+    }
+    write_private(&path, &json)
 }
 
 /// What `rescue` did.
@@ -65,12 +70,11 @@ pub enum Rescued {
 /// rescue copy (`own_binary`, version `own_version`). Records the rollback.
 pub fn roll_back(data_dir: &Path, own_binary: &Path, own_version: &str) -> Result<Rescued> {
     let layout = Layout::new(data_dir);
-    fs::create_dir_all(layout.root())
-        .with_context(|| format!("could not create {}", layout.root().display()))?;
+    layout.create_root()?;
     let failed = layout
         .release(Slot::Current)
         .map_or_else(|_| "(unknown)".to_string(), |release| release.version);
-    layout.remove(Slot::Incoming)?;
+    layout.remove_incoming()?;
     layout.end_switch()?;
     let marker = layout.checked_in_marker();
     if marker.exists() {
@@ -80,7 +84,7 @@ pub fn roll_back(data_dir: &Path, own_binary: &Path, own_version: &str) -> Resul
     let from_previous = layout.binary(Slot::Previous).exists();
     let running = if from_previous {
         let running = layout.release(Slot::Previous)?.version;
-        layout.rename(Slot::Previous, Slot::Current)?;
+        layout.restore_previous()?;
         running
     } else if failed != own_version {
         let bytes = fs::read(own_binary)
@@ -192,11 +196,25 @@ mod tests {
     use super::*;
     use crate::updates::tests::{signed, test_key};
 
-    fn store(layout: &Layout, slot: Slot, version: &str) {
-        let bytes = format!("agent {version}").into_bytes();
-        layout
-            .store(slot, &signed(version, &bytes, &test_key()), &bytes)
-            .unwrap();
+    /// `previous` (if given) and then `current`, as updates leave them.
+    fn install(layout: &Layout, previous: Option<&str>, current: &str) {
+        let release = |version: &str| {
+            let bytes = format!("agent {version}").into_bytes();
+            (signed(version, &bytes, &test_key()), bytes)
+        };
+        match previous {
+            Some(previous) => {
+                let (old, bytes) = release(previous);
+                layout.seed_current(&old, &bytes).unwrap();
+                let (new, bytes) = release(current);
+                layout.store_incoming(&new, &bytes).unwrap();
+                layout.promote(current).unwrap();
+            }
+            None => {
+                let (new, bytes) = release(current);
+                layout.seed_current(&new, &bytes).unwrap();
+            }
+        }
     }
 
     #[test]
@@ -204,8 +222,7 @@ mod tests {
         // current 2.0.0 fails, previous 1.0.0 is put back.
         let dir = tempfile::tempdir().unwrap();
         let layout = Layout::new(dir.path());
-        store(&layout, Slot::Current, "2.0.0");
-        store(&layout, Slot::Previous, "1.0.0");
+        install(&layout, Some("1.0.0"), "2.0.0");
         let rescue = dir.path().join("rescue-copy");
         fs::write(&rescue, b"rescue").unwrap();
         assert_eq!(
@@ -230,7 +247,7 @@ mod tests {
         // No previous: the rescue copy itself becomes current.
         let dir = tempfile::tempdir().unwrap();
         let layout = Layout::new(dir.path());
-        store(&layout, Slot::Current, "2.0.0");
+        install(&layout, None, "2.0.0");
         let rescue = dir.path().join("rescue-copy");
         fs::write(&rescue, b"rescue bytes").unwrap();
         assert!(matches!(
@@ -265,8 +282,7 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let layout = Layout::new(dir.path());
-        store(&layout, Slot::Current, "2.0.0");
-        store(&layout, Slot::Previous, "1.0.0");
+        install(&layout, Some("1.0.0"), "2.0.0");
         let rescue = dir.path().join("bmuster-agent");
         fs::write(&rescue, b"agent 1.0.0").unwrap();
 

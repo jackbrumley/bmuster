@@ -186,6 +186,9 @@ pub fn run(
         options.sessions,
         options.data_dir.clone(),
     );
+    // Installs from before SPEC-SESSION-UNITS Version 3 move to /opt.
+    #[cfg(target_os = "linux")]
+    crate::move_to_opt::start(&options.data_dir, options.launched, sessions.clone());
     let socket_thread = {
         let session = Arc::clone(&session);
         let stop = Arc::clone(&stop);

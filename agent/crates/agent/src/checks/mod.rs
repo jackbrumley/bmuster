@@ -6,7 +6,8 @@
 //!   every six hours, after a session fails to start (at most once in five
 //!   minutes) and when an admin asks (`run-checks`). One thread runs them,
 //!   one at a time, so two runs never overlap; asks that arrive during a run
-//!   are answered by it.
+//!   are answered by it. A check that failed with a permission denial runs
+//!   once per agent version ([`denied`]).
 //! - **Bounds:** each check has [`CHECK_DEADLINE`], the whole run
 //!   [`RUN_DEADLINE`]. Checks never prompt the person at the machine, never
 //!   show anything and leave no unit, device or file behind.
@@ -16,8 +17,10 @@
 //! Nothing from the server changes what a check does: `run-checks` carries
 //! no arguments, and every check is a fixed code path here.
 
+mod denied;
 #[cfg(target_os = "linux")]
 mod linux;
+use denied::Denied;
 #[cfg(windows)]
 pub mod windows;
 
@@ -64,6 +67,7 @@ pub struct Context {
 }
 
 /// One check: a fixed id, a title and a fixed code path.
+#[derive(Clone, Copy)]
 pub struct Check {
     pub id: &'static str,
     pub title: &'static str,
@@ -343,13 +347,14 @@ pub fn run_schedule(
     timings: Timings,
     mut schedule: Schedule,
     requests: &Receiver<Trigger>,
+    denied: &Denied,
     publish: &mut dyn FnMut(Trigger, Vec<CheckResult>),
 ) {
     loop {
         match schedule.next(Instant::now()) {
             Next::Run(trigger) => {
                 log::info!("Running the self-checks ({trigger:?}).");
-                let results = run_all(checks, context, timings.check, timings.run);
+                let results = denied.run(checks, context, timings.check, timings.run);
                 // Asks that came in during the run are answered by it.
                 while requests.try_recv().is_ok() {}
                 schedule.ran(trigger, Instant::now());
@@ -384,6 +389,7 @@ pub fn start(context: Context) {
                 },
                 Schedule::new(Instant::now()),
                 &requests,
+                &Denied::new(&context.data_dir, crate::updates::VERSION),
                 &mut |_trigger, results| {
                     let failed = results.iter().any(|r| r.status == CheckStatus::Fail);
                     LATEST.publish(&SHIP, results);
@@ -543,6 +549,8 @@ mod tests {
             Outcome::Pass(String::new())
         }
         let (sender, requests) = mpsc::channel();
+        let scratch = tempfile::tempdir().unwrap();
+        let denied_dir = scratch.path().to_path_buf();
         let runner = std::thread::spawn(move || {
             let mut published = Vec::new();
             run_schedule(
@@ -554,6 +562,7 @@ mod tests {
                 },
                 Schedule::new(Instant::now()),
                 &requests,
+                &Denied::new(&denied_dir, "1.0.0"),
                 &mut |trigger, results| published.push((trigger, results.len())),
             );
             published
@@ -625,6 +634,66 @@ mod tests {
         );
         #[cfg(any(target_os = "linux", windows))]
         assert_eq!(super::stay_awake_check().id, "stay-awake");
+        // It runs in the agent (no unit, no program) and, like every
+        // check, once per version after a refusal (SPEC-SESSION-UNITS O5).
+        assert!(denied::is_denial("Access denied"));
+    }
+
+    /// SPEC-SESSION-UNITS O5.
+    #[test]
+    fn denied_checks_run_once_per_version() {
+        static DENIED_RUNS: AtomicUsize = AtomicUsize::new(0);
+        static OTHER_RUNS: AtomicUsize = AtomicUsize::new(0);
+        fn denied(_: &Context) -> Outcome {
+            DENIED_RUNS.fetch_add(1, Ordering::SeqCst);
+            Outcome::Fail(
+                "systemd-run for bmuster-terminal-check-1.service exited with exit status: 1: \
+                 status=203/EXEC (Permission denied)"
+                    .into(),
+            )
+        }
+        fn broken(_: &Context) -> Outcome {
+            OTHER_RUNS.fetch_add(1, Ordering::SeqCst);
+            Outcome::Fail("No display is lit.".into())
+        }
+        let checks = [
+            check("passes", passes),
+            check("denied", denied),
+            check("broken", broken),
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let run = |version: &str| {
+            Denied::new(dir.path(), version).run(
+                &checks,
+                &context(),
+                Duration::from_secs(1),
+                Duration::from_secs(5),
+            )
+        };
+        let first = run("1.0.0");
+        let second = run("1.0.0");
+        // The same version, even after a restart (a new Denied), runs the
+        // denied check once; other failures run every time.
+        let third = run("1.0.0");
+        assert_eq!(DENIED_RUNS.load(Ordering::SeqCst), 1);
+        assert_eq!(OTHER_RUNS.load(Ordering::SeqCst), 3);
+        for results in [&first, &second, &third] {
+            let ids: Vec<&str> = results.iter().map(|r| r.id.as_str()).collect();
+            assert_eq!(ids, ["passes", "denied", "broken"], "order and list kept");
+            assert_eq!(results[1].status, CheckStatus::Fail, "still visible");
+        }
+        assert!(first[1].detail.contains("203/EXEC"));
+        assert!(second[1].detail.starts_with(denied::NOT_RUN_AGAIN));
+        assert!(second[1].detail.contains("Permission denied"));
+        assert_eq!(
+            second[1].checked_at, first[1].checked_at,
+            "when it really ran"
+        );
+        // A new version runs it again.
+        run("1.0.1");
+        assert_eq!(DENIED_RUNS.load(Ordering::SeqCst), 2);
+        run("1.0.1");
+        assert_eq!(DENIED_RUNS.load(Ordering::SeqCst), 2);
     }
 
     /// SPEC-DIAGNOSTICS D3.

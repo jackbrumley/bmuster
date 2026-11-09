@@ -8,11 +8,6 @@ pub mod windows;
 use anyhow::{bail, Result};
 use std::sync::Arc;
 
-#[cfg(target_os = "linux")]
-pub fn status_directory() -> Result<std::path::PathBuf> {
-    status::directory()
-}
-
 pub fn publish(board: Arc<crate::status::StatusBoard>, port: u16) {
     if let Err(error) = status::publish(board, port) {
         log::warn!("Tray unavailable: {error:#}");

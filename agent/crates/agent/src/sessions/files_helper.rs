@@ -193,7 +193,7 @@ fn helper_environment() -> Vec<(OsString, OsString)> {
 /// Starts the helper in `unit` under `stdio-host` and waits for it to
 /// connect back. Errors are the session's failure to start.
 pub fn start(unit: &TransientUnit, stop: &AtomicBool) -> Result<Started> {
-    let program: PathBuf = std::env::current_exe().context("could not find this program's path")?;
+    let program: PathBuf = crate::exec::unit::program(unit.manager())?;
     let launch = Launch {
         program: Program {
             arg0: program.clone().into_os_string(),

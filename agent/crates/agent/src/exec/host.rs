@@ -18,7 +18,7 @@ use std::ffi::OsString;
 use std::io::{self, BufReader, PipeReader, PipeWriter, Write};
 use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Child;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex};
@@ -65,20 +65,6 @@ pub fn hosted(host: HostProgram, agent: &Path, socket: &Path, launch: &Launch) -
         env: launch.env.clone(),
         cwd: launch.cwd.clone(),
     }
-}
-
-/// The program a unit runs as its host: this one. A test binary has no
-/// host subcommands, so tests (only the ignored ones start units) use the
-/// built agent beside it.
-fn agent_program() -> Result<PathBuf> {
-    let program = std::env::current_exe().context("could not find this program's path")?;
-    #[cfg(test)]
-    let program = program
-        .parent()
-        .and_then(Path::parent)
-        .map(|folder| folder.join("bmuster-agent"))
-        .context("the test binary is not in target/<profile>/deps")?;
-    Ok(program)
 }
 
 /// How the hosted program ended, as far as the agent knows.
@@ -320,7 +306,12 @@ pub fn start(
     // SAFETY: geteuid has no arguments and cannot fail.
     let uid = unsafe { libc::geteuid() };
     let socket = ConnectSocket::create(&Folder::for_manager(unit.manager())?, uid)?;
-    let hosted = hosted(host, &agent_program()?, socket.path(), launch);
+    let hosted = hosted(
+        host,
+        &super::unit::program(unit.manager())?,
+        socket.path(),
+        launch,
+    );
     let mut command = unit.command(runtime_max, &hosted);
     {
         use std::os::unix::process::CommandExt as _;

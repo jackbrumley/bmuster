@@ -24,9 +24,10 @@
 
 use super::placement::Kind;
 use super::spawn::Launch;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context as _, Result};
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -183,6 +184,28 @@ impl TransientUnit {
             return;
         }
         stop_units(self.manager, &[self.name.as_str()]);
+    }
+}
+
+/// The program a unit of `manager` runs as its host (SPEC-SESSION-UNITS,
+/// Version 3): for the system manager the current version under /opt,
+/// never this process's own path, because systemd may not run a program
+/// from /var/lib. The development user manager runs this build (in tests,
+/// the built agent beside the test binary: only ignored tests start units).
+pub fn program(manager: Manager) -> Result<PathBuf> {
+    match manager {
+        Manager::System => Ok(PathBuf::from(crate::paths::CURRENT_PROGRAM)),
+        #[cfg(debug_assertions)]
+        Manager::User => {
+            let program = std::env::current_exe().context("could not find this program's path")?;
+            #[cfg(test)]
+            let program = program
+                .parent()
+                .and_then(std::path::Path::parent)
+                .map(|folder| folder.join("bmuster-agent"))
+                .context("the test binary is not in target/<profile>/deps")?;
+            Ok(program)
+        }
     }
 }
 
@@ -353,7 +376,7 @@ mod tests {
         }
         let console = strings(&crate::console_helper::unit_arguments(
             "bmuster-console-1-1.service",
-            Path::new("/run/bmuster/bmuster-user-helper"),
+            Path::new("/opt/bmuster/versions/current/bmuster-agent"),
             Path::new(SOCKET),
             Path::new("/var/lib/bmuster"),
         ));
@@ -361,7 +384,7 @@ mod tests {
         let wayland = strings(&crate::wayland::capture::unit_arguments(
             "bmuster-wayland-1-1.service",
             1000,
-            Path::new("/run/bmuster/bmuster-user-helper"),
+            Path::new("/opt/bmuster/versions/current/bmuster-agent"),
             Path::new(SOCKET),
         ));
         assert!(!wayland.iter().any(forbidden), "{wayland:?}");
@@ -377,6 +400,40 @@ mod tests {
         assert!(!strings(&args)
             .iter()
             .any(|arg| arg.starts_with("RuntimeMaxSec=")));
+    }
+
+    /// SPEC-SESSION-UNITS O2: every unit the system manager starts for the
+    /// agent (terminal, command, files, console and Wayland helpers, the
+    /// checks' units) runs the current version under /opt.
+    #[test]
+    fn programs_live_under_opt() {
+        let program = program(Manager::System).unwrap();
+        assert_eq!(
+            program,
+            Path::new("/opt/bmuster/versions/current/bmuster-agent")
+        );
+        assert_eq!(program, Path::new(crate::paths::CURRENT_PROGRAM));
+        for (kind, host) in [
+            (Kind::Terminal, HostProgram::Pty),
+            (Kind::Exec, HostProgram::Stdio),
+            (Kind::Files, HostProgram::Stdio),
+        ] {
+            let unit = TransientUnit::new(Manager::System, kind, ID).unwrap();
+            let hosted = hosted(host, &program, Path::new(SOCKET), &launch("-bash", &[]));
+            let args = strings(&unit.arguments(None, &hosted));
+            let start = args.iter().position(|arg| arg == "--").unwrap();
+            assert_eq!(args[start + 1], crate::paths::CURRENT_PROGRAM);
+            assert!(!args.iter().any(|arg| arg.contains("/var/lib")), "{args:?}");
+        }
+        // The helpers check the same program (root's, writable by nobody else).
+        let error = crate::wayland::helper_program()
+            .err()
+            .map(|error| format!("{error:#}"))
+            .unwrap_or_default();
+        assert!(
+            error.is_empty() || error.contains("/opt/bmuster"),
+            "{error}"
+        );
     }
 
     #[test]

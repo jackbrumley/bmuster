@@ -8,9 +8,12 @@
 //! in. If it does not, the launcher switches back and records "rolled back"
 //! with the reason, which the old worker reports in its next check-in.
 //!
-//! On Linux the service runs `versions/current/bmuster-agent launch`, so the
-//! launcher is the current version's own binary and updates with it (from
-//! its next start). A launcher that cannot start is rolled back by the
+//! On Linux the service runs `/opt/bmuster/versions/current/bmuster-agent
+//! launch` (SPEC-SESSION-UNITS, Version 3), so the launcher is the current
+//! version's own binary and updates with it (from its next start). A
+//! launcher that an older unit still starts from /var/lib/bmuster runs only
+//! its own binary until the worker has moved the program files
+//! (`move_to_opt.rs`). A launcher that cannot start is rolled back by the
 //! rescue copy (`rescue.rs`). On Windows the service runs the copy in
 //! Program Files, because Windows cannot rename the folder of a running
 //! program; that copy is refreshed after a day of health.
@@ -75,6 +78,14 @@ enum Trial {
     Stopped,
 }
 
+/// What follows a worker's exit.
+enum After {
+    End(Ended),
+    Again,
+    /// A checked build waits in `incoming`.
+    Update,
+}
+
 impl Launcher {
     /// The installed launcher, as `launch` starts it.
     pub fn new(data_dir: PathBuf, worker_args: Vec<OsString>) -> Result<Self> {
@@ -95,6 +106,12 @@ impl Launcher {
 
     /// Runs workers until one stops for good or `stop` is set.
     pub fn run(&self, stop: &AtomicBool) -> Result<Ended> {
+        #[cfg(target_os = "linux")]
+        if crate::paths::is_installed_data_dir(&self.data_dir)
+            && crate::move_to_opt::runs_from_var_lib(&self.own_binary)
+        {
+            return self.run_from_var_lib(stop);
+        }
         self.recover()?;
         log::info!(
             "BMuster launcher {} started; running version {}.",
@@ -111,7 +128,7 @@ impl Launcher {
                     .with_context(|| format!("could not remove {}", marker.display()))?;
             }
             let switch = self.layout().switch()?;
-            let (mut child, tail) = self.spawn()?;
+            let (mut child, tail) = self.spawn(&self.layout().binary(Slot::Current))?;
             let started = Instant::now();
             if let Some(switch) = switch {
                 match self.trial(&mut child, &switch, stop)? {
@@ -136,20 +153,69 @@ impl Launcher {
                 return Ok(Ended::Stopped);
             };
             self.record_exit(&status, started.elapsed(), &tail);
-            match status.code() {
-                Some(EXIT_STOPPED) => return Ok(Ended::Stopped),
-                Some(EXIT_REVOKED) => return Ok(Ended::Revoked),
-                Some(EXIT_RESTART) => log::info!("Starting the agent again."),
-                Some(code) if code == i32::from(EXIT_UPDATE) => self.switch_to_incoming()?,
-                _ => {
-                    log::warn!(
-                        "The agent stopped unexpectedly ({status}); starting it again in {} s.",
-                        self.restart_delay.as_secs()
-                    );
-                    if sleep_unless_stopped(self.restart_delay, stop) {
-                        return Ok(Ended::Stopped);
-                    }
+            match self.after_exit(&status, stop) {
+                After::End(ended) => return Ok(ended),
+                After::Again => {}
+                After::Update => self.switch_to_incoming()?,
+            }
+        }
+    }
+
+    /// What follows a worker's exit, other than a switch.
+    fn after_exit(&self, status: &ExitStatus, stop: &AtomicBool) -> After {
+        match status.code() {
+            Some(EXIT_STOPPED) => After::End(Ended::Stopped),
+            Some(EXIT_REVOKED) => After::End(Ended::Revoked),
+            Some(EXIT_RESTART) => {
+                log::info!("Starting the agent again.");
+                After::Again
+            }
+            Some(code) if code == i32::from(EXIT_UPDATE) => After::Update,
+            _ => {
+                log::warn!(
+                    "The agent stopped unexpectedly ({status}); starting it again in {} s.",
+                    self.restart_delay.as_secs()
+                );
+                if sleep_unless_stopped(self.restart_delay, stop) {
+                    After::End(Ended::Stopped)
+                } else {
+                    After::Again
                 }
+            }
+        }
+    }
+
+    /// An install from before SPEC-SESSION-UNITS Version 3 started this
+    /// launcher from /var/lib/bmuster/versions (its unit was not rewritten
+    /// yet). The versions under /opt/bmuster are not writable from that
+    /// unit's sandbox, so the launcher runs its own binary as the worker,
+    /// which moves the program files and restarts the service from /opt.
+    #[cfg(target_os = "linux")]
+    fn run_from_var_lib(&self, stop: &AtomicBool) -> Result<Ended> {
+        log::warn!(
+            "BMuster launcher {} runs from {}; the agent moves its program files to /opt/bmuster \
+             and restarts from there. Updates wait until then.",
+            self.own_version,
+            self.own_binary.display()
+        );
+        crate::move_to_opt::end_old_switch(&self.data_dir, &self.own_version);
+        loop {
+            if stop.load(Ordering::SeqCst) {
+                return Ok(Ended::Stopped);
+            }
+            let (mut child, tail) = self.spawn(&self.own_binary)?;
+            let started = Instant::now();
+            let Some(status) = wait(&mut child, stop)? else {
+                stop_child(&mut child);
+                return Ok(Ended::Stopped);
+            };
+            self.record_exit(&status, started.elapsed(), &tail);
+            match self.after_exit(&status, stop) {
+                After::End(ended) => return Ok(ended),
+                After::Again => {}
+                After::Update => log::info!(
+                    "A new version waits; it is taken once the agent runs from /opt/bmuster."
+                ),
             }
         }
     }
@@ -158,19 +224,32 @@ impl Launcher {
     /// crash or power cut interrupted, or seeds it with this launcher.
     fn recover(&self) -> Result<()> {
         let layout = self.layout();
-        fs::create_dir_all(layout.root())
-            .with_context(|| format!("could not create {}", layout.root().display()))?;
+        layout.create_root()?;
+        if let Some(switch) = layout.switch()? {
+            let running = layout.release(Slot::Current).ok().map(|r| r.version);
+            if running.as_deref() != Some(switch.to.as_str()) {
+                match layout.promote(&switch.to) {
+                    Ok(()) => {
+                        log::info!("Finished a switch to {} that was interrupted.", switch.to)
+                    }
+                    Err(e) => {
+                        // A rollback that was interrupted, or a build that is gone.
+                        log::warn!(
+                            "Could not finish the switch to {}: {e:#}; staying on the running version.",
+                            switch.to
+                        );
+                        layout.end_switch()?;
+                    }
+                }
+            }
+        }
         if layout.binary(Slot::Current).exists() {
             return Ok(());
-        }
-        if layout.switch()?.is_some() && layout.binary(Slot::Incoming).exists() {
-            log::info!("Finishing a switch that was interrupted.");
-            return layout.rename(Slot::Incoming, Slot::Current);
         }
         if layout.binary(Slot::Previous).exists() {
             log::warn!("The current version is missing; going back to the previous one.");
             layout.end_switch()?;
-            return layout.rename(Slot::Previous, Slot::Current);
+            return layout.restore_previous();
         }
         let bytes = fs::read(&self.own_binary)
             .with_context(|| format!("could not read {}", self.own_binary.display()))?;
@@ -215,9 +294,8 @@ impl Launcher {
         }
     }
 
-    fn spawn(&self) -> Result<(Child, Tail)> {
-        let program = self.layout().binary(Slot::Current);
-        let mut command = Command::new(&program);
+    fn spawn(&self, program: &Path) -> Result<(Child, Tail)> {
+        let mut command = Command::new(program);
         command
             .arg("run")
             .arg("--launched")
@@ -305,7 +383,7 @@ impl Launcher {
                 layout.dir(Slot::Previous).display()
             );
         }
-        layout.rename(Slot::Previous, Slot::Current)?;
+        layout.restore_previous()?;
         layout.end_switch()?;
         updates::record_event(
             &self.data_dir,
@@ -342,8 +420,7 @@ impl Launcher {
                 };
                 // The switch file first: after a crash, `recover` can finish it.
                 layout.begin_switch(&switch)?;
-                layout.rename(Slot::Current, Slot::Previous)?;
-                layout.rename(Slot::Incoming, Slot::Current)?;
+                layout.promote(&switch.to)?;
                 log::info!("Switched from version {} to {}.", switch.from, switch.to);
                 Ok(())
             }
@@ -351,7 +428,7 @@ impl Launcher {
                 let reason = reason.unwrap_or_default();
                 let version = release.map_or_else(|| "(unknown)".to_string(), |r| r.version);
                 log::error!("The launcher refused version {version}: {reason}.");
-                layout.remove(Slot::Incoming)?;
+                layout.remove_incoming()?;
                 updates::record_event(
                     &self.data_dir,
                     UpdateEvent::Refused {
@@ -522,7 +599,6 @@ mod tests {
     use super::*;
     use crate::updates::tests::{signed, test_key};
     use ed25519_dalek::SigningKey;
-    use std::os::unix::fs::PermissionsExt as _;
 
     const OLD: &str = "1.0.0";
     const NEW: &str = "2.0.0";
@@ -544,18 +620,15 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let data = dir.path().display().to_string();
             let layout = Layout::new(dir.path());
-            fs::create_dir_all(layout.root()).unwrap();
-            for (slot, version, body) in [
-                (Slot::Current, OLD, old(&data)),
-                (Slot::Incoming, NEW, new(&data)),
-            ] {
-                let bytes = format!("#!/bin/sh\n{body}\n").into_bytes();
-                layout
-                    .store(slot, &signed(version, &bytes, signer), &bytes)
-                    .unwrap();
-                fs::set_permissions(layout.binary(slot), fs::Permissions::from_mode(0o700))
-                    .unwrap();
-            }
+            let script = |body: String| format!("#!/bin/sh\n{body}\n").into_bytes();
+            let bytes = script(old(&data));
+            layout
+                .seed_current(&signed(OLD, &bytes, signer), &bytes)
+                .unwrap();
+            let bytes = script(new(&data));
+            layout
+                .store_incoming(&signed(NEW, &bytes, signer), &bytes)
+                .unwrap();
             let launcher = Launcher {
                 data_dir: dir.path().to_path_buf(),
                 worker_args: vec![],
@@ -596,7 +669,7 @@ mod tests {
     fn an_update_that_checks_in_is_kept() {
         let rig = Rig::new(
             old_worker,
-            |data| format!("printf {NEW} > {data}/versions/checked-in\nsleep 1\nexit 0"),
+            |data| format!("printf {NEW} > {data}/checked-in\nsleep 1\nexit 0"),
             &test_key(),
         );
         assert_eq!(rig.run(), Ended::Stopped);
@@ -644,7 +717,7 @@ mod tests {
     fn a_marker_from_another_version_does_not_count() {
         let rig = Rig::new(
             old_worker,
-            |data| format!("printf {OLD} > {data}/versions/checked-in\nsleep 30"),
+            |data| format!("printf {OLD} > {data}/checked-in\nsleep 30"),
             &test_key(),
         );
         assert_eq!(rig.run(), Ended::Stopped);
@@ -732,9 +805,18 @@ mod tests {
                 to: NEW.into(),
             })
             .unwrap();
-        layout.rename(Slot::Current, Slot::Previous).unwrap();
+        // The switch record is written, nothing moved yet.
         rig.launcher.recover().unwrap();
         assert_eq!(rig.current_version(), NEW);
+        assert_eq!(layout.release(Slot::Previous).unwrap().version, OLD);
+        assert!(layout.switch().unwrap().is_some(), "still on trial");
+
+        // A rollback cut short (the failed build already gone): the running
+        // version stays and the switch ends.
+        layout.restore_previous().unwrap();
+        rig.launcher.recover().unwrap();
+        assert_eq!(rig.current_version(), OLD);
+        assert!(layout.switch().unwrap().is_none());
 
         let fresh = tempfile::tempdir().unwrap();
         let own = fresh.path().join("launcher");

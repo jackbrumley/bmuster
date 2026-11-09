@@ -21,6 +21,7 @@ agent/
     src/worker.rs         `run`: the check-in loop
     src/launcher.rs       `launch`: runs the worker, switches versions, rolls back (SPEC-AGENT-UPDATES)
     src/updates.rs        trusted release keys, build checks, version folders, the worker's download
+    src/move_to_opt.rs    moving a Linux install's versions from /var/lib to /opt (SPEC-SESSION-UNITS Version 3)
     release-key.pub       the project's release public key, built into every agent
     src/socket.rs         the live socket (own thread)
     src/local_page/       the local page on https://localhost:47500 (SPEC-AGENT-LOCAL)
@@ -41,7 +42,7 @@ agent/
 | :-- | :-- |
 | `bmuster-agent install --url <server> --code <code> [--name <name>] [--pin-cert <pin>]` | Needs root or Administrator. Copies the binary into place, enrols, then installs and starts the service. |
 | `bmuster-agent enrol --url <server> --code <code> [--name <name>] [--pin-cert <pin>] [--data-dir <dir>] [--insecure-dev-tls]` | Enrols only. Use it for development. |
-| `bmuster-agent launch [--data-dir <dir>] [--insecure-dev-tls]` | The service entry point: the launcher. It runs the agent from `<data>/versions/current` and keeps it up to date. |
+| `bmuster-agent launch [--data-dir <dir>] [--insecure-dev-tls]` | The service entry point: the launcher. It runs the agent from `versions/current` (installed on Linux: `/opt/bmuster/versions`; otherwise `<data>/versions`) and keeps it up to date. |
 | `bmuster-agent run [--data-dir <dir>] [--insecure-dev-tls] [--sessions <mode>]` | The agent itself: the check-in loop, the live socket and the local page. Run by hand it does not update itself. `--sessions` (or `BMUSTER_SESSIONS`) says where terminal, command and files sessions run; see below. |
 | `bmuster-agent rejoin --url <server> --code <code> [--name <name>] [--pin-cert <pin>] [--data-dir <dir>] [--insecure-dev-tls]` | Moves this machine to another server: enrols there first with a new key, then tells the old server it left. Needs root or Administrator for an installed agent; stops and restarts its service. |
 | `bmuster-agent status [--data-dir <dir>]` | Shows the enrolment and the service state. It does not contact the server. |
@@ -79,7 +80,7 @@ To try it without root: `cargo run -p bmuster-agent -- run --data-dir ./dev-data
 
 ## Updates (SPEC-AGENT-UPDATES)
 
-The launcher keeps `versions/current` and `versions/previous` in the data folder. When a check-in reply offers a newer build, the agent checks the signature over the version, target, size and SHA-256 before downloading, downloads it over its usual connection (the same certificate check or pin), checks the size and SHA-256, writes it to `versions/incoming` and exits `5`. The launcher checks it again with its own keys, switches, and gives the new version 120 s to check in; otherwise it switches back and records "rolled back". `update-state.json` holds the last update event, reported in every check-in. `status` shows the running and previous versions.
+The launcher keeps `versions/current` and `versions/previous`: on an installed Linux agent links to `/opt/bmuster/versions/<version>` (systemd may not run programs from `/var/lib`; SPEC-SESSION-UNITS Version 3), elsewhere in the data folder. When a check-in reply offers a newer build, the agent checks the signature over the version, target, size and SHA-256 before downloading, downloads it over its usual connection (the same certificate check or pin), checks the size and SHA-256, writes it to `versions/incoming` and exits `5`. The launcher checks it again with its own keys, switches, and gives the new version 120 s to check in; otherwise it switches back and records "rolled back". `update-state.json` holds the last update event, reported in every check-in. `status` shows the running and previous versions.
 
 Trusted keys: `release-key.pub` (the project key) and, only if set when building, `BMUSTER_EXTRA_RELEASE_KEY` (base64 raw Ed25519 public key; development builds and self-builders). `BMUSTER_VERSION` at build time sets the version (default: Cargo's).
 
@@ -95,7 +96,7 @@ Installed locations:
 
 | | Linux | Windows |
 | :-- | :-- | :-- |
-| Binary | `/opt/bmuster/bmuster-agent` | `C:\Program Files\BMuster\bmuster-agent.exe` |
+| Binary | `/opt/bmuster/bmuster-agent` (rescue copy); versions in `/opt/bmuster/versions` | `C:\Program Files\BMuster\bmuster-agent.exe` |
 | Data (key, `identity.json`) | `/var/lib/bmuster` (0700, files 0600) | `C:\ProgramData\BMuster` (SYSTEM and Administrators only) |
 | Service | `bmuster-agent.service` (systemd, root) | `BMusterAgent`, shown as "BMuster Agent" (LocalSystem) |
 | Log | journald (`journalctl -u bmuster-agent`) | `C:\ProgramData\BMuster\agent.log` |

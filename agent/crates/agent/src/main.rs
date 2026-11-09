@@ -16,6 +16,8 @@ mod launcher;
 mod local_page;
 mod log_spool;
 mod logging;
+#[cfg(target_os = "linux")]
+mod move_to_opt;
 mod paths;
 mod power;
 mod relocate;

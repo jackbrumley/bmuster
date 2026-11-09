@@ -1,7 +1,8 @@
-//! Linux install: the rescue copy in /opt/bmuster, data in /var/lib/bmuster,
-//! a systemd unit that runs the current version's own `bmuster-agent launch`
-//! as root from /var/lib/bmuster/versions/current (SPEC-AGENT-UPDATES,
-//! SPEC-SERVER-UPDATES). If that fails to start three times in five
+//! Linux install: the rescue copy and the versions in /opt/bmuster, data in
+//! /var/lib/bmuster, a systemd unit that runs the current version's own
+//! `bmuster-agent launch` as root from /opt/bmuster/versions/current
+//! (SPEC-AGENT-UPDATES, SPEC-SERVER-UPDATES, SPEC-SESSION-UNITS Version 3:
+//! systemd may not run programs from /var/lib). If that fails to start three times in five
 //! minutes, `bmuster-agent-rescue.service` runs the rescue copy's `rescue`.
 
 use crate::client::TlsMode;
@@ -19,8 +20,9 @@ use std::process::Command;
 const INSTALL_DIR: &str = "/opt/bmuster";
 /// The rescue copy: the installer's binary, refreshed after a day of health.
 const BINARY: &str = "/opt/bmuster/bmuster-agent";
-/// What the service runs: the current version (`updates::Layout`).
-const CURRENT_BINARY: &str = "/var/lib/bmuster/versions/current/bmuster-agent";
+/// What the service runs: the current version (`updates::Layout`), under
+/// /opt, where systemd may run programs (SPEC-SESSION-UNITS, Version 3).
+const CURRENT_BINARY: &str = paths::CURRENT_PROGRAM;
 const UNIT: Unit = Unit {
     name: "bmuster-agent.service",
 };
@@ -63,10 +65,11 @@ RuntimeDirectoryMode=0755
 # mount still allows, so the hardening below needs no exception for it.
 Environment=BMUSTER_SESSIONS=systemd
 
-# Hardening of the agent itself.
+# Hardening of the agent itself. It writes its data and, when it updates,
+# its program versions under /opt/bmuster (systemd may run programs there).
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/var/lib/bmuster
+ReadWritePaths=/var/lib/bmuster /opt/bmuster
 ProtectHome=read-only
 PrivateTmp=yes
 ProtectKernelTunables=yes
@@ -237,21 +240,53 @@ pub fn finish_rescue() -> Result<()> {
     systemctl(&["start", "--no-block", UNIT.name])
 }
 
-/// From the worker (inside the service's sandbox, where /opt and /etc are
+/// The program every unit the worker starts runs: the current version
+/// under /opt (systemd may not run one from /var/lib). An install that has
+/// not moved its program files there yet has none.
+fn current_program() -> Result<&'static Path> {
+    let program = Path::new(CURRENT_BINARY);
+    if !program.exists() {
+        bail!(
+            "{} is missing: the program files have not moved to /opt/bmuster yet",
+            program.display()
+        );
+    }
+    Ok(program)
+}
+
+/// The agent's unit files and their text, for `move_to_opt`.
+pub fn unit_files() -> [(std::path::PathBuf, String); 2] {
+    [
+        (UNIT.path(), unit_file()),
+        (RESCUE.path(), rescue_unit_file()),
+    ]
+}
+
+/// The agent's own unit, for `move_to_opt`'s restart.
+pub const UNIT_NAME: &str = UNIT.name;
+
+/// From the worker (inside the service's sandbox, where /etc is
 /// read-only): runs `refresh-rescue` as its own short-lived unit outside it.
 pub fn refresh_rescue_copy() -> Result<()> {
-    let program = std::env::current_exe().context("could not find this program's path")?;
-    let status = Command::new("systemd-run")
+    run_transient(refresh_command(current_program()?))
+}
+
+fn refresh_command(program: &Path) -> Command {
+    let mut command = Command::new("systemd-run");
+    command
         .arg("--quiet")
         .arg("--collect")
         .arg(format!(
             "--unit=bmuster-agent-refresh-{}",
             std::process::id()
         ))
-        .arg(&program)
-        .arg("refresh-rescue")
-        .status()
-        .context("could not run systemd-run")?;
+        .arg(program)
+        .arg("refresh-rescue");
+    command
+}
+
+fn run_transient(mut command: Command) -> Result<()> {
+    let status = command.status().context("could not run systemd-run")?;
     if !status.success() {
         bail!("systemd-run failed ({status})");
     }
@@ -287,8 +322,12 @@ pub fn refresh_service() -> Result<()> {
 /// `uninstall --purge` as its own short-lived unit, three seconds from now,
 /// after the page has replied.
 pub fn schedule_uninstall() -> Result<()> {
-    let program = std::env::current_exe().context("could not find this program's path")?;
-    let status = Command::new("systemd-run")
+    run_transient(uninstall_command(current_program()?))
+}
+
+fn uninstall_command(program: &Path) -> Command {
+    let mut command = Command::new("systemd-run");
+    command
         .arg("--quiet")
         .arg("--collect")
         .arg("--on-active=3")
@@ -296,14 +335,9 @@ pub fn schedule_uninstall() -> Result<()> {
             "--unit=bmuster-agent-uninstall-{}",
             std::process::id()
         ))
-        .arg(&program)
-        .args(["uninstall", "--purge"])
-        .status()
-        .context("could not run systemd-run")?;
-    if !status.success() {
-        bail!("systemd-run failed ({status})");
-    }
-    Ok(())
+        .arg(program)
+        .args(["uninstall", "--purge"]);
+    command
 }
 
 /// One line about the service, for `status`.
@@ -318,16 +352,73 @@ mod tests {
     #[test]
     fn unit_runs_the_current_version_and_spares_revoked_exits() {
         let unit = unit_file();
-        assert!(unit.contains("ExecStart=/var/lib/bmuster/versions/current/bmuster-agent launch\n"));
+        // SPEC-SESSION-UNITS O2: systemd runs the agent from /opt.
+        assert!(unit.contains("ExecStart=/opt/bmuster/versions/current/bmuster-agent launch\n"));
         assert_eq!(
             Path::new(CURRENT_BINARY),
             updates::Layout::new(Path::new("/var/lib/bmuster")).binary(updates::Slot::Current)
         );
+        assert!(!unit.contains("/var/lib/bmuster/versions"));
+        assert!(rescue_unit_file().contains("ExecStart=/opt/bmuster/"));
+        // The rescue refresh and the local page's uninstall run as
+        // transient units of the current version under /opt.
+        assert_eq!(
+            CURRENT_BINARY,
+            "/opt/bmuster/versions/current/bmuster-agent"
+        );
+        for command in [
+            refresh_command(Path::new(CURRENT_BINARY)),
+            uninstall_command(Path::new(CURRENT_BINARY)),
+        ] {
+            assert!(command.get_args().any(|arg| arg == CURRENT_BINARY));
+        }
         assert!(unit.contains("Restart=always\n"));
         assert!(unit.contains("RestartPreventExitStatus=3\n"));
         // Removed machines stop without a rescue.
         assert!(unit.contains("SuccessExitStatus=3\n"));
-        assert!(unit.contains("ReadWritePaths=/var/lib/bmuster\n"));
+    }
+
+    /// SPEC-SESSION-UNITS O3: the agent may write its data and its program
+    /// versions, nothing else, and the rest of the sandbox is as it was.
+    #[test]
+    fn sandbox_writes_only_data_and_program() {
+        let unit = unit_file();
+        let writable: Vec<&str> = unit
+            .lines()
+            .filter(|line| line.starts_with("ReadWritePaths="))
+            .collect();
+        assert_eq!(writable, ["ReadWritePaths=/var/lib/bmuster /opt/bmuster"]);
+        let hardening: Vec<&str> = unit
+            .lines()
+            .skip_while(|line| !line.starts_with("NoNewPrivileges="))
+            .take_while(|line| !line.is_empty())
+            .collect();
+        assert_eq!(
+            hardening,
+            [
+                "NoNewPrivileges=yes",
+                "ProtectSystem=strict",
+                "ReadWritePaths=/var/lib/bmuster /opt/bmuster",
+                "ProtectHome=read-only",
+                "PrivateTmp=yes",
+                "ProtectKernelTunables=yes",
+                "ProtectKernelModules=yes",
+                "ProtectKernelLogs=yes",
+                "ProtectControlGroups=yes",
+                "ProtectClock=yes",
+                "ProtectHostname=yes",
+                "RestrictSUIDSGID=yes",
+                "RestrictRealtime=yes",
+                "RestrictNamespaces=yes",
+                "LockPersonality=yes",
+                "MemoryDenyWriteExecute=yes",
+                "SystemCallArchitectures=native",
+                "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+            ]
+        );
+        for (path, _) in unit_files() {
+            assert!(path.starts_with("/etc/systemd/system"));
+        }
     }
 
     #[test]
@@ -351,7 +442,7 @@ mod tests {
         // Version 2): the runtime folder is the one writable place under
         // /run, and the sandbox needs nothing more.
         assert!(unit.contains("RuntimeDirectory=bmuster\n"));
-        assert!(unit.contains("ReadWritePaths=/var/lib/bmuster\n"));
+        assert!(unit.contains("ReadWritePaths=/var/lib/bmuster /opt/bmuster\n"));
         assert!(unit.contains("RestrictAddressFamilies=AF_UNIX "));
     }
 }

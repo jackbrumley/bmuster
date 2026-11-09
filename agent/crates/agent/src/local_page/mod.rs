@@ -240,10 +240,6 @@ fn try_start(setup: Setup) -> Result<Reporter> {
         connections: AtomicUsize::new(0),
     });
     if setup.launched && setup.mode == RunMode::Service {
-        #[cfg(target_os = "linux")]
-        if let Err(error) = crate::wayland::publish_helper() {
-            log::warn!("Wayland helper unavailable: {error:#}");
-        }
         crate::tray::publish(Arc::clone(&page.board), page.hosts.port);
     }
     {

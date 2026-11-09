@@ -111,6 +111,12 @@ impl Sessions {
         }
     }
 
+    /// How many sessions run now.
+    #[cfg(target_os = "linux")]
+    pub fn running(&self) -> usize {
+        *lock(&self.inner.running)
+    }
+
     /// Checks a ticket and remembers it, so it cannot be used twice.
     fn admit(&self, ticket: &str, signature: &str) -> Result<SessionTicket, TicketError> {
         let now = self.inner.session.server_now_ms();

@@ -76,7 +76,7 @@ fn unit_properties() {
     let socket = "/run/bmuster/connect/00112233445566778899aabbccddeeff.sock";
     let args = unit_arguments(
         "bmuster-console-1-1.service",
-        Path::new("/run/bmuster/bmuster-user-helper"),
+        Path::new("/opt/bmuster/versions/current/bmuster-agent"),
         Path::new(socket),
         Path::new("/var/lib/bmuster"),
     );
@@ -108,11 +108,15 @@ fn unit_properties() {
     assert_eq!(property(&args, "ProtectHome"), vec!["yes"]);
     // GPU drivers need to write and run shader code.
     assert_eq!(property(&args, "MemoryDenyWriteExecute"), vec!["no"]);
-    // The root-owned helper copy, never the install folder; no secrets
+    // The current version under /opt (never /var/lib); no secrets
     // on the command line, only the socket's path.
     assert_eq!(
         &text[text.len() - 3..],
-        &["/run/bmuster/bmuster-user-helper", "console-helper", socket]
+        &[
+            "/opt/bmuster/versions/current/bmuster-agent",
+            "console-helper",
+            socket
+        ]
     );
     assert!(!text
         .iter()
