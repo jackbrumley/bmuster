@@ -136,3 +136,38 @@ The SPEC-DIAGNOSTICS checks `systemd-run-pipe` and `terminal-pty` are replaced b
 - **Renamed tests.** U3's test is now `unit::tests::a_terminal_is_a_login_shell_under_pty_host`, U4's `unit::tests::a_command_runs_under_stdio_host_and_keeps_its_dollars`. The `user_manager` tests (`cargo build && cargo test -- --ignored`) start the built agent as the host; they passed on the developer's machine (systemd user manager, real cgroup peer check), as did the new `user_manager::a_terminal_unit_has_its_own_pty_and_resizes` and `checks::linux::tests::the_unit_checks_pass_under_the_user_manager` (`systemd-run`, `unit-connect-back` and `pty-host` against the user manager).
 - **Checks.** `systemd-run-pipe` and `terminal-pty` are gone. `unit-connect-back` runs `/bin/cat` under `stdio-host` in `bmuster-exec-check-<hex>.service`; `pty-host` runs `/bin/true` under `pty-host` in `bmuster-terminal-check-<hex>.service`. Both follow the session mode (`not-applicable` in-process), so a development agent in `systemd-user` mode runs them too.
 - **Not natively tested (CB7):** the system manager path as root inside the installed unit, SELinux on Fedora (whether `init_t` may execute the agent's binary as the unit's program and whether the unit may connect to the agent's socket in `/run/bmuster/connect`), the console helper's connect from inside its sandbox, and the Wayland helper as the signed-in user. Run `npm run diagnostics` against the laptop after installing 0.4.4: `unit-connect-back`, `pty-host` and `kms-capture` should pass and the `audit` check should show no new denials.
+
+## Version 3: everything systemd starts lives under /opt
+
+**Status:** `APPROVED` 2026-11-09 (follows from the 0.4.4 native test; Jack: "get what you can done overnight") · security work.
+
+### Evidence (Fedora 44, agent 0.4.4)
+
+The pty and pipe denials are gone. The units now fail with `203/EXEC`: `avc: denied { execute } for comm="(bmuster-agent)" scontext=system_u:system_r:init_t:s0 tcontext=system_u:object_r:var_lib_t:s0`. systemd may not execute a program stored under `/var/lib` (`var_lib_t`). The same applies to the agent's 24-hour rescue refresh (it runs the `/var/lib` copy through `systemd-run`) and to a unit file that names `/var/lib/bmuster/versions/current/bmuster-agent` as `ExecStart`. Fedora's SELinux troubleshooter shows a desktop alert for each denial, so every failed attempt is visible to the person at the machine.
+
+### Design
+
+1. Program files live under `/opt/bmuster`, data under `/var/lib/bmuster`:
+   - `/opt/bmuster/versions/<version>/bmuster-agent`, with `current` and `previous` links (moved from `/var/lib/bmuster/versions`);
+   - `/opt/bmuster/bmuster-agent` stays the rescue copy.
+2. New version files are **written** (copied) into `/opt/bmuster/versions`, never renamed in from elsewhere, so they take the folder's normal label (`usr_t` on Fedora). No SELinux policy, label or boolean is changed, and `chcon`/`semanage` are never run.
+3. The agent's unit adds `/opt/bmuster` to `ReadWritePaths` (and nothing else), so the updater can write new versions there. `ExecStart` is `/opt/bmuster/versions/current/bmuster-agent launch`.
+4. Every transient unit (terminal, command, files, console helper, Wayland helper, checks, refresh) runs `/opt/bmuster/versions/current/bmuster-agent`. The Wayland helper copy under `/run/bmuster` is removed.
+5. **Moving an installed agent** (0.4.1–0.4.4 layout, still under the old sandbox, which cannot write `/opt` or `/etc`): the new worker, on start, runs fixed system programs as short transient units, each a plain `bin_t` program that systemd may execute:
+   1. `/usr/bin/install -D -m 0755 <its own /var/lib path> /opt/bmuster/versions/<version>/bmuster-agent` (and the same for `previous`, if present);
+   2. `/usr/bin/ln -sfn` for `current` and `previous`;
+   3. `/usr/bin/install -m 0644 <unit text written to /var/lib/bmuster/staged-units/> /etc/systemd/system/bmuster-agent.service` (and the rescue unit), then `systemctl daemon-reload`.
+      It then logs "Moved the program files to /opt/bmuster; they apply from the next start" and, when idle (no session), restarts itself with `systemctl restart --no-block bmuster-agent`. Each step is idempotent; a failure is logged with its exit status and retried at the next start. The old `/var/lib/bmuster/versions` folder is deleted after a healthy start from `/opt`.
+6. The rescue refresh, rescue and updater code use the `/opt` paths only (one layout, no fallback).
+7. Self-checks never repeat a check that failed with a permission denial more than once per agent version, so a machine at a policy wall does not raise a desktop alert every six hours. The result stays visible in diagnostics.
+
+### Acceptance criteria
+
+| #   | Criterion                                                                                                           | Named test                                                               |
+| :-- | :------------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------- |
+| O1  | New versions are copied (not renamed) into `/opt/bmuster/versions/<v>` with `current`/`previous` links.             | Rust `updates::tests::versions_are_written_under_opt`                    |
+| O2  | Every unit's `ExecStart` and every transient unit's program is under `/opt/bmuster/versions/current`.               | Rust `exec::unit::tests::programs_live_under_opt`, `service_linux` tests |
+| O3  | The agent unit's only writable paths are `/var/lib/bmuster` and `/opt/bmuster`; the sandbox is otherwise unchanged. | Rust `service_linux::tests::sandbox_writes_only_data_and_program`        |
+| O4  | Moving an old install runs only the fixed system programs, is idempotent, and survives each step failing.           | Rust `relocate::tests::move_from_var_lib_steps` (fake runner)            |
+| O5  | A check that failed with a permission denial is not repeated within the same version.                               | Rust `checks::tests::denied_checks_run_once_per_version`                 |
+| O6  | Native: Fedora (SELinux enforcing) and Mint: terminal, files, desktop and all checks pass, with no new AVC denials. | Manual, through `npm run diagnostics`                                    |
