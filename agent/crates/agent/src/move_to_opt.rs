@@ -17,8 +17,10 @@
 //!
 //! Each step looks first and runs only when its result is missing, so the
 //! move is idempotent; a failed step stops the move, is logged with what
-//! failed, and the next start tries again. When no session runs, the
-//! worker restarts the service, which then starts from /opt. After the
+//! failed, and the next start tries again. Once this version has checked
+//! in and no session runs, `/usr/bin/install -m 0755` makes its /opt copy
+//! the rescue copy (the old one only knows /var/lib), and the worker
+//! restarts the service, which then starts from /opt. After the
 //! first check-in from /opt the old folder is deleted.
 //!
 //! Nothing here changes an SELinux label or policy.
@@ -85,6 +87,8 @@ pub struct Places {
     pub staged_units: PathBuf,
     /// Each unit file's path and the text this version writes.
     pub units: Vec<(PathBuf, String)>,
+    /// `/opt/bmuster/bmuster-agent`: the rescue copy.
+    pub rescue: PathBuf,
 }
 
 impl Places {
@@ -94,8 +98,42 @@ impl Places {
             versions: crate::paths::versions_dir(data_dir),
             staged_units: data_dir.join(STAGED_UNITS),
             units: crate::service_linux::unit_files().into_iter().collect(),
+            rescue: crate::service_linux::rescue_copy(),
         }
     }
+}
+
+/// After this version checked in (it is healthy), before the restart: its
+/// /opt copy becomes the rescue copy, so a launcher that fails to start
+/// from /opt is rolled back by rescue code that knows the /opt layout (the
+/// 0.4.4 copy only knows /var/lib/bmuster/versions, which is deleted).
+/// One fixed step, `/usr/bin/install -m 0755`, run only when the rescue
+/// copy differs. Returns whether it ran.
+pub fn refresh_rescue_copy(
+    places: &Places,
+    version: &str,
+    runner: &mut dyn Runner,
+) -> Result<bool> {
+    let version = AgentVersion::parse(version)?.as_str().to_string();
+    let source = places.versions.join(&version).join(BINARY_NAME);
+    let wanted =
+        fs::read(&source).with_context(|| format!("could not read {}", source.display()))?;
+    if fs::read(&places.rescue).ok().as_deref() == Some(wanted.as_slice()) {
+        return Ok(false);
+    }
+    let step = Step::new(
+        INSTALL,
+        &[
+            "-m".as_ref(),
+            "0755".as_ref(),
+            source.as_os_str(),
+            places.rescue.as_os_str(),
+        ],
+    );
+    runner
+        .run(&step)
+        .map_err(|reason| anyhow::anyhow!("{} failed: {reason}", step.describe()))?;
+    Ok(true)
 }
 
 /// Whether anything had to be done.
@@ -271,14 +309,45 @@ pub fn start(data_dir: &Path, launched: bool, sessions: Sessions) {
                     return;
                 }
             }
+            let places = Places::installed(&data_dir);
+            let marker = crate::updates::Layout::new(&data_dir).checked_in_marker();
+            let mut warned = false;
             loop {
                 std::thread::sleep(IDLE_POLL);
                 // An older launcher commits its switch to this version
                 // only after the first check-in; restarting before that
                 // would leave the switch on trial.
                 let on_trial = data_dir.join(OLD_VERSIONS).join("switch.json").exists();
-                if sessions.running() == 0 && !on_trial {
-                    break;
+                let healthy = fs::read_to_string(&marker)
+                    .is_ok_and(|version| version == crate::updates::VERSION);
+                if sessions.running() > 0 || on_trial || !healthy {
+                    continue;
+                }
+                match refresh_rescue_copy(&places, crate::updates::VERSION, &mut runner) {
+                    Ok(ran) => {
+                        if ran {
+                            log::info!(
+                                "Version {} is the rescue copy now.",
+                                crate::updates::VERSION
+                            );
+                        }
+                        if let Err(error) =
+                            crate::rescue::record_version(&data_dir, crate::updates::VERSION)
+                        {
+                            log::warn!("Could not record the rescue copy's version: {error:#}");
+                        }
+                        break;
+                    }
+                    // The restart waits: the old rescue copy cannot roll
+                    // back a launcher in /opt.
+                    Err(error) if !warned => {
+                        warned = true;
+                        log::error!(
+                            "Could not make this version the rescue copy: {error:#}; \
+                             trying again before restarting."
+                        );
+                    }
+                    Err(error) => log::debug!("Rescue copy still not refreshed: {error:#}"),
                 }
             }
             log::info!("No session is running; restarting the agent to run from /opt/bmuster.");
@@ -427,6 +496,8 @@ mod tests {
         fs::create_dir_all(&units).unwrap();
         fs::write(units.join("bmuster-agent.service"), "old unit").unwrap();
         fs::write(units.join("bmuster-agent-rescue.service"), "rescue unit").unwrap();
+        fs::create_dir_all(root.join("opt")).unwrap();
+        fs::write(root.join("opt/bmuster-agent"), "agent 0.4.4").unwrap();
         Places {
             old_versions,
             versions: root.join("opt/versions"),
@@ -438,6 +509,7 @@ mod tests {
                     "rescue unit".into(),
                 ),
             ],
+            rescue: root.join("opt/bmuster-agent"),
         }
     }
 
@@ -527,6 +599,55 @@ mod tests {
                 "step {fail_at}: only the rest runs again"
             );
         }
+
+        // After the check-in: this version's /opt copy becomes the rescue
+        // copy, with one fixed step, once.
+        let mut rescue = FakeRunner {
+            steps: Vec::new(),
+            fail_at: None,
+        };
+        assert!(refresh_rescue_copy(&places, "2.0.0", &mut rescue).unwrap());
+        assert_eq!(fs::read_to_string(&places.rescue).unwrap(), "agent 2.0.0");
+        let mode = fs::metadata(&places.rescue).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o755);
+        assert_eq!(rescue.steps.len(), 1);
+        assert_eq!(rescue.steps[0].program, INSTALL);
+        assert_eq!(
+            rescue.steps[0].args,
+            [
+                OsString::from("-m"),
+                "0755".into(),
+                places.versions.join("2.0.0").join(BINARY_NAME).into(),
+                places.rescue.clone().into(),
+            ]
+        );
+        assert!(!refresh_rescue_copy(&places, "2.0.0", &mut rescue).unwrap());
+        assert_eq!(rescue.steps.len(), 1, "idempotent");
+
+        // The rescue step failing: the old copy stays, the next try works.
+        let root = tempfile::tempdir().unwrap();
+        let places = old_install(root.path());
+        move_from_var_lib(
+            &places,
+            &mut FakeRunner {
+                steps: Vec::new(),
+                fail_at: None,
+            },
+        )
+        .unwrap();
+        let mut failing = FakeRunner {
+            steps: Vec::new(),
+            fail_at: Some(1),
+        };
+        let error = refresh_rescue_copy(&places, "2.0.0", &mut failing)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("failed: exit status: 1"), "{error}");
+        assert_eq!(fs::read_to_string(&places.rescue).unwrap(), "agent 0.4.4");
+        assert!(refresh_rescue_copy(&places, "2.0.0", &mut failing).unwrap());
+        assert_eq!(fs::read_to_string(&places.rescue).unwrap(), "agent 2.0.0");
+        // Only a version's own folder under /opt is ever the source.
+        assert!(refresh_rescue_copy(&places, "../2.0.0", &mut failing).is_err());
 
         // Nothing to move from is an error, not a silent success.
         let empty = tempfile::tempdir().unwrap();

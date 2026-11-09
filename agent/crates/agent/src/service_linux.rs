@@ -262,6 +262,11 @@ pub fn unit_files() -> [(std::path::PathBuf, String); 2] {
     ]
 }
 
+/// The rescue copy, for `move_to_opt`.
+pub fn rescue_copy() -> std::path::PathBuf {
+    std::path::PathBuf::from(BINARY)
+}
+
 /// The agent's own unit, for `move_to_opt`'s restart.
 pub const UNIT_NAME: &str = UNIT.name;
 
