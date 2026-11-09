@@ -195,8 +195,14 @@ impl ScreenWatch for Watch {
         {
             self.requested = false;
             match capture::start(user.uid, self.control, &self.data_dir) {
-                Ok(bridge) => self.bridge = Some(bridge),
-                Err(error) => self.failure = Some(format!("{error:#}")),
+                Ok(bridge) => {
+                    crate::timeline::step("portal-started", &format!("user {}", user.uid));
+                    self.bridge = Some(bridge);
+                }
+                Err(error) => {
+                    crate::timeline::step("portal-failed", &format!("{error:#}"));
+                    self.failure = Some(format!("{error:#}"));
+                }
             }
         }
         let mut phase = ApprovalPhase::Needed;

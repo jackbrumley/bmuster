@@ -182,6 +182,10 @@ impl Capturer for KmsCapturer {
     fn state(&self) -> DesktopState {
         DesktopState::Desktop { user: None }
     }
+
+    fn backend(&self) -> &'static str {
+        "kms"
+    }
 }
 
 /// A [`KmsSource`] the tests drive: displays and frames they set.

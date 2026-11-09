@@ -5,6 +5,9 @@
 //! Never collect terminal output, exec commands, shell history, file contents
 //! or arbitrary paths or commands. Every line is redacted before it is queued.
 
+#[cfg(any(windows, test))]
+pub mod windows;
+
 use crate::logging::{helper_line, ShipQueue, SHIP};
 use bmuster_protocol::logs::{LogLevel, LogSource};
 #[cfg(target_os = "linux")]
@@ -31,12 +34,12 @@ const JOURNAL_EVERY: Duration = Duration::from_secs(60);
 const JOURNAL_TARGET: &str = "journal";
 
 #[cfg(target_os = "linux")]
-fn journal_arguments() -> Vec<OsString> {
+fn journal_arguments(lines: usize) -> Vec<OsString> {
     [
         "--no-pager".to_string(),
         "--output=short-iso".to_string(),
         "--since=15 minutes ago".to_string(),
-        format!("--lines={MAX_JOURNAL_LINES}"),
+        format!("--lines={lines}"),
         "--unit=bmuster-agent.service".to_string(),
         "--unit=bmuster-terminal-*.service".to_string(),
         "--unit=bmuster-files-*.service".to_string(),
@@ -50,6 +53,7 @@ fn journal_arguments() -> Vec<OsString> {
 
 /// What the fixed journal query found.
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub enum Journal {
     Available {
         lines: Vec<String>,
@@ -80,6 +84,12 @@ pub fn redact(line: &str) -> String {
     } else {
         line.to_string()
     }
+}
+
+/// [`redact`] on each line of a text of several lines (a panic's backtrace,
+/// a worker's last stderr lines), so one line does not take the rest away.
+pub fn redact_lines(text: &str) -> String {
+    text.split('\n').map(redact).collect::<Vec<_>>().join("\n")
 }
 
 #[cfg(target_os = "linux")]
@@ -167,11 +177,16 @@ pub fn session_failed(kind: &'static str) {
         }
         *last = Some(Instant::now());
     }
+    // The checks say which capability broke (SPEC-DIAGNOSTICS 1).
+    crate::checks::request(crate::checks::Trigger::SessionFailed);
     let started = std::thread::Builder::new()
         .name("journal diagnostics".into())
         .spawn(move || {
             ship_journal(&SHIP, kind, journal());
             ship_denials(&SHIP, kind, denials());
+            // Windows: the fixed Event Log query (SPEC-DIAGNOSTICS 4).
+            #[cfg(windows)]
+            windows::ship_event_log(&SHIP, kind);
         });
     if let Err(error) = started {
         log::warn!("Could not start the journal query: {error}");
@@ -205,6 +220,7 @@ fn ship_journal(queue: &ShipQueue, kind: &str, journal: Journal) {
 
 /// Reads a helper's stderr line by line on its own thread, shipping each
 /// line with the helper's name.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn ship_helper_stderr(helper: &'static str, stderr: Option<impl Read + Send + 'static>) {
     let Some(stderr) = stderr else {
         return;
@@ -217,6 +233,7 @@ pub fn ship_helper_stderr(helper: &'static str, stderr: Option<impl Read + Send 
     }
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn ship_helper_lines(queue: &ShipQueue, helper: &str, stderr: impl Read) {
     for line in BufReader::new(stderr).split(b'\n') {
         let Ok(line) = line else {
@@ -230,6 +247,13 @@ fn ship_helper_lines(queue: &ShipQueue, helper: &str, stderr: impl Read) {
     }
 }
 
+/// The fixed journal query with one line: the self-check's `journal`
+/// (SPEC-DIAGNOSTICS 1).
+#[cfg(target_os = "linux")]
+pub fn journal_probe() -> Journal {
+    run_journal(journal_arguments(1))
+}
+
 fn journal() -> Journal {
     #[cfg(not(target_os = "linux"))]
     {
@@ -237,12 +261,12 @@ fn journal() -> Journal {
     }
     #[cfg(target_os = "linux")]
     {
-        run_journal(journal_arguments())
+        run_journal(journal_arguments(MAX_JOURNAL_LINES))
     }
 }
 
 /// Audit denials from the journal, else from auditd's log.
-fn denials() -> Journal {
+pub fn denials() -> Journal {
     #[cfg(not(target_os = "linux"))]
     {
         Journal::Unsupported
@@ -475,7 +499,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn journal_query_is_fixed_and_excludes_arbitrary_commands() {
-        let arguments: Vec<String> = journal_arguments()
+        let arguments: Vec<String> = journal_arguments(MAX_JOURNAL_LINES)
             .into_iter()
             .map(|argument| argument.to_string_lossy().into_owned())
             .collect();

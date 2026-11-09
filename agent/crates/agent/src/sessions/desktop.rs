@@ -13,9 +13,11 @@ use super::pump::{pump, Ended, Incoming as FromServer, Outgoing as ToServer};
 use crate::socket::Socket;
 use anyhow::{anyhow, bail, Context as _, Result};
 use bmuster_desktop::control::{AgentMessage, ErrorCode};
+use bmuster_desktop::session::{FiguresReport, FIGURES_EVERY};
 use bmuster_desktop::{
     notice, Console, DesktopSession, EndReason, Incoming, Mode, Outgoing, Platform, SessionSlot,
 };
+use bmuster_protocol::checks::{SessionStats, STATS_EVERY_MS};
 use bmuster_protocol::session::Consent;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{self, Sender};
@@ -129,12 +131,18 @@ pub fn run(
     let (output, outgoing) = mpsc::sync_channel::<ToServer>(OUTPUT_QUEUE);
     let (to_session, incoming) = mpsc::channel::<Incoming>();
     let shown = notice.map(|target| notice::show(target.as_ref(), viewer, to_session.clone()));
+    let timeline = crate::timeline::current();
     let worker = {
         let stop = Arc::clone(stop);
         std::thread::Builder::new()
             .name("desktop".into())
             .spawn(move || {
+                let _entered = timeline.as_ref().map(crate::timeline::enter);
+                let mut seen = Seen::default();
                 let mut send = |message: Outgoing| {
+                    if let Some(timeline) = &timeline {
+                        seen.observe(timeline, &message);
+                    }
                     let message = match message {
                         Outgoing::Binary(bytes) => ToServer::Bytes(bytes),
                         Outgoing::Text(text) => ToServer::Text(text),
@@ -143,7 +151,30 @@ pub fn run(
                         std::io::Error::new(std::io::ErrorKind::BrokenPipe, "the socket is gone")
                     })
                 };
-                let reason = bmuster_desktop::run(&mut session, &incoming, &mut send, &stop);
+                let mut backend = String::new();
+                let mut on_figures = |report: FiguresReport| {
+                    let Some(timeline) = &timeline else {
+                        return;
+                    };
+                    if report.backend != backend {
+                        backend = report.backend.to_string();
+                        timeline.step("backend", report.backend);
+                    }
+                    if report.figures.captures > 0 || report.interval >= FIGURES_EVERY {
+                        crate::timeline::ship_stats(
+                            &crate::logging::SHIP,
+                            &stats_of(timeline.session_id(), &report),
+                        );
+                    }
+                };
+                let reason = bmuster_desktop::run(
+                    &mut session,
+                    &incoming,
+                    &mut send,
+                    &stop,
+                    std::time::Duration::from_millis(STATS_EVERY_MS),
+                    &mut on_figures,
+                );
                 // Off the bar and out of the count before the socket closes.
                 drop(shown);
                 drop(slot);
@@ -180,8 +211,120 @@ pub fn run(
     ended
 }
 
+/// What the session's outgoing messages have shown so far, for its timeline.
+#[derive(Default)]
+pub(super) struct Seen {
+    first_frame: bool,
+    current: Option<String>,
+    state: Option<String>,
+}
+
+impl Seen {
+    /// Adds a step for the first frame, the screens found, each screen
+    /// switch, each change of what the screen shows and each error. Frames
+    /// are counted, never looked into.
+    pub(super) fn observe(&mut self, timeline: &crate::timeline::Timeline, message: &Outgoing) {
+        let text = match message {
+            Outgoing::Binary(bytes) => {
+                if !std::mem::replace(&mut self.first_frame, true) {
+                    timeline.step("first-frame", &format!("{} bytes", bytes.len()));
+                }
+                return;
+            }
+            Outgoing::Text(text) => text,
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
+            return;
+        };
+        let field = |name: &str| value.get(name).and_then(|v| v.as_str()).unwrap_or("");
+        match field("type") {
+            "displays" => {
+                let current = field("current").to_string();
+                let count = value
+                    .get("list")
+                    .and_then(|list| list.as_array())
+                    .map_or(0, Vec::len);
+                match &self.current {
+                    None => timeline.step(
+                        "screens",
+                        &format!("{count} found, showing {}", label(&current)),
+                    ),
+                    Some(previous) if *previous != current => timeline.step(
+                        "screen-switch",
+                        &format!(
+                            "{} to {} ({count} screens)",
+                            label(previous),
+                            label(&current)
+                        ),
+                    ),
+                    Some(_) => {}
+                }
+                self.current = Some(current);
+            }
+            "state" => {
+                let screen = value.get("screen");
+                let kind = screen
+                    .and_then(|s| s.get("kind"))
+                    .and_then(|k| k.as_str())
+                    .unwrap_or("");
+                let reason = screen
+                    .and_then(|s| s.get("reason").or_else(|| s.get("message")))
+                    .and_then(|r| r.as_str())
+                    .unwrap_or("");
+                let state = if reason.is_empty() {
+                    kind.to_string()
+                } else {
+                    format!("{kind}: {reason}")
+                };
+                if self.state.as_deref() != Some(state.as_str()) {
+                    timeline.step("screen-state", &state);
+                    self.state = Some(state);
+                }
+            }
+            "error" => timeline.step("error", &format!("{}: {}", field("code"), field("message"))),
+            _ => {}
+        }
+    }
+}
+
+fn label(display: &str) -> &str {
+    if display.is_empty() {
+        "nothing"
+    } else {
+        display
+    }
+}
+
+/// The figures as the `session-stats` record carries them.
+pub(super) fn stats_of(session_id: &str, report: &FiguresReport) -> SessionStats {
+    let figures = &report.figures;
+    let average = |total: std::time::Duration, count: u64| {
+        if count == 0 {
+            0.0
+        } else {
+            total.as_secs_f64() * 1000.0 / count as f64
+        }
+    };
+    let seconds = report.interval.as_secs_f64();
+    SessionStats {
+        session_id: session_id.to_string(),
+        interval_ms: u64::try_from(report.interval.as_millis()).unwrap_or(u64::MAX),
+        frames_sent: figures.frames_sent,
+        capture_ms_avg: average(figures.capture_time, figures.captures),
+        encode_ms_avg: average(figures.encode_time, figures.encodes),
+        bytes_per_second: if seconds > 0.0 {
+            (figures.bytes_sent as f64 / seconds) as u64
+        } else {
+            0
+        },
+        dropped_frames: figures.dropped_frames,
+        tiles: figures.tiles_sent,
+        backend: report.backend.to_string(),
+    }
+}
+
 #[cfg(all(test, target_os = "linux"))]
-mod tests {
+pub(super) mod tests {
     use super::super::testing::{socket_pair, Server};
     use super::*;
     use bmuster_desktop::capture::{
@@ -248,9 +391,13 @@ mod tests {
         fn state(&self) -> DesktopState {
             DesktopState::Desktop { user: None }
         }
+
+        fn backend(&self) -> &'static str {
+            "test"
+        }
     }
 
-    fn still_platform() -> Result<Console, String> {
+    pub(in crate::sessions) fn still_platform() -> Result<Console, String> {
         Ok(Console::Fixed(Platform {
             capturer: Box::new(Still::new()),
             make_input: Box::new(|| -> InputResult<Box<dyn InputBackend>> {

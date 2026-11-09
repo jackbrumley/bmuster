@@ -531,6 +531,10 @@ impl Capturer for X11Capturer {
     fn state(&self) -> DesktopState {
         DesktopState::Desktop { user: None }
     }
+
+    fn backend(&self) -> &'static str {
+        "x11"
+    }
 }
 
 impl Drop for X11Capturer {

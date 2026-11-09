@@ -23,10 +23,13 @@ use crate::client::Session;
 use crate::exec::pipe::Limits;
 use crate::exec::placement::{Kind, Placement, SessionMode};
 use crate::exec::PtySize;
+use crate::logging::SHIP;
 use crate::socket::{connect_to, Connect, Socket};
+use crate::timeline::Timeline;
 use anyhow::{Context as _, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
+use bmuster_protocol::checks::TimelineOutcome;
 use bmuster_protocol::session::{
     open_ticket, session_socket_path, SessionEvent, SessionPurpose, SessionTicket, TicketError,
 };
@@ -158,16 +161,23 @@ impl Sessions {
                 session_id.chars().take(8).collect::<String>()
             ))
             .spawn(move || {
+                let label = purpose_label(&admitted.purpose);
                 log::info!(
-                    "Session {} for {} ({}) started.",
+                    "Session {} for {} ({label}) started.",
                     admitted.session_id,
                     admitted.user.name,
-                    purpose_label(&admitted.purpose)
                 );
+                let timeline = Timeline::new(&admitted.session_id, purpose_kind(&admitted.purpose));
+                let _entered = crate::timeline::enter(&timeline);
+                timeline.step("ticket-checked", &label);
                 match serve(&inner, &admitted, &text) {
-                    Ok(ended) => log::info!("Session {} ended: {ended:?}.", admitted.session_id),
+                    Ok(ended) => {
+                        log::info!("Session {} ended: {ended:?}.", admitted.session_id);
+                        timeline.ship(&SHIP, TimelineOutcome::Ended, &format!("{ended:?}"));
+                    }
                     Err(e) => {
                         log::warn!("Session {} failed: {e:#}", admitted.session_id);
+                        timeline.ship(&SHIP, TimelineOutcome::Failed, &format!("{e:#}"));
                         failed_to_start(&admitted.purpose);
                     }
                 }
@@ -181,6 +191,16 @@ impl Sessions {
             });
         }
         Ok(())
+    }
+}
+
+/// The timeline's name for the session's kind.
+fn purpose_kind(purpose: &SessionPurpose) -> &'static str {
+    match purpose {
+        SessionPurpose::Terminal { .. } => "terminal",
+        SessionPurpose::Exec { .. } => "exec",
+        SessionPurpose::Files {} => "files",
+        SessionPurpose::Desktop { .. } => "desktop",
     }
 }
 
@@ -218,7 +238,14 @@ fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<End
             anyhow::bail!("the server refused the session socket: {message}")
         }
     };
-    let placement = |kind: Kind| inner.mode.placement(kind, &ticket.session_id);
+    crate::timeline::step("socket-open", "");
+    let placement = |kind: Kind| {
+        let placement = inner.mode.placement(kind, &ticket.session_id);
+        if let Ok(placement) = &placement {
+            crate::timeline::step("placement", &placement.describe());
+        }
+        placement
+    };
     match &ticket.purpose {
         SessionPurpose::Terminal { shell, cols, rows } => {
             let request = terminal::Request {
@@ -229,7 +256,10 @@ fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<End
             match placement(Kind::Terminal)
                 .and_then(|placement| terminal::start(&request, placement))
             {
-                Ok(spawned) => terminal::run(&mut socket, spawned, &inner.stop),
+                Ok(spawned) => {
+                    crate::timeline::step("started", request.shell.as_str());
+                    terminal::run(&mut socket, spawned, &inner.stop)
+                }
                 Err(e) => {
                     failed_to_start(&ticket.purpose);
                     fail(&mut socket, &e)
@@ -283,6 +313,7 @@ fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<End
             let open = bmuster_desktop::open_console;
             match desktop::prepare(&request, open) {
                 Ok(desktop::Prepared::Ready(ready)) => {
+                    crate::timeline::step("screen-opened", "");
                     desktop::run(&mut socket, *ready, &ticket.user.name, &inner.stop)
                 }
                 Ok(desktop::Prepared::Busy) => desktop::refuse_busy(&mut socket),
@@ -307,11 +338,12 @@ fn failed_to_start(purpose: &SessionPurpose) {
     }
 }
 
-/// Tells the console why the session could not start, then closes.
+/// Tells the console why the session could not start, then closes. The
+/// session's timeline ships now, before the journal query and the checks.
 fn fail(socket: &mut Socket, error: &anyhow::Error) -> Result<Ended> {
-    let event = SessionEvent::Failed {
-        message: format!("{error:#}"),
-    };
+    let message = format!("{error:#}");
+    crate::timeline::failed(&message);
+    let event = SessionEvent::Failed { message };
     socket
         .send(Message::text(serde_json::to_string(&event)?))
         .context("could not report the failure")?;
@@ -396,5 +428,151 @@ mod tests {
             refused.message
         );
         assert_eq!(*lock(&sessions.inner.running), 0);
+    }
+
+    /// SPEC-DIAGNOSTICS D7: steps with times, shipped once, at the end or
+    /// at once on failure, within the record's size.
+    #[test]
+    fn timeline_records_steps() {
+        use crate::logging::ShipQueue;
+        use crate::timeline::{Timeline, MAX_STEPS};
+        use bmuster_desktop::Outgoing;
+        use bmuster_protocol::checks::{SessionTimeline, TIMELINE_TARGET};
+
+        let queue: &'static ShipQueue = Box::leak(Box::new(ShipQueue::new()));
+        queue.enable();
+        let timeline = Timeline::new("s-9", "desktop");
+        {
+            let _entered = crate::timeline::enter(&timeline);
+            crate::timeline::step("ticket-checked", "desktop");
+            // Steps on another thread of the session, once it enters too.
+            let shared = std::sync::Arc::clone(&timeline);
+            std::thread::spawn(move || {
+                let _entered = crate::timeline::enter(&shared);
+                crate::timeline::step("helper-started", "bmuster-console-1-1 password=x");
+            })
+            .join()
+            .unwrap();
+        }
+        crate::timeline::step("outside", "no session: nothing happens");
+        let mut seen = desktop::Seen::default();
+        for message in [
+            Outgoing::Text(
+                r#"{"type":"displays","list":[{"id":"a"},{"id":"b"}],"current":"a"}"#.into(),
+            ),
+            Outgoing::Binary(vec![0; 300]),
+            Outgoing::Binary(vec![0; 300]),
+            Outgoing::Text(r#"{"type":"state","screen":{"kind":"sign-in"}}"#.into()),
+            Outgoing::Text(r#"{"type":"state","screen":{"kind":"sign-in"}}"#.into()),
+            Outgoing::Text(
+                r#"{"type":"displays","list":[{"id":"a"},{"id":"b"}],"current":"b"}"#.into(),
+            ),
+            Outgoing::Text(r#"{"type":"error","code":"capture-failed","message":"lost"}"#.into()),
+        ] {
+            seen.observe(&timeline, &message);
+        }
+        timeline.ship(queue, TimelineOutcome::Failed, "Cannot open the screen");
+        timeline.ship(queue, TimelineOutcome::Ended, "Finished");
+        let (records, _) = queue.take();
+        let shipped: Vec<_> = records
+            .iter()
+            .filter(|r| r.target == TIMELINE_TARGET)
+            .collect();
+        assert_eq!(shipped.len(), 1, "a failure ships at once, and only once");
+        let parsed: SessionTimeline = serde_json::from_str(&shipped[0].text).unwrap();
+        assert_eq!(parsed.session_id, "s-9");
+        assert_eq!(parsed.outcome, TimelineOutcome::Failed);
+        let steps: Vec<&str> = parsed.steps.iter().map(|s| s.step.as_str()).collect();
+        assert_eq!(
+            steps,
+            [
+                "ticket-checked",
+                "helper-started",
+                "screens",
+                "first-frame",
+                "screen-state",
+                "screen-switch",
+                "error",
+                "failed"
+            ]
+        );
+        assert_eq!(parsed.steps[1].detail, "[redacted diagnostic line]");
+        assert_eq!(parsed.steps[2].detail, "2 found, showing a");
+        assert_eq!(parsed.steps[5].detail, "a to b (2 screens)");
+        assert!(parsed.steps.windows(2).all(|pair| pair[0].t <= pair[1].t));
+
+        // A long session keeps its first and last steps.
+        let long = Timeline::new("s-10", "terminal");
+        for n in 0..(MAX_STEPS + 25) {
+            long.step("resize", &format!("step {n} {}", "x".repeat(200)));
+        }
+        long.ship(queue, TimelineOutcome::Ended, "ServerClosed");
+        let (records, _) = queue.take();
+        let text = &records[0].text;
+        assert!(text.len() <= bmuster_protocol::logs::MAX_RECORD_TEXT_BYTES);
+        let parsed: SessionTimeline = serde_json::from_str(text).unwrap();
+        assert!(parsed.omitted >= 25, "{}", parsed.omitted);
+        assert!(parsed.steps[0].detail.starts_with("step 0 "));
+        assert_eq!(parsed.steps.last().map(|s| s.step.as_str()), Some("ended"));
+    }
+
+    /// SPEC-DIAGNOSTICS D7: a desktop session's figures every interval.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn desktop_stats_interval() {
+        use bmuster_desktop::session::{FiguresReport, FIGURES_EVERY};
+        use bmuster_desktop::{Console, DesktopSession, Incoming, Mode};
+        use bmuster_protocol::checks::STATS_EVERY_MS;
+        use std::time::{Duration, Instant};
+
+        assert_eq!(FIGURES_EVERY, Duration::from_millis(STATS_EVERY_MS));
+        let Ok(Console::Fixed(platform)) = desktop::tests::still_platform() else {
+            panic!("a fixed test screen");
+        };
+        let mut session = DesktopSession::new(
+            Mode::Watch,
+            platform.capturer,
+            platform.make_input,
+            Instant::now(),
+        )
+        .unwrap();
+        let (sender, incoming) = std::sync::mpsc::channel();
+        sender
+            .send(Incoming::Text(
+                r#"{"type":"hello","codecs":["jpeg"],"viewport":{"width":800,"height":600,"pixelRatio":1}}"#.into(),
+            ))
+            .unwrap();
+        let ender = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(450));
+            let _ = sender.send(Incoming::End(bmuster_desktop::EndReason::Closed));
+        });
+        let mut reports: Vec<FiguresReport> = Vec::new();
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        bmuster_desktop::run(
+            &mut session,
+            &incoming,
+            &mut |_| Ok(()),
+            &stop,
+            Duration::from_millis(100),
+            &mut |report| reports.push(report),
+        );
+        ender.join().unwrap();
+        assert_eq!(reports[0].backend, "test", "the capture path at once");
+        assert!(reports.len() >= 3, "every interval: {}", reports.len());
+        assert!(reports[1..]
+            .iter()
+            .all(|r| r.interval >= Duration::from_millis(100)));
+        let sent: u64 = reports.iter().map(|r| r.figures.frames_sent).sum();
+        assert!(sent >= 1, "the keyframe was counted");
+        let busy = reports.iter().find(|r| r.figures.frames_sent > 0).unwrap();
+        let stats = desktop::stats_of("s-11", busy);
+        assert_eq!(stats.session_id, "s-11");
+        assert_eq!(stats.backend, "test");
+        assert!(stats.bytes_per_second > 0);
+        assert!(stats.tiles > 0);
+        assert_eq!(
+            serde_json::to_value(&stats).unwrap()["framesSent"],
+            busy.figures.frames_sent
+        );
     }
 }

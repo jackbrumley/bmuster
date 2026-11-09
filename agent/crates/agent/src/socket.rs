@@ -279,6 +279,13 @@ fn serve(mut socket: Socket, serving: &Serving<'_>, probe: &mut Probe) -> Result
                 .send(Message::text(serde_json::to_string(&batch)?))
                 .context("could not send log records")?;
         }
+        if let Some(results) = crate::checks::LATEST.take_unsent() {
+            socket
+                .send(Message::text(serde_json::to_string(
+                    &AgentMessage::Checks { results },
+                )?))
+                .context("could not send the self-check results")?;
+        }
         if stop.load(Ordering::SeqCst) {
             let _ = socket.close(None);
             let _ = socket.flush();
@@ -349,6 +356,10 @@ fn serve(mut socket: Socket, serving: &Serving<'_>, probe: &mut Probe) -> Result
                     }
                 }
                 Ok(ServerMessage::LogLevel(level)) => crate::logging::set_verbose(level),
+                Ok(ServerMessage::RunChecks) => {
+                    log::info!("The server asked for the self-checks.");
+                    crate::checks::request(crate::checks::Trigger::Asked);
+                }
                 Ok(ServerMessage::SessionOpen { ticket, signature }) => {
                     if let Err(refused) = sessions.open(&ticket, &signature) {
                         log::warn!("{}", refused.message);

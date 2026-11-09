@@ -49,6 +49,42 @@ fn session_string(session: u32, class: WTS_INFO_CLASS) -> String {
     }
 }
 
+/// `session`'s connection state for the machine report (SPEC-DIAGNOSTICS
+/// 4): `active`, `connected`, `disconnected`, … or `unknown`.
+pub fn session_state(session: u32) -> String {
+    use ::windows::Win32::System::RemoteDesktop::WTSConnectState;
+    let mut buffer = PWSTR::null();
+    let mut bytes = 0u32;
+    // SAFETY: WTS allocates `buffer`, which holds one WTS_CONNECTSTATE_CLASS
+    // (an i32) for this class; it is read once and freed below.
+    let state = unsafe {
+        if WTSQuerySessionInformationW(None, session, WTSConnectState, &mut buffer, &mut bytes)
+            .is_err()
+            || buffer.is_null()
+            || (bytes as usize) < std::mem::size_of::<i32>()
+        {
+            return "unknown".into();
+        }
+        let state = buffer.0.cast::<i32>().read_unaligned();
+        WTSFreeMemory(buffer.0.cast());
+        state
+    };
+    match state {
+        0 => "active",
+        1 => "connected",
+        2 => "connect-query",
+        3 => "shadow",
+        4 => "disconnected",
+        5 => "idle",
+        6 => "listen",
+        7 => "reset",
+        8 => "down",
+        9 => "init",
+        _ => "unknown",
+    }
+    .into()
+}
+
 /// Who is signed in to `session`: `jack`, or `CORP\jack` for a domain
 /// account. `None` at the sign-in screen.
 pub fn session_user(session: u32) -> Option<String> {

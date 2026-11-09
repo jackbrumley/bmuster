@@ -239,3 +239,57 @@ fn to_rect(r: &RECT) -> Rect {
         (r.bottom - r.top).max(0) as u32,
     )
 }
+
+/// One DXGI output as the machine report lists it (SPEC-DIAGNOSTICS 4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputInfo {
+    pub adapter: String,
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    /// Degrees: 0, 90, 180 or 270.
+    pub rotation: u32,
+}
+
+/// Every output of every adapter, as DXGI lists them.
+pub fn outputs() -> CaptureResult<Vec<OutputInfo>> {
+    use ::windows::Win32::Graphics::Dxgi::Common::{
+        DXGI_MODE_ROTATION_ROTATE180, DXGI_MODE_ROTATION_ROTATE270, DXGI_MODE_ROTATION_ROTATE90,
+    };
+    let mut found = Vec::new();
+    // SAFETY: plain COM calls; every returned interface is reference counted.
+    unsafe {
+        let factory: IDXGIFactory1 = CreateDXGIFactory1().map_err(failed("CreateDXGIFactory1"))?;
+        for adapter_index in 0.. {
+            let adapter = match factory.EnumAdapters1(adapter_index) {
+                Ok(adapter) => adapter,
+                Err(e) if e.code() == DXGI_ERROR_NOT_FOUND => break,
+                Err(e) => return Err(failed("EnumAdapters1")(e)),
+            };
+            let adapter_name = adapter
+                .GetDesc1()
+                .map(|desc| super::windows::wide_to_string(&desc.Description))
+                .unwrap_or_default();
+            for output_index in 0.. {
+                let Ok(output) = adapter.EnumOutputs(output_index) else {
+                    break;
+                };
+                let desc = output.GetDesc().map_err(failed("IDXGIOutput::GetDesc"))?;
+                let rect = desc.DesktopCoordinates;
+                found.push(OutputInfo {
+                    adapter: adapter_name.clone(),
+                    name: super::windows::wide_to_string(&desc.DeviceName),
+                    width: u32::try_from(rect.right - rect.left).unwrap_or(0),
+                    height: u32::try_from(rect.bottom - rect.top).unwrap_or(0),
+                    rotation: match desc.Rotation {
+                        DXGI_MODE_ROTATION_ROTATE90 => 90,
+                        DXGI_MODE_ROTATION_ROTATE180 => 180,
+                        DXGI_MODE_ROTATION_ROTATE270 => 270,
+                        _ => 0,
+                    },
+                });
+            }
+        }
+    }
+    Ok(found)
+}

@@ -59,6 +59,9 @@ pub enum Io<'a> {
     /// service (`--pipe`), so the two output streams stay apart. A time
     /// limit also stops the unit if the agent is gone.
     Pipe { runtime_max: Option<Duration> },
+    /// No streams (systemd's default, `/dev/null`): the self-check's
+    /// `systemd-run` unit, which tests the unit itself without a pty or pipe.
+    Detached,
 }
 
 /// One session's transient service.
@@ -164,6 +167,7 @@ impl TransientUnit {
                     );
                 }
             }
+            Io::Detached => {}
         }
         for (name, value) in &launch.env {
             args.push(joined(&[

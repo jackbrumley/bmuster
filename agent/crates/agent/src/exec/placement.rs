@@ -98,7 +98,29 @@ fn unit(manager: super::unit::Manager, kind: Kind, session_id: &str) -> Result<P
     Ok(Placement::Unit(unit))
 }
 
+impl SessionMode {
+    /// The systemd manager that starts session units, if sessions run as units.
+    #[cfg(target_os = "linux")]
+    pub fn manager(self) -> Option<super::unit::Manager> {
+        match self {
+            SessionMode::InProcess => None,
+            SessionMode::Systemd => Some(super::unit::Manager::System),
+            #[cfg(debug_assertions)]
+            SessionMode::SystemdUser => Some(super::unit::Manager::User),
+        }
+    }
+}
+
 impl Placement {
+    /// Where the session runs, for its timeline.
+    pub fn describe(&self) -> String {
+        match self {
+            Placement::InProcess => "in the agent's process".into(),
+            #[cfg(target_os = "linux")]
+            Placement::Unit(unit) => unit.name().to_string(),
+        }
+    }
+
     /// Stops the session's unit, which ends every process in it. In-process
     /// sessions end their process tree themselves.
     pub fn end(&self) {

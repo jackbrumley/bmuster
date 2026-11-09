@@ -45,9 +45,21 @@ const ANSWER: Duration = Duration::from_secs(3);
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Request {
     Displays,
-    Capture { display: String, full: bool },
-    Cursor { display: String },
-    CursorImage { shape: u32 },
+    Capture {
+        display: String,
+        full: bool,
+    },
+    Cursor {
+        display: String,
+    },
+    CursorImage {
+        shape: u32,
+    },
+    /// The self-check (SPEC-DIAGNOSTICS 1): capture one full frame and
+    /// answer only its size; the pixels never leave the helper.
+    FrameSize {
+        display: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -71,6 +83,11 @@ pub enum Reply {
         height: u32,
     },
     NoCursorImage,
+    /// The answer to `frame-size`: no pixels follow.
+    Size {
+        width: u32,
+        height: u32,
+    },
     Failed {
         message: String,
     },
@@ -195,6 +212,20 @@ pub fn serve(
                 Ok(_) => wire::json(&mut output, &Reply::NoCursorImage)?,
                 Err(error) => wire::json(&mut output, &failed(error))?,
             },
+            // The pixels are dropped here, inside the helper.
+            Request::FrameSize { display } => {
+                let reply = match source.capture(&display, true) {
+                    Ok(Some(frame)) => Reply::Size {
+                        width: frame.width,
+                        height: frame.height,
+                    },
+                    Ok(None) => failed(CaptureError::new(format!(
+                        "{display} gave no frame for a full capture"
+                    ))),
+                    Err(error) => failed(error),
+                };
+                wire::json(&mut output, &reply)?;
+            }
         }
     }
 }
@@ -206,6 +237,17 @@ pub fn serve(
 /// otherwise as strict as the agent's own unit. `MemoryDenyWriteExecute`
 /// stays off because GPU drivers compile shaders at run time.
 pub fn unit_arguments(unit: &str, program: &Path, data_dir: &Path) -> Vec<OsString> {
+    unit_arguments_running(unit, program, &[OsString::from("console-helper")], data_dir)
+}
+
+/// [`unit_arguments`] for any program: the self-check runs `/bin/cat` in
+/// exactly the helper's unit (SPEC-DIAGNOSTICS 1).
+pub fn unit_arguments_running(
+    unit: &str,
+    program: &Path,
+    program_args: &[OsString],
+    data_dir: &Path,
+) -> Vec<OsString> {
     let mut args: Vec<OsString> = [
         "--quiet",
         "--pipe",
@@ -257,7 +299,7 @@ pub fn unit_arguments(unit: &str, program: &Path, data_dir: &Path) -> Vec<OsStri
     args.push("--setenv=MESA_SHADER_CACHE_DISABLE=true".into());
     args.push("--".into());
     args.push(program.into());
-    args.push("console-helper".into());
+    args.extend(program_args.iter().cloned());
     args
 }
 
@@ -279,6 +321,16 @@ struct UnitGuard {
 
 impl Drop for UnitGuard {
     fn drop(&mut self) {
+        // A helper that ended by itself says how (SPEC-DIAGNOSTICS 2).
+        if let Ok(Some(status)) = self.child.try_wait() {
+            if !status.success() {
+                log::warn!(
+                    "The console capture helper {} exited with {status}",
+                    self.unit
+                );
+                crate::timeline::step("helper-exited", &format!("console helper: {status}"));
+            }
+        }
         let _ = std::process::Command::new("systemctl")
             .args(["stop", "--no-block", &self.unit])
             .stdout(Stdio::null())
@@ -314,6 +366,7 @@ impl HelperClient {
             bail!("The console capture helper has no pipe");
         };
         log::info!("Started the console capture helper {unit}");
+        crate::timeline::step("helper-started", &unit);
         Ok(HelperClient::over(
             Box::new(input),
             Box::new(output),
@@ -415,6 +468,19 @@ impl HelperClient {
                 Err(self
                     .fail("The console capture helper sent the wrong number of pixels".to_string()))
             }
+        }
+    }
+}
+
+impl HelperClient {
+    /// One full frame's size on `display`, captured and thrown away inside
+    /// the helper: the self-check's KMS test sends no pixels.
+    pub fn frame_size(&mut self, display: &str) -> CaptureResult<(u32, u32)> {
+        match self.ask(&Request::FrameSize {
+            display: display.to_string(),
+        })? {
+            Reply::Size { width, height } => Ok((width, height)),
+            other => Err(self.fail(format!("Unexpected console helper reply {other:?}"))),
         }
     }
 }

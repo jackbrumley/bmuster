@@ -231,6 +231,19 @@ fn open_socket(session: &Session, session_id: &str) -> Result<Socket> {
 
 fn serve(shared: &Shared, start: Start, stop: &Arc<AtomicBool>) {
     let session_id = start.session_id.clone();
+    // The helper's own steps (screens, capture path, figures) go to its log
+    // as `[session-timeline]` and `[session-stats]` lines, which the service
+    // ships (SPEC-DIAGNOSTICS 3, 4).
+    let timeline = crate::timeline::Timeline::new(&session_id, "desktop-helper");
+    let _entered = crate::timeline::enter(&timeline);
+    timeline.step(
+        "helper",
+        if start.resume {
+            "moved to this console session"
+        } else {
+            "started in the console session"
+        },
+    );
     let opened = check(shared, &start).and_then(|ticket| {
         open_socket(&shared.session, &session_id)
             .map(|socket| (ticket, socket))
@@ -240,6 +253,11 @@ fn serve(shared: &Shared, start: Start, stop: &Arc<AtomicBool>) {
         Ok(opened) => opened,
         Err(message) => {
             log::warn!("Desktop session {session_id}: {message}");
+            timeline.ship(
+                &crate::logging::SHIP,
+                bmuster_protocol::checks::TimelineOutcome::Failed,
+                &message,
+            );
             tell_or_log(
                 &shared.writer,
                 &FromHelper::Failed {
@@ -280,9 +298,16 @@ fn serve(shared: &Shared, start: Start, stop: &Arc<AtomicBool>) {
         Ok(desktop::Prepared::Busy) => desktop::refuse_busy(&mut socket),
         Err(error) => fail(&mut socket, &error),
     };
-    let reason = match ended {
-        Ok(ended) => format!("{ended:?}"),
-        Err(error) => format!("{error:#}"),
+    let (outcome, reason) = match ended {
+        Ok(ended) => (
+            bmuster_protocol::checks::TimelineOutcome::Ended,
+            format!("{ended:?}"),
+        ),
+        Err(error) => (
+            bmuster_protocol::checks::TimelineOutcome::Failed,
+            format!("{error:#}"),
+        ),
     };
+    timeline.ship(&crate::logging::SHIP, outcome, &reason);
     tell_or_log(&shared.writer, &FromHelper::Ended { session_id, reason });
 }

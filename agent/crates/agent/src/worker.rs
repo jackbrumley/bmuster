@@ -165,8 +165,16 @@ pub fn run(
             insecure_dev_tls: options.insecure_dev_tls,
         },
     );
+    // Its log is shipped as source `helper` (SPEC-DIAGNOSTICS 4).
+    #[cfg(windows)]
+    crate::diagnostics::windows::follow_helper_log(options.data_dir.join("desktop-helper.log"));
     let stop = Arc::new(AtomicBool::new(false));
     let (shipper, flusher) = start_shipping(&options.data_dir, &stop);
+    // A minute from now, then every six hours (SPEC-DIAGNOSTICS 1).
+    crate::checks::start(crate::checks::Context {
+        data_dir: options.data_dir.clone(),
+        mode: options.sessions,
+    });
     let server_key = decode_public_key(&identity.server_public_key)
         .context("identity.json holds an unreadable server key")?;
     let sessions = Sessions::new(
@@ -228,7 +236,11 @@ fn start_shipping(
     data_dir: &Path,
     stop: &Arc<AtomicBool>,
 ) -> (Option<Arc<Shipper>>, Option<std::thread::JoinHandle<()>>) {
-    let spool = match Spool::open(&data_dir.join(SPOOL_DIR), crate::logging::instance()) {
+    let spool_dir = data_dir.join(SPOOL_DIR);
+    // A panic is written into the spool before the process ends, and ships
+    // after the restart (SPEC-DIAGNOSTICS 2).
+    crate::logging::install_panic_hook(spool_dir.clone());
+    let spool = match Spool::open(&spool_dir, crate::logging::instance()) {
         Ok(spool) => spool,
         Err(error) => {
             log::error!("Could not open the log spool; logs are not sent to the server: {error}");
@@ -410,6 +422,7 @@ pub fn check_in(
         inventory: report,
         local_users: people.held(),
         update,
+        checks: crate::checks::LATEST.report(),
     };
     let body = serde_json::to_vec(&request)?;
     let reply = session.post_signed::<CheckInReply>(CHECK_IN_PATH, &body)?;

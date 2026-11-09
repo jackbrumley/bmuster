@@ -230,6 +230,13 @@ struct ChildGuard(Option<Child>);
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if let Some(child) = &mut self.0 {
+            // A helper that ended by itself says how (SPEC-DIAGNOSTICS 2).
+            if let Ok(Some(status)) = child.try_wait() {
+                if !status.success() {
+                    log::warn!("The Wayland user helper exited with {status}");
+                    crate::timeline::step("helper-exited", &format!("wayland helper: {status}"));
+                }
+            }
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -340,6 +347,10 @@ impl Capturer for Screen {
     }
     fn state(&self) -> DesktopState {
         DesktopState::Desktop { user: None }
+    }
+
+    fn backend(&self) -> &'static str {
+        "portal"
     }
 }
 

@@ -7,6 +7,7 @@ use crate::capture::{Capturer, Damage, Frame};
 use crate::control::{AgentMessage, Codec};
 use crate::encode::{scale, tiles::TileEncoder};
 use crate::frame::{self, FrameInfo};
+use std::time::{Duration, Instant};
 
 /// The stream parameters a `stream` message announces.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -30,6 +31,23 @@ pub(super) struct Video {
     scaled: Frame,
     stream: Option<StreamKey>,
     seq: u32,
+    figures: Figures,
+}
+
+/// What the video did since the figures were last taken (SPEC-DIAGNOSTICS 3).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Figures {
+    pub frames_sent: u64,
+    /// Captures made, and the time they took.
+    pub captures: u64,
+    pub capture_time: Duration,
+    /// Encodes made (scaling included), and the time they took.
+    pub encodes: u64,
+    pub encode_time: Duration,
+    pub bytes_sent: u64,
+    pub tiles_sent: u64,
+    /// Capture ticks skipped because the viewer was behind.
+    pub dropped_frames: u64,
 }
 
 impl Video {
@@ -39,6 +57,7 @@ impl Video {
             scaled: Frame::new(0, 0),
             stream: None,
             seq: 0,
+            figures: Figures::default(),
         }
     }
 
@@ -50,6 +69,16 @@ impl Video {
     /// The seq of the last frame (0 before the first).
     pub fn seq(&self) -> u32 {
         self.seq
+    }
+
+    /// The figures since the last call, which starts them again.
+    pub fn take_figures(&mut self) -> Figures {
+        std::mem::take(&mut self.figures)
+    }
+
+    /// A capture tick skipped because the viewer was behind.
+    pub fn dropped(&mut self) {
+        self.figures.dropped_frames += 1;
     }
 
     /// The next frame covers every tile.
@@ -74,7 +103,11 @@ impl Video {
         pts: u64,
         out: &mut Vec<Outgoing>,
     ) -> Result<Option<SentFrame>, String> {
+        let captured = Instant::now();
         let damage = capturer.capture(keyframe).map_err(|e| e.0)?;
+        self.figures.captures += 1;
+        self.figures.capture_time += captured.elapsed();
+        let encoding = Instant::now();
         let source = capturer.frame();
         let (width, height) = scale::scaled_size(source.width, source.height, factor);
         let scaled = (width, height) != (source.width, source.height);
@@ -105,6 +138,8 @@ impl Video {
             .encoder
             .encode(frame, &damage, keyframe || new_stream, quality)
             .map_err(|e| e.0)?;
+        self.figures.encodes += 1;
+        self.figures.encode_time += encoding.elapsed();
         if encoded.tiles.is_empty() && !encoded.keyframe {
             return Ok(None);
         }
@@ -138,8 +173,11 @@ impl Video {
             size_changed,
         };
         for batch in frame::tile_batches(info, &encoded.tiles, frame::MAX_BATCH_BYTES) {
+            self.figures.bytes_sent += batch.len() as u64;
             out.push(Outgoing::Binary(batch));
         }
+        self.figures.frames_sent += 1;
+        self.figures.tiles_sent += encoded.tiles.len() as u64;
         Ok(Some(SentFrame {
             seq: self.seq,
             keyframe: encoded.keyframe,

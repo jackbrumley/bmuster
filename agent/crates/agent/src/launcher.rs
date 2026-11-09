@@ -19,11 +19,15 @@ use crate::updates::{self, check_build, now_ms, Layout, Slot, Switch};
 use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::UpdateEvent;
 use ed25519_dalek::VerifyingKey;
+use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::fs;
+use std::io::{BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// The worker exits with this when a checked build waits in `incoming`.
@@ -33,6 +37,10 @@ pub const HEALTH_WINDOW: Duration = Duration::from_secs(120);
 /// Wait before starting a worker that crashed (like systemd's RestartSec).
 const RESTART_DELAY: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(250);
+/// How many of the worker's last stderr lines an exit record carries.
+pub const TAIL_LINES: usize = 20;
+/// The target of exit records (SPEC-DIAGNOSTICS 2).
+pub const EXIT_TARGET: &str = "launcher";
 
 /// Exit codes the worker uses (main.rs).
 const EXIT_STOPPED: i32 = 0;
@@ -103,12 +111,16 @@ impl Launcher {
                     .with_context(|| format!("could not remove {}", marker.display()))?;
             }
             let switch = self.layout().switch()?;
-            let mut child = self.spawn()?;
+            let (mut child, tail) = self.spawn()?;
+            let started = Instant::now();
             if let Some(switch) = switch {
                 match self.trial(&mut child, &switch, stop)? {
                     Trial::Healthy => self.commit(&switch)?,
                     Trial::Failed(reason) => {
                         stop_child(&mut child);
+                        if let Ok(Some(status)) = child.try_wait() {
+                            self.record_exit(&status, started.elapsed(), &tail);
+                        }
                         self.roll_back(&switch, &reason)?;
                         continue;
                     }
@@ -123,6 +135,7 @@ impl Launcher {
                 stop_child(&mut child);
                 return Ok(Ended::Stopped);
             };
+            self.record_exit(&status, started.elapsed(), &tail);
             match status.code() {
                 Some(EXIT_STOPPED) => return Ok(Ended::Stopped),
                 Some(EXIT_REVOKED) => return Ok(Ended::Revoked),
@@ -170,7 +183,39 @@ impl Launcher {
         Ok(())
     }
 
-    fn spawn(&self) -> Result<Child> {
+    /// Leaves a record of the worker's exit in the log spool, which the next
+    /// worker ships (SPEC-DIAGNOSTICS 2): exit code or signal, uptime and
+    /// its last stderr lines. A clean stop is `info`, anything else `error`.
+    fn record_exit(&self, status: &ExitStatus, uptime: Duration, tail: &Tail) {
+        let (level, what) = describe_exit(status);
+        let lines = tail.lines();
+        let text = if lines.is_empty() {
+            format!(
+                "The agent {what} after {}; it wrote nothing to stderr.",
+                describe_uptime(uptime)
+            )
+        } else {
+            format!(
+                "The agent {what} after {}; its last {} lines on stderr:\n{}",
+                describe_uptime(uptime),
+                lines.len(),
+                lines.join("\n")
+            )
+        };
+        let record = crate::logging::Pending {
+            at: crate::logging::now_ms(),
+            level,
+            source: bmuster_protocol::logs::LogSource::Agent,
+            target: EXIT_TARGET.into(),
+            text,
+        };
+        let spool = self.data_dir.join(crate::log_spool::SPOOL_DIR);
+        if let Err(error) = crate::log_spool::leave_record(&spool, &record) {
+            log::warn!("Could not record the agent's exit: {error}");
+        }
+    }
+
+    fn spawn(&self) -> Result<(Child, Tail)> {
         let program = self.layout().binary(Slot::Current);
         let mut command = Command::new(&program);
         command
@@ -184,16 +229,20 @@ impl Launcher {
                 crate::display_report::LAUNCHER_VERSION_ENV,
                 &self.own_version,
             )
-            .stdin(Stdio::null());
+            .stdin(Stdio::null())
+            // Read for the exit record, and passed on to the launcher's own.
+            .stderr(Stdio::piped());
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt as _;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             command.creation_flags(CREATE_NO_WINDOW);
         }
-        command
+        let mut child = command
             .spawn()
-            .with_context(|| format!("could not start {}", program.display()))
+            .with_context(|| format!("could not start {}", program.display()))?;
+        let tail = Tail::follow(child.stderr.take());
+        Ok((child, tail))
     }
 
     /// Waits for the new worker's first check-in, its exit, or the deadline.
@@ -313,6 +362,108 @@ impl Launcher {
                 )
             }
         }
+    }
+}
+
+/// The last [`TAIL_LINES`] lines of a worker's stderr, each also written to
+/// the launcher's own stderr (the journal, on Linux).
+struct Tail {
+    lines: Arc<Mutex<VecDeque<String>>>,
+    done: mpsc::Receiver<()>,
+}
+
+impl Tail {
+    fn follow(stderr: Option<std::process::ChildStderr>) -> Tail {
+        let lines = Arc::new(Mutex::new(VecDeque::new()));
+        let (finished, done) = mpsc::channel();
+        if let Some(stderr) = stderr {
+            let kept = Arc::clone(&lines);
+            let started = std::thread::Builder::new()
+                .name("worker stderr".into())
+                .spawn(move || {
+                    for line in BufReader::new(stderr).split(b'\n') {
+                        let Ok(line) = line else {
+                            break;
+                        };
+                        let _ = std::io::stderr().write_all(&line);
+                        let _ = std::io::stderr().write_all(b"\n");
+                        let text = String::from_utf8_lossy(&line).trim_end().to_string();
+                        let mut kept = kept.lock().unwrap_or_else(|p| p.into_inner());
+                        if kept.len() == TAIL_LINES {
+                            kept.pop_front();
+                        }
+                        kept.push_back(text);
+                    }
+                    let _ = finished.send(());
+                });
+            if let Err(error) = started {
+                log::warn!("Could not read the agent's stderr: {error}");
+            }
+        }
+        Tail { lines, done }
+    }
+
+    /// The lines so far, once the worker's stderr has closed (or a second
+    /// has passed: a helper it started may still hold it open).
+    fn lines(&self) -> Vec<String> {
+        let _ = self.done.recv_timeout(Duration::from_secs(1));
+        self.lines
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .iter()
+            .cloned()
+            .collect()
+    }
+}
+
+/// How a worker ended: `info` for the planned exits, `error` otherwise.
+fn describe_exit(status: &ExitStatus) -> (bmuster_protocol::logs::LogLevel, String) {
+    use bmuster_protocol::logs::LogLevel;
+    match status.code() {
+        Some(EXIT_STOPPED) => (LogLevel::Info, "stopped cleanly".into()),
+        Some(EXIT_RESTART) => (LogLevel::Info, "stopped to be started again".into()),
+        Some(EXIT_REVOKED) => (
+            LogLevel::Info,
+            "stopped because the server removed this machine".into(),
+        ),
+        Some(code) if code == i32::from(EXIT_UPDATE) => {
+            (LogLevel::Info, "stopped to switch to a new version".into())
+        }
+        Some(code) => (LogLevel::Error, format!("exited with code {code}")),
+        None => (LogLevel::Error, describe_signal(status)),
+    }
+}
+
+#[cfg(unix)]
+fn describe_signal(status: &ExitStatus) -> String {
+    use std::os::unix::process::ExitStatusExt as _;
+    match status.signal() {
+        Some(signal) => {
+            let name = match signal {
+                libc::SIGABRT => " (SIGABRT: a panic or an abort)",
+                libc::SIGSEGV => " (SIGSEGV)",
+                libc::SIGKILL => " (SIGKILL)",
+                libc::SIGTERM => " (SIGTERM)",
+                libc::SIGBUS => " (SIGBUS)",
+                _ => "",
+            };
+            format!("was ended by signal {signal}{name}")
+        }
+        None => format!("ended ({status})"),
+    }
+}
+
+#[cfg(not(unix))]
+fn describe_signal(status: &ExitStatus) -> String {
+    format!("ended ({status})")
+}
+
+fn describe_uptime(uptime: Duration) -> String {
+    let seconds = uptime.as_secs();
+    match seconds {
+        0..=119 => format!("{seconds} s"),
+        120..=7199 => format!("{} min", seconds / 60),
+        _ => format!("{} h {} min", seconds / 3600, seconds / 60 % 60),
     }
 }
 
@@ -515,6 +666,47 @@ mod tests {
             rig.last(),
             UpdateEvent::Refused { ref reason, .. } if reason.contains("not from a release key")
         ));
+    }
+
+    /// SPEC-DIAGNOSTICS D6.
+    #[test]
+    fn worker_exit_is_recorded() {
+        // First run: 25 lines on stderr, then a crash; second: a clean stop.
+        let rig = Rig::new(
+            |data| {
+                format!(
+                    "if [ -e {data}/crashed ]; then exit 0; fi\ntouch {data}/crashed\n\
+                     i=0; while [ $i -lt 25 ]; do echo \"line $i\" >&2; i=$((i+1)); done\nexit 1"
+                )
+            },
+            |_| "exit 0".into(),
+            &test_key(),
+        );
+        assert_eq!(rig.run(), Ended::Stopped);
+        let spool = crate::log_spool::Spool::open(
+            &rig.dir.path().join(crate::log_spool::SPOOL_DIR),
+            "00000000-0000-4000-8000-000000000003",
+        )
+        .unwrap();
+        let (_, records) = spool.next_batch(500).unwrap();
+        let exits: Vec<_> = records
+            .iter()
+            .filter(|record| record.target == EXIT_TARGET)
+            .collect();
+        assert_eq!(exits.len(), 2, "{records:?}");
+        let crash = &exits[0];
+        assert_eq!(crash.level, bmuster_protocol::logs::LogLevel::Error);
+        assert!(
+            crash.text.starts_with("The agent exited with code 1 after"),
+            "{}",
+            crash.text
+        );
+        assert!(crash.text.contains("its last 20 lines on stderr"));
+        assert!(crash.text.contains("line 24"));
+        assert!(crash.text.contains("line 5\n"));
+        assert!(!crash.text.contains("line 4\n"), "only the last 20 lines");
+        assert_eq!(exits[1].level, bmuster_protocol::logs::LogLevel::Info);
+        assert!(exits[1].text.starts_with("The agent stopped cleanly"));
     }
 
     #[test]

@@ -255,6 +255,13 @@ impl Capturer for WindowsCapturer {
     fn state(&self) -> DesktopState {
         DesktopState::Desktop { user: None }
     }
+
+    fn backend(&self) -> &'static str {
+        match self.grabber {
+            Grabber::Dxgi(_) => "dxgi",
+            Grabber::Gdi(_) => "gdi",
+        }
+    }
 }
 
 /// Renders a cursor on black and on white and works out each pixel's
@@ -354,4 +361,37 @@ fn render_icon(icon: HICON, width: i32, height: i32, background: u8) -> CaptureR
         drawn.map_err(|e| CaptureError::new(format!("DrawIconEx: {e}")))?;
         Ok(pixels)
     }
+}
+
+/// The desktop helper's capture checks (SPEC-DIAGNOSTICS 1): DXGI Desktop
+/// Duplication and GDI on every display, one full frame's size each. The
+/// pixels are dropped here.
+pub fn check_capture() -> (Result<String, String>, Result<String, String>) {
+    let displays = match list_displays() {
+        Ok(displays) => displays,
+        Err(error) => return (Err(error.0.clone()), Err(error.0)),
+    };
+    let mut dxgi = Vec::new();
+    let mut gdi = Vec::new();
+    let mut dxgi_failed = None;
+    let mut gdi_failed = None;
+    for display in &displays {
+        let rect = display.rect();
+        let mut frame = Frame::new(rect.width, rect.height);
+        match Duplication::new(display).and_then(|mut d| d.capture(&mut frame, true)) {
+            Ok(_) => dxgi.push(format!("{} {}x{}", display.id, frame.width, frame.height)),
+            Err(error) => dxgi_failed = Some(format!("{}: {error}", display.id)),
+        }
+        let mut frame = Frame::new(rect.width, rect.height);
+        match GdiGrabber::new(rect).and_then(|mut g| g.capture(&mut frame)) {
+            Ok(()) => gdi.push(format!("{} {}x{}", display.id, frame.width, frame.height)),
+            Err(error) => gdi_failed = Some(format!("{}: {error}", display.id)),
+        }
+    }
+    let outcome = |sizes: Vec<String>, failed: Option<String>| match failed {
+        Some(reason) => Err(reason),
+        None if sizes.is_empty() => Err("No displays".to_string()),
+        None => Ok(format!("One frame of {}.", sizes.join(", "))),
+    };
+    (outcome(dxgi, dxgi_failed), outcome(gdi, gdi_failed))
 }

@@ -84,6 +84,10 @@ impl Capturer for NoScreen {
             reason: "There is no screen to show".to_string(),
         }
     }
+
+    fn backend(&self) -> &'static str {
+        "none"
+    }
 }
 
 /// How the screen is read and driven (SPEC-CONSOLE-CAPTURE, table C1).

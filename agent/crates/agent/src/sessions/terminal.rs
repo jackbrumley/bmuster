@@ -66,11 +66,13 @@ pub fn run(socket: &mut Socket, spawned: Spawned, stop: &AtomicBool) -> Result<E
     let pty = Arc::new(pty);
     let (output, outgoing) = mpsc::sync_channel::<Outgoing>(OUTPUT_QUEUE);
     let (reader_done, reader_finished) = mpsc::channel::<()>();
+    let timeline = crate::timeline::current();
 
     {
         let output = output.clone();
+        let timeline = timeline.clone();
         spawn("terminal-read", move || {
-            read_terminal(reader, &output);
+            read_terminal(reader, &output, timeline.as_deref());
             let _ = reader_done.send(());
         })?;
     }
@@ -80,7 +82,18 @@ pub fn run(socket: &mut Socket, spawned: Spawned, stop: &AtomicBool) -> Result<E
         spawn("terminal-wait", move || {
             let event = match process.wait() {
                 Ok(code) => {
+                    if let Some(timeline) = &timeline {
+                        timeline.step("exited", &format!("exit code {code}"));
+                    }
                     if code != 0 && started.elapsed() < EARLY_EXIT {
+                        // It did not really start (a unit's exit 208, say).
+                        if let Some(timeline) = &timeline {
+                            timeline.ship(
+                                &crate::logging::SHIP,
+                                bmuster_protocol::checks::TimelineOutcome::Failed,
+                                &format!("The shell exited with {code} straight after it started"),
+                            );
+                        }
                         crate::diagnostics::session_failed("terminal");
                     }
                     SessionEvent::Exited { code }
@@ -142,13 +155,24 @@ fn spawn(name: &str, work: impl FnOnce() + Send + 'static) -> Result<()> {
 
 /// Terminal → socket. Once the socket side is gone it keeps reading and
 /// dropping, so a shell (or ConPTY's close) never waits on a full buffer.
-fn read_terminal(mut reader: File, output: &SyncSender<Outgoing>) {
+fn read_terminal(
+    mut reader: File,
+    output: &SyncSender<Outgoing>,
+    timeline: Option<&crate::timeline::Timeline>,
+) {
     let mut buffer = vec![0u8; CHUNK];
     let mut forwarding = true;
+    let mut first = true;
     loop {
         match reader.read(&mut buffer) {
             Ok(0) => return,
             Ok(n) => {
+                if std::mem::take(&mut first) {
+                    if let Some(timeline) = timeline {
+                        // How much, never what: terminal output is not shipped.
+                        timeline.step("first-byte", &format!("{n} bytes"));
+                    }
+                }
                 if forwarding && output.send(Outgoing::Bytes(buffer[..n].to_vec())).is_err() {
                     forwarding = false;
                 }

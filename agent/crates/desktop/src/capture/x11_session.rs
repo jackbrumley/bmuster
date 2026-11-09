@@ -309,6 +309,19 @@ pub fn connect(target: &X11Target) -> Result<(RustConnection, usize), String> {
     ))
 }
 
+/// Connects as [`connect`] does and reads the root window's size: the
+/// self-check's X11 test (SPEC-DIAGNOSTICS 1). Nothing is captured.
+pub fn root_size(target: &X11Target) -> Result<(u16, u16), String> {
+    use x11rb::connection::Connection as _;
+    let (connection, screen) = connect(target)?;
+    connection
+        .setup()
+        .roots
+        .get(screen)
+        .map(|root| (root.width_in_pixels, root.height_in_pixels))
+        .ok_or_else(|| format!("X display {} has no screen {screen}", target.display))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
