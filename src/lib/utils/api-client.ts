@@ -15,14 +15,17 @@ export async function apiRequest<Reply>(options: {
 	url: string;
 	body: unknown;
 	reply: z.ZodType<Reply>;
+	signal?: AbortSignal;
 }): Promise<ApiResult<Reply>> {
 	let response: Response;
 	try {
-		response = await fetch(options.url, {
+		const request: RequestInit = {
 			method: options.method,
 			headers: options.body === undefined ? {} : { 'content-type': 'application/json' },
 			body: options.body === undefined ? null : JSON.stringify(options.body)
-		});
+		};
+		if (options.signal !== undefined) request.signal = options.signal;
+		response = await fetch(options.url, request);
 	} catch {
 		return { ok: false, message: UNREACHABLE, status: 0 };
 	}

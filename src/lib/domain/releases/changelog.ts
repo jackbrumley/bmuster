@@ -1,6 +1,12 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.3.3',
+		changes: [
+			'Keep the Updates page open while the server restarts, and reconnect automatically when it returns or rolls back.'
+		]
+	},
+	{
 		version: '0.3.2',
 		changes: [
 			'Retry temporary server update check failures and make failed checks retry automatically.',

@@ -8,7 +8,8 @@
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
-	let { view }: { view: ServerUpdateView } = $props();
+	let { view, onRestarting }: { view: ServerUpdateView; onRestarting: (version: string) => void } =
+		$props();
 	let busy = $state(false);
 	async function check(): Promise<void> {
 		if (busy) return;
@@ -57,11 +58,8 @@
 			});
 			if (!result.ok) showToast(result.message, 'error');
 			else {
-				showToast(
-					'The launcher will check and install the update. This page shows its progress.',
-					'success'
-				);
-				await refreshAll();
+				showToast('BMuster is restarting. This page will reconnect automatically.', 'success');
+				onRestarting(version);
 			}
 		} finally {
 			busy = false;

@@ -1,6 +1,6 @@
 # SPEC-SERVER-UPDATES: Check, install and recover server updates
 
-**Status:** Implemented in v0.3.0; check reliability improvements in progress for the next release · 2026-11-08.
+**Status:** Implemented in v0.3.3 · 2026-11-09.
 
 ## Open decisions and security
 
@@ -37,6 +37,7 @@ For Docker/Coolify, the image is the box. BMuster reports the newer version and 
 | SU9  | Updates page refreshes every visible few seconds and shows every machine's version, stage/estimated turn, pins, failures and offline state; filters preserve scroll and selection.                                                                                                                                                           | `updates-live.svelte.test.ts`                                              |
 | SU10 | Release workflow signs server manifests and agent builds and tests compatible A→B and broken B→A before publication. No unsigned release fallback.                                                                                                                                                                                           | release dry run and scratch install/update test                            |
 | SU11 | Docker notice gives tag/deploy instructions and has no self-update action; checks can be disabled and manually requested.                                                                                                                                                                                                                    | `server-update-panel.svelte.test.ts`, `server-update-check.test.ts`        |
+| SU12 | After an installed server update is accepted, keep the Updates page rendered, stop normal page refreshes, retry readiness through temporary proxy/DNS failures, and reload only after the expected version is healthy or the previous version reports failure/rollback.                                                                      | `server-restart-monitor.test.ts`, `updates-page.svelte.test.ts`            |
 
 ## Schema and routes
 
@@ -75,6 +76,12 @@ The v0.3.0 candidate introduces the first server self-update-capable launcher. T
   five minutes; successful checks retain the daily interval. A failed check
   with no cached release is shown as inconclusive, never as confirmation that
   no update exists. Signature, metadata and asset validation remain fail-closed.
+- After an installed update is accepted, the Updates page stays rendered and
+  stops its normal data refreshes. It checks the authenticated update view with
+  a five-second request timeout and bounded backoff, tolerates proxy/DNS errors,
+  and reloads when the expected version is marked healthy or the launcher
+  reports failure/rollback. Returning to the foreground triggers an immediate
+  check.
 - The release workflow builds Linux x64, Linux arm64 and Windows x64 bundles,
   signs agent and app manifests, and uploads dry-run artifacts on manual
   dispatch. The initial v0.3.0 manifest intentionally has no rollback source;

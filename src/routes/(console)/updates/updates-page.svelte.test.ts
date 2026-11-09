@@ -52,6 +52,33 @@ const MACHINES: Data['machines'] = [
 	})
 ];
 
+const SERVER_RELEASE: Data['server'] = {
+	installedVersion: '0.3.1',
+	deployment: 'installed',
+	launcherVersion: '0.3.0',
+	checkedAtIso: '2026-11-08T10:00:00.000Z',
+	lastSuccessAtIso: '2026-11-08T10:00:00.000Z',
+	release: {
+		version: '0.3.2',
+		notes: 'Server update reliability.',
+		publishedAtIso: '2026-11-08T10:00:00.000Z',
+		manifest: {
+			schemaVersion: 1,
+			version: '0.3.2',
+			target: 'x86_64-unknown-linux-gnu',
+			archive: 'bmuster-app-x86_64-unknown-linux-gnu.tar.gz',
+			bytes: 100,
+			sha256: 'a'.repeat(64),
+			minimumLauncher: '0.3.0',
+			nodeMajor: 26,
+			rollbackFrom: ['0.3.0', '0.3.1']
+		}
+	},
+	problem: null,
+	install: { allowed: true, reason: '' },
+	operation: { current: null, previous: null, pending: null, phase: 'idle', message: '' }
+};
+
 function renderPage(overrides: Partial<Data>) {
 	return render(UpdatesPage, {
 		params: {},
@@ -185,6 +212,40 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 			.toBeVisible();
 		await expect.element(screen.getByText('Update check returned HTTP 504.')).toBeVisible();
 		await expect.element(screen.getByText('No newer release found')).not.toBeInTheDocument();
+	});
+
+	it('keeps the update page loaded through temporary proxy failures', async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+			if (input === '/api/server-updates/install' && init?.method === 'POST') {
+				return Promise.resolve(
+					new Response(JSON.stringify(SERVER_RELEASE), {
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					})
+				);
+			}
+			if (input === '/api/server-updates' && init?.method === 'GET') {
+				return Promise.resolve(new Response('host not found', { status: 502 }));
+			}
+			return Promise.resolve(new Response('{}', { status: 200 }));
+		});
+		vi.stubGlobal('fetch', fetch);
+		await render(ConfirmDialog);
+		const screen = await renderPage({ server: SERVER_RELEASE });
+
+		await screen.getByRole('button', { name: 'Update now' }).click();
+		const dialog = screen.getByRole('dialog', { name: 'Update BMuster to 0.3.2?' });
+		await dialog.getByRole('button', { name: 'Update now' }).click();
+
+		await expect
+			.element(screen.getByRole('heading', { name: 'Updating BMuster server' }))
+			.toBeVisible();
+		await expect.element(screen.getByText('Reconnecting automatically')).toBeVisible();
+		await expect.element(screen.getByText(/host-not-found error/)).toBeVisible();
+		await expect.element(screen.getByRole('heading', { name: 'Roll-out' })).not.toBeInTheDocument();
+		await vi.waitFor(() => {
+			expect(fetch.mock.calls.some(([url]) => url === '/api/server-updates')).toBe(true);
+		});
 	});
 
 	it('U8: links to the built-in Early updates group, inviting a first machine when it is empty', async () => {

@@ -12,6 +12,7 @@
 	import { CHANGELOG } from '#lib/domain/releases/changelog.ts';
 	import { stageLabel } from '#lib/domain/machines/agent-updates.ts';
 	import { rolloutReplySchema } from '#lib/schemas/machines/agent-updates.ts';
+	import { serverUpdateViewSchema } from '#lib/schemas/releases/server-updates.ts';
 	import Button from '#lib/ui/button.svelte';
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
@@ -22,6 +23,7 @@
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import { formatRelative } from '#lib/utils/format.ts';
 	import UpdateMachines from './update-machines.svelte';
+	import { startServerRestartMonitor } from './server-restart-monitor.ts';
 	import type { PageProps } from './$types';
 
 	/**
@@ -29,16 +31,43 @@
 	 * roll-out has got, every machine's version and update state, Pause and Update now.
 	 */
 	let { data }: PageProps = $props();
+	let restartExpectedVersion = $state<string | null>(null);
+	let restartMonitor: ReturnType<typeof startServerRestartMonitor> | undefined;
 	onMount(() => {
 		const timer = setInterval(() => {
-			if (document.visibilityState === 'visible') {
+			if (restartExpectedVersion === null && document.visibilityState === 'visible') {
 				void refreshAll();
 			}
 		}, 3000);
+		const checkAfterTabReturns = (): void => {
+			if (document.visibilityState === 'visible') restartMonitor?.checkNow();
+		};
+		document.addEventListener('visibilitychange', checkAfterTabReturns);
 		return () => {
 			clearInterval(timer);
+			document.removeEventListener('visibilitychange', checkAfterTabReturns);
+			restartMonitor?.stop();
 		};
 	});
+
+	function onServerRestarting(version: string): void {
+		restartExpectedVersion = version;
+		restartMonitor?.stop();
+		restartMonitor = startServerRestartMonitor({
+			expectedVersion: version,
+			read: () =>
+				apiRequest({
+					method: 'GET',
+					url: '/api/server-updates',
+					body: undefined,
+					reply: serverUpdateViewSchema,
+					signal: AbortSignal.timeout(5000)
+				}),
+			onReturned: () => {
+				window.location.reload();
+			}
+		});
+	}
 
 	const earlyCount = $derived(
 		`${String(data.earlyGroup.machines)} ${data.earlyGroup.machines === 1 ? 'machine' : 'machines'}`
@@ -75,113 +104,126 @@
 	actions={undefined}
 />
 
-<ServerUpdatePanel view={data.server} />
+{#if restartExpectedVersion !== null}
+	<Panel heading="Updating BMuster server" actions={undefined} tone="normal" padding="normal">
+		<Notice tone="info" title="Reconnecting automatically">
+			<p>
+				BMuster is installing version {restartExpectedVersion} and restarting. Nginx may briefly show
+				an unavailable or host-not-found error while the server returns. Leave this tab open; it will
+				reconnect and reload the page when the update finishes or rolls back.
+			</p>
+		</Notice>
+	</Panel>
+{:else}
+	<ServerUpdatePanel view={data.server} onRestarting={onServerRestarting} />
 
-<Panel heading="Release notes" actions={undefined} tone="normal" padding="normal">
-	{#each CHANGELOG as release (release.version)}
-		<h2>BMuster {release.version}</h2>
-		<ul>
-			{#each release.changes as change (change)}<li>{change}</li>{/each}
-		</ul>
-	{/each}
-</Panel>
+	<Panel heading="Release notes" actions={undefined} tone="normal" padding="normal">
+		{#each CHANGELOG as release (release.version)}
+			<h2>BMuster {release.version}</h2>
+			<ul>
+				{#each release.changes as change (change)}<li>{change}</li>{/each}
+			</ul>
+		{/each}
+	</Panel>
 
-{#if data.rollout.kind === 'rollout' && data.rollout.paused.kind === 'paused'}
-	<Notice
-		tone={data.rollout.paused.by === 'system' ? 'danger' : 'warning'}
-		title="The roll-out of {data.rollout.version} is paused"
-	>
-		<p>
-			{data.rollout.paused.reason} ({formatRelative(data.rollout.paused.atIso, data.now)}). Machines
-			not yet on {data.rollout.version} wait until you resume. Update now still works for any machine.
-		</p>
-	</Notice>
-{/if}
+	{#if data.rollout.kind === 'rollout' && data.rollout.paused.kind === 'paused'}
+		<Notice
+			tone={data.rollout.paused.by === 'system' ? 'danger' : 'warning'}
+			title="The roll-out of {data.rollout.version} is paused"
+		>
+			<p>
+				{data.rollout.paused.reason} ({formatRelative(data.rollout.paused.atIso, data.now)}).
+				Machines not yet on {data.rollout.version} wait until you resume. Update now still works for any
+				machine.
+			</p>
+		</Notice>
+	{/if}
 
-<Panel heading="Roll-out" actions={undefined} tone="normal" padding="normal">
-	{#if data.rollout.kind === 'none'}
-		<p class="muted">
-			This server has no signed agent build yet, so there is nothing to offer. Release builds are
-			signed; for a development build run <code>npm run agent:release-local</code>.
-		</p>
-	{:else}
-		<dl class="facts">
-			<div>
-				<dt>On offer</dt>
-				<dd>Version {data.rollout.version}</dd>
-			</div>
-			<div>
-				<dt>Policy</dt>
-				<dd>
-					{data.policy === 'automatic' ? 'Automatic, in stages' : 'Manual: only Update now'}
-					· <a href={resolve('/(console)/settings')}>change</a>
-				</dd>
-			</div>
-			{#if data.policy === 'automatic'}
+	<Panel heading="Roll-out" actions={undefined} tone="normal" padding="normal">
+		{#if data.rollout.kind === 'none'}
+			<p class="muted">
+				This server has no signed agent build yet, so there is nothing to offer. Release builds are
+				signed; for a development build run <code>npm run agent:release-local</code>.
+			</p>
+		{:else}
+			<dl class="facts">
 				<div>
-					<dt>Stage</dt>
+					<dt>On offer</dt>
+					<dd>Version {data.rollout.version}</dd>
+				</div>
+				<div>
+					<dt>Policy</dt>
 					<dd>
-						{stageLabel(data.rollout.stage)}, since {formatRelative(
-							data.rollout.stageStartedIso,
-							data.now
-						)}
+						{data.policy === 'automatic' ? 'Automatic, in stages' : 'Manual: only Update now'}
+						· <a href={resolve('/(console)/settings')}>change</a>
 					</dd>
 				</div>
-			{/if}
-		</dl>
-		<div>
-			{#if data.rollout.paused.kind === 'paused'}
-				<Button
-					variant="primary"
-					size="compact"
-					type="button"
-					onclick={() => {
-						void setPaused(false);
-					}}><IconPlayerPlay size={18} /> Resume roll-out</Button
-				>
-			{:else}
-				<Button
-					variant="secondary"
-					size="compact"
-					type="button"
-					onclick={() => {
-						void setPaused(true);
-					}}><IconPlayerPause size={18} /> Pause roll-out</Button
-				>
-			{/if}
-		</div>
-	{/if}
-	<p class="early">
-		Machines in {data.earlyGroup.name} get new versions first. {earlyCount} —
-		<a href={earlyGroupHref}>{data.earlyGroup.machines === 0 ? 'add one' : 'add or take out'}</a>
-	</p>
-</Panel>
-
-<UpdateMachines machines={data.machines} now={data.now} />
-
-{#snippet buildRow(build: Build)}
-	<ListRow action={{ kind: 'static' }} align="center" dimmed={!build.signed}>
-		<span class="build">
-			<span class="build-version">{build.version}</span>
-			<span class="muted">{build.target}</span>
-		</span>
-		{#if build.signed}
-			<span class="signed"><IconCircleCheck size={18} /> Signed</span>
-		{:else}
-			<span class="unsigned"><IconCircleX size={18} /> Not signed: install only</span>
+				{#if data.policy === 'automatic'}
+					<div>
+						<dt>Stage</dt>
+						<dd>
+							{stageLabel(data.rollout.stage)}, since {formatRelative(
+								data.rollout.stageStartedIso,
+								data.now
+							)}
+						</dd>
+					</div>
+				{/if}
+			</dl>
+			<div>
+				{#if data.rollout.paused.kind === 'paused'}
+					<Button
+						variant="primary"
+						size="compact"
+						type="button"
+						onclick={() => {
+							void setPaused(false);
+						}}><IconPlayerPlay size={18} /> Resume roll-out</Button
+					>
+				{:else}
+					<Button
+						variant="secondary"
+						size="compact"
+						type="button"
+						onclick={() => {
+							void setPaused(true);
+						}}><IconPlayerPause size={18} /> Pause roll-out</Button
+					>
+				{/if}
+			</div>
 		{/if}
-	</ListRow>
-{/snippet}
+		<p class="early">
+			Machines in {data.earlyGroup.name} get new versions first. {earlyCount} —
+			<a href={earlyGroupHref}>{data.earlyGroup.machines === 0 ? 'add one' : 'add or take out'}</a>
+		</p>
+	</Panel>
 
-<ListCard
-	heading="Builds on this server"
-	actions={undefined}
-	label="Agent builds, newest first"
-	items={data.builds}
-	key={(build: Build) => `${build.version}/${build.target}`}
-	row={buildRow}
-	empty="No agent builds yet."
-/>
+	<UpdateMachines machines={data.machines} now={data.now} />
+
+	{#snippet buildRow(build: Build)}
+		<ListRow action={{ kind: 'static' }} align="center" dimmed={!build.signed}>
+			<span class="build">
+				<span class="build-version">{build.version}</span>
+				<span class="muted">{build.target}</span>
+			</span>
+			{#if build.signed}
+				<span class="signed"><IconCircleCheck size={18} /> Signed</span>
+			{:else}
+				<span class="unsigned"><IconCircleX size={18} /> Not signed: install only</span>
+			{/if}
+		</ListRow>
+	{/snippet}
+
+	<ListCard
+		heading="Builds on this server"
+		actions={undefined}
+		label="Agent builds, newest first"
+		items={data.builds}
+		key={(build: Build) => `${build.version}/${build.target}`}
+		row={buildRow}
+		empty="No agent builds yet."
+	/>
+{/if}
 
 <style>
 	.muted {
