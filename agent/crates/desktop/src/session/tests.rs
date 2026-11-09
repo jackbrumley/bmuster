@@ -98,6 +98,10 @@ impl Capturer for FakeCapturer {
             user: Some("jack".to_string()),
         }
     }
+
+    fn backend(&self) -> &'static str {
+        "test"
+    }
 }
 
 struct Harness {
@@ -473,6 +477,8 @@ fn session_run_loop_answers_and_ends_when_the_socket_goes() {
             Ok(())
         },
         &stop,
+        FIGURES_EVERY,
+        &mut |_| {},
     );
     assert_eq!(reason, EndReason::NoBrowser);
     assert_eq!(types(&sent).first().map(String::as_str), Some("displays"));
@@ -494,6 +500,8 @@ fn session_run_loop_stops_when_the_agent_stops() {
             Ok(())
         },
         &stop,
+        FIGURES_EVERY,
+        &mut |_| {},
     );
     assert_eq!(reason, EndReason::AgentLost);
     assert_eq!(types(&sent), ["ended"]);

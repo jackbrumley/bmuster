@@ -59,11 +59,27 @@ function selinuxFacts(selinux: SeLinux): DisplayFact[] {
 	}
 }
 
+/** What a Windows desktop session depends on (SPEC-DIAGNOSTICS 4); agents before 0.4.3 leave it out. */
+type WindowsSystem =
+	| { kind: 'unreported' }
+	| {
+			kind: 'reported';
+			build: string;
+			edition: string;
+			consoleSession: { kind: 'none' } | { kind: 'attached'; id: number; state: string };
+			secureDesktop: { kind: 'unknown' } | { kind: 'known'; active: boolean };
+			outputs: { adapter: string; name: string; width: number; height: number; rotation: number }[];
+			sasPolicy: { kind: 'not-set' } | { kind: 'set'; value: number };
+	  };
+
+export type WindowsDisplay = {
+	kind: 'windows';
+	console: { kind: 'none' } | { kind: 'user'; name: string };
+	system: WindowsSystem;
+};
+
 export type DisplayReport =
-	| LinuxDisplay
-	| { kind: 'windows'; console: { kind: 'none' } | { kind: 'user'; name: string } }
-	| { kind: 'unsupported' }
-	| { kind: 'unreported' };
+	LinuxDisplay | WindowsDisplay | { kind: 'unsupported' } | { kind: 'unreported' };
 
 export type DisplayFact = { label: string; value: string };
 
@@ -121,5 +137,66 @@ export function linuxDisplayFacts(report: LinuxDisplay): DisplayFact[] {
 			label: 'Agent',
 			value: `v${report.agentVersion}${report.launcherVersion.kind === 'known' ? `, launcher v${report.launcherVersion.version}` : ', no launcher'}`
 		}
+	];
+}
+
+/** `SoftwareSASGeneration`: who may send Ctrl+Alt+Del in software. */
+function sasLabel(policy: { kind: 'not-set' } | { kind: 'set'; value: number }): string {
+	if (policy.kind === 'not-set') return 'Not set (none)';
+	switch (policy.value) {
+		case 0:
+			return '0 (none)';
+		case 1:
+			return '1 (services)';
+		case 2:
+			return '2 (ease of access apps)';
+		case 3:
+			return '3 (services and apps)';
+		default:
+			return String(policy.value);
+	}
+}
+
+/** The Display card's facts for Windows, in display order. */
+export function windowsDisplayFacts(report: WindowsDisplay): DisplayFact[] {
+	const consoleUser = {
+		label: 'Console user',
+		value: report.console.kind === 'user' ? report.console.name : 'Nobody signed in'
+	};
+	const system = report.system;
+	if (system.kind === 'unreported') {
+		return [consoleUser, { label: 'Windows', value: 'Not reported by this agent' }];
+	}
+	const edition = system.edition === '' ? '' : ` ${system.edition}`;
+	return [
+		{
+			label: 'Windows',
+			value:
+				system.build === '' ? `Build not reported${edition}` : `Build ${system.build}${edition}`
+		},
+		consoleUser,
+		{
+			label: 'Console session',
+			value:
+				system.consoleSession.kind === 'attached'
+					? `${system.consoleSession.id} (${system.consoleSession.state})`
+					: 'None attached'
+		},
+		{
+			label: 'Secure desktop',
+			value:
+				system.secureDesktop.kind === 'known'
+					? system.secureDesktop.active
+						? 'Showing (sign-in, lock or UAC)'
+						: 'Not showing'
+					: 'Unknown'
+		},
+		...(system.outputs.length === 0
+			? [{ label: 'Outputs', value: 'None found' }]
+			: system.outputs.map((output) => ({
+					label: output.name,
+					value: `${output.adapter} · ${output.width}x${output.height}${output.rotation === 0 ? '' : `, rotated ${output.rotation}°`}`
+				}))),
+		{ label: 'SAS policy', value: sasLabel(system.sasPolicy) }
 	];
 }

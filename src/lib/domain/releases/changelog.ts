@@ -1,6 +1,16 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.3',
+		changes: [
+			'Agents check what they can do on their machine a minute after they start, every six hours and after a failed session, and Manage shows each check passing or failing with the reason. Admins can run them again with Run checks.',
+			'When the agent crashes or stops unexpectedly, the reason and its last messages are recorded and sent to the server after it restarts.',
+			'Manage lists recent sessions with the steps each one took, and desktop sessions report their frame rate, timings and capture method every 30 seconds.',
+			'Windows machines send their desktop helper’s log and, after a failure, the related Windows event log entries; the Display card shows the Windows build, console session, screens and Ctrl+Alt+Del policy.',
+			'The diagnostics command line can follow logs, show checks and sessions, watch a machine, and print raw JSON.'
+		]
+	},
+	{
 		version: '0.4.2',
 		changes: [
 			'Show SELinux’s mode and the agent’s and systemd’s security contexts on the Display card.',

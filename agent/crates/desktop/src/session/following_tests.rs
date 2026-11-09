@@ -79,6 +79,10 @@ impl Capturer for SolidCapturer {
     fn state(&self) -> DesktopState {
         DesktopState::Desktop { user: None }
     }
+
+    fn backend(&self) -> &'static str {
+        "test"
+    }
 }
 
 /// What the fake seat shows; the test changes it between ticks.

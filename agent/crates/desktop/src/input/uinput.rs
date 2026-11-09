@@ -201,6 +201,85 @@ fn set_bits(
     Ok(())
 }
 
+/// The self-check's device name (SPEC-DIAGNOSTICS 1).
+pub const CHECK_NAME: &str = "BMuster self-check";
+
+/// One request the self-check makes of `/dev/uinput`. There is no variant
+/// that sets a capability bit, so the check's device has no keys, buttons
+/// or axes and can never type, click or move anything (SPEC-DIAGNOSTICS D3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckRequest {
+    Setup,
+    Create,
+    Destroy,
+}
+
+impl CheckRequest {
+    /// The ioctl number the request uses.
+    pub fn number(self) -> u64 {
+        match self {
+            CheckRequest::Setup => UI_DEV_SETUP,
+            CheckRequest::Create => UI_DEV_CREATE,
+            CheckRequest::Destroy => UI_DEV_DESTROY,
+        }
+    }
+}
+
+/// The self-check's requests, in order.
+pub const CHECK_REQUESTS: [CheckRequest; 3] = [
+    CheckRequest::Setup,
+    CheckRequest::Create,
+    CheckRequest::Destroy,
+];
+
+/// The ioctls that give a device capabilities, none of which the check uses.
+pub const CAPABILITY_REQUESTS: [u64; 4] =
+    [UI_SET_EVBIT, UI_SET_KEYBIT, UI_SET_RELBIT, UI_SET_ABSBIT];
+
+/// Opens `path` and makes [`CHECK_REQUESTS`]: a device with no capabilities,
+/// created and destroyed at once.
+pub fn check_device(path: &Path) -> io::Result<()> {
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(path)?;
+    let mut raw = Setup {
+        id: InputId {
+            bustype: BUS_VIRTUAL,
+            vendor: 0,
+            product: 0,
+            version: 1,
+        },
+        name: [0; 80],
+        ff_effects_max: 0,
+    };
+    raw.name[..CHECK_NAME.len()].copy_from_slice(CHECK_NAME.as_bytes());
+    let mut created = false;
+    for request in CHECK_REQUESTS {
+        // SAFETY: UI_DEV_SETUP takes a uinput_setup; the others take none.
+        let result = unsafe {
+            match request {
+                CheckRequest::Setup => ioctl::call_with(file.as_fd(), request.number(), &mut raw),
+                CheckRequest::Create | CheckRequest::Destroy => {
+                    ioctl::call(file.as_fd(), request.number(), 0)
+                }
+            }
+        };
+        match (request, result) {
+            (_, Ok(_)) => created |= request == CheckRequest::Create,
+            (CheckRequest::Destroy, Err(error)) => return Err(error),
+            (_, Err(error)) => {
+                if created {
+                    // SAFETY: UI_DEV_DESTROY takes no argument.
+                    let _ = unsafe { ioctl::call(file.as_fd(), UI_DEV_DESTROY, 0) };
+                }
+                return Err(error);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The two devices.
 pub struct Devices {
     keyboard: Created,

@@ -26,6 +26,32 @@ const cardSchema = z.object({
 	connectors: z.array(z.object({ name: word, modes: z.array(z.string().max(64)).max(256) })).max(32)
 });
 
+const size = z.number().int().min(0).max(1_000_000);
+
+const windowsSystemSchema = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('unreported') }),
+	z.object({
+		kind: z.literal('reported'),
+		build: word,
+		edition: word,
+		consoleSession: z.discriminatedUnion('kind', [
+			z.object({ kind: z.literal('none') }),
+			z.object({ kind: z.literal('attached'), id: size, state: word })
+		]),
+		secureDesktop: z.discriminatedUnion('kind', [
+			z.object({ kind: z.literal('unknown') }),
+			z.object({ kind: z.literal('known'), active: z.boolean() })
+		]),
+		outputs: z
+			.array(z.object({ adapter: word, name: word, width: size, height: size, rotation: size }))
+			.max(32),
+		sasPolicy: z.discriminatedUnion('kind', [
+			z.object({ kind: z.literal('not-set') }),
+			z.object({ kind: z.literal('set'), value: size })
+		])
+	})
+]);
+
 export const displayReportSchema = z
 	.discriminatedUnion('kind', [
 		z.object({
@@ -67,7 +93,9 @@ export const displayReportSchema = z
 			console: z.discriminatedUnion('kind', [
 				z.object({ kind: z.literal('none') }),
 				z.object({ kind: z.literal('user'), name: word })
-			])
+			]),
+			// Agents before 0.4.3 do not send it (SPEC-DIAGNOSTICS 4).
+			system: windowsSystemSchema.default({ kind: 'unreported' })
 		}),
 		z.object({ kind: z.literal('unsupported') }),
 		z.object({ kind: z.literal('unreported') })

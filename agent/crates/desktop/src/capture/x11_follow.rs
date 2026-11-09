@@ -320,8 +320,7 @@ impl LogindWatch {
                 );
             }
         }
-        let active = match loginctl(&["show-seat", "seat0", "--property=ActiveSession", "--value"])
-        {
+        let active = match active_session() {
             Ok(active) => active,
             Err(error) => {
                 return (
@@ -342,19 +341,8 @@ impl LogindWatch {
             }
             return (no_session(), None);
         }
-        match loginctl(&[
-            "show-session",
-            session,
-            "--property=Type",
-            "--property=Class",
-            "--property=Display",
-            "--property=Name",
-            "--property=User",
-            "--property=State",
-            "--property=LockedHint",
-        ]) {
-            Ok(text) => {
-                let properties = parse_properties(&text);
+        match session_properties(session) {
+            Ok(properties) => {
                 let kind = properties.get("Type").map(String::as_str).unwrap_or("");
                 if self.console.is_some() && screen_path(kind) == ScreenPath::Kms {
                     return (self.kms_look(session, &properties), None);
@@ -374,6 +362,28 @@ impl LogindWatch {
             ),
         }
     }
+}
+
+/// seat0's active session id, empty when none, as logind says.
+pub fn active_session() -> Result<String, String> {
+    loginctl(&["show-seat", "seat0", "--property=ActiveSession", "--value"])
+}
+
+/// The properties of logind session `session` that the follower reads:
+/// `Type`, `Class`, `Display`, `Name`, `User`, `State` and `LockedHint`.
+pub fn session_properties(session: &str) -> Result<HashMap<String, String>, String> {
+    loginctl(&[
+        "show-session",
+        session,
+        "--property=Type",
+        "--property=Class",
+        "--property=Display",
+        "--property=Name",
+        "--property=User",
+        "--property=State",
+        "--property=LockedHint",
+    ])
+    .map(|text| parse_properties(&text))
 }
 
 impl ScreenWatch for LogindWatch {

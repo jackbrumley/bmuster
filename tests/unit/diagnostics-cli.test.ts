@@ -38,7 +38,9 @@ function json(body: unknown, status = 200): Response {
 	});
 }
 
-function io(homeDir: string, routes: (url: URL) => Response) {
+function io(homeDir: string, routes: (url: URL) => Response, polls = 0) {
+	let left = polls;
+	const waits: number[] = [];
 	const out: string[] = [];
 	const err: string[] = [];
 	const fetch = vi.fn<typeof globalThis.fetch>((input) =>
@@ -50,9 +52,14 @@ function io(homeDir: string, routes: (url: URL) => Response) {
 		platform: 'linux',
 		fetch,
 		out: (line) => out.push(line),
-		err: (line) => err.push(line)
+		err: (line) => err.push(line),
+		wait: (ms) => {
+			waits.push(ms);
+			left -= 1;
+			return Promise.resolve(left >= 0);
+		}
 	};
-	return { io: value, out, err, fetch };
+	return { io: value, out, err, fetch, waits };
 }
 
 const routes = (url: URL): Response => {
@@ -181,5 +188,154 @@ describe('npm run diagnostics (SPEC-AGENT-LOGS AL13)', () => {
 		expect(sinceTime('2d', NOW)).toBe(new Date(NOW - 2 * 86_400_000).toISOString());
 		expect(sinceTime('2026-11-09T10:00:00Z', NOW)).toBe('2026-11-09T10:00:00.000Z');
 		expect(() => sinceTime('yesterday', NOW)).toThrow(/neither a time/);
+	});
+
+	it('D11: --json prints raw replies on every command', async () => {
+		const run = io(home(0o600), routes);
+		expect(await runDiagnostics(['machines', '--json'], run.io, NOW)).toBe(0);
+		expect(JSON.parse(run.out[0] ?? '')).toEqual([MACHINE]);
+		const logs = io(home(0o600), routes);
+		expect(await runDiagnostics(['logs', MACHINE.id, '--json'], logs.io, NOW)).toBe(0);
+		expect(JSON.parse(logs.out[0] ?? '')).toMatchObject({ newer: 'n-2' });
+		expect(logs.out).toHaveLength(1);
+	});
+
+	it('D11: --follow polls every 3 s with the newer cursor and prints only new records', async () => {
+		const cursors: (string | null)[] = [];
+		const following = (url: URL): Response => {
+			if (url.pathname === '/api/diagnostics/server/logs') {
+				const cursor = url.searchParams.get('cursor');
+				cursors.push(cursor);
+				return json({
+					records:
+						cursor === 'n-1'
+							? [
+									{
+										instance: 's',
+										seq: 2,
+										atIso: '2026-11-09T11:31:00.000Z',
+										level: 'warn',
+										area: 'relay',
+										machineId: null,
+										text: 'arrived later'
+									}
+								]
+							: [],
+					older: { kind: 'none' },
+					newer: cursor === null ? 'n-1' : 'n-2'
+				});
+			}
+			return routes(url);
+		};
+		const run = io(home(0o600), following, 2);
+		expect(await runDiagnostics(['server', '--follow', '--level', 'warn'], run.io, NOW)).toBe(0);
+		expect(cursors).toEqual([null, 'n-1', 'n-2']);
+		expect(run.waits).toEqual([3000, 3000, 3000]);
+		expect(run.out).toEqual([
+			'(0 records)',
+			'2026-11-09T11:31:00.000Z WARN  [relay] arrived later'
+		]);
+	});
+
+	it('D11: prints checks and sessions', async () => {
+		const more = (url: URL): Response => {
+			switch (url.pathname) {
+				case `/api/diagnostics/machines/${MACHINE.id}/checks`:
+					return json({
+						kind: 'results',
+						receivedIso: '2026-11-09T11:58:00.000Z',
+						results: [
+							{
+								id: 'terminal-pty',
+								title: 'Terminal on a pty',
+								status: 'fail',
+								detail: 'Failed to set up standard input: Permission denied',
+								durationMs: 40,
+								checkedAtIso: '2026-11-09T11:58:00.000Z'
+							},
+							{
+								id: 'x11-display',
+								title: 'X11 display',
+								status: 'not-applicable',
+								detail: 'Wayland',
+								durationMs: 1,
+								checkedAtIso: '2026-11-09T11:58:00.000Z'
+							}
+						]
+					});
+				case `/api/diagnostics/machines/${MACHINE.id}/sessions`:
+					return json({
+						sessions: [
+							{
+								sessionId: 's1',
+								kind: 'terminal',
+								startedIso: '2026-11-09T11:00:00.000Z',
+								server: { kind: 'unknown' },
+								timeline: {
+									kind: 'shipped',
+									outcome: 'failed',
+									reason: 'exit 208',
+									startedIso: '2026-11-09T11:00:00.000Z',
+									steps: [{ t: 12, step: 'unit-started', detail: 'bmuster-terminal-s1.service' }],
+									omitted: 0
+								},
+								stats: []
+							}
+						]
+					});
+				default:
+					return routes(url);
+			}
+		};
+		const checks = io(home(0o600), more);
+		expect(await runDiagnostics(['checks', 'fedora-desk'], checks.io, NOW)).toBe(0);
+		expect(checks.out).toEqual([
+			'Checks received 2026-11-09T11:58:00.000Z:',
+			'FAIL terminal-pty (40 ms): Failed to set up standard input: Permission denied',
+			'N/A  x11-display (1 ms): Wayland'
+		]);
+		const sessions = io(home(0o600), more);
+		expect(
+			await runDiagnostics(['sessions', 'fedora-desk', '--since', '2d'], sessions.io, NOW)
+		).toBe(0);
+		expect(sessions.out).toEqual([
+			'2026-11-09T11:00:00.000Z terminal s1',
+			'  failed: exit 208',
+			'    +12 ms unit-started bmuster-terminal-s1.service',
+			'(1 sessions)'
+		]);
+		const call = sessions.fetch.mock.calls
+			.map(([input]) => new URL(input instanceof Request ? input.url : input))
+			.find((url) => url.pathname.endsWith('/sessions'));
+		expect(call?.searchParams.get('since')).toBe(new Date(NOW - 2 * 86_400_000).toISOString());
+	});
+
+	it('D11: watch follows the log, the check results and the online state together', async () => {
+		let reads = 0;
+		const watched = (url: URL): Response => {
+			switch (url.pathname) {
+				case '/api/diagnostics/machines':
+					// The first read finds the machine by name; watch reads again each round.
+					reads += 1;
+					return json({ machines: [{ ...MACHINE, online: reads < 3 }] });
+				case `/api/diagnostics/machines/${MACHINE.id}/checks`:
+					return json({ kind: 'pending', receivedIso: '2026-11-09T11:58:00.000Z' });
+				case `/api/diagnostics/machines/${MACHINE.id}/logs`:
+					return url.searchParams.get('cursor') === null
+						? routes(url)
+						: json({ records: [], older: { kind: 'none' }, newer: 'n-2' });
+				default:
+					return routes(url);
+			}
+		};
+		const run = io(home(0o600), watched, 1);
+		expect(await runDiagnostics(['watch', 'fedora-desk'], run.io, NOW)).toBe(0);
+		expect(run.out).toEqual([
+			'-- fedora-desk is online',
+			'The agent has not finished its first checks yet (since 2026-11-09T11:58:00.000Z).',
+			'2026-11-09T11:00:01.000Z INFO  [agent:bmuster_agent::sessions] Session started.',
+			'2026-11-09T11:00:02.000Z WARN  [journal:journal] bmuster-terminal-1.service: exit 208',
+			'-- fedora-desk is offline'
+		]);
 	});
 });

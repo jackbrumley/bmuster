@@ -388,6 +388,7 @@ describe('desktop audit (SPEC-DESKTOP R16)', () => {
 			mode: 'control',
 			consent: 'unattended',
 			codec: 'JPEG tiles',
+			session: sessionId,
 			from: '192.0.2.1'
 		});
 		expect(find('session-ended')?.detail).toMatchObject({

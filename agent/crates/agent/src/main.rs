@@ -1,6 +1,7 @@
 //! `bmuster-agent`: enrols a machine with a BMuster server, checks in, and
 //! keeps a live socket open. See `docs/specs/SPEC-ENROLMENT.md`.
 
+mod checks;
 mod client;
 #[cfg(target_os = "linux")]
 mod console_helper;
@@ -25,6 +26,7 @@ mod service_windows;
 mod sessions;
 mod socket;
 mod status;
+mod timeline;
 mod tls;
 mod totp;
 mod tray;
@@ -174,11 +176,15 @@ enum Command {
     #[command(hide = true)]
     DesktopHelper {
         /// The service's pipe name (without -in or -out)
-        #[arg(long)]
-        pipe: String,
+        #[arg(long, required_unless_present = "check")]
+        pipe: Option<String>,
         /// The service's process id, checked against the pipe's server
-        #[arg(long)]
-        service_pid: u32,
+        #[arg(long, required_unless_present = "check")]
+        service_pid: Option<u32>,
+        /// Run the helper's fixed self-checks, write their results to this
+        /// file and exit (SPEC-DIAGNOSTICS 1)
+        #[arg(long, value_name = "FILE", conflicts_with_all = ["pipe", "service_pid"])]
+        check: Option<PathBuf>,
         /// Data folder (identity, key and server key)
         #[arg(long)]
         data_dir: PathBuf,
@@ -399,15 +405,24 @@ fn dispatch(command: Command) -> Result<ExitCode> {
         Command::DesktopHelper {
             pipe,
             service_pid,
+            check,
             data_dir,
             insecure_dev_tls,
         } => {
-            sessions::windows_desktop::helper::run(&sessions::windows_desktop::helper::Args {
-                pipe,
-                service_pid,
-                data_dir,
-                insecure_dev_tls,
-            })?;
+            // A panic lands in desktop-helper.log, which the service ships.
+            logging::install_logged_panic_hook();
+            match (check, pipe, service_pid) {
+                (Some(out), _, _) => checks::windows::helper_checks(&out)?,
+                (None, Some(pipe), Some(service_pid)) => sessions::windows_desktop::helper::run(
+                    &sessions::windows_desktop::helper::Args {
+                        pipe,
+                        service_pid,
+                        data_dir,
+                        insecure_dev_tls,
+                    },
+                )?,
+                _ => bail!("desktop-helper needs --pipe and --service-pid, or --check"),
+            }
             Ok(ExitCode::SUCCESS)
         }
     }

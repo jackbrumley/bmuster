@@ -12,6 +12,12 @@ import { GET as machinesGet } from './machines/+server.ts';
 import { GET as logsGet } from './machines/[id]/logs/+server.ts';
 import { GET as reportGet } from './machines/[id]/report/+server.ts';
 import { GET as serverLogsGet } from './server/logs/+server.ts';
+import { GET as checksGet } from './machines/[id]/checks/+server.ts';
+import { GET as sessionsGet } from './machines/[id]/sessions/+server.ts';
+import { POST as runChecksPost } from '../machines/[id]/checks/+server.ts';
+import { machineChecksSchema, machineSessionsSchema } from '#lib/schemas/logs/checks.ts';
+import { recordAudit } from '#lib/server/services/audit/audit.ts';
+import { storeCheckResults } from '#lib/server/services/logs/machine-checks.ts';
 
 const INSTANCE = '22222222-2222-4222-8222-222222222222';
 const now = Date.now();
@@ -256,5 +262,163 @@ describe('diagnostics endpoints (SPEC-AGENT-LOGS AL11)', () => {
 		expect(
 			listAudit(database, 5).find((entry) => entry.kind === 'server-logs-viewed')
 		).toMatchObject({ detail: { area: 'relay', records: '1', via: 'token api test' } });
+	});
+
+	it('D9: tokens read the latest check results but can never run checks', async () => {
+		const { token, machineId } = await setUp();
+		const read = async () =>
+			machineChecksSchema.parse(
+				await (
+					await checksGet(
+						request(`/api/diagnostics/machines/${machineId}/checks`, token, {
+							id: machineId
+						}) as Parameters<typeof checksGet>[0]
+					)
+				).json()
+			);
+		expect(await read()).toEqual({ kind: 'unreported' });
+		storeCheckResults(
+			database,
+			machineId,
+			[
+				{
+					id: 'terminal-pty',
+					title: 'Terminal on a pty',
+					status: 'fail',
+					detail: 'Failed to set up standard input: Permission denied',
+					durationMs: 40,
+					checkedAt: now
+				}
+			],
+			now
+		);
+		expect(await read()).toMatchObject({
+			kind: 'results',
+			results: [{ id: 'terminal-pty', status: 'fail' }]
+		});
+
+		const url = `https://bmuster.test/api/machines/${machineId}/checks`;
+		const partial: Pick<RequestEvent, 'locals' | 'url' | 'request' | 'params'> = {
+			locals: { session: { kind: 'none' } },
+			url: new URL(url),
+			request: new Request(url, {
+				method: 'POST',
+				headers: { authorization: `Bearer ${token}` }
+			}),
+			params: { id: machineId }
+		};
+		const refused = await Promise.resolve()
+			.then(() => runChecksPost(partial as Parameters<typeof runChecksPost>[0]))
+			.catch((error: unknown) => error);
+		expect(
+			refused instanceof Response ? refused.status : isHttpError(refused) ? refused.status : 0
+		).toBeGreaterThanOrEqual(400);
+		expect(listAudit(database, 20).some((entry) => entry.kind === 'agent-checks-requested')).toBe(
+			false
+		);
+	});
+
+	it('D9: sessions join the server entries to the shipped timeline and figures, audited', async () => {
+		const { admin, token, machineId } = await setUp();
+		const sessionId = crypto.randomUUID();
+		const detail = { type: 'desktop', mode: 'control', session: sessionId };
+		recordAudit(
+			database,
+			{
+				actor: { kind: 'user', userId: admin.id },
+				kind: 'session-opened',
+				target: 'Test machine',
+				machineId,
+				detail
+			},
+			now - 40_000
+		);
+		recordAudit(
+			database,
+			{
+				actor: { kind: 'user', userId: admin.id },
+				kind: 'session-ended',
+				target: 'Test machine',
+				machineId,
+				detail: { ...detail, ended: 'Closed by the viewer' }
+			},
+			now - 5_000
+		);
+		const failedId = crypto.randomUUID();
+		const timeline = (id: string, kind: string, outcome: string) =>
+			JSON.stringify({
+				sessionId: id,
+				kind,
+				startedAt: now - 40_000,
+				outcome,
+				reason: outcome === 'failed' ? 'exit 208' : 'closed',
+				steps: [
+					{ t: 0, step: 'ticket-checked', detail: '' },
+					{ t: 120, step: 'unit-started', detail: 'bmuster-terminal-1.service' }
+				],
+				omitted: 0
+			});
+		storeLogBatch(
+			database,
+			machineId,
+			{
+				type: 'log-batch',
+				instance: '55555555-5555-4555-8555-555555555555',
+				records: [
+					{ target: 'session-timeline', text: timeline(sessionId, 'desktop', 'ended') },
+					{
+						target: 'session-stats',
+						text: JSON.stringify({
+							sessionId,
+							intervalMs: 30_000,
+							framesSent: 600,
+							captureMsAvg: 4.5,
+							encodeMsAvg: 7.25,
+							bytesPerSecond: 250_000,
+							droppedFrames: 3,
+							tiles: 9000,
+							backend: 'kms'
+						})
+					},
+					{ target: 'session-timeline', text: timeline(failedId, 'terminal', 'failed') },
+					{ target: 'session-timeline', text: '[redacted diagnostic line]' }
+				].map((record, index) => ({
+					seq: index + 1,
+					at: now - 4_000 + index,
+					level: 'info' as const,
+					source: 'agent' as const,
+					...record
+				}))
+			},
+			now
+		);
+		const response = await sessionsGet(
+			request(`/api/diagnostics/machines/${machineId}/sessions?limit=10`, token, {
+				id: machineId
+			}) as Parameters<typeof sessionsGet>[0]
+		);
+		expect(response.headers.get('cache-control')).toBe('no-store');
+		const { sessions } = machineSessionsSchema.parse(await response.json());
+		expect(sessions).toHaveLength(2);
+		const desktop = sessions.find((session) => session.sessionId === sessionId);
+		expect(desktop).toMatchObject({
+			kind: 'desktop',
+			server: {
+				kind: 'known',
+				userName: admin.name,
+				ended: { kind: 'ended', how: 'Closed by the viewer' }
+			},
+			timeline: { kind: 'shipped', outcome: 'ended' },
+			stats: [{ backend: 'kms', framesSent: 600 }]
+		});
+		expect(sessions.find((session) => session.sessionId === failedId)).toMatchObject({
+			kind: 'terminal',
+			server: { kind: 'unknown' },
+			timeline: { kind: 'shipped', outcome: 'failed', reason: 'exit 208' },
+			stats: []
+		});
+		expect(
+			listAudit(database, 5).find((entry) => entry.kind === 'agent-sessions-viewed')
+		).toMatchObject({ detail: { sessions: '2', via: 'token api test' } });
 	});
 });

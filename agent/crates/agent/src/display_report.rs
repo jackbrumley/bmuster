@@ -36,11 +36,70 @@ pub fn report() -> DisplayReport {
     {
         DisplayReport::Windows {
             console: crate::inventory::signed_in_user(),
+            system: windows_system(),
         }
     }
     #[cfg(not(any(target_os = "linux", windows)))]
     {
         DisplayReport::Unsupported
+    }
+}
+
+/// Build, edition, the console session, the DXGI outputs and the SAS policy
+/// (SPEC-DIAGNOSTICS 4). The service cannot see the console's input
+/// desktop from session 0, so whether the secure desktop is up is
+/// `unknown` here (the helper's timeline steps say it).
+#[cfg(windows)]
+fn windows_system() -> bmuster_protocol::WindowsSystem {
+    use bmuster_desktop::winsession::{console, follow::NO_CONSOLE_SESSION};
+    use bmuster_protocol::{ConsoleSession, DxgiOutput, SasPolicy, SecureDesktop, WindowsSystem};
+    let version =
+        windows_registry::LOCAL_MACHINE.open(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+    let text = |name: &str| {
+        version
+            .as_ref()
+            .ok()
+            .and_then(|key| key.get_string(name).ok())
+            .unwrap_or_default()
+    };
+    let build = match (
+        text("CurrentBuild"),
+        version
+            .as_ref()
+            .ok()
+            .and_then(|key| key.get_u32("UBR").ok()),
+    ) {
+        (build, Some(ubr)) if !build.is_empty() => format!("{build}.{ubr}"),
+        (build, _) => build,
+    };
+    let session = console::active_console_session();
+    WindowsSystem::Reported {
+        build,
+        edition: text("EditionID"),
+        console_session: if session == NO_CONSOLE_SESSION {
+            ConsoleSession::None
+        } else {
+            ConsoleSession::Attached {
+                id: session,
+                state: console::session_state(session),
+            }
+        },
+        secure_desktop: SecureDesktop::Unknown,
+        outputs: bmuster_desktop::capture::dxgi::outputs()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|output| DxgiOutput {
+                adapter: output.adapter,
+                name: output.name,
+                width: output.width,
+                height: output.height,
+                rotation: output.rotation,
+            })
+            .collect(),
+        sas_policy: match crate::checks::windows::sas_value() {
+            Some(value) => SasPolicy::Set { value },
+            None => SasPolicy::NotSet,
+        },
     }
 }
 

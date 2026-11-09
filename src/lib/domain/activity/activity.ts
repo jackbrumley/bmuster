@@ -85,6 +85,9 @@ const AUDIT_KINDS = [
 	'diagnostics-token-created',
 	'diagnostics-token-revoked',
 	'diagnostics-token-used',
+	// SPEC-DIAGNOSTICS
+	'agent-checks-requested',
+	'agent-sessions-viewed',
 	// SPEC-CSV-EXPORT
 	'list-exported',
 	// SPEC-FILES
@@ -281,6 +284,10 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Revoked a diagnostics token';
 		case 'diagnostics-token-used':
 			return 'Used a diagnostics token';
+		case 'agent-checks-requested':
+			return "Ran an agent's self-checks";
+		case 'agent-sessions-viewed':
+			return "Read a machine's session timelines";
 		case 'list-exported':
 			return 'Exported a list';
 		case 'file-downloaded':

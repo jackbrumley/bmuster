@@ -21,7 +21,7 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -112,6 +112,11 @@ impl ShipQueue {
 
     pub fn enable(&self) {
         self.enabled.store(true, Ordering::SeqCst);
+    }
+
+    /// True once the worker turned shipping on.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
     }
 
     /// Redacts and queues one record (a no-op until shipping is on).
@@ -307,6 +312,7 @@ impl Log for Logger {
 
 /// One line of a helper's stderr: shown in the agent's own log as before,
 /// and shipped with the helper's name as its target.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn helper_line(queue: &ShipQueue, helper: &str, line: &str) {
     let _ = writeln!(std::io::stderr(), "INFO  [{helper}] {line}");
     remember(format!(
@@ -314,6 +320,24 @@ pub fn helper_line(queue: &ShipQueue, helper: &str, line: &str) {
         httpdate::fmt_http_date(SystemTime::now())
     ));
     queue.push(LogLevel::Info, LogSource::Helper, helper, line);
+}
+
+/// A record with a fixed target (a failed self-check): shown in the agent's
+/// own log and shipped under `target`.
+pub fn note(queue: &ShipQueue, level: LogLevel, target: &str, text: &str) {
+    let label = match level {
+        LogLevel::Error => "ERROR",
+        LogLevel::Warn => "WARN",
+        LogLevel::Info => "INFO",
+        LogLevel::Debug => "DEBUG",
+        LogLevel::Trace => "TRACE",
+    };
+    let _ = writeln!(std::io::stderr(), "{label:<5} [{target}] {text}");
+    remember(format!(
+        "{} {label:<5} [{target}] {text}",
+        httpdate::fmt_http_date(SystemTime::now())
+    ));
+    queue.push(level, LogSource::Agent, target, text);
 }
 
 /// Level from `BMUSTER_LOG` (`error`, `warn`, `info`, `debug`, `trace`); `info` when unset.
@@ -352,9 +376,185 @@ pub fn init_file(path: &Path) -> Result<(), String> {
     install(Sink::File(Mutex::new(file)))
 }
 
+/// The most of a panic's backtrace that is kept (SPEC-DIAGNOSTICS 2).
+const MAX_BACKTRACE_BYTES: usize = 16 * 1024;
+/// The target of a panic's records.
+pub const PANIC_TARGET: &str = "panic";
+
+/// Writes every panic, with its place and a backtrace, into the log spool
+/// in `spool_dir` before the process ends, so it ships after the restart.
+/// The write is synchronous and goes around the running spool, which the
+/// panicking thread may hold.
+pub fn install_panic_hook(spool_dir: PathBuf) {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let message = panic_message(info);
+        let location = info
+            .location()
+            .map(|place| format!("{}:{}", place.file(), place.line()))
+            .unwrap_or_default();
+        let thread = std::thread::current()
+            .name()
+            .unwrap_or("unnamed")
+            .to_string();
+        let backtrace = std::backtrace::Backtrace::force_capture().to_string();
+        for record in panic_records(&message, &location, &thread, &backtrace, now_ms()) {
+            let _ = crate::log_spool::leave_record(&spool_dir, &record);
+        }
+        previous(info);
+    }));
+}
+
+/// A panic's message, when it has one.
+fn panic_message(info: &std::panic::PanicHookInfo<'_>) -> String {
+    let payload = info.payload();
+    payload
+        .downcast_ref::<&str>()
+        .map(|text| (*text).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "(no message)".to_string())
+}
+
+/// For the Windows desktop helper, whose log file the service ships: each
+/// panic goes into that log as `error` lines before the process ends.
+#[cfg(windows)]
+pub fn install_logged_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let backtrace = std::backtrace::Backtrace::force_capture().to_string();
+        let location = info
+            .location()
+            .map(|place| format!("{}:{}", place.file(), place.line()))
+            .unwrap_or_default();
+        let thread = std::thread::current()
+            .name()
+            .unwrap_or("unnamed")
+            .to_string();
+        let message = panic_message(info);
+        for record in panic_records(&message, &location, &thread, &backtrace, now_ms()) {
+            log::error!("{}", record.text);
+        }
+        log::logger().flush();
+        previous(info);
+    }));
+}
+
+/// A panic as `error` records: the first says what and where, with the
+/// start of the backtrace; the rest carry the backtrace (at most
+/// [`MAX_BACKTRACE_BYTES`]), each within a record's text limit.
+fn panic_records(
+    message: &str,
+    location: &str,
+    thread: &str,
+    backtrace: &str,
+    at: u64,
+) -> Vec<Pending> {
+    let backtrace = cut_text(backtrace, MAX_BACKTRACE_BYTES);
+    let mut parts: Vec<String> = Vec::new();
+    let mut part = String::new();
+    let room = MAX_RECORD_TEXT_BYTES - 256;
+    for line in backtrace.lines() {
+        if !part.is_empty() && part.len() + line.len() + 1 > room {
+            parts.push(std::mem::take(&mut part));
+        }
+        part.push_str(&cut_text(line, room));
+        part.push('\n');
+    }
+    if !part.is_empty() {
+        parts.push(part);
+    }
+    let count = parts.len().max(1);
+    let head = cut_text(
+        &format!("The agent panicked in thread {thread} at {location}: {message}"),
+        1024,
+    );
+    let mut texts = vec![format!(
+        "{head}\nBacktrace (1 of {count}):\n{}",
+        parts.first().map_or("", String::as_str)
+    )];
+    for (index, part) in parts.iter().enumerate().skip(1) {
+        texts.push(format!("Backtrace ({} of {count}):\n{part}", index + 1));
+    }
+    texts
+        .into_iter()
+        .map(|text| Pending {
+            at,
+            level: LogLevel::Error,
+            source: LogSource::Agent,
+            target: PANIC_TARGET.into(),
+            text: cut_text(text.trim_end(), MAX_RECORD_TEXT_BYTES),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// SPEC-DIAGNOSTICS D5.
+    #[test]
+    fn panic_is_spooled_before_exit() {
+        let dir = tempfile::tempdir().unwrap();
+        let spool_dir = dir.path().join("logs");
+        install_panic_hook(spool_dir.clone());
+        let crashed = std::thread::Builder::new()
+            .name("crasher".into())
+            .spawn(|| panic!("check panic 4711 token=abc"))
+            .unwrap()
+            .join();
+        // Back to the default hook for the other tests.
+        let _ = std::panic::take_hook();
+        assert!(crashed.is_err());
+
+        // The records are on disk already; the next start ships them.
+        let spool =
+            crate::log_spool::Spool::open(&spool_dir, "00000000-0000-4000-8000-000000000001")
+                .unwrap();
+        let (_, records) = spool.next_batch(500).unwrap();
+        let ours: Vec<_> = records
+            .iter()
+            .filter(|record| record.target == PANIC_TARGET)
+            .collect();
+        assert!(!ours.is_empty(), "{records:?}");
+        assert!(ours.iter().all(|record| record.level == LogLevel::Error));
+        assert!(
+            ours[0].text.contains("[redacted diagnostic line]"),
+            "the message names a token, so its line is redacted: {}",
+            ours[0].text
+        );
+        assert!(ours[0].text.contains("Backtrace (1 of"), "{}", ours[0].text);
+        assert!(ours
+            .iter()
+            .all(|record| record.text.len() <= MAX_RECORD_TEXT_BYTES));
+        let again =
+            crate::log_spool::Spool::open(&spool_dir, "00000000-0000-4000-8000-000000000002")
+                .unwrap();
+        assert_eq!(
+            again.next_batch(500).map(|(_, r)| r.len()),
+            Some(records.len()),
+            "taken in once: the left files are gone, the records wait in the spool"
+        );
+    }
+
+    #[test]
+    fn a_panic_is_split_within_the_record_limit() {
+        let backtrace: String = (0..2000)
+            .map(|n| format!("  {n}: frame::function_{n}\n"))
+            .collect();
+        let records = panic_records("boom", "src/main.rs:1", "main", &backtrace, 5);
+        assert!(records.len() > 1);
+        assert!(records[0]
+            .text
+            .starts_with("The agent panicked in thread main at src/main.rs:1: boom"));
+        let total: usize = records.iter().map(|r| r.text.len()).sum();
+        assert!(
+            total <= MAX_BACKTRACE_BYTES + 4 * 1024 + records.len() * 64,
+            "{total}"
+        );
+        assert!(records
+            .iter()
+            .all(|r| r.text.len() <= MAX_RECORD_TEXT_BYTES));
+    }
 
     fn leaked<T>(value: T) -> &'static T {
         Box::leak(Box::new(value))

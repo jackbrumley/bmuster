@@ -197,3 +197,27 @@ export function readServerLogs(
 		text: row.text
 	}));
 }
+
+/**
+ * One machine's records with these targets since a time, newest first: the session timelines and
+ * desktop figures (SPEC-DIAGNOSTICS 3), which are ordinary agent records.
+ */
+export function readTargetRecords(
+	database: Queryable,
+	query: { machineId: string; targets: readonly string[]; sinceMs: number; limit: number }
+): { at: Date; target: string; text: string }[] {
+	return database
+		.select({ at: agentLogRecords.at, target: agentLogRecords.target, text: agentLogRecords.text })
+		.from(agentLogRecords)
+		.where(
+			and(
+				eq(agentLogRecords.machineId, query.machineId),
+				eq(agentLogRecords.source, 'agent'),
+				inArray(agentLogRecords.target, [...query.targets]),
+				gte(agentLogRecords.at, new Date(query.sinceMs))
+			)
+		)
+		.orderBy(desc(agentLogRecords.at), desc(rowid))
+		.limit(query.limit)
+		.all();
+}

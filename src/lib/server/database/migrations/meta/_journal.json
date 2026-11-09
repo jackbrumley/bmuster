@@ -99,6 +99,13 @@
       "when": 1794208151298,
       "tag": "0013_agent_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1794217068055,
+      "tag": "0014_machine_checks",
+      "breakpoints": true
     }
   ]
 }

@@ -29,4 +29,26 @@ describe('display report schema', () => {
 		const report = displayReportSchema.parse({ ...linuxReport, selinux });
 		expect(report.kind === 'linux' ? report.selinux : undefined).toEqual(selinux);
 	});
+
+	it('D8: reads a Windows report before 0.4.3 as unreported, and the new fields after', () => {
+		const older = displayReportSchema.parse({ kind: 'windows', console: { kind: 'none' } });
+		expect(older.kind === 'windows' ? older.system : undefined).toEqual({ kind: 'unreported' });
+		const system = {
+			kind: 'reported',
+			build: '26100.2314',
+			edition: 'Professional',
+			consoleSession: { kind: 'attached', id: 1, state: 'active' },
+			secureDesktop: { kind: 'unknown' },
+			outputs: [
+				{ adapter: 'GPU', name: '\\\\.\\DISPLAY1', width: 1920, height: 1080, rotation: 0 }
+			],
+			sasPolicy: { kind: 'not-set' }
+		};
+		const report = displayReportSchema.parse({
+			kind: 'windows',
+			console: { kind: 'none' },
+			system
+		});
+		expect(report.kind === 'windows' ? report.system : undefined).toEqual(system);
+	});
 });

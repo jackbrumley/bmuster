@@ -12,8 +12,15 @@ import type { EndedSession, SessionRecord } from './relay.ts';
 /** Says who ran it as: the only choice for now is the agent's own account. */
 const RUN_AS_LABEL = 'Administrator (root or SYSTEM)';
 
-/** "terminal" with its shell, "files", or "desktop" with its mode. */
+/**
+ * "terminal" with its shell, "files", or "desktop" with its mode, and the session id, which joins
+ * the entry to the agent's timeline of the same session (SPEC-DIAGNOSTICS 3).
+ */
 function typeDetail(record: SessionRecord): Record<string, string> {
+	return { ...kindDetail(record), session: record.id };
+}
+
+function kindDetail(record: SessionRecord): Record<string, string> {
 	switch (record.kind) {
 		case 'terminal':
 			return { type: 'terminal', shell: record.shell, 'run as': RUN_AS_LABEL };

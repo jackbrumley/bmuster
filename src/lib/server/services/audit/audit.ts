@@ -1,4 +1,4 @@
-import { and, between, desc, inArray } from 'drizzle-orm';
+import { and, between, desc, eq, gte, inArray } from 'drizzle-orm';
 import { isAuditKind, type AuditKind } from '#lib/domain/activity/activity.ts';
 import { auditEntries } from '../../database/schema.ts';
 import type { Queryable } from '../../database/connection.ts';
@@ -110,6 +110,27 @@ export function listAuditBetween(
 				.all()
 				.map(toRecord);
 	}
+}
+
+/** One machine's newest entries of these kinds since a time: its sessions (SPEC-DIAGNOSTICS 3). */
+export function listMachineAudit(
+	database: Queryable,
+	query: { machineId: string; kinds: readonly AuditKind[]; sinceMs: number; limit: number }
+): AuditRecord[] {
+	return database
+		.select()
+		.from(auditEntries)
+		.where(
+			and(
+				eq(auditEntries.machineId, query.machineId),
+				inArray(auditEntries.kind, [...query.kinds]),
+				gte(auditEntries.at, new Date(query.sinceMs))
+			)
+		)
+		.orderBy(desc(auditEntries.at))
+		.limit(query.limit)
+		.all()
+		.map(toRecord);
 }
 
 function toRecord(row: typeof auditEntries.$inferSelect): AuditRecord {

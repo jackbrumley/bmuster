@@ -272,6 +272,10 @@ pub trait Capturer: Send {
 
     /// Sign-in screen or desktop, locked, who is signed in.
     fn state(&self) -> DesktopState;
+
+    /// Which capture path this is, for session timelines and figures
+    /// (SPEC-DIAGNOSTICS 3): `x11`, `kms`, `portal`, `dxgi`, `gdi` or `none`.
+    fn backend(&self) -> &'static str;
 }
 
 #[cfg(test)]

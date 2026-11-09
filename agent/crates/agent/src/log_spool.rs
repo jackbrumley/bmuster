@@ -44,6 +44,64 @@ struct Line {
     record: LogRecord,
 }
 
+/// Files of records left for the next worker start with this.
+const LEFT_PREFIX: &str = "left-";
+
+/// A record left in the spool folder by a process that cannot reach the
+/// running spool: the panic hook (the process is about to end) and the
+/// launcher (between workers). SPEC-DIAGNOSTICS 2.
+#[derive(Serialize, Deserialize)]
+struct Left {
+    at: u64,
+    level: LogLevel,
+    source: LogSource,
+    target: String,
+    text: String,
+}
+
+/// Writes `record` synchronously as its own file in the spool folder `dir`;
+/// the next [`Spool::open`] takes it in and ships it. Redacted and cut like
+/// every queued record.
+pub fn leave_record(dir: &Path, record: &Pending) -> io::Result<()> {
+    use std::sync::atomic::AtomicU64;
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    make_private_dir(dir)?;
+    let left = Left {
+        at: record.at,
+        level: record.level,
+        source: record.source,
+        target: bmuster_protocol::logs::cut_text(
+            &record.target,
+            bmuster_protocol::logs::MAX_RECORD_TARGET_BYTES,
+        ),
+        text: bmuster_protocol::logs::cut_text(
+            &crate::diagnostics::redact_lines(&record.text),
+            bmuster_protocol::logs::MAX_RECORD_TEXT_BYTES,
+        ),
+    };
+    // Sorted by name is oldest first: the time, then this process's count.
+    let name = format!(
+        "{LEFT_PREFIX}{:015}-{:010}-{:06}.json",
+        record.at,
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::SeqCst)
+    );
+    let temporary = dir.join(format!("{name}.new"));
+    {
+        let mut options = OpenOptions::new();
+        options.create(true).write(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary)?;
+        file.write_all(&serde_json::to_vec(&left)?)?;
+        file.sync_all()?;
+    }
+    fs::rename(temporary, dir.join(name))
+}
+
 /// The first line not yet acknowledged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct Cursor {
@@ -197,7 +255,7 @@ impl Spool {
             bytes: 0,
             lines: 0,
         });
-        Ok(Self {
+        let mut spool = Self {
             dir: dir.to_path_buf(),
             instance: instance.to_string(),
             next_seq: 1,
@@ -208,7 +266,42 @@ impl Spool {
                 count: 0,
                 excess: 0,
             },
-        })
+        };
+        spool.take_left_records()?;
+        Ok(spool)
+    }
+
+    /// Moves records that a crashed process or the launcher left
+    /// ([`leave_record`]) into the spool, oldest first.
+    fn take_left_records(&mut self) -> io::Result<()> {
+        let mut left: Vec<PathBuf> = fs::read_dir(&self.dir)?
+            .flatten()
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(LEFT_PREFIX) && name.ends_with(".json"))
+            })
+            .collect();
+        left.sort();
+        for path in left {
+            // One that cannot be read (cut short by the crash) is dropped.
+            if let Ok(record) = fs::read(&path)
+                .map_err(io::Error::other)
+                .and_then(|bytes| serde_json::from_slice::<Left>(&bytes).map_err(io::Error::other))
+            {
+                self.write(Pending {
+                    at: record.at,
+                    level: record.level,
+                    source: record.source,
+                    target: record.target,
+                    text: record.text,
+                })?;
+            }
+            fs::remove_file(&path)?;
+        }
+        Ok(())
     }
 
     fn total_bytes(&self) -> u64 {

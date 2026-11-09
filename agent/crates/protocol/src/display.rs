@@ -13,6 +13,10 @@ pub enum DisplayReport {
     /// The console session's user, as the inventory's signed-in user reads it.
     Windows {
         console: SignedInUser,
+        /// Build, console session, DXGI outputs and SAS policy
+        /// (SPEC-DIAGNOSTICS 4); agents before 0.4.3 leave it out.
+        #[serde(default)]
+        system: WindowsSystem,
     },
     /// No display report on this operating system yet.
     Unsupported,
@@ -136,5 +140,68 @@ pub enum LauncherVersion {
     None,
     Known {
         version: String,
+    },
+}
+
+/// What a Windows desktop session depends on (SPEC-DIAGNOSTICS 4).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum WindowsSystem {
+    /// From an agent before 0.4.3.
+    #[default]
+    Unreported,
+    #[serde(rename_all = "camelCase")]
+    Reported {
+        /// `CurrentBuild.UBR`, e.g. `26100.2314`; empty when unknown.
+        build: String,
+        /// `EditionID`, e.g. `Professional`; empty when unknown.
+        edition: String,
+        console_session: ConsoleSession,
+        secure_desktop: SecureDesktop,
+        /// Every DXGI output, as the service sees them.
+        outputs: Vec<DxgiOutput>,
+        /// `SoftwareSASGeneration` (0 none, 1 services, 2 apps, 3 both).
+        sas_policy: SasPolicy,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum ConsoleSession {
+    /// No session is attached to the console.
+    None,
+    Attached {
+        id: u32,
+        /// `active`, `connected`, `disconnected`, …
+        state: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SecureDesktop {
+    Unknown,
+    Known { active: bool },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DxgiOutput {
+    pub adapter: String,
+    /// `\\.\DISPLAY1`, …
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    /// Degrees: 0, 90, 180 or 270.
+    pub rotation: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SasPolicy {
+    /// The policy value is not set (Windows' default: none).
+    NotSet,
+    Set {
+        value: u32,
     },
 }

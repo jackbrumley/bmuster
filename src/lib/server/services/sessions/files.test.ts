@@ -301,6 +301,8 @@ describe('changes are audited, listing is not (F8, F12)', () => {
 			kind: entry.kind,
 			detail: entry.detail
 		}));
+		const sessionId = entries[3]?.detail['session'] ?? '';
+		expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
 		expect(entries).toEqual([
 			{
 				kind: 'files-deleted',
@@ -310,7 +312,12 @@ describe('changes are audited, listing is not (F8, F12)', () => {
 			{ kind: 'folder-created', detail: { path: '/srv/Reports' } },
 			{
 				kind: 'session-opened',
-				detail: { type: 'files', 'run as': 'Administrator (root or SYSTEM)', from: '192.0.2.7' }
+				detail: {
+					type: 'files',
+					'run as': 'Administrator (root or SYSTEM)',
+					session: sessionId,
+					from: '192.0.2.7'
+				}
 			}
 		]);
 	});

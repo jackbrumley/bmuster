@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
+pub use video::Figures;
 use video::Video;
 
 /// Desktop sessions allowed at once on one machine (R15).
@@ -141,6 +142,12 @@ impl DesktopSession {
 
     pub fn mode(&self) -> Mode {
         self.mode
+    }
+
+    /// The video's figures since the last call, and the capture path now
+    /// in use (SPEC-DIAGNOSTICS 3).
+    pub fn take_figures(&mut self) -> (Figures, &'static str) {
+        (self.video.take_figures(), self.capturer.backend())
     }
 
     /// Why the session ended, once it has.
@@ -385,12 +392,13 @@ impl DesktopSession {
 
         match self.pacer.tick(now) {
             TickDecision::Stalled { newly } => {
+                self.video.dropped();
                 if newly {
                     log::info!("Desktop viewer sent no ack for 10 s; pausing frames");
                     out.push(text(AgentMessage::Stalled));
                 }
             }
-            TickDecision::WindowFull => {}
+            TickDecision::WindowFull => self.video.dropped(),
             TickDecision::Capture { keyframe } => {
                 let factor = self.scale_factor();
                 let quality = self.pacer.jpeg_quality();
@@ -449,21 +457,48 @@ fn error(code: ErrorCode, message: &str) -> Outgoing {
 
 /// Longest wait between checks of the `stop` flag.
 const STOP_POLL: Duration = Duration::from_millis(100);
+/// How often [`run`] hands over the video's figures (SPEC-DIAGNOSTICS 3).
+pub const FIGURES_EVERY: Duration = Duration::from_secs(30);
+
+/// The video's figures over `interval`, and the capture path in use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FiguresReport {
+    pub figures: Figures,
+    pub backend: &'static str,
+    pub interval: Duration,
+}
 
 /// Runs a session until it ends: text frames from `incoming`, ticks on time,
 /// everything produced goes to `send`. A closed channel or a failed send
 /// ends the session with `agent-lost` (the socket is gone). `stop` is the
 /// agent's shutdown flag, as the sessions pump takes it: once set, the
-/// session releases every held key, says `ended` and returns.
+/// session releases every held key, says `ended` and returns. Every
+/// `figures_every`, and whenever the capture path changes, the video's
+/// figures go to `on_figures`.
 pub fn run(
     session: &mut DesktopSession,
     incoming: &Receiver<Incoming>,
     send: &mut dyn FnMut(Outgoing) -> std::io::Result<()>,
     stop: &AtomicBool,
+    figures_every: Duration,
+    on_figures: &mut dyn FnMut(FiguresReport),
 ) -> EndReason {
+    let mut figures_since = Instant::now();
+    let mut backend = "";
     loop {
         if let Some(reason) = session.ended() {
             return reason;
+        }
+        let interval = figures_since.elapsed();
+        if interval >= figures_every || session.capturer.backend() != backend {
+            let (figures, now_backend) = session.take_figures();
+            backend = now_backend;
+            on_figures(FiguresReport {
+                figures,
+                backend,
+                interval,
+            });
+            figures_since = Instant::now();
         }
         if stop.load(Ordering::SeqCst) {
             for message in session.end(EndReason::AgentLost) {

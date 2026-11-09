@@ -23,7 +23,8 @@ function checkIn(
 		signedInUser: { kind: 'user' as const, name: 'jack' },
 		load: { cpuPercent: 12.5, memoryUsedBytes: 4 * 1024 ** 3 },
 		inventory,
-		localUsers: { kind: 'unsupported' as const }
+		localUsers: { kind: 'unsupported' as const },
+		checks: { kind: 'unreported' as const }
 	};
 }
 

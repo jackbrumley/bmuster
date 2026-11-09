@@ -200,6 +200,19 @@ impl InputBackend for SendInputBackend {
     }
 }
 
+/// The desktop helper's input check (SPEC-DIAGNOSTICS 1): `SendInput` with
+/// no events at all, which reaches the call without moving or typing.
+pub fn check_send_input() -> Result<String, String> {
+    // SAFETY: an empty slice; no INPUT is read.
+    let sent = unsafe { SendInput(&[], std::mem::size_of::<INPUT>() as i32) };
+    let error = ::windows::core::Error::from_thread();
+    if sent == 0 && error.code().is_err() {
+        Err(format!("SendInput refused: {error}"))
+    } else {
+        Ok("SendInput accepted an empty list in this session.".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::normalise;

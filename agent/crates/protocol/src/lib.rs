@@ -11,14 +11,16 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+pub mod checks;
 mod display;
 pub mod files;
 pub mod logs;
 pub mod session;
 mod updates;
 pub use display::{
-    DisplayReport, DrmCard, DrmConnector, LauncherVersion, LinuxDisplay, LockedHint, NvidiaModeset,
-    Programs, SeLinux, SeatSession, Uinput,
+    ConsoleSession, DisplayReport, DrmCard, DrmConnector, DxgiOutput, LauncherVersion,
+    LinuxDisplay, LockedHint, NvidiaModeset, Programs, SasPolicy, SeLinux, SeatSession,
+    SecureDesktop, Uinput, WindowsSystem,
 };
 pub use updates::{
     release_message, release_message_of, release_path, AgentVersion, UpdateEvent, UpdateOffer,
@@ -302,6 +304,9 @@ pub struct CheckInRequest {
     pub local_users: LocalUsersHeld,
     /// Whether this agent can update itself, and its last update (SPEC-AGENT-UPDATES).
     pub update: UpdateReport,
+    /// The latest self-check results (SPEC-DIAGNOSTICS 1); older agents send none.
+    #[serde(default)]
+    pub checks: checks::ChecksReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -626,6 +631,9 @@ pub enum ServerMessage {
     },
     /// Log the agent's own debug records until a time, or go back to info.
     LogLevel(logs::VerboseLevel),
+    /// Run the fixed self-checks now (SPEC-DIAGNOSTICS 1). Carries nothing:
+    /// what the checks do is fixed in the agent.
+    RunChecks,
 }
 
 /// Agent to server.
@@ -649,6 +657,8 @@ pub enum AgentMessage {
         instance: String,
         records: Vec<logs::LogRecord>,
     },
+    /// The self-check results after `run-checks` (SPEC-DIAGNOSTICS 1).
+    Checks { results: Vec<checks::CheckResult> },
 }
 
 #[cfg(test)]
@@ -1018,10 +1028,78 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(DisplayReport::Windows {
-                console: SignedInUser::None
+                console: SignedInUser::None,
+                system: WindowsSystem::Unreported,
             })
             .unwrap(),
-            json!({ "kind": "windows", "console": { "kind": "none" } })
+            json!({ "kind": "windows", "console": { "kind": "none" }, "system": { "kind": "unreported" } })
+        );
+    }
+
+    /// SPEC-DIAGNOSTICS D8: the Windows report's new fields, and an older
+    /// agent's report without them.
+    #[test]
+    fn windows_report_has_its_new_fields() {
+        let report = DisplayReport::Windows {
+            console: SignedInUser::User { name: "kim".into() },
+            system: WindowsSystem::Reported {
+                build: "26100.2314".into(),
+                edition: "Professional".into(),
+                console_session: ConsoleSession::Attached {
+                    id: 1,
+                    state: "active".into(),
+                },
+                secure_desktop: SecureDesktop::Known { active: false },
+                outputs: vec![DxgiOutput {
+                    adapter: "Intel(R) UHD Graphics".into(),
+                    name: "\\\\.\\DISPLAY1".into(),
+                    width: 1920,
+                    height: 1080,
+                    rotation: 0,
+                }],
+                sas_policy: SasPolicy::Set { value: 3 },
+            },
+        };
+        let value = serde_json::to_value(&report).unwrap();
+        assert_eq!(
+            value["system"],
+            json!({
+                "kind": "reported",
+                "build": "26100.2314",
+                "edition": "Professional",
+                "consoleSession": { "kind": "attached", "id": 1, "state": "active" },
+                "secureDesktop": { "kind": "known", "active": false },
+                "outputs": [{
+                    "adapter": "Intel(R) UHD Graphics",
+                    "name": "\\\\.\\DISPLAY1",
+                    "width": 1920,
+                    "height": 1080,
+                    "rotation": 0
+                }],
+                "sasPolicy": { "kind": "set", "value": 3 }
+            })
+        );
+        let older: DisplayReport =
+            serde_json::from_value(json!({ "kind": "windows", "console": { "kind": "none" } }))
+                .unwrap();
+        assert_eq!(
+            older,
+            DisplayReport::Windows {
+                console: SignedInUser::None,
+                system: WindowsSystem::Unreported
+            }
+        );
+    }
+
+    #[test]
+    fn checks_travel_in_the_check_in_and_on_the_socket() {
+        assert_eq!(
+            serde_json::to_value(ServerMessage::RunChecks).unwrap(),
+            json!({ "type": "run-checks" })
+        );
+        assert_eq!(
+            serde_json::to_value(AgentMessage::Checks { results: vec![] }).unwrap(),
+            json!({ "type": "checks", "results": [] })
         );
     }
 }
