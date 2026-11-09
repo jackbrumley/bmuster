@@ -6,6 +6,8 @@
 //! platform side is an [`InputBackend`]: XTest on X11, `SendInput` on Windows.
 
 pub mod keymap;
+#[cfg(target_os = "linux")]
+pub mod uinput;
 #[cfg(windows)]
 pub mod windows;
 #[cfg(target_os = "linux")]
@@ -180,19 +182,26 @@ impl InputController {
     }
 
     /// Characters typed as characters; line breaks and tabs as their keys.
+    /// A character the platform cannot type is skipped and the rest still
+    /// go; the first such error is returned.
     pub fn text(&mut self, text: &str) -> InputResult<()> {
+        let mut first_error = None;
         for character in text.chars() {
             let named = match character {
                 '\n' | '\r' => Some("Enter"),
                 '\t' => Some("Tab"),
                 _ => None,
             };
-            match named.and_then(keymap::position) {
-                Some(position) => self.tap(&[position])?,
-                None => self.backend.type_char(character)?,
+            let result = match named.and_then(keymap::position) {
+                Some(position) => self.tap(&[position]),
+                None => self.backend.type_char(character),
+            };
+            if let Err(error) = result {
+                first_error.get_or_insert(error);
             }
         }
-        self.backend.flush()
+        self.backend.flush()?;
+        first_error.map_or(Ok(()), Err)
     }
 
     pub fn special(&mut self, name: SpecialKey) -> InputResult<()> {

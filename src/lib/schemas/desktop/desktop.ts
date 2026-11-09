@@ -25,7 +25,8 @@ const DESKTOP_ERROR_CODES = [
 	'too-many-sessions',
 	'capture-failed',
 	'encoder-failed',
-	'bad-message'
+	'bad-message',
+	'input-failed'
 ] as const;
 
 /** What the screen at the machine shows (`state`). */

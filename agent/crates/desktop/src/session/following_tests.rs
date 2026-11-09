@@ -496,3 +496,121 @@ fn follow_capture_failure_looks_again_instead_of_ending() {
     assert_eq!(keyframe_width(&out), Some(128));
     assert!(h.session.ended().is_none());
 }
+
+/// A KMS screen (SPEC-CONSOLE-CAPTURE C5) over a fake source the test
+/// changes: the Wayland greeter on one CRTC, then a new mode, a second
+/// monitor, and every screen off.
+#[cfg(target_os = "linux")]
+mod kms {
+    use super::*;
+    use crate::capture::kms::capturer::fake::{display, FakeKms};
+    use crate::capture::kms::capturer::{SharedSource, LAYOUT_EVERY};
+    use crate::input::uinput::Opener;
+
+    struct KmsWatch {
+        source: SharedSource,
+    }
+
+    impl ScreenWatch for KmsWatch {
+        fn look(&mut self) -> Look {
+            Look {
+                key: "kms:c1".into(),
+                state: DesktopState::SignIn,
+            }
+        }
+        fn open(&mut self) -> Result<Platform, String> {
+            crate::kms_platform(
+                self.source.clone(),
+                Opener::with(|| panic!("a watch session builds no injector")),
+            )
+        }
+    }
+
+    /// Real time passes so the capturer reads the display list again.
+    fn after_layout_poll(session: &mut DesktopSession, now: &mut Instant) -> Vec<Outgoing> {
+        std::thread::sleep(LAYOUT_EVERY + Duration::from_millis(50));
+        *now += Duration::from_millis(200);
+        let out = session.tick(*now);
+        let seq = out.iter().rev().find_map(|m| match m {
+            Outgoing::Binary(b) if b[0] == 2 && b[2] & crate::frame::FLAG_LAST_PART != 0 => {
+                Some(u32::from_le_bytes([b[4], b[5], b[6], b[7]]))
+            }
+            _ => None,
+        });
+        if let Some(seq) = seq {
+            session.handle_text(&format!(r#"{{"type":"ack","seq":{seq}}}"#), *now);
+        }
+        out
+    }
+
+    #[test]
+    fn follow_kms_mode_and_monitor_changes_send_displays_state_and_a_keyframe() {
+        let _turn = crate::notice::test_turn();
+        let fake = FakeKms::default();
+        {
+            let mut screens = fake.0.lock().unwrap();
+            screens.displays = vec![display("card0-eDP-1", 0, 96, 64)];
+            screens.colours = vec![("card0-eDP-1".into(), [10, 20, 30, 0])];
+        }
+        let source: SharedSource = Arc::new(Mutex::new(Box::new(fake.clone())));
+        let mut now = Instant::now();
+        let mut session = DesktopSession::following(
+            Mode::Watch,
+            Box::new(KmsWatch {
+                source: source.clone(),
+            }),
+            now,
+        );
+        let out = session.handle_text(HELLO, now);
+        assert_eq!(
+            of_type(&texts(&out), "displays")[0]["list"][0]["id"],
+            "card0-eDP-1"
+        );
+        assert_eq!(
+            keyframe_width(&after_layout_poll(&mut session, &mut now)),
+            Some(96)
+        );
+
+        // An unchanged screen: the helper says so and nothing is sent.
+        assert!(after_layout_poll(&mut session, &mut now)
+            .iter()
+            .all(|m| matches!(m, Outgoing::Text(_))));
+
+        // The resolution changes (a new mode on the same CRTC).
+        fake.0.lock().unwrap().displays = vec![display("card0-eDP-1", 0, 128, 64)];
+        let out = after_layout_poll(&mut session, &mut now);
+        let messages = texts(&out);
+        assert_eq!(of_type(&messages, "displays")[0]["list"][0]["width"], 128);
+        assert_eq!(
+            of_type(&messages, "state")[0]["screen"],
+            serde_json::json!({"kind": "sign-in"})
+        );
+        assert_eq!(keyframe_width(&out), Some(128));
+
+        // A monitor is plugged in: two displays, the current one kept.
+        fake.0.lock().unwrap().displays = vec![
+            display("card0-eDP-1", 0, 128, 64),
+            display("card0-HDMI-A-1", 128, 80, 64),
+        ];
+        let out = after_layout_poll(&mut session, &mut now);
+        let messages = texts(&out);
+        let displays = of_type(&messages, "displays");
+        assert_eq!(displays[0]["list"].as_array().unwrap().len(), 2);
+        assert_eq!(displays[0]["current"], "card0-eDP-1");
+        assert_eq!(of_type(&messages, "state").len(), 1);
+        assert_eq!(keyframe_width(&out), Some(128));
+
+        // Every screen off: the session stays open and says why.
+        fake.0.lock().unwrap().displays.clear();
+        let out = after_layout_poll(&mut session, &mut now);
+        assert!(
+            of_type(&texts(&out), "state")[0]["screen"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("The screen is off"),
+            "{:?}",
+            texts(&out)
+        );
+        assert!(session.ended().is_none());
+    }
+}

@@ -240,6 +240,8 @@ pub enum ErrorCode {
     CaptureFailed,
     EncoderFailed,
     BadMessage,
+    /// Input the screen cannot take, like a character with no key on it.
+    InputFailed,
 }
 
 /// Why a session ended (SPEC-DESKTOP 9).
@@ -417,5 +419,13 @@ mod tests {
             r#"{"type":"ended","reason":"disconnected-at-machine"}"#
         );
         assert_eq!(AgentMessage::Stalled.to_json(), r#"{"type":"stalled"}"#);
+        assert_eq!(
+            AgentMessage::Error {
+                code: ErrorCode::InputFailed,
+                message: "no key".into()
+            }
+            .to_json(),
+            r#"{"type":"error","code":"input-failed","message":"no key"}"#
+        );
     }
 }

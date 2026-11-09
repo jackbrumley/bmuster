@@ -29,6 +29,9 @@ use std::time::{Duration, Instant};
 pub enum Target {
     X11(crate::capture::x11_session::X11Target),
     Portal,
+    /// A screen below any display server (KMS): nothing can be drawn on
+    /// it, so there is no bar (SPEC-CONSOLE-CAPTURE, Notice).
+    Console,
 }
 #[cfg(target_os = "linux")]
 impl From<crate::capture::x11_session::X11Target> for Target {
@@ -147,7 +150,7 @@ impl Board {
             return;
         };
         #[cfg(target_os = "linux")]
-        if matches!(screen, Target::Portal) {
+        if matches!(screen, Target::Portal | Target::Console) {
             return;
         }
         if self.failed_at.is_some_and(|at| at.elapsed() < RETRY) {

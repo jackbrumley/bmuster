@@ -1,6 +1,7 @@
 //! Following seat0 on Linux (SPEC-DESKTOP 6.1): which session the physical
-//! screen shows, read from logind once a second, and opening X11 capture on
-//! it.
+//! screen shows, read from logind once a second, and opening capture on it:
+//! X11 for X sessions, KMS and uinput for everything else when the watch has
+//! a [`ConsoleOpener`] (SPEC-CONSOLE-CAPTURE, table C1).
 //!
 //! [`LogindWatch`] runs `loginctl show-seat seat0` and `show-session` and
 //! reads them with [`look_at`], a pure function: an X11 session with a
@@ -14,12 +15,34 @@
 //! [`XAUTHORITY_OVERRIDE`] fixes one nested X server. Release builds ignore
 //! all three.
 
+use super::kms::capturer::SharedSource;
+use super::kms::SCREEN_OFF;
 use super::x11_session::{find_xauthority, loginctl, parse_properties, X11Target};
 use super::DesktopState;
-use crate::follow::{Look, ScreenWatch};
+use crate::follow::{console_state, screen_path, Look, ScreenPath, ScreenWatch};
 use crate::Platform;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+/// How long a screen KMS could not read waits before trying again.
+pub const CONSOLE_RETRY: Duration = Duration::from_secs(10);
+
+/// Starts the KMS reader for the screens X11 cannot show (the agent runs it
+/// in its root `console-helper` process).
+pub trait ConsoleOpener: Send {
+    fn open(&mut self) -> Result<SharedSource, String>;
+}
+
+/// The KMS side of a watch: the opener, the running reader, and the last
+/// failure (kept so it is not retried every second).
+struct Console {
+    opener: Box<dyn ConsoleOpener>,
+    source: Option<SharedSource>,
+    failure: Option<(String, String, Instant)>,
+    /// The logind session the last look put on KMS, `None` while on X11.
+    session: Option<String>,
+}
 
 /// Development and test override for the display (debug builds only).
 pub const DISPLAY_OVERRIDE: &str = "BMUSTER_DESKTOP_DISPLAY";
@@ -164,14 +187,105 @@ pub fn look_at_screen_file(text: &str) -> (Look, Option<X11Seen>) {
 #[derive(Default)]
 pub struct LogindWatch {
     seen: Option<X11Seen>,
+    console: Option<Console>,
 }
 
 impl LogindWatch {
+    /// X11 only: other screens wait with a reason.
     pub fn new() -> Self {
         LogindWatch::default()
     }
 
-    fn look_now(&self) -> (Look, Option<X11Seen>) {
+    /// X11, and KMS with uinput for every other screen.
+    pub fn with_console(opener: Box<dyn ConsoleOpener>) -> Self {
+        LogindWatch {
+            seen: None,
+            console: Some(Console {
+                opener,
+                source: None,
+                failure: None,
+                session: None,
+            }),
+        }
+    }
+
+    /// Why KMS could not show the current screen, while that stands.
+    pub fn console_failure(&self) -> Option<&str> {
+        let console = self.console.as_ref()?;
+        let session = console.session.as_ref()?;
+        console
+            .failure
+            .as_ref()
+            .filter(|(failed, _, _)| failed == session)
+            .map(|(_, reason, _)| reason.as_str())
+    }
+
+    /// The look for a screen on the KMS path: starts the reader if needed
+    /// and asks it whether anything is lit.
+    fn kms_look(&mut self, session: &str, properties: &HashMap<String, String>) -> Look {
+        let get = |key: &str| properties.get(key).map(String::as_str).unwrap_or("");
+        let unavailable = |key: String, reason: String| Look {
+            key,
+            state: DesktopState::Unavailable { reason },
+        };
+        let Some(console) = self.console.as_mut() else {
+            return unavailable(
+                format!("{session}:kms"),
+                "Only X11 screens can be shown".into(),
+            );
+        };
+        console.session = Some(session.to_string());
+        if get("State") == "closing" {
+            return unavailable(
+                format!("{session}:closing"),
+                "The session on the screen is closing".into(),
+            );
+        }
+        if let Some((failed, reason, at)) = &console.failure {
+            if failed == session && at.elapsed() < CONSOLE_RETRY {
+                return unavailable(format!("kms-failed:{session}"), reason.clone());
+            }
+            console.failure = None;
+        }
+        let source = match &console.source {
+            Some(source) => source.clone(),
+            None => match console.opener.open() {
+                Ok(source) => {
+                    console.source = Some(source.clone());
+                    source
+                }
+                Err(reason) => {
+                    console.failure = Some((session.to_string(), reason.clone(), Instant::now()));
+                    return unavailable(format!("kms-failed:{session}"), reason);
+                }
+            },
+        };
+        let displays = source.lock().unwrap_or_else(|p| p.into_inner()).displays();
+        match displays {
+            Err(error) => {
+                console.source = None;
+                console.failure = Some((session.to_string(), error.0.clone(), Instant::now()));
+                unavailable(format!("kms-failed:{session}"), error.0)
+            }
+            Ok(list) if list.is_empty() => {
+                unavailable(format!("kms-off:{session}"), SCREEN_OFF.to_string())
+            }
+            Ok(_) => Look {
+                key: format!("kms:{session}"),
+                state: console_state(get("Class"), get("LockedHint"), get("Name")),
+            },
+        }
+    }
+
+    /// Left the KMS path: stop the reader.
+    fn leave_console(&mut self) {
+        if let Some(console) = self.console.as_mut() {
+            console.source = None;
+            console.session = None;
+        }
+    }
+
+    fn look_now(&mut self) -> (Look, Option<X11Seen>) {
         if cfg!(debug_assertions) {
             if let Some(path) = std::env::var_os(SCREEN_FILE_OVERRIDE) {
                 return match std::fs::read_to_string(&path) {
@@ -223,6 +337,9 @@ impl LogindWatch {
         };
         let session = active.trim();
         if session.is_empty() {
+            if self.console.is_some() {
+                return (self.kms_look("none", &HashMap::new()), None);
+            }
             return (no_session(), None);
         }
         match loginctl(&[
@@ -236,7 +353,15 @@ impl LogindWatch {
             "--property=State",
             "--property=LockedHint",
         ]) {
-            Ok(text) => look_at(session, &parse_properties(&text)),
+            Ok(text) => {
+                let properties = parse_properties(&text);
+                let kind = properties.get("Type").map(String::as_str).unwrap_or("");
+                if self.console.is_some() && screen_path(kind) == ScreenPath::Kms {
+                    return (self.kms_look(session, &properties), None);
+                }
+                self.leave_console();
+                look_at(session, &properties)
+            }
             // The session ended between the two calls: look again next time.
             Err(error) => (
                 Look {
@@ -269,6 +394,17 @@ impl ScreenWatch for LogindWatch {
     }
 
     fn open(&mut self) -> Result<Platform, String> {
+        if let Some(console) = self.console.as_mut() {
+            if let (Some(session), Some(source)) = (&console.session, &console.source) {
+                let opened =
+                    crate::kms_platform(source.clone(), crate::input::uinput::Opener::system());
+                if let Err(reason) = &opened {
+                    console.failure = Some((session.clone(), reason.clone(), Instant::now()));
+                    console.source = None;
+                }
+                return opened;
+            }
+        }
         let seen = self
             .seen
             .as_ref()

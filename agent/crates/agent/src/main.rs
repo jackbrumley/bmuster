@@ -2,6 +2,8 @@
 //! keeps a live socket open. See `docs/specs/SPEC-ENROLMENT.md`.
 
 mod client;
+#[cfg(target_os = "linux")]
+mod console_helper;
 mod diagnostics;
 mod exec;
 mod files;
@@ -86,6 +88,18 @@ enum Command {
     #[cfg(target_os = "linux")]
     #[command(hide = true)]
     WaylandHelper,
+    /// The KMS screen reader a desktop session starts as a root unit
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    ConsoleHelper,
+    /// Print what the kernel scans out to each display and save one PNG per
+    /// display (run as root; nothing is sent anywhere)
+    #[cfg(target_os = "linux")]
+    KmsProbe {
+        /// Where to save, like /tmp/kms.png (becomes /tmp/kms-<display>.png)
+        #[arg(long)]
+        png: PathBuf,
+    },
     /// Show the user-session tray; --open opens local management without a tray host
     Tray {
         #[arg(long)]
@@ -259,6 +273,16 @@ fn dispatch(command: Command) -> Result<ExitCode> {
         #[cfg(target_os = "linux")]
         Command::WaylandHelper => {
             wayland::helper::run()?;
+            Ok(ExitCode::SUCCESS)
+        }
+        #[cfg(target_os = "linux")]
+        Command::ConsoleHelper => {
+            console_helper::run()?;
+            Ok(ExitCode::SUCCESS)
+        }
+        #[cfg(target_os = "linux")]
+        Command::KmsProbe { png } => {
+            console_helper::probe(&png)?;
             Ok(ExitCode::SUCCESS)
         }
         Command::Tray { open } => {

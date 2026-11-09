@@ -279,15 +279,16 @@ impl DesktopSession {
             ClientMessage::ClipboardPush { .. } | ClientMessage::ClipboardPull => {
                 self.log_once("clipboard", "message (clipboard comes in phase 6)");
             }
-            message => self.inject(message),
+            message => self.inject(message, out),
         }
     }
 
-    fn inject(&mut self, message: ClientMessage) {
+    fn inject(&mut self, message: ClientMessage, out: &mut Vec<Outgoing>) {
         let display = self.current_rect();
         let Some(input) = self.input.as_mut() else {
             return;
         };
+        let typing = matches!(message, ClientMessage::Text { .. });
         let result = match message {
             ClientMessage::Pointer { x, y, buttons } => input.pointer(display, x, y, buttons),
             ClientMessage::Wheel { dx, dy, mode } => input.wheel(dx, dy, mode),
@@ -304,6 +305,10 @@ impl DesktopSession {
         };
         if let Err(err) = result {
             log::warn!("Desktop input failed: {err}");
+            // Text the screen cannot type is the viewer's to know about.
+            if typing {
+                out.push(error(ErrorCode::InputFailed, &err.0));
+            }
         }
     }
 
@@ -365,6 +370,11 @@ impl DesktopSession {
                 self.video.refresh();
                 self.pacer.force_keyframe();
                 out.push(self.displays_message());
+                // A following session says again what the screen shows, so
+                // a resolution or monitor change reads like a switch.
+                if self.follow.is_some() {
+                    out.push(self.state_message());
+                }
             }
             Ok(false) => {}
             Err(err) => {

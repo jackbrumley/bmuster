@@ -2,7 +2,7 @@
 mod capture;
 pub mod helper;
 mod png_stream;
-mod wire;
+pub(crate) mod wire;
 
 use anyhow::{bail, Context as _, Result};
 use bmuster_desktop::{
@@ -34,7 +34,9 @@ pub fn publish_helper() -> Result<()> {
     std::fs::rename(next, dir.join("bmuster-user-helper"))?;
     Ok(())
 }
-fn helper_program() -> Result<PathBuf> {
+/// The root-owned copy of this program that helpers run (never the
+/// install folder, which holds the agent's identity).
+pub(crate) fn helper_program() -> Result<PathBuf> {
     let path = crate::tray::status_directory()?.join("bmuster-user-helper");
     use std::os::unix::fs::MetadataExt as _;
     let metadata = std::fs::symlink_metadata(&path)
@@ -106,6 +108,10 @@ fn parse_session(id: &str, text: &str) -> Result<Option<UserSession>> {
     }))
 }
 
+/// The screen at the machine (SPEC-CONSOLE-CAPTURE): X11 screens through
+/// XShm and XTest, everything else through KMS and uinput. A signed-in
+/// Wayland desktop that KMS cannot read (some NVIDIA set-ups) falls back to
+/// the desktop portal, which asks the person at the machine to approve.
 pub struct Watch {
     x11: LogindWatch,
     data_dir: PathBuf,
@@ -118,7 +124,7 @@ pub struct Watch {
 impl Watch {
     pub fn new(data_dir: &Path, mode: Mode) -> Self {
         Self {
-            x11: LogindWatch::new(),
+            x11: LogindWatch::with_console(Box::new(crate::console_helper::Opener::new(data_dir))),
             data_dir: data_dir.into(),
             control: mode == Mode::Control,
             user: None,
@@ -140,6 +146,14 @@ impl ScreenWatch for Watch {
         Ok(())
     }
     fn look(&mut self) -> Look {
+        let look = self.x11.look();
+        if self.x11.console_failure().is_none() {
+            self.user = None;
+            self.bridge = None;
+            self.requested = false;
+            self.failure = None;
+            return look;
+        }
         let active = match active_session() {
             Ok(active) => active,
             Err(error) => {
@@ -161,7 +175,7 @@ impl ScreenWatch for Watch {
         }
         self.user = active;
         let Some(user) = &self.user else {
-            return self.x11.look();
+            return look;
         };
         if user.locked {
             self.bridge = None;

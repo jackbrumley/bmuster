@@ -4,9 +4,10 @@
 //!
 //! - [`session::DesktopSession`]: browser text frames in, binary frames and
 //!   JSON control messages out; [`session::run`] loops it over a channel.
-//! - [`capture`]: X11 (XShm, XDamage, RandR, XFixes) and Windows (DXGI
-//!   Desktop Duplication, GDI fallback).
-//! - [`input`]: XTest and `SendInput`, with release-all.
+//! - [`capture`]: X11 (XShm, XDamage, RandR, XFixes), the Linux console
+//!   through KMS (SPEC-CONSOLE-CAPTURE) and Windows (DXGI Desktop
+//!   Duplication, GDI fallback).
+//! - [`input`]: XTest, uinput and `SendInput`, with release-all.
 //! - [`notice`]: the bar at the machine while someone is connected.
 //! - [`follow`]: a session that follows the screen at the machine (the
 //!   sign-in screen, a desktop, a switch between them) without ending.
@@ -22,6 +23,8 @@ pub mod encode;
 pub mod follow;
 pub mod frame;
 pub mod input;
+#[cfg(target_os = "linux")]
+mod ioctl;
 pub mod notice;
 pub mod pacing;
 pub mod session;
@@ -85,6 +88,24 @@ pub fn x11_platform(target: capture::x11_session::X11Target) -> Result<Platform,
             Ok(Box::new(input::x11::XTestInput::open(&target)?) as Box<dyn InputBackend>)
         }),
         notice_target: notice_target.into(),
+    })
+}
+
+/// Capture through KMS (from `source`, the root helper's pipe) and input
+/// through uinput, built by `uinput` only for a control session (Linux:
+/// Wayland, the text console, anything that is not X11).
+#[cfg(target_os = "linux")]
+pub fn kms_platform(
+    source: capture::kms::capturer::SharedSource,
+    uinput: input::uinput::Opener,
+) -> Result<Platform, String> {
+    let bounds = std::sync::Arc::new(std::sync::Mutex::new(capture::Rect::new(0, 0, 1, 1)));
+    let capturer =
+        capture::kms::capturer::KmsCapturer::new(source, bounds.clone()).map_err(|e| e.0)?;
+    Ok(Platform {
+        capturer: Box::new(capturer),
+        make_input: Box::new(move || uinput.backend(bounds)),
+        notice_target: notice::Target::Console,
     })
 }
 

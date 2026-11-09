@@ -5,6 +5,8 @@
 //! GDI DIB sections all give, so no platform converts pixels.
 
 #[cfg(target_os = "linux")]
+pub mod kms;
+#[cfg(target_os = "linux")]
 pub mod x11;
 #[cfg(target_os = "linux")]
 pub mod x11_follow;
