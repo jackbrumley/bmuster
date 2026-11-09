@@ -1,10 +1,11 @@
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHANGELOG } from '#lib/domain/releases/changelog.ts';
 import { compareAgentVersions } from '#lib/domain/machines/agent-version.ts';
 import {
-	serverUpdateStateSchema,
 	updateCacheSchema,
+	updaterStatusSchema,
+	type ServerUpdateOperation,
 	type UpdateCache,
 	type ServerUpdateView
 } from '#lib/schemas/releases/server-updates.ts';
@@ -17,13 +18,39 @@ import { readBounded } from './files.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 const FAILED_CHECK_RETRY = 5 * 60 * 1000;
+/**
+ * The request for the root updater (SPEC-SERVER-UPDATES). It is always empty: the updater never
+ * reads it, and installs only the newest release signed with the key compiled into it.
+ */
+export const UPDATE_FLAG = 'update-requested';
+/** Written only by the root updater. */
+export const UPDATE_STATUS = 'update-status.json';
 const EMPTY: UpdateCache = {
 	checkedAtIso: null,
 	lastSuccessAtIso: null,
 	release: null,
 	problem: null
 };
-const IDLE = { current: null, previous: null, pending: null, phase: 'idle', message: '' } as const;
+const IDLE: ServerUpdateOperation = {
+	phase: 'idle',
+	from: null,
+	to: null,
+	message: '',
+	atIso: null
+};
+const IN_PROGRESS = new Set<ServerUpdateOperation['phase']>([
+	'requested',
+	'checking',
+	'downloading',
+	'switching',
+	'starting'
+]);
+export const REINSTALL_ONCE =
+	'This release cannot update this server by itself. Re-run the installer once (install.sh on Linux, install.ps1 on Windows); from then on the whole server, including Node, updates itself.';
+
+function isMissing(error: unknown): boolean {
+	return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
 
 type Latest = () => Promise<UpdateCache['release']>;
 export class ServerUpdates {
@@ -45,22 +72,45 @@ export class ServerUpdates {
 					JSON.parse(readBounded(join(config.dataDir, 'check.json'), 512 * 1024).toString('utf8'))
 				);
 			} catch (error) {
-				if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+				if (!isMissing(error)) throw error;
 			}
+		}
+	}
+	/** The request waiting for the updater, else the updater's last status. */
+	#operation(): ServerUpdateOperation {
+		const config = this.#config;
+		if (config.kind !== 'installed') return IDLE;
+		try {
+			const flag = lstatSync(join(config.dataDir, UPDATE_FLAG));
+			return {
+				phase: 'requested',
+				from: this.#current,
+				to: null,
+				message: 'Waiting for the updater to start.',
+				atIso: flag.mtime.toISOString()
+			};
+		} catch (error) {
+			if (!isMissing(error)) throw error;
+		}
+		try {
+			const status = updaterStatusSchema.parse(
+				JSON.parse(readBounded(join(config.dataDir, UPDATE_STATUS), 32 * 1024).toString('utf8'))
+			);
+			return {
+				phase: status.phase,
+				from: status.from,
+				to: status.to,
+				message: status.message,
+				atIso: new Date(status.atMs).toISOString()
+			};
+		} catch (error) {
+			if (isMissing(error)) return IDLE;
+			throw error;
 		}
 	}
 	view(): ServerUpdateView {
 		const config = this.#config;
-		let operation: ServerUpdateView['operation'] = { ...IDLE };
-		if (config.kind === 'installed') {
-			try {
-				operation = serverUpdateStateSchema.parse(
-					JSON.parse(readBounded(join(config.dataDir, 'state.json'), 32 * 1024).toString('utf8'))
-				);
-			} catch (error) {
-				if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
-			}
-		}
+		const operation = this.#operation();
 		let reason =
 			config.kind === 'docker'
 				? 'Deploy the new image tag in Docker or Coolify.'
@@ -77,19 +127,16 @@ export class ServerUpdates {
 				this.#cache.problem === null
 					? 'No newer signed release is available.'
 					: 'Could not confirm whether a newer signed release is available. Check for updates again.';
-		if (reason === '' && release !== null && config.kind === 'installed') {
-			if (compareAgentVersions(release.manifest.minimumLauncher, config.version) > 0)
-				reason = 'This release needs a newer launcher. Rerun the administrator installer.';
-			else if (!release.manifest.rollbackFrom.includes(this.#current))
-				reason =
-					'This release has no tested schema-compatible rollback to this version. Rerun the administrator installer.';
-		}
-		if (['downloading', 'preparing', 'starting'].includes(operation.phase))
-			reason = 'A server update is already in progress.';
+		if (
+			reason === '' &&
+			release !== null &&
+			compareAgentVersions(release.manifest.minimumLauncher, this.#current) > 0
+		)
+			reason = REINSTALL_ONCE;
+		if (IN_PROGRESS.has(operation.phase)) reason = 'A server update is already in progress.';
 		return {
 			installedVersion: this.#current,
 			deployment: config.kind,
-			launcherVersion: config.kind === 'installed' ? config.version : null,
 			...this.#cache,
 			release,
 			install: { allowed: reason === '', reason },
@@ -138,6 +185,10 @@ export class ServerUpdates {
 				now
 			);
 	}
+	/**
+	 * Asks the root updater for an update: an empty flag file and nothing else. `version` is what
+	 * the admin confirmed; the updater picks the newest signed release itself.
+	 */
 	request(version: string, userId: string, now: number): void {
 		const view = this.view();
 		if (
@@ -150,10 +201,7 @@ export class ServerUpdates {
 					? 'Check for updates again before installing this version.'
 					: view.install.reason
 			);
-		writeFileSync(join(this.#config.dataDir, 'request.json'), JSON.stringify({ version }), {
-			flag: 'wx',
-			mode: 0o600
-		});
+		writeFileSync(join(this.#config.dataDir, UPDATE_FLAG), '', { flag: 'wx', mode: 0o600 });
 		recordAudit(
 			this.#database,
 			{

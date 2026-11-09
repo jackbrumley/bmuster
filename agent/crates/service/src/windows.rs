@@ -116,6 +116,35 @@ pub fn create_and_start(spec: &ServiceSpec) -> Result<()> {
         .context("could not start the service")
 }
 
+/// After two restarts in five minutes, runs `command` (the agent's rescue
+/// copy). Only crashes count: a clean stop with an exit code (a removed
+/// machine) is not a failure.
+pub fn set_rescue_actions(name: &str, command: &OsStr) -> Result<()> {
+    let manager = manager(ServiceManagerAccess::CONNECT)?;
+    let service = manager
+        .open_service(name, ServiceAccess::CHANGE_CONFIG)
+        .context("could not open the service")?;
+    let restart = ServiceAction {
+        action_type: ServiceActionType::Restart,
+        delay: Duration::from_secs(10),
+    };
+    service
+        .update_failure_actions(ServiceFailureActions {
+            reset_period: ServiceFailureResetPeriod::After(Duration::from_secs(300)),
+            reboot_msg: None,
+            command: Some(command.to_os_string()),
+            actions: Some(vec![
+                restart.clone(),
+                restart,
+                ServiceAction {
+                    action_type: ServiceActionType::RunCommand,
+                    delay: Duration::from_secs(1),
+                },
+            ]),
+        })
+        .context("could not set the service's rescue rules")
+}
+
 pub fn exists(name: &str) -> bool {
     manager(ServiceManagerAccess::CONNECT)
         .and_then(|manager| {

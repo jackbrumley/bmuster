@@ -1,18 +1,22 @@
-//! `bmuster-server`: runs the bundled Node server and installs it as a
-//! service. See `docs/specs/SPEC-SERVER-INSTALL.md`.
+//! `bmuster-server`: runs the bundled Node server, installs it as a service,
+//! and updates the whole install as root. See `docs/specs/SPEC-SERVER-INSTALL.md`
+//! and `docs/specs/SPEC-SERVER-UPDATES.md`.
 
 mod address;
 mod bundle;
 mod config;
+mod install;
+mod launcher;
 mod layout;
-mod node;
+mod releases;
 #[cfg(target_os = "linux")]
 mod service_linux;
 #[cfg(windows)]
 mod service_windows;
+mod updater;
 mod updates;
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{bail, Result};
 use clap::{Args, Parser, Subcommand};
 use layout::Layout;
 use std::path::PathBuf;
@@ -58,12 +62,25 @@ enum Command {
         /// Install the files and settings only: no service, no system user, no root
         #[arg(long)]
         no_service: bool,
+        /// Only rewrite the service definitions for this release (the updater
+        /// runs this from the new release)
+        #[arg(long)]
+        refresh_units: bool,
+    },
+    /// Install the newest signed release if the console asked for one (run
+    /// as root by the update service, or every two minutes on Windows)
+    Update {
+        #[command(flatten)]
+        folders: Folders,
+        /// Only finish or undo an interrupted update (at boot)
+        #[arg(long)]
+        recover: bool,
     },
     /// Stop and remove the service and the program folder (data is kept)
     Uninstall {
         #[command(flatten)]
         folders: Folders,
-        /// Also delete the data folder (database, settings, secrets key)
+        /// Also delete the data folder (database, settings and secrets key)
         #[arg(long)]
         purge: bool,
     },
@@ -83,13 +100,7 @@ fn main() -> ExitCode {
     } = &cli.command
     {
         return report(
-            layout::own_dir()
-                .and_then(|program| {
-                    Ok(Layout {
-                        program,
-                        data: data_dir_or_default(data_dir.clone())?,
-                    })
-                })
+            data_dir_or_default(data_dir.clone())
                 .and_then(service_windows::run_as_service)
                 .map(|()| ExitCode::SUCCESS),
         );
@@ -116,161 +127,95 @@ fn data_dir_or_default(given: Option<PathBuf>) -> Result<PathBuf> {
 
 fn dispatch(command: Command) -> Result<ExitCode> {
     match command {
-        Command::Run { data_dir, .. } => run(&Layout {
-            program: layout::own_dir()?,
-            data: data_dir_or_default(data_dir)?,
-        }),
+        Command::Run { data_dir, .. } => {
+            run(data_dir_or_default(data_dir)?)?;
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Install {
             folders,
             port,
             no_service,
+            refresh_units,
         } => {
-            install(
-                &layout::resolve(folders.prefix, folders.data_dir)?,
-                port,
-                no_service,
-            )?;
+            let target = layout::resolve(folders.prefix, folders.data_dir)?;
+            if refresh_units {
+                install::refresh_units(&target, no_service)?;
+            } else {
+                install::install(&target, port, no_service)?;
+            }
             Ok(ExitCode::SUCCESS)
         }
+        Command::Update { folders, recover } => {
+            update(&layout::resolve(folders.prefix, folders.data_dir)?, recover)
+        }
         Command::Uninstall { folders, purge } => {
-            uninstall(&layout::resolve(folders.prefix, folders.data_dir)?, purge)?;
+            install::uninstall(&layout::resolve(folders.prefix, folders.data_dir)?, purge)?;
             Ok(ExitCode::SUCCESS)
         }
         Command::Status { folders } => {
-            status(&layout::resolve(folders.prefix, folders.data_dir)?);
+            install::status(&layout::resolve(folders.prefix, folders.data_dir)?);
             Ok(ExitCode::SUCCESS)
         }
     }
 }
 
-/// Node in the foreground: replaced in place on Unix (so systemd's signals
-/// reach Node), waited for elsewhere.
-fn run(layout: &Layout) -> Result<ExitCode> {
-    if !layout.env_file().exists() {
+/// Node in the foreground, restarted if it crashes; SIGTERM stops it.
+fn run(data: PathBuf) -> Result<()> {
+    let env_file = data.join(layout::ENV_FILE);
+    if !env_file.exists() {
         bail!(
             "there are no settings at {}; run `bmuster-server install` first",
-            layout.env_file().display()
+            env_file.display()
         );
     }
-    updates::run(layout)?;
-    Ok(ExitCode::SUCCESS)
-}
-
-fn install(layout: &Layout, port: Option<u16>, no_service: bool) -> Result<()> {
-    if !no_service {
-        platform::require_admin()?;
-    }
-    let source = layout::own_dir()?;
-    layout::check_bundle(&source)?;
-    if !no_service && platform::stop_service()? {
-        println!("Stopped the running server for the upgrade.");
-    }
-    bundle::replace_dir(&source, &layout.program)?;
-    updates::reset_for_installer(layout)?;
-    println!(
-        "Installed BMuster Server {} in {}.",
-        layout::bundle_version(&layout.program),
-        layout.program.display()
-    );
-
-    std::fs::create_dir_all(&layout.data)
-        .with_context(|| format!("could not create {}", layout.data.display()))?;
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&layout.data, std::fs::Permissions::from_mode(0o700))?;
+        launcher::run_in_foreground(data)
     }
-    if config::write_if_missing(&layout.env_file(), port.unwrap_or(config::DEFAULT_PORT))? {
-        println!("Wrote new settings to {}.", layout.env_file().display());
-    } else {
-        println!("Kept the settings and data in {}.", layout.data.display());
-        let kept = config::read_listen(&layout.env_file())?.port;
-        if port.is_some_and(|wanted| wanted != kept) {
-            println!(
-                "Note: the server keeps port {kept}; change PORT in {} to move it.",
-                layout.env_file().display()
-            );
-        }
+    #[cfg(not(unix))]
+    {
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        launcher::Launcher::for_this_program(data)?.run(&stop, None)
     }
-
-    if no_service {
-        println!(
-            "No service was installed. Start the server with:\n  \"{}\" run --data-dir \"{}\"",
-            layout.launcher().display(),
-            layout.data.display()
-        );
-    } else {
-        platform::install_service(layout)?;
-    }
-    let listen = config::read_listen(&layout.env_file())?;
-    println!("Address: {}", address::best_url(listen));
-    Ok(())
 }
 
-fn uninstall(layout: &Layout, purge: bool) -> Result<()> {
-    if platform::service_installed() {
-        platform::require_admin()?;
-        platform::remove_service()?;
-    }
-    if layout.program.exists() {
-        layout::check_bundle(&layout.program)?;
-        platform::remove_program(layout)?;
-        println!("Removed {}.", layout.program.display());
-    }
-    if !layout.data.exists() {
-        return Ok(());
-    }
-    if !purge {
-        println!(
-            "Kept {} (database, settings and secrets key); add --purge to remove it.",
-            layout.data.display()
-        );
-        return Ok(());
-    }
-    if !layout.env_file().exists() && !layout.database().exists() {
-        bail!(
-            "{} has no server.env or bmuster.db, so it was left alone",
-            layout.data.display()
-        );
-    }
-    std::fs::remove_dir_all(&layout.data)
-        .with_context(|| format!("could not remove {}", layout.data.display()))?;
-    println!(
-        "Removed {} (database, settings and secrets key).",
-        layout.data.display()
-    );
-    platform::remove_user()
-}
-
-fn status(layout: &Layout) {
-    println!(
-        "Server version: {}",
-        layout::bundle_version(&layout.program)
-    );
-    println!("Launcher:       {}", env!("CARGO_PKG_VERSION"));
-    println!("Program folder: {}", layout.program.display());
-    println!("Data folder:    {}", layout.data.display());
-    println!("Service:        {}", platform::service_state());
-    match config::read_listen(&layout.env_file()) {
-        Ok(listen) => println!("Address:        {}", address::best_url(listen)),
-        Err(e) => println!("Address:        unknown ({e:#})"),
-    }
-    println!("Log:            {}", platform::log_hint(layout));
+fn update(target: &Layout, recover: bool) -> Result<ExitCode> {
+    let keys = updates::trusted_keys()?;
+    let service = updater::system::service(target)?;
+    let source = updater::system::source();
+    let updater = updater::Updater {
+        layout: target,
+        keys: &keys,
+        target: updates::TARGET,
+        service: service.as_ref(),
+        source: source.as_ref(),
+        health_window: updater::system::health_window(),
+    };
+    let outcome = if recover {
+        updater.recover_at_boot()?
+    } else {
+        updater.update()?
+    };
+    println!("bmuster-server update: {outcome:?}");
+    Ok(match outcome {
+        updater::Outcome::Failed => ExitCode::FAILURE,
+        _ => ExitCode::SUCCESS,
+    })
 }
 
 #[cfg(target_os = "linux")]
 mod platform {
     pub use crate::service_linux::{
-        install_service, log_hint, remove_program, remove_service, remove_user, require_admin,
-        service_installed, service_state, stop_service,
+        install_service, log_hint, refresh_units, remove_program, remove_service, remove_user,
+        require_admin, service_installed, service_state, start_service, stop_service,
     };
 }
 
 #[cfg(windows)]
 mod platform {
     pub use crate::service_windows::{
-        install_service, log_hint, remove_program, remove_service, remove_user, require_admin,
-        service_installed, service_state, stop_service,
+        install_service, log_hint, refresh_units, remove_program, remove_service, remove_user,
+        require_admin, service_installed, service_state, start_service, stop_service,
     };
 }
 
@@ -287,8 +232,16 @@ mod platform {
         require_admin()
     }
 
+    pub fn refresh_units(_layout: &Layout) -> Result<()> {
+        require_admin()
+    }
+
     pub fn stop_service() -> Result<bool> {
         Ok(false)
+    }
+
+    pub fn start_service() -> Result<()> {
+        require_admin()
     }
 
     pub fn service_installed() -> bool {

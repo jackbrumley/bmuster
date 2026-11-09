@@ -43,12 +43,6 @@ function checkMachine(
 ):
 	| { kind: 'ok'; grants: Grant[]; machine: { name: string; osFamily: OsFamily } }
 	| Extract<OpenSessionResult, { kind: 'refused' }> {
-	if (!relay.accepting())
-		return {
-			kind: 'refused',
-			status: 409,
-			message: 'The server is updating. Reconnect after the console returns.'
-		};
 	const grants = permissionsFor(database, user, machineId);
 	const machine = activeMachineBasics(database, machineId);
 	if (machine === undefined || !grants.some((grant) => grant.permission === 'view')) {

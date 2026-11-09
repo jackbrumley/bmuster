@@ -1,13 +1,19 @@
 //! Windows install: binary in C:\Program Files\BMuster, data and log in
 //! C:\ProgramData\BMuster, service "BMuster Agent" running as LocalSystem.
 //! The service is the launcher; it runs the agent from
-//! C:\ProgramData\BMuster\versions\current (SPEC-AGENT-UPDATES).
+//! C:\ProgramData\BMuster\versions\current (SPEC-AGENT-UPDATES). The
+//! Program Files binary is also the rescue copy (SPEC-SERVER-UPDATES): the
+//! service's recovery actions run its `rescue` after repeated crashes, and a
+//! version healthy for a day copies itself over it. (Windows cannot rename
+//! the folder of a running program, so unlike Linux the service does not
+//! run `versions\current` itself.)
 
 use crate::client::TlsMode;
 use crate::identity::{self, EnrolOptions};
 use crate::launcher::{Ended, Launcher};
 use crate::paths;
 use crate::sessions::windows_desktop::sas;
+use crate::{rescue, updates};
 use anyhow::{Context as _, Result};
 use bmuster_protocol::ServerTrust;
 use bmuster_service::windows::{self as service, status, Account, ServiceSpec};
@@ -84,6 +90,11 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
         log::warn!("Ctrl+Alt+Del from the console will not work: {e:#}");
     }
 
+    let bytes =
+        std::fs::read(&binary).with_context(|| format!("could not read {}", binary.display()))?;
+    updates::seed_current(&updates::Layout::new(&data_dir), &bytes, updates::VERSION)?;
+    rescue::record_version(&data_dir, updates::VERSION)?;
+
     // Restarts after a crash; a clean stop with the revoked exit code is not
     // a failure, so a removed machine stays stopped.
     service::create_and_start(&ServiceSpec {
@@ -94,8 +105,17 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
         arguments: vec![OsString::from("launch"), OsString::from("--service")],
         account: Account::LocalSystem,
     })?;
+    service::set_rescue_actions(SERVICE_NAME, &rescue_command()?)?;
     log::info!("Installed and started the \"{DISPLAY_NAME}\" service.");
     Ok(())
+}
+
+/// The recovery action's command line: the rescue copy's `rescue`.
+fn rescue_command() -> Result<OsString> {
+    let mut command = OsString::from("\"");
+    command.push(binary_path()?);
+    command.push("\" rescue");
+    Ok(command)
 }
 
 pub fn uninstall(purge: bool) -> Result<()> {
@@ -148,6 +168,29 @@ pub fn stop_service() -> Result<bool> {
 
 pub fn start_service() -> Result<()> {
     service::start(SERVICE_NAME)
+}
+
+/// After `rescue` (run by the recovery action, with the service stopped).
+pub fn finish_rescue() -> Result<()> {
+    service::start(SERVICE_NAME)
+}
+
+/// From the worker, which runs as SYSTEM outside any sandbox.
+pub fn refresh_rescue_copy() -> Result<()> {
+    refresh_service()
+}
+
+/// `refresh-rescue`: the current version becomes the rescue copy (and the
+/// service's launcher from its next start), and the recovery actions are
+/// set, which also moves an install from before the rescue copy onto it.
+pub fn refresh_service() -> Result<()> {
+    service::require_admin()?;
+    let program = std::env::current_exe().context("could not find this program's path")?;
+    let data_dir = paths::default_data_dir()?;
+    rescue::refresh(&data_dir, &program, &binary_path()?, updates::VERSION)?;
+    service::set_rescue_actions(SERVICE_NAME, &rescue_command()?)?;
+    log::info!("Version {} is the rescue copy now.", updates::VERSION);
+    Ok(())
 }
 
 /// The local page's Uninstall, from inside the service: a copy of this

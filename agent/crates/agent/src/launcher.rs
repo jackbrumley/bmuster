@@ -8,11 +8,14 @@
 //! in. If it does not, the launcher switches back and records "rolled back"
 //! with the reason, which the old worker reports in its next check-in.
 //!
-//! The launcher is the installed program itself and never replaces itself,
-//! so a bad release cannot break the thing that rolls it back. Its own code is
-//! only replaced by reinstalling.
+//! On Linux the service runs `versions/current/bmuster-agent launch`, so the
+//! launcher is the current version's own binary and updates with it (from
+//! its next start). A launcher that cannot start is rolled back by the
+//! rescue copy (`rescue.rs`). On Windows the service runs the copy in
+//! Program Files, because Windows cannot rename the folder of a running
+//! program; that copy is refreshed after a day of health.
 
-use crate::updates::{self, check_build, now_ms, Layout, Release, Slot, Switch};
+use crate::updates::{self, check_build, now_ms, Layout, Slot, Switch};
 use anyhow::{bail, Context as _, Result};
 use bmuster_protocol::UpdateEvent;
 use ed25519_dalek::VerifyingKey;
@@ -158,14 +161,7 @@ impl Launcher {
         }
         let bytes = fs::read(&self.own_binary)
             .with_context(|| format!("could not read {}", self.own_binary.display()))?;
-        let release = Release {
-            version: self.own_version.clone(),
-            target: updates::TARGET.to_string(),
-            size: bytes.len() as u64,
-            sha256: bmuster_protocol::sha256_hex(&bytes),
-            signature: String::new(),
-        };
-        layout.store(Slot::Current, &release, &bytes)?;
+        updates::seed_current(&layout, &bytes, &self.own_version)?;
         log::info!(
             "Set up {} with this program (version {}).",
             layout.dir(Slot::Current).display(),

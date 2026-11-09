@@ -74,7 +74,7 @@ bmuster-server/
   releases/<version>/<target>/bmuster-agent[.exe]   all three agent builds (RELEASES_PATH)
 ```
 
-Asset names carry no version (`bmuster-server-linux-x64.tar.gz`), so the installers fetch `https://github.com/jackbrumley/bmuster/releases/latest/download/<name>` with no GitHub API call (no rate limit, no JSON parsing). `SHA256SUMS` sits beside them; a specific release is `--version vX.Y.Z`.
+Asset names carry no version (`bmuster-app-x86_64-unknown-linux-gnu.tar.gz` with its signed manifest `bmuster-app-x86_64-unknown-linux-gnu.json`, and `bmuster-server-windows-x64.zip`; SPEC-SERVER-UPDATES), so the installers fetch `https://github.com/jackbrumley/bmuster/releases/latest/download/<name>` with no GitHub API call (no rate limit, no JSON parsing). `SHA256SUMS` sits beside them; a specific release is `--version vX.Y.Z`.
 
 `app/` and `releases/` are deliberately self-contained so a later Dockerfile can copy them as they are and run `node server.js` in `app/` with `RELEASES_PATH` pointing at the agents; the launcher is optional.
 
@@ -102,14 +102,14 @@ A fresh install listens on **8443** in **local network mode** (`BMUSTER_LOCAL_NE
 ## 8. Upgrade and uninstall
 
 - **Upgrade:** run the same one-line command. `install` stops the service, swaps the program folder for the new one, keeps `server.env` and the database, and starts the service; migrations run at start-up (additive only, AGENTS.md §3). The agent builds in `releases/` are the ones shipped with that server version.
-- **Uninstall (Linux):** `sudo /opt/bmuster-server/bmuster-server uninstall [--purge]`.
-- **Uninstall (Windows):** `& "C:\Program Files\BMuster Server\bmuster-server.exe" uninstall [--purge]` as Administrator. The running launcher cannot delete its own file, so it removes everything else and a short detached `cmd` removes the folder a few seconds later.
+- **Uninstall (Linux):** `sudo /opt/bmuster-server/current/bmuster-server uninstall [--purge]`.
+- **Uninstall (Windows):** `& "C:\Program Files\BMuster Server\current\bmuster-server.exe" uninstall [--purge]` as Administrator. The running launcher cannot delete its own file, so it removes everything else and a short detached `cmd` removes the folder a few seconds later.
 - Enrolled agents are not touched by either.
 
 ## 9. Testing
 
 - Unit: the unit file text (`service_linux::tests`), the Windows service settings (`service_windows::tests`, compiled and linted for `x86_64-pc-windows-gnu`), `server.env` text and reading, Node command line, bundle swap; server: I12 and I14.
-- Manual, no root: `npm run release:server-local`, then `sh docs/install.sh --archive dist/release/bmuster-server-linux-x64.tar.gz --prefix <scratch>/opt --data-dir <scratch>/data --no-service --port 47620`, `run`, `/readyz`, `/setup`, an agent download from `/agent/v1/releases/…`, stop, `uninstall --purge` on the scratch folders.
+- Manual, no root: `npm run release:server-local`, then unpack `dist/release/bmuster-app-<target>.tar.gz` and run its `./bmuster-server install --prefix <scratch>/opt --data-dir <scratch>/data --no-service --port 47620`, `run`, `/readyz`, `/setup`, an agent download from `/agent/v1/releases/…`, stop, `uninstall --purge` on the scratch folders.
 - Not testable here: Windows, arm64, the systemd service itself (needs root), and the release workflow (runs only on GitHub).
 
 ## 10. Out of scope

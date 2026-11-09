@@ -145,7 +145,6 @@ export const CLOSE_REPLACED = 4001;
 export type Relay = ReturnType<typeof createRelay>;
 
 export function createRelay(limits: RelayLimits) {
-	let accepting = true;
 	const sessions = new Map<string, LiveSession>();
 	const tickets = new Map<string, { sessionId: string; userId: string; expiresAt: number }>();
 	const ended = new Map<string, EndedSession>();
@@ -518,15 +517,6 @@ export function createRelay(limits: RelayLimits) {
 			});
 		},
 
-		accepting: () => accepting,
-		prepareForServerUpdate() {
-			accepting = false;
-			for (const id of sessions.keys())
-				end(id, 'closed', 'The server is updating. Reconnect after the console returns.');
-		},
-		resumeAfterServerUpdate() {
-			accepting = true;
-		},
 		end,
 
 		/** Who is using this machine now (T8). */

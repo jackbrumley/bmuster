@@ -1,15 +1,29 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
 	import type { ServerUpdateView } from '#lib/schemas/releases/server-updates.ts';
-	import { serverUpdateViewSchema } from '#lib/schemas/releases/server-updates.ts';
+	import {
+		serverUpdateRequestedSchema,
+		serverUpdateViewSchema
+	} from '#lib/schemas/releases/server-updates.ts';
 	import Panel from '#lib/ui/panel.svelte';
 	import Button from '#lib/ui/button.svelte';
 	import Notice from '#lib/ui/notice.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
-	let { view, onRestarting }: { view: ServerUpdateView; onRestarting: (version: string) => void } =
-		$props();
+	let {
+		view,
+		onRestarting
+	}: {
+		view: ServerUpdateView;
+		onRestarting: (version: string, requestedAtIso: string) => void;
+	} = $props();
+	/** What happens if the new version does not start: declared in its signed manifest. */
+	function ifItFails(release: NonNullable<ServerUpdateView['release']>): string {
+		return release.manifest.rollbackFrom.includes(view.installedVersion)
+			? `If it does not, BMuster ${view.installedVersion} comes back automatically on the same database.`
+			: `If it does not, the server stays stopped for an administrator, with a copy of the database from before the update.`;
+	}
 	let busy = $state(false);
 	async function check(): Promise<void> {
 		if (busy) return;
@@ -43,7 +57,7 @@
 		if (
 			!(await confirmAction({
 				title: `Update BMuster to ${version}?`,
-				message: `${view.release.notes}\n\nThe console will restart and active sessions will end. It may be unavailable for about 30 seconds. Machines receive the signed agent through their configured rollout, pins and update policy. A compatible startup failure restores the previous application; the database is retained.`,
+				message: `${view.release.notes}\n\nThe whole server is replaced (its launcher, Node and the console), so the console restarts and active sessions end; it may be unavailable for a minute or two. The new version must start within two minutes. ${ifItFails(view.release)} Machines receive the signed agent through their configured rollout, pins and update policy.`,
 				confirmLabel: 'Update now'
 			}))
 		)
@@ -54,12 +68,12 @@
 				method: 'POST',
 				url: '/api/server-updates/install',
 				body: { version },
-				reply: serverUpdateViewSchema
+				reply: serverUpdateRequestedSchema
 			});
 			if (!result.ok) showToast(result.message, 'error');
 			else {
-				showToast('BMuster is restarting. This page will reconnect automatically.', 'success');
-				onRestarting(version);
+				showToast('BMuster is updating. This page will reconnect automatically.', 'success');
+				onRestarting(version, result.data.requestedAtIso);
 			}
 		} finally {
 			busy = false;
@@ -91,7 +105,11 @@
 			tone={view.operation.phase === 'failed' || view.operation.phase === 'rolled-back'
 				? 'warning'
 				: 'info'}
-			title="Server update: {view.operation.phase}"><p>{view.operation.message}</p></Notice
+			title="Server update: {view.operation.phase}"
+			><p>{view.operation.message}</p>
+			{#if view.operation.atIso !== null}<p>
+					{new Date(view.operation.atIso).toLocaleString()}
+				</p>{/if}</Notice
 		>{/if}
 	<div class="actions">
 		{#if !busy}<Button type="button" variant="secondary" size="compact" onclick={() => void check()}

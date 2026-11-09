@@ -25,8 +25,8 @@ function run(command: string, args: readonly string[]): void {
 
 /** Docker's architecture names, and the archive each one is built from. */
 const ARCHIVES: Record<string, { docker: string; archive: string }> = {
-	x64: { docker: 'amd64', archive: 'bmuster-server-linux-x64.tar.gz' },
-	arm64: { docker: 'arm64', archive: 'bmuster-server-linux-arm64.tar.gz' }
+	x64: { docker: 'amd64', archive: 'bmuster-app-x86_64-unknown-linux-gnu.tar.gz' },
+	arm64: { docker: 'arm64', archive: 'bmuster-app-aarch64-unknown-linux-gnu.tar.gz' }
 };
 
 const { values: options } = parseArgs({
@@ -43,12 +43,13 @@ if (!existsSync(archive)) {
 }
 
 const context = resolve('dist', 'docker');
-const unpacked = join(context, spec.docker);
+// The bundle's files are at its top level; the Dockerfile reads <arch>/bmuster-server/.
+const unpacked = join(context, spec.docker, 'bmuster-server');
 rmSync(context, { recursive: true, force: true });
 mkdirSync(unpacked, { recursive: true });
 run('tar', ['-xzf', archive, '-C', unpacked]);
 
-const version = readFileSync(join(unpacked, 'bmuster-server', 'VERSION'), 'utf8').trim();
+const version = readFileSync(join(unpacked, 'VERSION'), 'utf8').trim();
 const nodeVersion = readFileSync('.node-version', 'utf8').trim();
 run('docker', [
 	'build',

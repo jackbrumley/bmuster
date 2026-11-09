@@ -102,12 +102,15 @@ function secretsKey(): Buffer {
 	return key;
 }
 
+/**
+ * How this server was started (SPEC-SERVER-UPDATES). An installed server's launcher passes its
+ * data folder, where the app writes the update request and reads the root updater's status.
+ */
 export type LauncherConfig =
 	| { kind: 'source' | 'docker' }
 	| {
 			kind: 'installed';
 			dataDir: string;
-			version: string;
 			target: 'x86_64-unknown-linux-gnu' | 'aarch64-unknown-linux-gnu' | 'x86_64-pc-windows-msvc';
 			nonce: string;
 	  };
@@ -115,11 +118,10 @@ export type LauncherConfig =
 function launcherConfig(): LauncherConfig {
 	const kind = optional('BMUSTER_DEPLOYMENT') ?? 'source';
 	const dataDir = optional('BMUSTER_UPDATE_DATA');
-	const version = optional('BMUSTER_LAUNCHER_VERSION');
 	const target = optional('BMUSTER_LAUNCHER_TARGET');
 	const nonce = optional('BMUSTER_READINESS_NONCE');
 	if (kind === 'source' || kind === 'docker') {
-		if ([dataDir, version, target, nonce].some((value) => value !== undefined))
+		if ([dataDir, target, nonce].some((value) => value !== undefined))
 			throw new Error('Launcher settings require BMUSTER_DEPLOYMENT=installed');
 		return { kind };
 	}
@@ -127,8 +129,6 @@ function launcherConfig(): LauncherConfig {
 		kind !== 'installed' ||
 		dataDir === undefined ||
 		!isAbsolute(dataDir) ||
-		version === undefined ||
-		!/^\d+\.\d+\.\d+$/.test(version) ||
 		nonce === undefined ||
 		!/^[a-f0-9]{64}$/.test(nonce) ||
 		(target !== 'x86_64-unknown-linux-gnu' &&
@@ -136,7 +136,7 @@ function launcherConfig(): LauncherConfig {
 			target !== 'x86_64-pc-windows-msvc')
 	)
 		throw new Error('Installed server launcher settings are incomplete or invalid');
-	return { kind, dataDir, version, target, nonce };
+	return { kind, dataDir, target, nonce };
 }
 
 export const env = {

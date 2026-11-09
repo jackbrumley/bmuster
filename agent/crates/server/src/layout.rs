@@ -1,5 +1,14 @@
 //! Where an installed server keeps its program and its data
-//! (SPEC-SERVER-INSTALL section 4), and what a release bundle holds.
+//! (SPEC-SERVER-INSTALL section 4, SPEC-SERVER-UPDATES), and what a release
+//! bundle holds.
+//!
+//! ```text
+//! /opt/bmuster-server/releases/<version>/   one unpacked bundle per release
+//! /opt/bmuster-server/current               link to the running release
+//! /opt/bmuster-server/update-switch.json    the updater's switch record (root)
+//! /var/lib/bmuster-server/update-requested  the app's request (empty, ignored)
+//! /var/lib/bmuster-server/update-status.json the updater's progress, for the app
+//! ```
 
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
@@ -14,11 +23,11 @@ pub const LOG_FILE: &str = "server.log";
 const VERSION_FILE: &str = "VERSION";
 
 #[cfg(windows)]
-const LAUNCHER: &str = "bmuster-server.exe";
+pub const LAUNCHER: &str = "bmuster-server.exe";
 #[cfg(not(windows))]
-const LAUNCHER: &str = "bmuster-server";
+pub const LAUNCHER: &str = "bmuster-server";
 
-/// A program folder (the unpacked bundle) and a data folder.
+/// A program folder (its releases and `current`) and a data folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Layout {
     pub program: PathBuf,
@@ -26,12 +35,39 @@ pub struct Layout {
 }
 
 impl Layout {
-    pub fn node(&self) -> PathBuf {
-        node_in(&self.program)
+    /// The launcher of the running release, as the service starts it.
+    pub fn launcher(&self) -> PathBuf {
+        self.program.join(crate::releases::CURRENT).join(LAUNCHER)
     }
 
-    pub fn launcher(&self) -> PathBuf {
-        self.program.join(LAUNCHER)
+    /// The updater's switch record: in the program folder, which only root
+    /// or Administrators can write, because recovery acts on it.
+    pub fn switch_record(&self) -> PathBuf {
+        self.program.join("update-switch.json")
+    }
+
+    /// Held by the one updater that may run.
+    pub fn update_lock(&self) -> PathBuf {
+        self.program.join("update.lock")
+    }
+
+    /// The app's request for an update; only its existence counts.
+    pub fn update_flag(&self) -> PathBuf {
+        self.data.join("update-requested")
+    }
+
+    /// The updater's progress, which the app shows.
+    pub fn update_status(&self) -> PathBuf {
+        self.data.join("update-status.json")
+    }
+
+    /// Written by the app once it serves requests: nonce, version, process.
+    pub fn ready_file(&self) -> PathBuf {
+        self.data.join("ready.json")
+    }
+
+    pub fn backups(&self) -> PathBuf {
+        self.data.join("backups")
     }
 
     pub fn env_file(&self) -> PathBuf {
@@ -48,7 +84,8 @@ impl Layout {
     }
 }
 
-fn node_in(program: &Path) -> PathBuf {
+/// The bundled Node in a release folder.
+pub fn node_in(program: &Path) -> PathBuf {
     if cfg!(windows) {
         program.join("node").join("node.exe")
     } else {
@@ -94,7 +131,7 @@ pub fn resolve(program: Option<PathBuf>, data: Option<PathBuf>) -> Result<Layout
     })
 }
 
-/// The folder this launcher runs from: the unpacked bundle or the program folder.
+/// The folder this launcher runs from: an unpacked bundle or a release folder.
 pub fn own_dir() -> Result<PathBuf> {
     let exe = std::env::current_exe()?;
     match exe.parent() {
@@ -135,14 +172,19 @@ pub mod tests {
 
     /// A minimal bundle under `root`, for the bundle and command tests.
     pub fn fake_bundle(root: &Path) -> PathBuf {
-        let dir = root.join("bundle");
+        fake_bundle_named(root, "bundle", "1.2.3")
+    }
+
+    /// A minimal bundle of `version` in `root/<name>`.
+    pub fn fake_bundle_named(root: &Path, name: &str, version: &str) -> PathBuf {
+        let dir = root.join(name);
         std::fs::create_dir_all(node_in(&dir).parent().unwrap()).unwrap();
         std::fs::create_dir_all(dir.join("app")).unwrap();
         std::fs::create_dir_all(dir.join("releases").join("0.1.0")).unwrap();
         std::fs::write(node_in(&dir), "node").unwrap();
         std::fs::write(dir.join("app").join("server.js"), "// server").unwrap();
         std::fs::write(dir.join(LAUNCHER), "launcher").unwrap();
-        std::fs::write(dir.join(VERSION_FILE), "1.2.3\n").unwrap();
+        std::fs::write(dir.join(VERSION_FILE), format!("{version}\n")).unwrap();
         dir
     }
 
@@ -167,6 +209,22 @@ pub mod tests {
         };
         assert_eq!(layout.env_file(), Path::new("/d").join("server.env"));
         assert_eq!(layout.database(), Path::new("/d").join("bmuster.db"));
+        assert_eq!(
+            layout.update_flag(),
+            Path::new("/d").join("update-requested")
+        );
+        assert_eq!(
+            layout.update_status(),
+            Path::new("/d").join("update-status.json")
+        );
+        assert_eq!(
+            layout.switch_record(),
+            Path::new("/p").join("update-switch.json")
+        );
+        assert_eq!(
+            layout.launcher(),
+            Path::new("/p").join("current").join(LAUNCHER)
+        );
     }
 
     /// An empty folder for one test, under the system temp folder.

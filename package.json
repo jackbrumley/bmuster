@@ -16,6 +16,7 @@
 		"agent:release-local": "node scripts/agent-release-local.ts",
 		"release:server-local": "node scripts/release-server.ts",
 		"server:sign-update": "node scripts/server-update-sign.ts",
+		"server:update-test": "node scripts/server-update-scratch-test.ts",
 		"docker:local": "node scripts/docker-local.ts",
 		"agent:release-key": "node scripts/agent-release-key.ts",
 		"agent:sign": "node scripts/agent-sign.ts",

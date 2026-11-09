@@ -119,12 +119,17 @@ const updateEventSchema = z.discriminatedUnion('kind', [
 
 /**
  * Whether the agent can update itself. Agents from before SPEC-AGENT-UPDATES send nothing; they
- * have no launcher either.
+ * have no launcher either. `launcherVersion` is the rescue copy's version (SPEC-SERVER-UPDATES);
+ * agents from before it, or that have not recorded it yet, send none.
  */
 const updateReportSchema = z
 	.discriminatedUnion('kind', [
 		z.object({ kind: z.literal('no-launcher') }),
-		z.object({ kind: z.literal('launcher'), last: updateEventSchema })
+		z.object({
+			kind: z.literal('launcher'),
+			last: updateEventSchema,
+			launcherVersion: z.string().max(64).nullable().default(null)
+		})
 	])
 	.default({ kind: 'no-launcher' });
 

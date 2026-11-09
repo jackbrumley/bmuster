@@ -1,12 +1,12 @@
-//! Putting a bundle in the program folder: copied beside it, then swapped
-//! in, so a failed copy never leaves half a server behind.
+//! Copying bundles: a folder tree copied whole, and a folder swapped in for
+//! another, so a failed copy never leaves half a server behind.
 
 use anyhow::{bail, Context as _, Result};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn sibling(dir: &Path, suffix: &str) -> Result<PathBuf> {
+pub fn sibling(dir: &Path, suffix: &str) -> Result<PathBuf> {
     let Some(name) = dir.file_name() else {
         bail!("{} has no folder name", dir.display());
     };
@@ -17,7 +17,7 @@ fn sibling(dir: &Path, suffix: &str) -> Result<PathBuf> {
 
 /// Copies a folder tree; files keep their permissions, symbolic links stay
 /// links (Unix).
-fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+pub fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     fs::create_dir_all(to).with_context(|| format!("could not create {}", to.display()))?;
     for entry in fs::read_dir(from).with_context(|| format!("could not read {}", from.display()))? {
         let entry = entry?;
@@ -53,35 +53,25 @@ fn copy_link(source: &Path, _target: &Path) -> Result<()> {
     bail!("{} is a link; bundles hold none", source.display())
 }
 
-fn same_folder(a: &Path, b: &Path) -> bool {
+pub fn same_folder(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
         _ => false,
     }
 }
 
-/// Makes `program` an exact copy of `source`: copied to `<program>.new`,
-/// the old folder moved to `<program>.old`, the new one moved in, the old
-/// one deleted. Nothing happens when `source` already is `program`.
-pub fn replace_dir(source: &Path, program: &Path) -> Result<()> {
-    if same_folder(source, program) {
-        return Ok(());
+/// Puts the finished folder `staged` where `target` is: the old one moved
+/// to `<target>.old`, the new one moved in, the old one deleted.
+pub fn swap_in(staged: &Path, target: &Path) -> Result<()> {
+    let old = sibling(target, ".old")?;
+    if old.exists() {
+        fs::remove_dir_all(&old).with_context(|| format!("could not remove {}", old.display()))?;
     }
-    let staged = sibling(program, ".new")?;
-    let old = sibling(program, ".old")?;
-    for leftover in [&staged, &old] {
-        if leftover.exists() {
-            fs::remove_dir_all(leftover)
-                .with_context(|| format!("could not remove {}", leftover.display()))?;
-        }
+    if target.exists() {
+        fs::rename(target, &old)
+            .with_context(|| format!("could not move {} to {}", target.display(), old.display()))?;
     }
-    copy_tree(source, &staged)?;
-    if program.exists() {
-        fs::rename(program, &old).with_context(|| {
-            format!("could not move {} to {}", program.display(), old.display())
-        })?;
-    }
-    fs::rename(&staged, program)
+    fs::rename(staged, target)
         .with_context(|| format!("could not move {} into place", staged.display()))?;
     if old.exists() {
         fs::remove_dir_all(&old).with_context(|| format!("could not remove {}", old.display()))?;
@@ -95,25 +85,24 @@ mod tests {
     use crate::layout::tests::{fake_bundle, scratch};
 
     #[test]
-    fn a_new_bundle_replaces_the_old_program_folder_completely() {
-        let root = scratch("bundle-replace");
+    fn a_staged_folder_replaces_the_old_one_completely() {
+        let root = scratch("bundle-swap");
         let source = fake_bundle(&root);
-        let program = root.join("opt").join("bmuster-server");
-        fs::create_dir_all(&program).unwrap();
-        fs::write(program.join("left-over.txt"), "old").unwrap();
+        let target = root.join("opt").join("bmuster-server");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("left-over.txt"), "old").unwrap();
+        let staged = sibling(&target, ".new").unwrap();
+        copy_tree(&source, &staged).unwrap();
 
-        replace_dir(&source, &program).unwrap();
-        assert!(!program.join("left-over.txt").exists());
+        swap_in(&staged, &target).unwrap();
+        assert!(!target.join("left-over.txt").exists());
         assert_eq!(
-            fs::read_to_string(program.join("VERSION")).unwrap(),
+            fs::read_to_string(target.join("VERSION")).unwrap(),
             "1.2.3\n"
         );
         assert!(!root.join("opt").join("bmuster-server.new").exists());
         assert!(!root.join("opt").join("bmuster-server.old").exists());
-
-        // Running install from the program folder itself changes nothing.
-        replace_dir(&program, &program).unwrap();
-        crate::layout::check_bundle(&program).unwrap();
+        assert!(same_folder(&target, &target));
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -128,7 +117,7 @@ mod tests {
         std::os::unix::fs::symlink("server.js", source.join("app").join("link.js")).unwrap();
         let program = root.join("program");
 
-        replace_dir(&source, &program).unwrap();
+        copy_tree(&source, &program).unwrap();
         let mode = fs::metadata(program.join("node").join("bin").join("node"))
             .unwrap()
             .permissions()

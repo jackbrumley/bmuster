@@ -1,11 +1,17 @@
 /**
  * npm run release:server-local [-- --binaries <dir>]
  *
- * Builds the server release archive for this computer (SPEC-SERVER-INSTALL
+ * Builds the server release bundle for this computer (SPEC-SERVER-INSTALL
  * I1, section 5) in dist/release/: the SvelteKit build, server.ts bundled,
  * production node_modules, the migrations, the Node runtime pinned in
  * .node-version (checked against nodejs.org's SHASUMS256.txt), the agent
- * builds and the bmuster-server launcher.
+ * builds and the bmuster-server launcher and updater.
+ *
+ * The bundle is bmuster-app-<target>.tar.gz, its files at the top level: the
+ * one archive install.sh, the root updater and the container image use, once
+ * server:sign-update has signed its manifest (SPEC-SERVER-UPDATES). Windows
+ * also gets bmuster-server-windows-x64.zip (a bmuster-server folder) for
+ * install.ps1.
  *
  * Without --binaries the agent and launcher are built here with cargo, for
  * this computer only. The release workflow passes --binaries <dir>, a folder
@@ -53,12 +59,12 @@ function run(
 	}
 }
 
-/** Release platform names, the Rust target of each, and Node's own names. */
+/** Release platform names, the Rust target of each, Node's own names, and whether install.ps1's zip is made. */
 const PLATFORMS = {
-	'linux-x64': { target: 'x86_64-unknown-linux-gnu', node: 'linux-x64', archive: 'tar.gz' },
-	'linux-arm64': { target: 'aarch64-unknown-linux-gnu', node: 'linux-arm64', archive: 'tar.gz' },
-	'windows-x64': { target: 'x86_64-pc-windows-msvc', node: 'win-x64', archive: 'zip' }
-} as const satisfies Record<string, { target: AgentTarget; node: string; archive: string }>;
+	'linux-x64': { target: 'x86_64-unknown-linux-gnu', node: 'linux-x64', zip: false },
+	'linux-arm64': { target: 'aarch64-unknown-linux-gnu', node: 'linux-arm64', zip: false },
+	'windows-x64': { target: 'x86_64-pc-windows-msvc', node: 'win-x64', zip: true }
+} as const satisfies Record<string, { target: AgentTarget; node: string; zip: boolean }>;
 type Platform = keyof typeof PLATFORMS;
 
 function platformOf(target: AgentTarget): Platform {
@@ -292,20 +298,30 @@ copyFileSync('LICENSE', join(BUNDLE, 'LICENSE'));
 writeFileSync(join(BUNDLE, 'VERSION'), `${serverVersion}\n`);
 
 mkdirSync(OUT, { recursive: true });
-const archive = join(OUT, `bmuster-server-${platform}.${spec.archive}`);
+const archive = join(OUT, `bmuster-server-${platform}.zip`);
 rmSync(archive, { force: true });
-if (spec.archive === 'zip') {
+if (spec.zip) {
 	run(TAR, ['-a', '-c', '-f', archive, '-C', STAGE, 'bmuster-server']);
-} else {
-	run(TAR, ['-czf', archive, '-C', STAGE, 'bmuster-server']);
 }
 const appArchive = join(OUT, `bmuster-app-${target}.tar.gz`);
 rmSync(appArchive, { force: true });
-run(TAR, ['-czf', appArchive, '-C', BUNDLE, 'app', 'releases', 'VERSION']);
+// The updater's archive rules allow exactly these top-level names.
+run(TAR, [
+	'-czf',
+	appArchive,
+	'-C',
+	BUNDLE,
+	binaryName('bmuster-server', target),
+	'node',
+	'app',
+	'releases',
+	'VERSION',
+	'LICENSE'
+]);
 console.log(
 	`release:server: BMuster Server ${serverVersion} for ${platform} (Node ${nodeVersion})`
 );
-console.log(`  ${archive}`);
-console.log(`  SHA-256 ${sha256(archive)}`);
-console.log(`  ${appArchive}`);
-console.log(`  SHA-256 ${sha256(appArchive)}`);
+for (const path of spec.zip ? [archive, appArchive] : [appArchive]) {
+	console.log(`  ${path}`);
+	console.log(`  SHA-256 ${sha256(path)}`);
+}

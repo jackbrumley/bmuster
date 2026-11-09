@@ -4,8 +4,8 @@
 # what the archives hold. The build context is a folder with one unpacked
 # Linux archive per architecture:
 #
-#   <context>/amd64/bmuster-server/   from bmuster-server-linux-x64.tar.gz
-#   <context>/arm64/bmuster-server/   from bmuster-server-linux-arm64.tar.gz
+#   <context>/amd64/bmuster-server/   from bmuster-app-x86_64-unknown-linux-gnu.tar.gz
+#   <context>/arm64/bmuster-server/   from bmuster-app-aarch64-unknown-linux-gnu.tar.gz
 #
 # The release workflow fills it; for a local image, `npm run docker:local`
 # does it from `npm run release:server-local`. Only the archive's app/ and

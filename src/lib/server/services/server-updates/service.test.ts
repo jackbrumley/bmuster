@@ -19,12 +19,12 @@ const release = {
 		bytes: 100,
 		sha256: 'a'.repeat(64),
 		minimumLauncher: '0.3.0',
-		nodeMajor: 26 as const,
+		nodeMajor: 26,
 		rollbackFrom: ['0.3.0']
 	}
 };
 
-describe('server update service (SU1, SU3)', () => {
+describe('server update service (SPEC-SERVER-UPDATES SU1)', () => {
 	it('checks on demand, coalesces requests and records the last successful check', async () => {
 		const database = testDatabase();
 		const admin = await addTestUser(database, {
@@ -40,7 +40,6 @@ describe('server update service (SU1, SU3)', () => {
 				{
 					kind: 'installed',
 					dataDir: folder,
-					version: '0.3.0',
 					target: release.manifest.target,
 					nonce: 'a'.repeat(64)
 				},
@@ -86,7 +85,6 @@ describe('server update service (SU1, SU3)', () => {
 				{
 					kind: 'installed',
 					dataDir: folder,
-					version: '0.3.0',
 					target: release.manifest.target,
 					nonce: 'b'.repeat(64)
 				},
@@ -109,7 +107,6 @@ describe('server update service (SU1, SU3)', () => {
 				{
 					kind: 'installed',
 					dataDir: folder,
-					version: '0.3.0',
 					target: release.manifest.target,
 					nonce: 'c'.repeat(64)
 				},

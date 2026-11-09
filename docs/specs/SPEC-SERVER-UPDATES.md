@@ -1,6 +1,6 @@
 # SPEC-SERVER-UPDATES: Whole-install updates by a root updater, for server and agent
 
-**Status:** `APPROVED` 2026-11-09 (Jack: "go", then "build everything") · second version. Replaces the v0.3.0–v0.3.3 application-slot design (see "Version 1" at the end).
+**Status:** `IMPLEMENTED (pending release)` 2026-11-09 · approved 2026-11-09 (Jack: "go", then "build everything") · second version. Replaces the v0.3.0–v0.3.3 application-slot design (see "Version 1" at the end). See "As built" for what was tested natively and what still needs a real root, systemd or Windows run.
 
 ## Problem
 
@@ -69,6 +69,47 @@ This is security work: the updater runs as root and installs code that controls 
 | SU10 | Agent: the unit runs the current version, a failing start rolls back through the rescue copy, and the rescue copy refreshes after 24 h.         | Rust `launcher::tests::rescue_rolls_back`, `rescue_refresh`     |
 | SU11 | `install.sh` verifies the manifest signature before installing.                                                                                 | `install-scripts.test.ts`                                       |
 | SU12 | Release workflow: signed bundles only; a scratch install updates A→B and rolls back a broken B.                                                 | release dry run, scratch update test                            |
+
+## As built (pending release, 2026-11-09)
+
+### Criteria and their tests
+
+| #    | Test as built                                                                                                                                   | How it was run                                 |
+| :--- | :---------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------- |
+| SU1  | `server-release.test.ts`, `service.test.ts` (unchanged behaviour)                                                                               | Natively                                       |
+| SU2  | `server-update-guards.test.ts`: empty flag only, audit, second request refused, Docker/source refused, 401/403, cross-origin refused            | Natively                                       |
+| SU3  | Rust `updater::tests::flag_is_only_a_trigger`, `updater::files::tests::links_in_the_data_folder_are_never_followed`                             | Natively                                       |
+| SU4  | Rust `updates::manifest::tests::verification`, `updates::archive::tests::*`, `updater::tests::refused_releases_change_nothing`                  | Natively                                       |
+| SU5  | Rust `updater::tests::switch_keeps_previous_and_prunes`, `releases::tests::*`                                                                   | Natively                                       |
+| SU6  | Rust `updater::tests::health_commit_and_rollback_rules`                                                                                         | Natively                                       |
+| SU7  | Rust `updater::tests::recover_from_every_step` (every step, both link states, at boot and not)                                                  | Natively                                       |
+| SU8  | Rust `install::tests::layout_and_units`, `service_linux::tests::*`; `service_windows::tests::*` (Windows only)                                  | Linux natively; Windows compiled only          |
+| SU9  | `server-restart-monitor.test.ts`, `updates-page.svelte.test.ts` (the two SU9 cases)                                                             | Natively                                       |
+| SU10 | Rust `rescue::tests::rescue_rolls_back`, `rescue::tests::rescue_refresh`, `service_linux::tests::a_failing_start_runs_the_rescue_copy`          | Logic natively; systemd and Windows not run    |
+| SU11 | `tests/unit/install-scripts.test.ts` (the real script, real OpenSSL; signed, other key, project key, tampered, no manifest)                     | Natively                                       |
+| SU12 | `npm run server:update-test` (`scripts/server-update-scratch-test.ts`), run by the release workflow's `update-test-linux` job before publishing | Scratch test natively; release dry run not run |
+
+The SU10 tests live in `rescue.rs` (`rescue::tests`), not `launcher::tests`.
+
+### How it differs from the design
+
+- **The switch record and the updater's lock live in the program folder** (`/opt/bmuster-server/update-switch.json`, `update.lock`), not the data folder: recovery acts on the record, so only root may be able to write it. `update-requested`, `update-status.json`, `ready.json` and the database copy are in the data folder as designed; the updater never follows a link there (`O_NOFOLLOW`, or `FILE_FLAG_OPEN_REPARSE_POINT` on Windows), replaces files by rename, and refuses a linked data folder or `backups/` folder.
+- **Boot recovery decides without a health check**, because the server unit waits for it: interrupted while switching (the new release never ran) → back to the old release; while starting → back if the new release declares the old one compatible, else the new one stays; while rolling back → finished. The path-triggered (Windows: scheduled) updater recovers with the same rules, stopping and starting the service around them. The recovery unit runs only when the record exists (`ConditionPathExists`).
+- **Manifest field names are unchanged** (`rollbackFrom` is the design's `rollbackCompatibleFrom`; `minimumLauncher` now means the oldest installed version whose updater may install the release by itself), because v0.3.x servers parse the manifest strictly. The release keeps the v0.3.x asset names, `bmuster-app-<target>.tar.gz` and `.json`, but the archive is now the whole install. So a v0.3.x server sees the new release and shows its own "This release needs a newer launcher. Rerun the administrator installer." `server-update-sign.ts` now requires an explicit entry in `docs/server-update-compatibility.json` and refuses a `minimumLauncher` of 0.3.3 or older for any later release. **Before the first tag, add that release's entry with `minimumLauncher` set to its own version.**
+- **One Linux archive.** The signed bundle is what install.sh, the updater and the container image use; `bmuster-server-linux-*.tar.gz` and the SHA256SUMS check in install.sh are gone. Windows keeps `bmuster-server-windows-x64.zip` for install.ps1 (still SHA256SUMS-checked; signing it is outside this spec) plus its tar.gz bundle for the updater.
+- **install.sh needs OpenSSL 3** (`pkeyutl -rawin` for Ed25519) and fails closed without it. `--archive` now needs the signed manifest beside the archive; a local build is installed by running its unpacked `bmuster-server install`.
+- **Readiness:** the app writes `ready.json` as `{nonce, version}`; the launcher takes the nonce from the switch record when the record names its version. `BMUSTER_LAUNCHER_VERSION` is gone (the launcher is part of the release).
+- **The launcher restarts a crashed app itself**, waiting 2 s and doubling to a minute.
+- **No session pause before an update.** The relay's `prepareForServerUpdate`, `resumeAfterServerUpdate` and `accepting` went with the preparation step; sessions end when the updater stops the service.
+- **Windows agent:** the service still runs the Program Files copy, which is also the rescue copy, because Windows cannot rename the folder of a running program (the launcher switches `versions/current`). Recovery actions: restart, restart, then `bmuster-agent.exe rescue`. Only crashes count, so a removed machine's clean stop is not a failure. On Linux, `OnFailure` fires after three failed starts in five minutes, and `SuccessExitStatus=3` keeps a removed machine from triggering the rescue.
+- **Rescue refresh:** after 24 hours of check-ins in one run, the worker runs `refresh-rescue` (Linux: as a transient unit outside the sandbox, through `systemd-run`; Windows: in the worker). It copies itself over the rescue copy, records `versions/rescue-copy.json`, and rewrites the agent's units. That also moves agents installed before this change onto the new unit from their next start, with no reinstall.
+- **`launcherVersion`** is reported in every check-in and parsed by the server, but not yet stored or shown (that needs a column).
+- **Scratch-test seams:** with `--features scratch-test` (never in a release build) the updater reads releases from `BMUSTER_UPDATE_TEST_SOURCE`, drives the service with `BMUSTER_UPDATE_TEST_SERVICE`, and takes a shorter health window from `BMUSTER_UPDATE_TEST_HEALTH_SECONDS`. As for the agent, `BMUSTER_EXTRA_RELEASE_KEY` at build time adds one trusted key. Every check is the release build's own.
+
+### Tested natively, and what still needs a real machine
+
+- **Run natively here** (Linux x64, no root): the Rust unit tests, plus the scratch end-to-end test. That test builds the real launcher and updater, uses the real Node with stand-in apps, and installs with `install --no-service`. It covers the `releases/` and `current` layout, a request with no flag, A→B kept healthy with A as previous and a database copy, a release signed by another key refused, a broken release that declares compatibility rolled back, a broken one that does not stopped with instructions naming the copy, and `update --recover` finishing an interrupted rollback. Also run natively: install.sh with real OpenSSL, and the console tests.
+- **Only unit-tested or compiled:** the systemd units for real (the path unit starting the updater, boot ordering, `install --refresh-units` and `systemctl` as root), root ownership and modes on `/opt` and `/var/lib`, the GitHub source over HTTPS, a real `npm run release:server-local` bundle, the agent's rescue under systemd (`OnFailure`, `StartLimitBurst`, `systemd-run` refresh), and all Windows behaviour: the server service through the `current` link, the scheduled task, `MoveFileEx`, the agent's recovery actions and rescue copy. Windows code was type- and clippy-checked only, with `x86_64-pc-windows-gnu`. The release workflow's dry run was not run.
 
 ## Version 1 (v0.3.0–v0.3.3, replaced)
 

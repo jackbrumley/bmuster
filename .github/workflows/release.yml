@@ -2,11 +2,16 @@
 # (docs/specs/SPEC-SERVER-INSTALL.md, I13).
 #
 #   Tag push (vX.Y.Z, equal to package.json's version): builds the agents and
-#     launchers on each platform, then the three archives on native runners,
-#     writes SHA256SUMS, install-tests the Linux and Windows archives with the
-#     installers from this commit, and only then creates the GitHub release
-#     with all four files at once, so the installers' "latest" never sees a
-#     half-filled release.
+#     launchers on each platform, then each target's whole-install bundle
+#     (bmuster-app-<target>.tar.gz) on native runners, signs its manifest
+#     (bmuster-app-<target>.json) with the offline release key, plus the
+#     Windows zip for install.ps1; writes SHA256SUMS; install-tests the Linux
+#     and Windows archives with the installers from this commit (install.sh
+#     checks the signature); runs the scratch update test (A to B, a broken B
+#     rolled back); and only then creates the GitHub release with every file
+#     at once, so the installers' and updaters' "latest" never sees a
+#     half-filled release. Nothing is published unsigned
+#     (SPEC-SERVER-UPDATES).
 #   Manual run (Actions tab, or `gh workflow run release.yml --ref <branch>`):
 #     a dry run of everything but the release; the files stay as workflow
 #     artifacts.
@@ -185,7 +190,9 @@ jobs:
       - name: Build the archive
         run: node scripts/release-server.ts --binaries dist/binaries
 
-      - name: Sign the server update
+      # The manifest install.sh, the root updater and v0.3.x servers check.
+      # Without the offline key there is no release.
+      - name: Sign the server release
         env:
           BMUSTER_RELEASE_SIGNING_KEY: ${{ secrets.BMUSTER_RELEASE_SIGNING_KEY }}
         run: node scripts/server-update-sign.ts --target "${{ matrix.target }}" --archive "dist/release/bmuster-app-${{ matrix.target }}.tar.gz"
@@ -210,7 +217,10 @@ jobs:
       - name: Write SHA256SUMS
         working-directory: release
         run: |
-          sha256sum bmuster-server-* bmuster-app-*.tar.gz > SHA256SUMS
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+            test -s "bmuster-app-$target.tar.gz" && test -s "bmuster-app-$target.json"
+          done
+          sha256sum bmuster-server-* bmuster-app-* > SHA256SUMS
           cat SHA256SUMS
 
       - uses: actions/upload-artifact@v7
@@ -233,30 +243,66 @@ jobs:
           name: release
           path: release
 
-      - name: Install
-        run: sudo sh docs/install.sh --archive release/bmuster-server-linux-x64.tar.gz
+      - name: Install (install.sh checks the manifest signature)
+        run: sudo sh docs/install.sh --archive release/bmuster-app-x86_64-unknown-linux-gnu.tar.gz
 
-      - name: Ready, with a setup code in the log
+      - name: Ready, with a setup code in the log and the updater units in place
         run: |
           curl -fsk https://127.0.0.1:8443/readyz
           curl -fsk https://127.0.0.1:8443/healthz
           sudo journalctl -u bmuster-server -o cat --no-pager | grep -q 'first-run setup code:'
           test "$(stat -c %U /var/lib/bmuster-server)" = "bmuster-server"
+          version="$(cat /opt/bmuster-server/current/VERSION)"
+          test "$(readlink /opt/bmuster-server/current)" = "releases/$version"
+          /opt/bmuster-server/current/bmuster-server --version | grep -q "$version"
+          systemctl is-enabled bmuster-server-update.path
+          systemctl is-active bmuster-server-update.path
+          systemctl is-enabled bmuster-server-recover.service
+          test -f /etc/systemd/system/bmuster-server-update.service
+
+      - name: A tampered archive is refused
+        run: |
+          mkdir tampered
+          cp release/bmuster-app-x86_64-unknown-linux-gnu.* tampered/
+          printf 'x' >> tampered/bmuster-app-x86_64-unknown-linux-gnu.tar.gz
+          ! sudo sh docs/install.sh --archive tampered/bmuster-app-x86_64-unknown-linux-gnu.tar.gz
 
       - name: Upgrade keeps the data
         run: |
           key="$(sudo grep '^SECRETS_KEY=' /var/lib/bmuster-server/server.env)"
-          sudo sh docs/install.sh --archive release/bmuster-server-linux-x64.tar.gz
+          sudo sh docs/install.sh --archive release/bmuster-app-x86_64-unknown-linux-gnu.tar.gz
           test "$(sudo grep '^SECRETS_KEY=' /var/lib/bmuster-server/server.env)" = "$key"
           sudo test -f /var/lib/bmuster-server/bmuster.db
 
       - name: Uninstall
         run: |
-          sudo /opt/bmuster-server/bmuster-server uninstall --purge
+          sudo /opt/bmuster-server/current/bmuster-server uninstall --purge
           test ! -e /opt/bmuster-server
           test ! -e /var/lib/bmuster-server
           test ! -e /etc/systemd/system/bmuster-server.service
+          test ! -e /etc/systemd/system/bmuster-server-update.path
+          test ! -e /etc/systemd/system/bmuster-server-update.service
+          test ! -e /etc/systemd/system/bmuster-server-recover.service
           ! id bmuster-server
+
+  # The root updater end to end without root: two installs in scratch
+  # folders, a release folder signed with a throwaway key, A to B, then a
+  # broken B rolled back and an incompatible broken B stopped
+  # (scripts/server-update-scratch-test.ts, SPEC-SERVER-UPDATES SU12).
+  update-test-linux:
+    name: Scratch update test (Linux)
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: Update A to B, roll back a broken B
+        run: node scripts/server-update-scratch-test.ts
 
   install-test-windows:
     name: Install test (Windows)
@@ -292,7 +338,7 @@ jobs:
 
       - name: Uninstall
         run: |
-          & 'C:\Program Files\BMuster Server\bmuster-server.exe' uninstall --purge
+          & 'C:\Program Files\BMuster Server\current\bmuster-server.exe' uninstall --purge
           if ($LASTEXITCODE -ne 0) { throw 'uninstall failed' }
           Start-Sleep -Seconds 8
           if (Get-Service BMusterServer -ErrorAction SilentlyContinue) { throw 'service still there' }
@@ -301,7 +347,7 @@ jobs:
 
   publish:
     name: Publish the release
-    needs: [install-test-linux, install-test-windows]
+    needs: [install-test-linux, install-test-windows, update-test-linux]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
@@ -346,12 +392,12 @@ jobs:
           name: release
           path: release
 
-      - name: Unpack the Linux archives
+      - name: Unpack the Linux bundles
         run: |
           (cd release && sha256sum --check --ignore-missing SHA256SUMS)
-          mkdir -p image/amd64 image/arm64
-          tar -xzf release/bmuster-server-linux-x64.tar.gz -C image/amd64
-          tar -xzf release/bmuster-server-linux-arm64.tar.gz -C image/arm64
+          mkdir -p image/amd64/bmuster-server image/arm64/bmuster-server
+          tar -xzf release/bmuster-app-x86_64-unknown-linux-gnu.tar.gz -C image/amd64/bmuster-server
+          tar -xzf release/bmuster-app-aarch64-unknown-linux-gnu.tar.gz -C image/arm64/bmuster-server
           echo "BMUSTER_VERSION=$(cat image/amd64/bmuster-server/VERSION)" >> "$GITHUB_ENV"
           echo "NODE_VERSION=$(cat .node-version)" >> "$GITHUB_ENV"
 

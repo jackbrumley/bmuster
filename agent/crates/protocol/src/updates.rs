@@ -206,13 +206,20 @@ pub enum UpdateEvent {
 
 /// In a check-in: whether this agent can update itself, and its last update.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 pub enum UpdateReport {
     /// Started without the launcher (by hand, or installed before it existed):
     /// it cannot update itself. A one-time reinstall fixes that.
     NoLauncher,
     Launcher {
         last: UpdateEvent,
+        /// The rescue copy's version (SPEC-SERVER-UPDATES), the binary that
+        /// rolls a failing version back; `None` until it is recorded.
+        launcher_version: Option<String>,
     },
 }
 
@@ -292,12 +299,13 @@ mod tests {
                     version: "0.2.0".into(),
                     reason: "no check-in".into(),
                     at_ms: 5
-                }
+                },
+                launcher_version: Some("0.1.0".into()),
             })
             .unwrap(),
             json!({ "kind": "launcher", "last": {
                 "kind": "rolled-back", "version": "0.2.0", "reason": "no check-in", "atMs": 5
-            } })
+            }, "launcherVersion": "0.1.0" })
         );
         assert_eq!(
             serde_json::to_value(UpdateReport::NoLauncher).unwrap(),

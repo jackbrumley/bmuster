@@ -24,7 +24,11 @@ import type { ReleaseLookup } from './releases.ts';
 const RELEASE = { version: '0.2.0', size: 3, sha256: 'a'.repeat(64), signature: 'c2ln' };
 const RELEASES: ReleaseLookup = (target) =>
 	target === 'x86_64-unknown-linux-gnu' ? RELEASE : undefined;
-const LAUNCHER: UpdateReport = { kind: 'launcher', last: { kind: 'none' } };
+const LAUNCHER: UpdateReport = {
+	kind: 'launcher',
+	last: { kind: 'none' },
+	launcherVersion: '0.1.0'
+};
 
 /** A machine with an agent 0.1.0 under its launcher, on a server offering 0.2.0. */
 async function setUp(earlyGroup: boolean) {
@@ -87,7 +91,13 @@ describe('agent updates on the server (SPEC-AGENT-UPDATES)', () => {
 		checkIn(database, machineId, LAUNCHER, NOW);
 		const rolledBack: UpdateReport = {
 			kind: 'launcher',
-			last: { kind: 'rolled-back', version: '0.2.0', reason: 'no check-in in 120 s', atMs: NOW + 5 }
+			last: {
+				kind: 'rolled-back',
+				version: '0.2.0',
+				reason: 'no check-in in 120 s',
+				atMs: NOW + 5
+			},
+			launcherVersion: '0.1.0'
 		};
 		expect(checkIn(database, machineId, rolledBack, NOW + 10)).toEqual({ kind: 'none' });
 		expect(checkIn(database, machineId, rolledBack, NOW + 20)).toEqual({ kind: 'none' });
@@ -109,7 +119,8 @@ describe('agent updates on the server (SPEC-AGENT-UPDATES)', () => {
 		checkIn(database, machineId, LAUNCHER, NOW);
 		const updated: UpdateReport = {
 			kind: 'launcher',
-			last: { kind: 'updated', from: '0.1.0', to: '0.2.0', atMs: NOW + 5 }
+			last: { kind: 'updated', from: '0.1.0', to: '0.2.0', atMs: NOW + 5 },
+			launcherVersion: '0.1.0'
 		};
 		expect(checkIn(database, machineId, updated, NOW + 10, '0.2.0')).toEqual({ kind: 'none' });
 		expect(state(database, machineId, NOW + 10, '0.2.0')).toEqual({ kind: 'up-to-date' });
