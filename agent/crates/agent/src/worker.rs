@@ -8,6 +8,7 @@ use crate::inventory::{self, Probe};
 use crate::local_page::journal::Journal;
 use crate::local_page::people::People;
 use crate::local_page::{self, Reporter};
+use crate::log_spool::{Shipper, Spool, SPOOL_DIR};
 use crate::sessions::Sessions;
 use crate::socket;
 use crate::status::{RunMode, StatusBoard};
@@ -165,6 +166,7 @@ pub fn run(
         },
     );
     let stop = Arc::new(AtomicBool::new(false));
+    let (shipper, flusher) = start_shipping(&options.data_dir, &stop);
     let server_key = decode_public_key(&identity.server_public_key)
         .context("identity.json holds an unreadable server key")?;
     let sessions = Sessions::new(
@@ -178,9 +180,19 @@ pub fn run(
         let session = Arc::clone(&session);
         let stop = Arc::clone(&stop);
         let board = Arc::clone(&board);
+        let shipper = shipper.clone();
         std::thread::Builder::new()
             .name("live-socket".into())
-            .spawn(move || socket::run(&session, &sessions, &sender, &stop, &board))
+            .spawn(move || {
+                socket::run(
+                    &session,
+                    &sessions,
+                    &sender,
+                    &stop,
+                    &board,
+                    shipper.as_deref(),
+                )
+            })
             .context("could not start the live socket thread")?
     };
 
@@ -202,7 +214,36 @@ pub fn run(
     if socket_thread.join().is_err() {
         log::error!("the live socket thread failed");
     }
+    if flusher.is_some_and(|flusher| flusher.join().is_err()) {
+        log::error!("the log spool thread failed");
+    }
     outcome
+}
+
+/// Turns on log shipping (SPEC-AGENT-LOGS 1): the queue fills, a thread
+/// moves it into the spool under `<data>/logs`, and the live socket sends it.
+/// A spool that cannot be opened leaves the agent running without shipping,
+/// and says so in its own log.
+fn start_shipping(
+    data_dir: &Path,
+    stop: &Arc<AtomicBool>,
+) -> (Option<Arc<Shipper>>, Option<std::thread::JoinHandle<()>>) {
+    let spool = match Spool::open(&data_dir.join(SPOOL_DIR), crate::logging::instance()) {
+        Ok(spool) => spool,
+        Err(error) => {
+            log::error!("Could not open the log spool; logs are not sent to the server: {error}");
+            return (None, None);
+        }
+    };
+    crate::logging::SHIP.enable();
+    let shipper = Arc::new(Shipper::new(spool));
+    match shipper.start_flusher(&crate::logging::SHIP, Arc::clone(stop)) {
+        Ok(flusher) => (Some(shipper), Some(flusher)),
+        Err(error) => {
+            log::error!("Could not start the log spool thread; logs are not sent: {error}");
+            (None, None)
+        }
+    }
 }
 
 /// The local page's list of people and its waiting events, which the

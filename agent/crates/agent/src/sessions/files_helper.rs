@@ -204,9 +204,10 @@ pub fn relay(socket: &mut Socket, unit: &TransientUnit, stop: &AtomicBool) -> Re
         .command(Io::Pipe { runtime_max: None }, &launch)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .spawn()
         .context("could not start systemd-run for the files helper")?;
+    crate::diagnostics::ship_helper_stderr("files-helper", child.stderr.take());
     let (Some(input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
         unit.stop();
         let _ = child.kill();

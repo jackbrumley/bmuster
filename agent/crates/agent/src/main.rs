@@ -3,6 +3,7 @@
 
 mod client;
 mod diagnostics;
+mod display_report;
 mod exec;
 mod files;
 mod gpus;
@@ -10,6 +11,7 @@ mod identity;
 mod inventory;
 mod launcher;
 mod local_page;
+mod log_spool;
 mod logging;
 mod paths;
 mod relocate;

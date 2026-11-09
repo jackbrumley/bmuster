@@ -1,9 +1,11 @@
 //! The live socket: a signed WebSocket the server uses to ask for a check-in
 //! now, to watch the machine's load while a console page is open, and to
-//! start sessions (each on a socket of its own, see `sessions`).
+//! start sessions (each on a socket of its own, see `sessions`). The agent
+//! sends its spooled log records on it (SPEC-AGENT-LOGS 1).
 
 use crate::client::{parse_reply, Channel, Reply, Session, USER_AGENT};
 use crate::inventory::Probe;
+use crate::log_spool::Shipper;
 use crate::sessions::Sessions;
 use crate::status::StatusBoard;
 use crate::worker::{Backoff, Signal};
@@ -12,7 +14,7 @@ use bmuster_protocol::{AgentMessage, RefusalReason, ServerMessage, SOCKET_PATH};
 use std::io::ErrorKind;
 use std::net::{TcpStream, ToSocketAddrs as _};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 use tungstenite::client::IntoClientRequest as _;
 use tungstenite::handshake::HandshakeError;
@@ -54,6 +56,7 @@ pub fn run(
     signals: &Sender<Signal>,
     stop: &AtomicBool,
     board: &StatusBoard,
+    shipper: Option<&Shipper>,
 ) {
     let mut backoff = Backoff::new(Duration::from_secs(1), Duration::from_secs(60));
     let mut probe = Probe::new();
@@ -63,7 +66,20 @@ pub fn run(
             Ok(Connect::Open(socket)) => {
                 log::info!("Live socket connected.");
                 board.socket(true);
-                let ended = serve(*socket, session, sessions, signals, stop, &mut probe);
+                if let Some(shipper) = shipper {
+                    shipper.reconnected();
+                }
+                let ended = serve(
+                    *socket,
+                    &Serving {
+                        session,
+                        sessions,
+                        signals,
+                        stop,
+                        shipper,
+                    },
+                    &mut probe,
+                );
                 board.socket(false);
                 ended
             }
@@ -234,25 +250,34 @@ fn is_timeout(error: &tungstenite::Error) -> bool {
         if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut)
 }
 
-fn serve(
-    mut socket: Socket,
-    session: &Session,
-    sessions: &Sessions,
-    signals: &Sender<Signal>,
-    stop: &AtomicBool,
-    probe: &mut Probe,
-) -> Result<Ended> {
+/// What one connection serves.
+#[derive(Clone, Copy)]
+struct Serving<'a> {
+    session: &'a Session,
+    sessions: &'a Sessions,
+    signals: &'a Sender<Signal>,
+    stop: &'a AtomicBool,
+    shipper: Option<&'a Shipper>,
+}
+
+fn serve(mut socket: Socket, serving: &Serving<'_>, probe: &mut Probe) -> Result<Ended> {
+    let Serving {
+        session,
+        sessions,
+        signals,
+        stop,
+        shipper,
+    } = *serving;
     let mut next_ping = Instant::now() + PING_EVERY;
     let mut last_heard = Instant::now();
     // (interval, next send) while a console page is watching.
     let mut watch: Option<(Duration, Instant)> = None;
-    let (diagnostics_send, diagnostics_receive) = mpsc::channel();
 
     loop {
-        while let Ok(message) = diagnostics_receive.try_recv() {
+        if let Some(batch) = shipper.and_then(|shipper| shipper.next_message(Instant::now())) {
             socket
-                .send(Message::text(serde_json::to_string(&message)?))
-                .context("could not send agent diagnostics")?;
+                .send(Message::text(serde_json::to_string(&batch)?))
+                .context("could not send log records")?;
         }
         if stop.load(Ordering::SeqCst) {
             let _ = socket.close(None);
@@ -318,34 +343,12 @@ fn serve(
                 }
                 Ok(ServerMessage::PinUpdate { next }) => session.transport.announce(next),
                 Ok(ServerMessage::UserMessage { from, text }) => show_user_message(from, text),
-                Ok(ServerMessage::DiagnosticsRequest { request_id }) => {
-                    if request_id.len() != 36
-                        || !request_id
-                            .bytes()
-                            .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
-                    {
-                        log::warn!("Ignoring malformed diagnostics request id");
-                        continue;
-                    }
-                    let sender = diagnostics_send.clone();
-                    if let Err(error) = std::thread::Builder::new()
-                        .name("agent diagnostics".into())
-                        .spawn(move || {
-                            let report = crate::diagnostics::collect();
-                            let message = AgentMessage::Diagnostics {
-                                request_id,
-                                agent_version: env!("CARGO_PKG_VERSION").to_string(),
-                                captured_at_ms: report.captured_at_ms,
-                                lines: report.lines,
-                                truncated: report.truncated,
-                                journal: report.journal,
-                            };
-                            let _ = sender.send(message);
-                        })
-                    {
-                        log::warn!("Could not start agent diagnostics: {error}");
+                Ok(ServerMessage::LogAck { instance, seq }) => {
+                    if let Some(shipper) = shipper {
+                        shipper.acked(&instance, seq);
                     }
                 }
+                Ok(ServerMessage::LogLevel(level)) => crate::logging::set_verbose(level),
                 Ok(ServerMessage::SessionOpen { ticket, signature }) => {
                     if let Err(refused) = sessions.open(&ticket, &signature) {
                         log::warn!("{}", refused.message);

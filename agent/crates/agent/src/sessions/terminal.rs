@@ -19,7 +19,7 @@ use std::io::{Read as _, Write as _};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Bytes read from the terminal at a time (one frame at most).
 const CHUNK: usize = 16 * 1024;
@@ -29,6 +29,8 @@ const OUTPUT_QUEUE: usize = 16;
 const INPUT_LIMIT: usize = 1024 * 1024;
 /// After the shell exits, how long to wait for its last output.
 const LAST_OUTPUT_WAIT: Duration = Duration::from_secs(1);
+/// A shell that fails this soon did not really start (a unit's exit 208, say).
+const EARLY_EXIT: Duration = Duration::from_secs(5);
 
 /// What to start.
 pub struct Request<'a> {
@@ -74,9 +76,15 @@ pub fn run(socket: &mut Socket, spawned: Spawned, stop: &AtomicBool) -> Result<E
     }
     {
         let pty = Arc::clone(&pty);
+        let started = Instant::now();
         spawn("terminal-wait", move || {
             let event = match process.wait() {
-                Ok(code) => SessionEvent::Exited { code },
+                Ok(code) => {
+                    if code != 0 && started.elapsed() < EARLY_EXIT {
+                        crate::diagnostics::session_failed("terminal");
+                    }
+                    SessionEvent::Exited { code }
+                }
                 Err(e) => SessionEvent::Failed {
                     message: format!("{e:#}"),
                 },
