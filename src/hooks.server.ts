@@ -19,7 +19,13 @@ import {
 import { restorePresence } from '#lib/server/services/agents/presence.ts';
 import { applyFirstRunLocalNetworkMode, prepareFirstRun } from '#lib/server/services/auth/setup.ts';
 import { startEmailWorker } from '#lib/server/services/email/email-worker.ts';
-import { printToServerLog, serverSetupCode } from '#lib/server/services/auth/setup-code.ts';
+import { serverSetupCode } from '#lib/server/services/auth/setup-code.ts';
+import { scheduleLogRetention } from '#lib/server/services/logs/log-retention.ts';
+import {
+	serverLog,
+	serverLogWriter,
+	storeServerLogs
+} from '#lib/server/services/logs/server-log.ts';
 import { registerSocketRoutes } from '#lib/server/sockets/socket-registry.ts';
 import { SOCKET_ROUTES } from '#lib/server/sockets/socket-route-table.ts';
 import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts';
@@ -32,12 +38,16 @@ import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts
  * I12), then the first admin is created from the environment, or a setup code
  * is printed (SPEC-SIGN-IN S17, S18); the email queue starts working
  * (SPEC-EMAIL E3); machines whose live socket was open when the server
- * stopped get a grace period to reconnect (SPEC-PRESENCE P4). The dev
+ * stopped get a grace period to reconnect (SPEC-PRESENCE P4). The server's
+ * own log records are kept from the start, and old agent and server log
+ * records are pruned now and hourly (SPEC-AGENT-LOGS 2). The dev
  * server registers Vite's own certificate. A built server also schedules the nightly database snapshot (SPEC-HOSTING
  * H3); the dev server does not, so it never writes backups beside a
  * developer's database.
  */
 export const init: ServerInit = async () => {
+	storeServerLogs(database, crypto.randomUUID());
+	scheduleLogRetention(database);
 	registerSocketRoutes(SOCKET_ROUTES);
 	applyFirstRunLocalNetworkMode(database, env.localNetworkModeAtFirstRun, Date.now());
 	if (!dev) {
@@ -45,13 +55,30 @@ export const init: ServerInit = async () => {
 			startupServedCertificate(database, env.secretsKey, lanCertificateNames(), Date.now())
 		);
 	}
-	await prepareFirstRun(database, env.firstAdmin, serverSetupCode, printToServerLog, Date.now());
+	await prepareFirstRun(
+		database,
+		env.firstAdmin,
+		serverSetupCode,
+		serverLogWriter('auth'),
+		Date.now()
+	);
 	if (!dev && env.databasePath !== ':memory:') {
-		scheduleSnapshots(database.$client, env.databasePath, env.backupSchedule, printToServerLog);
+		scheduleSnapshots(
+			database.$client,
+			env.databasePath,
+			env.backupSchedule,
+			serverLogWriter('database')
+		);
 	}
 	if (!dev && !building) {
-		startUpdateChecks(printToServerLog);
-		startPreparation(database, env.databasePath, env.launcher, sessionRelay(), printToServerLog);
+		startUpdateChecks(serverLogWriter('updates'));
+		startPreparation(
+			database,
+			env.databasePath,
+			env.launcher,
+			sessionRelay(),
+			serverLogWriter('updates')
+		);
 	}
 	startEmailWorker(database, env.secretsKey);
 	restorePresence(database, Date.now());
@@ -68,5 +95,5 @@ export const handle = sequence(session, setupRedirect, originCheck);
  * shows (SPEC-ERROR-PAGES E5); the browser never sees the error itself.
  */
 export const handleError: HandleServerError = serverErrorHandler((line) => {
-	process.stderr.write(`${line}\n`);
+	serverLog('error', 'http', line);
 }, errorReference);

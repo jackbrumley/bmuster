@@ -3,6 +3,7 @@ import { database } from '#lib/server/database/app-database.ts';
 import { MIGRATIONS_FOLDER } from '#lib/server/database/connection.ts';
 import { databaseReadiness } from '#lib/server/database/readiness.ts';
 import { route } from '#lib/server/guards/route.ts';
+import { serverLog } from '#lib/server/services/logs/server-log.ts';
 import type { RequestHandler } from './$types';
 
 /**
@@ -17,7 +18,7 @@ export const GET: RequestHandler = route.public(() => {
 		case 'ready':
 			return Response.json({ status: 'ready', version: CHANGELOG[0].version }, { headers });
 		case 'not-ready':
-			process.stderr.write(`GET /readyz: not ready (${readiness.reason})\n`);
+			serverLog('warn', 'database', `GET /readyz: not ready (${readiness.reason})`);
 			return Response.json({ status: 'not-ready' }, { status: 503, headers });
 	}
 });

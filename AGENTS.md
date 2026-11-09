@@ -385,7 +385,8 @@ The design is in `docs/access-and-sign-in.md`.
 - `route-guard-required` (violation, §11): A route handler not built by a guard
   runs without checking who is asking. **Fix:** Export it as
   `route.<public|user|admin|agent>(…)` or `page.<public|user|admin>(…)` from
-  src/lib/server/guards/.
+  src/lib/server/guards/; `route.diagnostics(…)` only for GET under
+  src/routes/api/diagnostics/.
 - `server-imports-app-modules-forbidden` (violation, §6): src/lib/server/** runs
   outside Vite (scripts, tests), where `$app/*` and `$env/*` do not exist.
   **Fix:** Take what the module needs as a parameter from the route or hook.

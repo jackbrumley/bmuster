@@ -8,7 +8,9 @@ import { isTestFile } from './source-file.ts';
  * access before it runs.
  *
  * - Every HTTP method a `+server.ts` exports is built by a guard:
- *   `export const GET = route.<public|user|admin|agent>(…)`.
+ *   `export const GET = route.<public|user|admin|agent|diagnostics>(…)`.
+ * - `route.diagnostics`, the one guard that takes a read-only diagnostics
+ *   token (SPEC-AGENT-LOGS 4), builds only `GET` under src/routes/api/diagnostics/.
  * - Every `load` and form action in `+page.server.ts` / `+layout.server.ts`
  *   is built by `page.<public|user|admin>(…)`; `actions` is an object of
  *   guarded handlers.
@@ -30,12 +32,13 @@ const HTTP_METHODS: ReadonlySet<string> = new Set([
 	'fallback'
 ]);
 const GUARDS = {
-	route: new Set(['public', 'user', 'admin', 'agent']),
+	route: new Set(['public', 'user', 'admin', 'agent', 'diagnostics']),
 	page: new Set(['public', 'user', 'admin'])
 } as const;
 type GuardObject = keyof typeof GUARDS;
 
 const GUARDS_DIR = 'src/lib/server/guards/';
+const DIAGNOSTICS_ROUTES = 'src/routes/api/diagnostics/';
 
 type RouteFileKind = 'endpoint' | 'server-load' | 'universal-load';
 
@@ -187,6 +190,13 @@ export function scanRouteGuards(relPath: string, text: string): string[] {
 		} else if (!GUARDS[slot.guard].has(call.variant)) {
 			issues.push(
 				`line ${lineOf(slot.node)}: \`${slot.guard}.${call.variant}\` is not a guard; use ${variants}.`
+			);
+		} else if (
+			call.variant === 'diagnostics' &&
+			(slot.name !== 'GET' || !relPath.startsWith(DIAGNOSTICS_ROUTES))
+		) {
+			issues.push(
+				`line ${lineOf(slot.node)}: \`route.diagnostics\` accepts read-only tokens, so it builds only GET handlers under ${DIAGNOSTICS_ROUTES}; use route.admin here.`
 			);
 		}
 	}

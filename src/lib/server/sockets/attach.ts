@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { serverLog } from '../services/logs/server-log.ts';
 import { isSocketRefusal, matchSocketPath, type SocketRoute } from './socket-route.ts';
 
 /** Every connection is pinged this often; one that misses a pong is dropped. */
@@ -47,7 +48,7 @@ export function attachSocketRoutes(
 			return;
 		}
 		upgrade(incoming, stream, head).catch((error: unknown) => {
-			process.stderr.write(`Socket upgrade failed: ${String(error)}\n`);
+			serverLog('error', 'relay', `Socket upgrade failed: ${String(error)}`);
 			reject(stream, 500, { reason: 'server-error', message: 'Internal Server Error' });
 		});
 	});

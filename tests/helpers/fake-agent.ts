@@ -114,7 +114,32 @@ export const SAMPLE_INVENTORY: InventoryWire = {
 			memoryBytes: { kind: 'unknown' },
 			driver: 'i915'
 		}
-	]
+	],
+	display: {
+		kind: 'linux',
+		seat: {
+			kind: 'active',
+			sessionType: 'wayland',
+			class: 'user',
+			desktop: 'GNOME',
+			state: 'active',
+			lockedHint: { kind: 'unknown' }
+		},
+		cards: [
+			{
+				name: 'card1',
+				driver: 'i915',
+				kms: true,
+				connectors: [{ name: 'HDMI-A-1', modes: ['2560x1440', '1920x1080'] }]
+			}
+		],
+		uinput: { device: true, module: true },
+		nvidiaModeset: { kind: 'present', value: 'Y' },
+		programs: { xdgDesktopPortal: true, gstreamer: true, pipewiresrc: true },
+		kernel: '6.8.0-45-generic',
+		agentVersion: '0.4.0',
+		launcherVersion: { kind: 'known', version: '0.4.0' }
+	}
 };
 
 /** A server with no signed agent builds (SPEC-AGENT-UPDATES): nothing to offer. */

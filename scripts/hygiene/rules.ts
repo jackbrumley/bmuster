@@ -201,7 +201,7 @@ export const HYGIENE_RULES = {
 		severity: 'violation',
 		section: '11',
 		why: 'A route handler not built by a guard runs without checking who is asking.',
-		fix: 'Export it as `route.<public|user|admin|agent>(…)` or `page.<public|user|admin>(…)` from src/lib/server/guards/.'
+		fix: 'Export it as `route.<public|user|admin|agent>(…)` or `page.<public|user|admin>(…)` from src/lib/server/guards/; `route.diagnostics(…)` only for GET under src/routes/api/diagnostics/.'
 	},
 
 	// Server boundary (scripts/hygiene/server-boundary.ts)

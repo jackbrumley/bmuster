@@ -10,6 +10,9 @@ import { enrolFakeAgent } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import { load as machineLayout } from '../../../routes/(console)/machines/[id]/+layout.server.ts';
 import { GET as notesGet } from '../../../routes/api/machines/[id]/notes/+server.ts';
+import { eq } from 'drizzle-orm';
+import { users } from '../database/schema.ts';
+import { createDiagnosticsToken } from '../services/auth/diagnostics-tokens.ts';
 import { toConsoleUser } from '../services/users/users.ts';
 import { page } from './page.ts';
 import { route } from './route.ts';
@@ -81,6 +84,96 @@ describe('endpoint guards (S7)', () => {
 		);
 		expect(response.status).toBe(401);
 		expect(await response.json()).toMatchObject({ reason: 'bad-signature' });
+	});
+});
+
+describe('diagnostics guard (SPEC-AGENT-LOGS AL10)', () => {
+	async function tokenFor(role: 'admin' | 'member'): Promise<string> {
+		const owner = await addTestUser(appDatabase, {
+			email: `token-${crypto.randomUUID()}@example.com`,
+			role: 'admin',
+			password: null
+		});
+		const { token } = createDiagnosticsToken(
+			appDatabase,
+			{ name: 'guard test', days: 1, userId: owner.id },
+			Date.now()
+		);
+		if (role === 'member') {
+			appDatabase.update(users).set({ role: 'member' }).where(eq(users.id, owner.id)).run();
+		}
+		return token;
+	}
+
+	function bearer(path: string, token: string, method = 'GET'): RequestEvent {
+		return event(
+			{ kind: 'none' },
+			path,
+			new Request(`https://bmuster.test${path}`, {
+				method,
+				headers: { authorization: `Bearer ${token}` }
+			})
+		);
+	}
+
+	it('AL10: a token reads diagnostics, but only with GET', async () => {
+		const token = await tokenFor('admin');
+		const reader = route.diagnostics((_event, { reader }) =>
+			Response.json({ kind: reader.kind, role: reader.user.role })
+		);
+		const read = await reader(bearer('/api/diagnostics/machines', token));
+		expect(read.status).toBe(200);
+		expect(await read.json()).toEqual({ kind: 'token', role: 'admin' });
+		for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+			expect((await reader(bearer('/api/diagnostics/machines', token, method))).status).toBe(405);
+		}
+	});
+
+	it('AL10: a token is refused on every other guard, even a GET', async () => {
+		const token = await tokenFor('admin');
+		for (const guarded of [route.user(ok), route.admin(ok)]) {
+			expect((await guarded(bearer('/api/users', token))).status).toBe(401);
+		}
+		const agent = await route.agent(ok)(bearer('/agent/v1/check-in', token, 'POST'));
+		expect(agent.status).toBe(401);
+	});
+
+	it('AL10: a bad, member-owned or missing token is refused; admin sessions read', async () => {
+		const reader = route.diagnostics(ok);
+		expect((await reader(bearer('/api/diagnostics/machines', 'bmd_wrong'))).status).toBe(401);
+		const demoted = await tokenFor('member');
+		expect((await reader(bearer('/api/diagnostics/machines', demoted))).status).toBe(401);
+		// A header is judged alone: a bad token next to an admin's cookie is still refused.
+		const withCookie = event(
+			{ kind: 'signed-in', user: ADMIN },
+			'/api/diagnostics/machines',
+			new Request('https://bmuster.test/api/diagnostics/machines', {
+				headers: { authorization: 'Bearer bmd_wrong' }
+			})
+		);
+		expect((await reader(withCookie)).status).toBe(401);
+		expect((await reader(event({ kind: 'none' }, '/api/diagnostics/machines'))).status).toBe(401);
+		expect(
+			(await reader(event({ kind: 'signed-in', user: MEMBER }, '/api/diagnostics/machines'))).status
+		).toBe(403);
+		expect(
+			(await reader(event({ kind: 'signed-in', user: ADMIN }, '/api/diagnostics/machines'))).status
+		).toBe(200);
+	});
+
+	it('AL10: route.diagnostics builds only GET handlers under /api/diagnostics', () => {
+		const files = routeFiles('src/routes').filter((path) => path.endsWith('+server.ts'));
+		const diagnostics = files.filter((path) => path.startsWith('src/routes/api/diagnostics/'));
+		expect(diagnostics.length).toBeGreaterThanOrEqual(4);
+		for (const path of files) {
+			const text = readFileSync(path, 'utf8');
+			if (diagnostics.includes(path)) {
+				expect(text, path).toMatch(/export const GET: RequestHandler = route\.diagnostics\(/);
+				expect(text, path).not.toMatch(/export const (POST|PUT|PATCH|DELETE)/);
+			} else {
+				expect(text, path).not.toMatch(/route\.diagnostics\(/);
+			}
+		}
 	});
 });
 

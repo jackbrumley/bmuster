@@ -78,8 +78,11 @@ export function setupCodeKeeper(print: (line: string) => void): SetupCodeKeeper 
 	};
 }
 
-/** A line in the server's log: its standard output (the terminal, journald or Docker). */
-export function printToServerLog(line: string): void {
+/**
+ * The setup code in the server's log: its standard output (the terminal, journald or Docker),
+ * never the stored server log (SPEC-AGENT-LOGS 2), because the code is a secret.
+ */
+function printToServerLog(line: string): void {
 	process.stdout.write(`${line}\n`);
 }
 

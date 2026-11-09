@@ -4,7 +4,14 @@
  * change together.
  */
 import { z } from 'zod';
-import { diagnosticJournalSchema } from '#lib/schemas/agents/diagnostics.ts';
+import {
+	LOG_LEVELS,
+	LOG_SOURCES,
+	MAX_BATCH_RECORDS,
+	MAX_RECORD_TARGET,
+	MAX_RECORD_TEXT
+} from '#lib/domain/logs/logs.ts';
+import { displayReportSchema } from '#lib/schemas/agents/display-report.ts';
 
 const osFamilySchema = z.enum(['windows', 'linux', 'macos']);
 
@@ -83,7 +90,9 @@ export const inventorySchema = z.object({
 		)
 		.max(256),
 	/** Agents before 0.2 sent no `gpus`; their inventories read as none reported. */
-	gpus: z.array(gpuSchema).max(32).default([])
+	gpus: z.array(gpuSchema).max(32).default([]),
+	/** Agents from before SPEC-AGENT-LOGS send none: `unreported`. */
+	display: displayReportSchema
 });
 
 export type InventoryWire = z.infer<typeof inventorySchema>;
@@ -252,16 +261,30 @@ export const agentSocketMessageSchema = z.discriminatedUnion('type', [
 		sessionId: z.string().max(64),
 		message: z.string().max(2000)
 	}),
+	/** Log records from one agent process, oldest first (SPEC-AGENT-LOGS 1). */
 	z.object({
-		type: z.literal('diagnostics'),
-		requestId: z.uuid(),
-		agentVersion: z.string().min(1).max(64),
-		capturedAtMs: z.int().min(0),
-		lines: z.array(z.string().max(4096)).max(200),
-		truncated: z.boolean(),
-		journal: diagnosticJournalSchema
+		type: z.literal('log-batch'),
+		instance: z.uuid(),
+		records: z
+			.array(
+				z.object({
+					seq: z.int().min(1),
+					at: z.int().min(0),
+					level: z.enum(LOG_LEVELS),
+					source: z.enum(LOG_SOURCES),
+					target: z.string().max(MAX_RECORD_TARGET),
+					text: z.string().max(MAX_RECORD_TEXT)
+				})
+			)
+			.min(1)
+			.max(MAX_BATCH_RECORDS)
 	})
 ]);
+
+export type LogBatchMessage = Extract<
+	z.infer<typeof agentSocketMessageSchema>,
+	{ type: 'log-batch' }
+>;
 
 /**
  * How an agent checks the server's certificate (SPEC-INSTALL-OPTIONS L5, L7):
@@ -281,7 +304,11 @@ export type ServerSocketMessage =
 	| { type: 'session-open'; ticket: string; signature: string }
 	/** A message box on the console session's screen, from `from` (Windows). */
 	| { type: 'user-message'; from: string; text: string }
-	| { type: 'diagnostics-request'; requestId: string };
+	/** The batch's records up to `seq` are stored (SPEC-AGENT-LOGS 1). */
+	| { type: 'log-ack'; instance: string; seq: number }
+	/** The agent's own debug records until `untilMs`, or back to info. */
+	| { type: 'log-level'; level: 'debug'; untilMs: number }
+	| { type: 'log-level'; level: 'info' };
 
 export type RefusalReason =
 	| 'bad-request'

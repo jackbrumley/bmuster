@@ -1,6 +1,7 @@
 /** What the console knows about one enrolled machine. Browser-safe: no server imports. */
 import type { SessionInUse, TerminalShell } from '../sessions/session.ts';
 import type { MachineUpdateState } from './agent-updates.ts';
+import type { DisplayReport } from './display-report.ts';
 
 export type OsFamily = 'windows' | 'linux' | 'macos';
 
@@ -52,6 +53,8 @@ export type MachineInventory =
 			displayCount: number;
 			addresses: string[];
 			gpus: Gpu[];
+			/** What a remote desktop depends on (SPEC-AGENT-LOGS 3). */
+			display: DisplayReport;
 	  };
 
 export type Machine = {

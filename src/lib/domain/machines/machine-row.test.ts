@@ -20,7 +20,8 @@ function inventory(
 		disks,
 		displayCount: 1,
 		addresses: [],
-		gpus: []
+		gpus: [],
+		display: { kind: 'unreported' }
 	};
 }
 
