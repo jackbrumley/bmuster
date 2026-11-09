@@ -11,9 +11,15 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+mod display;
 pub mod files;
+pub mod logs;
 pub mod session;
 mod updates;
+pub use display::{
+    DisplayReport, DrmCard, DrmConnector, LauncherVersion, LinuxDisplay, LockedHint, NvidiaModeset,
+    Programs, SeatSession, Uinput,
+};
 pub use updates::{
     release_message, release_message_of, release_path, AgentVersion, UpdateEvent, UpdateOffer,
     UpdateReport, VersionError, RELEASE_SIGNING_DOMAIN,
@@ -332,6 +338,8 @@ pub struct Inventory {
     pub network: Vec<NetworkInterface>,
     /// Every graphics card, integrated and discrete (SPEC-MACHINE-DETAILS D8).
     pub gpus: Vec<GpuInfo>,
+    /// What a remote desktop depends on (SPEC-AGENT-LOGS 3).
+    pub display: DisplayReport,
 }
 
 impl Inventory {
@@ -611,11 +619,13 @@ pub enum ServerMessage {
         from: String,
         text: String,
     },
-    /// A bounded diagnostics request from an authenticated administrator.
-    DiagnosticsRequest {
-        #[serde(rename = "requestId")]
-        request_id: String,
+    /// The server stored this instance's records up to `seq` (SPEC-AGENT-LOGS 1).
+    LogAck {
+        instance: String,
+        seq: u64,
     },
+    /// Log the agent's own debug records until a time, or go back to info.
+    LogLevel(logs::VerboseLevel),
 }
 
 /// Agent to server.
@@ -634,27 +644,11 @@ pub enum AgentMessage {
         session_id: String,
         message: String,
     },
-    /// A response to one diagnostics request, containing only agent logs and
-    /// fixed service startup diagnostics (never shell output or history).
-    Diagnostics {
-        #[serde(rename = "requestId")]
-        request_id: String,
-        #[serde(rename = "agentVersion")]
-        agent_version: String,
-        #[serde(rename = "capturedAtMs")]
-        captured_at_ms: u64,
-        lines: Vec<String>,
-        truncated: bool,
-        journal: DiagnosticJournal,
+    /// Log records from one agent process, oldest first (SPEC-AGENT-LOGS 1).
+    LogBatch {
+        instance: String,
+        records: Vec<logs::LogRecord>,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum DiagnosticJournal {
-    Available { lines: Vec<String>, truncated: bool },
-    Unavailable { reason: String },
-    Unsupported,
 }
 
 #[cfg(test)]
@@ -914,39 +908,110 @@ mod tests {
     }
 
     #[test]
-    fn diagnostics_messages_match_the_agent_socket_contract() {
+    fn log_messages_match_the_agent_socket_contract() {
         assert_eq!(
-            serde_json::to_value(ServerMessage::DiagnosticsRequest {
-                request_id: "11111111-1111-4111-8111-111111111111".into()
+            serde_json::to_value(AgentMessage::LogBatch {
+                instance: "11111111-1111-4111-8111-111111111111".into(),
+                records: vec![logs::LogRecord {
+                    seq: 1,
+                    at: 1_000,
+                    level: logs::LogLevel::Warn,
+                    source: logs::LogSource::Helper,
+                    target: "wayland-helper".into(),
+                    text: "pipewire stream failed".into(),
+                }],
             })
             .unwrap(),
             json!({
-                "type": "diagnostics-request",
-                "requestId": "11111111-1111-4111-8111-111111111111"
+                "type": "log-batch",
+                "instance": "11111111-1111-4111-8111-111111111111",
+                "records": [{
+                    "seq": 1, "at": 1_000, "level": "warn", "source": "helper",
+                    "target": "wayland-helper", "text": "pipewire stream failed"
+                }]
+            })
+        );
+        let ack: ServerMessage =
+            serde_json::from_str(r#"{"type":"log-ack","instance":"i-1","seq":42}"#).unwrap();
+        assert_eq!(
+            ack,
+            ServerMessage::LogAck {
+                instance: "i-1".into(),
+                seq: 42
+            }
+        );
+        let debug: ServerMessage =
+            serde_json::from_str(r#"{"type":"log-level","level":"debug","untilMs":5000}"#).unwrap();
+        assert_eq!(
+            debug,
+            ServerMessage::LogLevel(logs::VerboseLevel::Debug { until_ms: 5000 })
+        );
+        let info: ServerMessage =
+            serde_json::from_str(r#"{"type":"log-level","level":"info"}"#).unwrap();
+        assert_eq!(info, ServerMessage::LogLevel(logs::VerboseLevel::Info));
+    }
+
+    #[test]
+    fn display_report_matches_the_inventory_contract() {
+        let report = DisplayReport::Linux(Box::new(LinuxDisplay {
+            seat: SeatSession::Active {
+                session_type: "wayland".into(),
+                class: "user".into(),
+                desktop: "GNOME".into(),
+                state: "active".into(),
+                locked_hint: LockedHint::Unknown,
+            },
+            cards: vec![DrmCard {
+                name: "card1".into(),
+                driver: "i915".into(),
+                kms: true,
+                connectors: vec![DrmConnector {
+                    name: "eDP-1".into(),
+                    modes: vec!["1920x1080".into()],
+                }],
+            }],
+            uinput: Uinput {
+                device: true,
+                module: true,
+            },
+            nvidia_modeset: NvidiaModeset::Absent,
+            programs: Programs {
+                xdg_desktop_portal: true,
+                gstreamer: true,
+                pipewiresrc: false,
+            },
+            kernel: "6.17.1".into(),
+            agent_version: "0.4.0".into(),
+            launcher_version: LauncherVersion::Known {
+                version: "0.4.0".into(),
+            },
+        }));
+        assert_eq!(
+            serde_json::to_value(&report).unwrap(),
+            json!({
+                "kind": "linux",
+                "seat": {
+                    "kind": "active", "sessionType": "wayland", "class": "user",
+                    "desktop": "GNOME", "state": "active", "lockedHint": { "kind": "unknown" }
+                },
+                "cards": [{
+                    "name": "card1", "driver": "i915", "kms": true,
+                    "connectors": [{ "name": "eDP-1", "modes": ["1920x1080"] }]
+                }],
+                "uinput": { "device": true, "module": true },
+                "nvidiaModeset": { "kind": "absent" },
+                "programs": { "xdgDesktopPortal": true, "gstreamer": true, "pipewiresrc": false },
+                "kernel": "6.17.1",
+                "agentVersion": "0.4.0",
+                "launcherVersion": { "kind": "known", "version": "0.4.0" }
             })
         );
         assert_eq!(
-            serde_json::to_value(AgentMessage::Diagnostics {
-                request_id: "11111111-1111-4111-8111-111111111111".into(),
-                agent_version: "0.3.1".into(),
-                captured_at_ms: 1_000,
-                lines: vec!["agent started".into()],
-                truncated: false,
-                journal: DiagnosticJournal::Available {
-                    lines: vec!["terminal failed".into()],
-                    truncated: false
-                }
+            serde_json::to_value(DisplayReport::Windows {
+                console: SignedInUser::None
             })
             .unwrap(),
-            json!({
-                "type": "diagnostics",
-                "requestId": "11111111-1111-4111-8111-111111111111",
-                "agentVersion": "0.3.1",
-                "capturedAtMs": 1_000,
-                "lines": ["agent started"],
-                "truncated": false,
-                "journal": { "kind": "available", "lines": ["terminal failed"], "truncated": false }
-            })
+            json!({ "kind": "windows", "console": { "kind": "none" } })
         );
     }
 }

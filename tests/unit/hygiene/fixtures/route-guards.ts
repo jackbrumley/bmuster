@@ -10,6 +10,7 @@ const run = (relPath: string, content: string) => () =>
 const ENDPOINT = 'src/routes/api/users/+server.ts';
 const PAGE_SERVER = 'src/routes/(console)/users/+page.server.ts';
 const UNIVERSAL = 'src/routes/(console)/users/+page.ts';
+const DIAGNOSTICS = 'src/routes/api/diagnostics/machines/+server.ts';
 
 export const routeGuardFixtures: readonly RuleFixture[] = [
 	{
@@ -46,5 +47,28 @@ export const routeGuardFixtures: readonly RuleFixture[] = [
 		rule: 'route-guard-required',
 		bad: run(UNIVERSAL, 'export const load = () => ({ users: [] });'),
 		good: run(UNIVERSAL, 'export const ssr = true;')
+	},
+	// SPEC-AGENT-LOGS 4: tokens are read-only by construction.
+	{
+		rule: 'route-guard-required',
+		bad: run(
+			DIAGNOSTICS,
+			"import { route } from '#lib/server/guards/route.ts';\nexport const POST = route.diagnostics(() => Response.json({}));"
+		),
+		good: run(
+			DIAGNOSTICS,
+			"import { route } from '#lib/server/guards/route.ts';\nexport const GET = route.diagnostics(() => Response.json({}));"
+		)
+	},
+	{
+		rule: 'route-guard-required',
+		bad: run(
+			ENDPOINT,
+			"import { route } from '#lib/server/guards/route.ts';\nexport const GET = route.diagnostics(() => Response.json({}));"
+		),
+		good: run(
+			ENDPOINT,
+			"import { route } from '#lib/server/guards/route.ts';\nexport const GET = route.admin(() => Response.json({}));"
+		)
 	}
 ];

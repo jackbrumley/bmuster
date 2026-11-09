@@ -99,6 +99,7 @@ impl Probe {
             displays: Vec::new(),
             network: network(),
             gpus: crate::gpus::gpus(),
+            display: crate::display_report::report(),
         })
     }
 }

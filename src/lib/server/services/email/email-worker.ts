@@ -1,6 +1,7 @@
 import type { AppDatabase } from '../../database/connection.ts';
 import { processNotificationEvents } from '../notifications/notify.ts';
 import { deliverDueEmails } from './email-queue.ts';
+import { serverLog } from '../logs/server-log.ts';
 import { sendSmtp } from './smtp.ts';
 
 /**
@@ -24,7 +25,7 @@ type Worker =
 let worker: Worker = { kind: 'stopped' };
 
 function writeLog(line: string): void {
-	process.stdout.write(`[email] ${line}\n`);
+	serverLog('info', 'email', line);
 }
 
 /** Read through a function: a request for another run arrives while this one awaits. */

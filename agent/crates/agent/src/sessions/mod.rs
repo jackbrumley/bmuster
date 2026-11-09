@@ -166,7 +166,10 @@ impl Sessions {
                 );
                 match serve(&inner, &admitted, &text) {
                     Ok(ended) => log::info!("Session {} ended: {ended:?}.", admitted.session_id),
-                    Err(e) => log::warn!("Session {} failed: {e:#}", admitted.session_id),
+                    Err(e) => {
+                        log::warn!("Session {} failed: {e:#}", admitted.session_id);
+                        failed_to_start(&admitted.purpose);
+                    }
                 }
                 *lock(&inner.running) -= 1;
             });
@@ -227,7 +230,10 @@ fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<End
                 .and_then(|placement| terminal::start(&request, placement))
             {
                 Ok(spawned) => terminal::run(&mut socket, spawned, &inner.stop),
-                Err(e) => fail(&mut socket, &e),
+                Err(e) => {
+                    failed_to_start(&ticket.purpose);
+                    fail(&mut socket, &e)
+                }
             }
         }
         SessionPurpose::Exec {
@@ -255,7 +261,10 @@ fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<End
             Ok(Placement::InProcess) => files::run(&mut socket, &inner.stop),
             #[cfg(target_os = "linux")]
             Ok(Placement::Unit(unit)) => files_helper::relay(&mut socket, &unit, &inner.stop),
-            Err(e) => fail(&mut socket, &e),
+            Err(e) => {
+                failed_to_start(&ticket.purpose);
+                fail(&mut socket, &e)
+            }
         },
         SessionPurpose::Desktop { consent, notice } => {
             let request = desktop::Request {
@@ -277,9 +286,24 @@ fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<End
                     desktop::run(&mut socket, *ready, &ticket.user.name, &inner.stop)
                 }
                 Ok(desktop::Prepared::Busy) => desktop::refuse_busy(&mut socket),
-                Err(e) => fail(&mut socket, &e),
+                Err(e) => {
+                    failed_to_start(&ticket.purpose);
+                    fail(&mut socket, &e)
+                }
             }
         }
+    }
+}
+
+/// A terminal, files or desktop session did not start: ship the fixed
+/// journal query (SPEC-AGENT-LOGS 1). Commands are left out: their units can
+/// hold command text.
+fn failed_to_start(purpose: &SessionPurpose) {
+    match purpose {
+        SessionPurpose::Terminal { .. } => crate::diagnostics::session_failed("terminal"),
+        SessionPurpose::Files {} => crate::diagnostics::session_failed("files"),
+        SessionPurpose::Desktop { .. } => crate::diagnostics::session_failed("desktop"),
+        SessionPurpose::Exec { .. } => {}
     }
 }
 

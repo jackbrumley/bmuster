@@ -77,7 +77,14 @@ const AUDIT_KINDS = [
 	'agent-unpinned',
 	'agent-rollout-paused',
 	'agent-rollout-resumed',
+	// SPEC-AGENT-LOGS
 	'agent-logs-viewed',
+	'server-logs-viewed',
+	'agent-verbose-started',
+	'agent-verbose-stopped',
+	'diagnostics-token-created',
+	'diagnostics-token-revoked',
+	'diagnostics-token-used',
 	// SPEC-CSV-EXPORT
 	'list-exported',
 	// SPEC-FILES
@@ -261,7 +268,19 @@ export function activityLabel(kind: AuditKind): string {
 		case 'agent-rollout-resumed':
 			return 'Resumed the agent roll-out';
 		case 'agent-logs-viewed':
-			return 'Viewed agent diagnostics';
+			return 'Read agent logs';
+		case 'server-logs-viewed':
+			return 'Read the server log';
+		case 'agent-verbose-started':
+			return 'Made an agent log verbosely';
+		case 'agent-verbose-stopped':
+			return 'Set an agent back to normal logging';
+		case 'diagnostics-token-created':
+			return 'Created a diagnostics token';
+		case 'diagnostics-token-revoked':
+			return 'Revoked a diagnostics token';
+		case 'diagnostics-token-used':
+			return 'Used a diagnostics token';
 		case 'list-exported':
 			return 'Exported a list';
 		case 'file-downloaded':

@@ -15,7 +15,7 @@
 	import LocalPage from './local-page.svelte';
 	import MachineDetails from './machine-details.svelte';
 	import MachineGroups from './machine-groups.svelte';
-	import RecentAgentLogs from './recent-agent-logs.svelte';
+	import MachineLogs from './machine-logs.svelte';
 	import ReinstallAgent from './reinstall-agent.svelte';
 	import type { PageProps } from './$types';
 
@@ -94,7 +94,13 @@
 	localTls={data.localTls}
 />
 
-<RecentAgentLogs machineId={machine.id} />
+<MachineLogs
+	machineId={machine.id}
+	machineName={machine.name}
+	sendsLogs={machine.inventory.kind === 'pending' ||
+		machine.inventory.display.kind !== 'unreported'}
+	verboseUntilIso={data.verboseUntilIso}
+/>
 
 <Panel heading="Danger zone" actions={undefined} tone="danger" padding="normal">
 	<div class="danger-row">

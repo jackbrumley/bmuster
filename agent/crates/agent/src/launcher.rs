@@ -183,6 +183,11 @@ impl Launcher {
             .arg("--data-dir")
             .arg(&self.data_dir)
             .args(&self.worker_args)
+            // The machine report names the launcher's version (SPEC-AGENT-LOGS 3).
+            .env(
+                crate::display_report::LAUNCHER_VERSION_ENV,
+                &self.own_version,
+            )
             .stdin(Stdio::null());
         #[cfg(windows)]
         {

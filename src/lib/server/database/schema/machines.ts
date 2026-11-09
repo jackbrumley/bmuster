@@ -49,7 +49,12 @@ export const machines = sqliteTable('machines', {
 	 * When its live socket closed, set once the grace period ran out and it went offline
 	 * (SPEC-PRESENCE P2); null while it is online. A restart reads it to know who was offline.
 	 */
-	socketOfflineSince: integer({ mode: 'timestamp_ms' })
+	socketOfflineSince: integer({ mode: 'timestamp_ms' }),
+	/**
+	 * Until when the agent logs its own debug records (SPEC-AGENT-LOGS 1); null at the normal
+	 * level. Sent to the agent again when it reconnects before then.
+	 */
+	verboseUntil: integer({ mode: 'timestamp_ms' })
 });
 
 /**

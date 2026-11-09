@@ -5,6 +5,7 @@
 		IconAlertTriangle,
 		IconArrowsExchange,
 		IconBell,
+		IconBug,
 		IconCertificate,
 		IconCloudDownload,
 		IconDeviceDesktopMinus,
@@ -12,6 +13,7 @@
 		IconDevices,
 		IconDownload,
 		IconEdit,
+		IconFileText,
 		IconFolderPlus,
 		IconNoteOff,
 		IconRefresh,
@@ -181,7 +183,15 @@
 			case 'agent-unpinned':
 				return IconPin;
 			case 'agent-logs-viewed':
-				return IconTerminal2;
+			case 'server-logs-viewed':
+				return IconFileText;
+			case 'agent-verbose-started':
+			case 'agent-verbose-stopped':
+				return IconBug;
+			case 'diagnostics-token-created':
+			case 'diagnostics-token-revoked':
+			case 'diagnostics-token-used':
+				return IconKey;
 			case 'list-exported':
 				return IconDownload;
 			case 'file-downloaded':

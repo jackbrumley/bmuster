@@ -114,10 +114,15 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
             .arg("wayland-helper")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
             .context("Could not launch the Wayland user helper")?,
     ));
+    // Its stderr carries gst-launch's too (SPEC-AGENT-LOGS 1).
+    crate::diagnostics::ship_helper_stderr(
+        "wayland-helper",
+        child.0.as_mut().and_then(|process| process.stderr.take()),
+    );
     let result = (|| -> Result<Arc<Bridge>> {
         let token_file = token_path(dir, uid, control);
         let restore_token = match std::fs::read(&token_file) {

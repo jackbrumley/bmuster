@@ -8,10 +8,12 @@ export {
 } from './schema/access.ts';
 export { agentRollouts, machineUpdates } from './schema/agent-updates.ts';
 export { auditEntries } from './schema/audit.ts';
+export { diagnosticsTokens } from './schema/diagnostics-tokens.ts';
 export { emailMessages } from './schema/email.ts';
 export { identityProviders } from './schema/identity-providers.ts';
 export { joinCodes } from './schema/join-codes.ts';
 export { localCertificates } from './schema/local-certificates.ts';
+export { agentLogRecords, serverLogRecords } from './schema/logs.ts';
 export {
 	machineInventory,
 	machineLocalPages,

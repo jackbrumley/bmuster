@@ -238,6 +238,7 @@ function toInventory(row: InventoryRow | null): MachineInventory {
 		disks: data.disks,
 		displayCount: data.displays.length,
 		addresses: data.network.flatMap((network) => network.addresses),
-		gpus: data.gpus
+		gpus: data.gpus,
+		display: data.display
 	};
 }

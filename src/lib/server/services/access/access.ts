@@ -166,6 +166,19 @@ export function localPagePeople(database: Queryable): { userId: string; name: st
 	return enabledAdmins(database).map((admin) => ({ userId: admin.id, name: admin.name }));
 }
 
+/**
+ * Reading agent and server logs and machine reports, making an agent verbose, and diagnostics
+ * tokens (SPEC-AGENT-LOGS 4) are for admins only.
+ */
+export function canReadDiagnostics(user: ConsoleUser): boolean {
+	switch (user.role) {
+		case 'admin':
+			return true;
+		case 'member':
+			return false;
+	}
+}
+
 /** Managing the server and viewing release/update metadata is admin-only. */
 export function canManageServer(user: ConsoleUser): boolean {
 	return user.role === 'admin';
