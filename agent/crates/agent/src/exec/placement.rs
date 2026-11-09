@@ -81,12 +81,14 @@ impl SessionMode {
     /// Ends session units an earlier run of the agent left behind (it
     /// crashed or was killed while sessions were open).
     pub fn sweep(self) {
-        match self {
-            SessionMode::InProcess => {}
-            #[cfg(target_os = "linux")]
-            SessionMode::Systemd => super::unit::sweep(super::unit::Manager::System),
-            #[cfg(all(target_os = "linux", debug_assertions))]
-            SessionMode::SystemdUser => super::unit::sweep(super::unit::Manager::User),
+        #[cfg(target_os = "linux")]
+        if let Some(manager) = self.manager() {
+            super::unit::sweep(manager);
+            // Sockets of units that never connected.
+            match super::connect::Folder::for_manager(manager) {
+                Ok(folder) => folder.sweep(),
+                Err(e) => log::warn!("{e:#}"),
+            }
         }
     }
 }

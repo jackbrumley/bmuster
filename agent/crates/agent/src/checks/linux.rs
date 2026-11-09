@@ -2,29 +2,34 @@
 //! sessions' and helpers' code paths with a harmless program in place of
 //! the real one, so a failure names the step that breaks a real session:
 //!
-//! - `systemd-run`: [`TransientUnit`] as terminal sessions make it, no pty.
-//! - `systemd-run-pipe`: the console helper's unit (`--pipe`), with `/bin/cat`.
-//! - `terminal-pty`: [`Pty::spawn`] on a fresh pty, as the terminal does.
+//! - `systemd-run`: [`TransientUnit`] as sessions make it, running `/bin/true`.
+//! - `unit-connect-back`: a command unit whose `stdio-host` connects back,
+//!   passes the peer check and echoes a line through `/bin/cat`
+//!   (SPEC-SESSION-UNITS, Version 2).
+//! - `pty-host`: [`Pty::spawn`] in a terminal unit, as the terminal does:
+//!   `pty-host` makes the pty in the unit and runs `/bin/true` on it.
 //!
 //! Every unit is `--collect`ed and stopped when the check ends; the uinput
 //! device has no capabilities and is destroyed at once; the KMS check's
 //! pixels never leave the helper.
 
 use super::{Check, Context, Outcome, CHECK_DEADLINE};
-use crate::console_helper::{unit_arguments_running, HelperClient};
+use crate::console_helper::HelperClient;
 use crate::diagnostics::Journal;
+use crate::exec::host::{self, HostProgram};
 use crate::exec::placement::{Kind, Placement};
 use crate::exec::pty::{Pty, Spawned};
 use crate::exec::spawn::{Launch, Program};
-use crate::exec::unit::{Io, TransientUnit};
+use crate::exec::unit::TransientUnit;
 use crate::exec::PtySize;
 use bmuster_desktop::capture::kms::KmsSource as _;
 use bmuster_desktop::capture::x11_follow::{active_session, look_at, session_properties};
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::io::{Read, Write as _};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -39,18 +44,18 @@ pub fn checks() -> Vec<Check> {
     vec![
         Check {
             id: "systemd-run",
-            title: "Transient unit (as terminal sessions start)",
+            title: "Transient unit (as sessions start)",
             run: systemd_run,
         },
         Check {
-            id: "systemd-run-pipe",
-            title: "Transient unit with --pipe (as the helpers start)",
-            run: systemd_run_pipe,
+            id: "unit-connect-back",
+            title: "Unit connects back to the agent (as sessions and helpers do)",
+            run: unit_connect_back,
         },
         Check {
-            id: "terminal-pty",
-            title: "Terminal unit on a pty",
-            run: terminal_pty,
+            id: "pty-host",
+            title: "Terminal unit with its own pty (pty-host)",
+            run: pty_host,
         },
         Check {
             id: "logind-seat",
@@ -162,16 +167,6 @@ fn wait_until(child: &mut Child, until: Instant) -> Option<ExitStatus> {
     }
 }
 
-/// The helpers' units belong to the system manager.
-fn stop_unit(unit: &str) {
-    let _ = Command::new("systemctl")
-        .args(["stop", "--no-block", unit])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-}
-
 fn systemd_run(context: &Context) -> Outcome {
     let Some(manager) = context.mode.manager() else {
         return Outcome::NotApplicable(
@@ -182,7 +177,7 @@ fn systemd_run(context: &Context) -> Outcome {
         Ok(unit) => unit,
         Err(error) => return Outcome::Fail(format!("{error:#}")),
     };
-    let mut command = unit.command(Io::Detached, &harmless("/bin/true"));
+    let mut command = unit.command(None, &harmless("/bin/true"));
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -211,75 +206,69 @@ fn systemd_run(context: &Context) -> Outcome {
     }
 }
 
-fn systemd_run_pipe(context: &Context) -> Outcome {
-    if !systemd_present() {
-        return Outcome::NotApplicable("This machine does not run systemd.".into());
-    }
-    if !is_root() {
+/// A command unit, as command and files sessions start it: `stdio-host`
+/// running `/bin/cat` connects back, passes the peer check and echoes a line.
+fn unit_connect_back(context: &Context) -> Outcome {
+    let Some(manager) = context.mode.manager() else {
         return Outcome::NotApplicable(
-            "The agent is not running as root (a development run); the helpers need root.".into(),
+            "Sessions run inside the agent's own process (BMUSTER_SESSIONS is not systemd).".into(),
         );
-    }
-    let unit = format!("bmuster-console-{}", check_id());
-    let mut child = match Command::new("systemd-run")
-        .args(unit_arguments_running(
-            &unit,
-            Path::new("/bin/cat"),
-            &[],
-            &context.data_dir,
-        ))
-        .current_dir("/")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(error) => return Outcome::Fail(format!("Could not run systemd-run: {error}")),
     };
-    let stderr = child.stderr.take().map(collect);
+    let unit = match TransientUnit::new(manager, Kind::Exec, &check_id()) {
+        Ok(unit) => unit,
+        Err(error) => return Outcome::Fail(format!("{error:#}")),
+    };
+    let name = unit.name().to_string();
+    let started = host::start(
+        &unit,
+        HostProgram::Stdio,
+        &harmless("/bin/cat"),
+        Some(WAIT),
+        &AtomicBool::new(false),
+    );
+    let host::Started {
+        channels,
+        systemd_run,
+    } = match started {
+        Ok(started) => started,
+        Err(error) => return Outcome::Fail(format!("{name}: {error:#}")),
+    };
     let (send, echoed) = mpsc::channel();
-    if let Some(mut stdout) = child.stdout.take() {
-        let _ = std::thread::Builder::new()
-            .name("check pipe".into())
-            .spawn(move || {
-                let mut bytes = vec![0_u8; LINE.len()];
-                let read = stdout.read_exact(&mut bytes).map(|()| bytes);
-                let _ = send.send(read.map_err(|error| error.to_string()));
-            });
-    }
-    let written = child
-        .stdin
-        .as_mut()
-        .map(|stdin| stdin.write_all(LINE).and_then(|()| stdin.flush()));
+    let mut stdout = channels.stdout;
+    let _ = std::thread::Builder::new()
+        .name("check echo".into())
+        .spawn(move || {
+            let mut bytes = vec![0_u8; LINE.len()];
+            let read = stdout.read_exact(&mut bytes).map(|()| bytes);
+            let _ = send.send(read.map_err(|error| error.to_string()));
+        });
+    let written = channels
+        .input
+        .send_bytes(LINE)
+        .and_then(|()| channels.input.close_input());
     let answer = echoed.recv_timeout(WAIT - Duration::from_secs(2));
-    // End of input ends cat, and with it the unit.
-    drop(child.stdin.take());
-    let status = wait_until(&mut child, Instant::now() + Duration::from_secs(2));
-    stop_unit(&unit);
-    let errors = stderr.as_ref().map(text).unwrap_or_default();
-    let status = status.map_or_else(|| "still running".to_string(), |s| s.to_string());
+    let exit = channels.exit.wait_for(Duration::from_secs(2));
+    unit.stop();
+    systemd_run.end();
     match (written, answer) {
-        (Some(Ok(())), Ok(Ok(bytes))) if bytes == LINE => Outcome::Pass(format!(
-            "{unit}.service echoed a line through its pipes ({status})."
+        (Ok(()), Ok(Ok(bytes))) if bytes == LINE => Outcome::Pass(format!(
+            "{name} connected back, passed the peer check and echoed a line ({exit:?})."
         )),
-        (Some(Err(error)), _) => Outcome::Fail(format!(
-            "Could not write to {unit}.service's pipe: {error}. systemd-run ({status}) said: {errors}"
-        )),
+        (Err(error), _) => Outcome::Fail(format!("Could not write to {name}'s host: {error}")),
         (_, Ok(Ok(bytes))) => Outcome::Fail(format!(
-            "{unit}.service sent back {:?} instead of the line. systemd-run ({status}) said: {errors}",
+            "{name} sent back {:?} instead of the line ({exit:?}).",
             String::from_utf8_lossy(&bytes)
         )),
         (_, Ok(Err(error))) => Outcome::Fail(format!(
-            "Reading {unit}.service's pipe failed: {error}. systemd-run ({status}) said: {errors}"
+            "Reading {name}'s output failed: {error} ({exit:?})."
         )),
-        (_, Err(_)) => Outcome::Fail(format!(
-            "{unit}.service did not echo the line in time. systemd-run ({status}) said: {errors}"
-        )),
+        (_, Err(_)) => Outcome::Fail(format!("{name} did not echo the line in time ({exit:?}).")),
     }
 }
 
-fn terminal_pty(context: &Context) -> Outcome {
+/// A terminal unit, as terminal sessions start it: `pty-host` makes the pty
+/// in the unit and runs `/bin/true` on it.
+fn pty_host(context: &Context) -> Outcome {
     let Some(manager) = context.mode.manager() else {
         return Outcome::NotApplicable(
             "Sessions run inside the agent's own process (BMUSTER_SESSIONS is not systemd).".into(),
@@ -312,7 +301,7 @@ fn terminal_pty(context: &Context) -> Outcome {
             let _ = send.send(process.wait().map_err(|error| format!("{error:#}")));
         });
     let code = exited.recv_timeout(WAIT);
-    // Ends the unit and systemd-run's session; the terminal then hangs up.
+    // Ends the unit and the host's connection.
     pty.end();
     drop(pty);
     let shown = text(&output);
@@ -322,16 +311,13 @@ fn terminal_pty(context: &Context) -> Outcome {
         format!("{shown:?}")
     };
     match code {
-        Ok(Ok(0)) => Outcome::Pass(format!("{name} ran /bin/true on a pty and exited 0.")),
-        Ok(Ok(code)) => Outcome::Fail(format!(
-            "{name} exited with {code}{}; the terminal showed {shown}.",
-            if code == 208 {
-                " (208: systemd could not set up the unit's standard input on the pty)"
-            } else {
-                ""
-            }
+        Ok(Ok(0)) => Outcome::Pass(format!(
+            "{name} ran /bin/true on a pty made in the unit and exited 0."
         )),
-        Ok(Err(error)) => Outcome::Fail(format!("Could not wait for {name}: {error}")),
+        Ok(Ok(code)) => Outcome::Fail(format!(
+            "{name} exited with {code}; the terminal showed {shown}."
+        )),
+        Ok(Err(error)) => Outcome::Fail(format!("{name}: {error}")),
         Err(_) => Outcome::Fail(format!(
             "{name} did not finish in {} s; the terminal showed {shown}.",
             WAIT.as_secs()
@@ -632,8 +618,8 @@ pub mod tests {
             ids,
             [
                 "systemd-run",
-                "systemd-run-pipe",
-                "terminal-pty",
+                "unit-connect-back",
+                "pty-host",
                 "logind-seat",
                 "kms-capture",
                 "egl",
@@ -650,12 +636,12 @@ pub mod tests {
             mode: crate::exec::placement::SessionMode::InProcess,
         };
         assert!(matches!(systemd_run(&context), Outcome::NotApplicable(_)));
-        assert!(matches!(terminal_pty(&context), Outcome::NotApplicable(_)));
+        assert!(matches!(
+            unit_connect_back(&context),
+            Outcome::NotApplicable(_)
+        ));
+        assert!(matches!(pty_host(&context), Outcome::NotApplicable(_)));
         if !is_root() {
-            assert!(matches!(
-                systemd_run_pipe(&context),
-                Outcome::NotApplicable(_)
-            ));
             assert!(matches!(kms_capture(&context), Outcome::NotApplicable(_)));
         }
         // The units are collected when they end and their names are the
@@ -667,38 +653,31 @@ pub mod tests {
         )
         .unwrap();
         let arguments: Vec<String> = unit
-            .arguments(Io::Detached, &harmless("/bin/true"))
+            .arguments(None, &harmless("/bin/true"))
             .iter()
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         assert!(arguments.contains(&"--collect".to_string()));
         assert!(unit.name().starts_with("bmuster-terminal-check-"));
-        let pipe: Vec<String> = unit_arguments_running(
-            "bmuster-console-check-1",
-            Path::new("/bin/cat"),
-            &[],
-            Path::new("/var/lib/bmuster"),
-        )
-        .iter()
-        .map(|a| a.to_string_lossy().into_owned())
-        .collect();
-        assert!(pipe.contains(&"--pipe".to_string()));
-        assert!(pipe.contains(&"--collect".to_string()));
-        assert_eq!(pipe.last().map(String::as_str), Some("/bin/cat"));
-        let helper = crate::console_helper::unit_arguments(
-            "bmuster-console-check-1",
-            Path::new("/opt/bmuster-agent"),
-            Path::new("/var/lib/bmuster"),
-        );
-        let helper: Vec<String> = helper
-            .iter()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(
-            helper[..helper.len() - 2],
-            pipe[..pipe.len() - 1],
-            "the same unit as the console helper, but for its program"
-        );
+        let echo = TransientUnit::new(crate::exec::unit::Manager::System, Kind::Exec, &check_id())
+            .unwrap();
+        assert!(echo.name().starts_with("bmuster-exec-check-"));
+    }
+
+    /// The unit checks for real, against the developer's own user manager
+    /// with the built agent: `cargo build && cargo test -- --ignored`.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[ignore = "needs a systemd user manager and the built agent"]
+    fn the_unit_checks_pass_under_the_user_manager() {
+        let context = Context {
+            data_dir: std::env::temp_dir(),
+            mode: crate::exec::placement::SessionMode::SystemdUser,
+        };
+        for check in [systemd_run, unit_connect_back, pty_host] {
+            let outcome = check(&context);
+            assert!(matches!(outcome, Outcome::Pass(_)), "{outcome:?}");
+        }
     }
 
     struct OneScreen;

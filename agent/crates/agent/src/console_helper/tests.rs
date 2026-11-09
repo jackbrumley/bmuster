@@ -73,14 +73,18 @@ fn property<'a>(args: &'a [OsString], name: &str) -> Vec<&'a str> {
 
 #[test]
 fn unit_properties() {
+    let socket = "/run/bmuster/connect/00112233445566778899aabbccddeeff.sock";
     let args = unit_arguments(
-        "bmuster-console-1-1",
+        "bmuster-console-1-1.service",
         Path::new("/run/bmuster/bmuster-user-helper"),
+        Path::new(socket),
         Path::new("/var/lib/bmuster"),
     );
     let text: Vec<&str> = args.iter().filter_map(|a| a.to_str()).collect();
-    assert!(text.contains(&"--pipe") && text.contains(&"--wait") && text.contains(&"--collect"));
-    assert!(text.contains(&"--unit=bmuster-console-1-1"));
+    assert!(!text.contains(&"--pipe"), "no agent pipes through systemd");
+    assert!(text.contains(&"--wait") && text.contains(&"--collect"));
+    assert_eq!(property(&args, "StandardInput"), vec!["null"]);
+    assert!(text.contains(&"--unit=bmuster-console-1-1.service"));
     // Root, but only the capability reading a framebuffer needs.
     assert!(!text.iter().any(|a| a.starts_with("--uid")));
     assert_eq!(
@@ -105,10 +109,10 @@ fn unit_properties() {
     // GPU drivers need to write and run shader code.
     assert_eq!(property(&args, "MemoryDenyWriteExecute"), vec!["no"]);
     // The root-owned helper copy, never the install folder; no secrets
-    // on the command line.
+    // on the command line, only the socket's path.
     assert_eq!(
-        &text[text.len() - 2..],
-        &["/run/bmuster/bmuster-user-helper", "console-helper"]
+        &text[text.len() - 3..],
+        &["/run/bmuster/bmuster-user-helper", "console-helper", socket]
     );
     assert!(!text
         .iter()
@@ -167,6 +171,46 @@ fn helper_round_trip_and_cleanup() {
     drop(client);
     agent_end.shutdown(std::net::Shutdown::Both).unwrap();
     helper.join().unwrap().unwrap();
+}
+
+/// CB6: the helper connects back to a real connect socket, passes the peer
+/// check, answers over it, and ends when the agent's side closes.
+#[test]
+fn over_socket() {
+    use crate::exec::connect::{ConnectSocket, Folder, Peer, CONNECT_WAIT};
+    let dir = tempfile::tempdir().unwrap();
+    // SAFETY: geteuid cannot fail.
+    let uid = unsafe { libc::geteuid() };
+    let socket = ConnectSocket::create(&Folder::at(dir.path()), uid).unwrap();
+    let path = socket.path().to_path_buf();
+    let pixels = Arc::new(Mutex::new(vec![1, 2, 3, 0, 4, 5, 6, 0]));
+    let helper = std::thread::spawn(move || {
+        let stream = UnixStream::connect(&path).unwrap();
+        let mut screen = Screen { pixels, last: None };
+        serve_stream(stream, &mut screen)
+    });
+    let unit = "bmuster-console-1-1.service";
+    let stream = socket
+        .accept_checked(
+            &Peer::new(uid, unit, Manager::System),
+            CONNECT_WAIT,
+            &mut || None,
+            &|_| Ok(format!("0::/system.slice/{unit}\n")),
+        )
+        .unwrap();
+    let closing = stream.try_clone().unwrap();
+    let mut client = HelperClient::over(
+        Box::new(stream.try_clone().unwrap()),
+        Box::new(stream),
+        Box::new(()),
+    );
+    assert_eq!(client.displays().unwrap()[0].id, "card0-eDP-1");
+    let frame = client.capture("card0-eDP-1", true).unwrap().unwrap();
+    assert_eq!(frame.row(0), &[1, 2, 3, 0, 4, 5, 6, 0][..]);
+    // Closing the socket ends the helper.
+    closing.shutdown(std::net::Shutdown::Both).unwrap();
+    helper.join().unwrap().unwrap();
+    drop(client);
 }
 
 #[test]

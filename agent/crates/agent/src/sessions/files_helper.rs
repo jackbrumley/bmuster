@@ -9,23 +9,26 @@
 //!
 //! Between the two, each message is a frame on the helper's stdin or
 //! stdout: one byte for the kind (0 text, 1 binary), the payload's length
-//! as four bytes big-endian, then the payload.
+//! as four bytes big-endian, then the payload. The helper runs under
+//! `stdio-host` (Version 2), which carries its stdin, stdout and stderr
+//! over the connect-back socket, so nothing of the agent's passes through
+//! systemd.
 
 use super::files::{Requests, OUTPUT_QUEUE};
 use super::pump::{pump, Ended, Incoming, Outgoing};
+use crate::exec::host::{self, HostProgram, InputWriter, Started};
 use crate::exec::spawn::{Launch, Program};
-use crate::exec::unit::{Io, TransientUnit};
+use crate::exec::unit::TransientUnit;
 use crate::socket::Socket;
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result};
 use bmuster_protocol::session::SessionEvent;
 use std::ffi::OsString;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
-use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const TEXT: u8 = 0;
 const BINARY: u8 = 1;
@@ -187,9 +190,9 @@ fn helper_environment() -> Vec<(OsString, OsString)> {
     env
 }
 
-/// Runs a files session in `unit`: starts the helper there and relays the
-/// socket to it until the session ends, then stops the unit.
-pub fn relay(socket: &mut Socket, unit: &TransientUnit, stop: &AtomicBool) -> Result<Ended> {
+/// Starts the helper in `unit` under `stdio-host` and waits for it to
+/// connect back. Errors are the session's failure to start.
+pub fn start(unit: &TransientUnit, stop: &AtomicBool) -> Result<Started> {
     let program: PathBuf = std::env::current_exe().context("could not find this program's path")?;
     let launch = Launch {
         program: Program {
@@ -200,29 +203,33 @@ pub fn relay(socket: &mut Socket, unit: &TransientUnit, stop: &AtomicBool) -> Re
         env: helper_environment(),
         cwd: PathBuf::from("/"),
     };
-    let mut child = unit
-        .command(Io::Pipe { runtime_max: None }, &launch)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("could not start systemd-run for the files helper")?;
-    crate::diagnostics::ship_helper_stderr("files-helper", child.stderr.take());
-    let (Some(input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
-        unit.stop();
-        let _ = child.kill();
-        let _ = child.wait();
-        bail!("the files helper has no pipes");
-    };
-    let ended = relay_streams(socket, input, output, stop);
-    // Its input is closed: the helper finishes and exits, or is stopped.
-    let until = Instant::now() + EXIT_WAIT;
-    while Instant::now() < until && matches!(child.try_wait(), Ok(None)) {
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    host::start(unit, HostProgram::Stdio, &launch, None, stop)
+}
+
+/// Relays the session socket to a started helper until the session ends,
+/// then stops the unit.
+pub fn relay(
+    socket: &mut Socket,
+    unit: &TransientUnit,
+    started: Started,
+    stop: &AtomicBool,
+) -> Result<Ended> {
+    let Started {
+        channels,
+        systemd_run,
+    } = started;
+    crate::diagnostics::ship_helper_stderr("files-helper", Some(channels.stderr));
+    // The writer goes with the relay, which closes the helper's input.
+    let ended = relay_streams(
+        socket,
+        InputWriter::new(channels.input),
+        channels.stdout,
+        stop,
+    );
+    // The helper finishes and exits, or is stopped.
+    let _ = channels.exit.wait_for(EXIT_WAIT);
     unit.stop();
-    let _ = child.kill();
-    let _ = child.wait();
+    systemd_run.end();
     ended
 }
 
@@ -261,8 +268,7 @@ mod tests {
         assert!(read_frame(&mut cut_short.as_slice()).is_err());
     }
 
-    /// The relay and a helper joined by pipes, as `systemd-run --pipe`
-    /// joins them.
+    /// The relay and a helper joined by pipes, as `stdio-host` joins them.
     fn start() -> (Server, std::thread::JoinHandle<Ended>) {
         let (mut client, server) = socket_pair();
         let (helper_in, relay_out) = std::io::pipe().unwrap();

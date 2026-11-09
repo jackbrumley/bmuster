@@ -1,13 +1,25 @@
 //! Starting and ending the processes a session runs: the shell for a
 //! terminal (a pseudo-terminal) and single commands for exec (pipes), in
 //! the agent's process or as transient systemd services ([`placement`]).
+//! A transient service runs a host program ([`pty_host`], [`stdio_host`])
+//! that connects back to the agent ([`connect`], [`host`]).
 
+#[cfg(target_os = "linux")]
+pub mod channel;
+#[cfg(target_os = "linux")]
+pub mod connect;
+#[cfg(target_os = "linux")]
+pub mod host;
 pub mod pipe;
 pub mod placement;
 #[cfg_attr(unix, path = "pty_unix.rs")]
 #[cfg_attr(windows, path = "pty_windows.rs")]
 pub mod pty;
+#[cfg(target_os = "linux")]
+pub mod pty_host;
 pub mod spawn;
+#[cfg(target_os = "linux")]
+pub mod stdio_host;
 pub mod tree;
 #[cfg(target_os = "linux")]
 pub mod unit;

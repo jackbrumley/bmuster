@@ -1,10 +1,10 @@
 //! The KMS console helper (SPEC-CONSOLE-CAPTURE, Capture 1): the physical
 //! screen is read by `bmuster-agent console-helper`, a transient root unit
 //! with access to `/dev/dri` only, no network and no view of the agent's
-//! data folder. It answers the agent's requests over its inherited stdin
-//! and stdout with the helper wire format, and ends when the pipe closes.
-//! Nothing secret crosses the pipe: requests name a display, replies carry
-//! pixels.
+//! data folder. It connects back to the agent's per-unit socket
+//! (SPEC-SESSION-UNITS, Version 2), answers the agent's requests there with
+//! the helper wire format, and ends when the socket closes. Nothing secret
+//! crosses it: requests name a display, replies carry pixels.
 //!
 //! - [`run`]: the helper's side, a [`KmsReader`] behind [`serve`].
 //! - [`HelperClient`]: the agent's side, a [`KmsSource`] over the pipe.
@@ -16,6 +16,8 @@ mod probe;
 
 pub use probe::probe;
 
+use crate::exec::connect::{self, ConnectSocket, Folder, Peer};
+use crate::exec::unit::Manager;
 use crate::wayland::wire::{self, Packet};
 use anyhow::{bail, Context as _, Result};
 use bmuster_desktop::capture::kms::capturer::SharedSource;
@@ -25,9 +27,11 @@ use bmuster_desktop::capture::x11_follow::ConsoleOpener;
 use bmuster_desktop::capture::{CaptureError, CaptureResult, CursorImage, Frame};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
-use std::io::{Read, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -112,9 +116,11 @@ impl KmsSource for Unavailable {
     }
 }
 
-/// The helper process: serve the machine's screens until the agent closes
-/// the pipe.
-pub fn run() -> Result<()> {
+/// The helper process: connect back to the agent at `socket` and serve
+/// the machine's screens until the agent closes it.
+pub fn run(socket: &Path) -> Result<()> {
+    let stream = UnixStream::connect(socket)
+        .with_context(|| format!("could not connect to {}", socket.display()))?;
     let mut source: Box<dyn KmsSource> = match KmsReader::open() {
         Ok(reader) => Box::new(reader),
         Err(error) => {
@@ -122,11 +128,13 @@ pub fn run() -> Result<()> {
             Box::new(Unavailable(error.0))
         }
     };
-    serve(
-        std::io::stdin().lock(),
-        std::io::stdout().lock(),
-        &mut *source,
-    )
+    serve_stream(stream, &mut *source)
+}
+
+/// [`serve`] over a connect-back socket.
+fn serve_stream(stream: UnixStream, source: &mut dyn KmsSource) -> Result<()> {
+    let reading = stream.try_clone()?;
+    serve(BufReader::new(reading), BufWriter::new(stream), source)
 }
 
 fn packed(width: u32, height: u32, stride: usize, data: &[u8]) -> Vec<u8> {
@@ -235,33 +243,23 @@ pub fn serve(
 /// may open the DRM devices and the standard pseudo-devices only, has no
 /// network, cannot see `data_dir` (the agent's identity and tokens) and is
 /// otherwise as strict as the agent's own unit. `MemoryDenyWriteExecute`
-/// stays off because GPU drivers compile shaders at run time.
-pub fn unit_arguments(unit: &str, program: &Path, data_dir: &Path) -> Vec<OsString> {
-    unit_arguments_running(unit, program, &[OsString::from("console-helper")], data_dir)
-}
-
-/// [`unit_arguments`] for any program: the self-check runs `/bin/cat` in
-/// exactly the helper's unit (SPEC-DIAGNOSTICS 1).
-pub fn unit_arguments_running(
-    unit: &str,
-    program: &Path,
-    program_args: &[OsString],
-    data_dir: &Path,
-) -> Vec<OsString> {
-    let mut args: Vec<OsString> = [
-        "--quiet",
-        "--pipe",
-        "--wait",
-        "--collect",
-        "--service-type=exec",
-    ]
-    .map(OsString::from)
-    .to_vec();
+/// stays off because GPU drivers compile shaders at run time. Its standard
+/// streams are systemd's own (`/dev/null`, the journal): the helper
+/// connects back to `socket`, its one argument (SPEC-SESSION-UNITS,
+/// Version 2). Connecting to a socket works on its read-only `/run` and
+/// without a network (a path socket is not one).
+pub fn unit_arguments(unit: &str, program: &Path, socket: &Path, data_dir: &Path) -> Vec<OsString> {
+    let mut args: Vec<OsString> = ["--quiet", "--wait", "--collect", "--service-type=exec"]
+        .map(OsString::from)
+        .to_vec();
     args.push(format!("--unit={unit}").into());
     let mut properties: Vec<OsString> = [
         "KillMode=control-group",
         "TimeoutStopSec=3",
         "UMask=0077",
+        "StandardInput=null",
+        "StandardOutput=journal",
+        "StandardError=journal",
         "NoNewPrivileges=yes",
         "CapabilityBoundingSet=CAP_SYS_ADMIN",
         "DevicePolicy=closed",
@@ -299,7 +297,8 @@ pub fn unit_arguments_running(
     args.push("--setenv=MESA_SHADER_CACHE_DISABLE=true".into());
     args.push("--".into());
     args.push(program.into());
-    args.extend(program_args.iter().cloned());
+    args.push("console-helper".into());
+    args.push(socket.into());
     args
 }
 
@@ -317,10 +316,13 @@ pub struct HelperClient {
 struct UnitGuard {
     child: Child,
     unit: String,
+    stream: UnixStream,
 }
 
 impl Drop for UnitGuard {
     fn drop(&mut self) {
+        // A closed socket ends the helper.
+        let _ = self.stream.shutdown(std::net::Shutdown::Both);
         // A helper that ended by itself says how (SPEC-DIAGNOSTICS 2).
         if let Ok(Some(status)) = self.child.try_wait() {
             if !status.success() {
@@ -342,35 +344,41 @@ impl Drop for UnitGuard {
 }
 
 impl HelperClient {
-    /// Starts `program console-helper` as a transient root unit.
+    /// Starts `program console-helper <socket>` as a transient root unit
+    /// and waits for it to connect back (SPEC-SESSION-UNITS, Version 2).
     pub fn start(program: &Path, data_dir: &Path) -> Result<HelperClient> {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let unit = format!(
-            "bmuster-console-{}-{}",
+            "bmuster-console-{}-{}.service",
             std::process::id(),
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         );
-        let mut child = std::process::Command::new("systemd-run")
-            .args(unit_arguments(&unit, program, data_dir))
-            .current_dir("/")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("Could not start the console capture helper")?;
-        // systemd-run's own errors and the helper's (SPEC-AGENT-LOGS 1).
-        crate::diagnostics::ship_helper_stderr("console-helper", child.stderr.take());
-        let (Some(input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
-            let _ = child.kill();
-            let _ = child.wait();
-            bail!("The console capture helper has no pipe");
-        };
+        // The helper runs as root, like the agent.
+        let socket = ConnectSocket::create(&Folder::system(), 0)?;
+        let mut command = std::process::Command::new("systemd-run");
+        command.args(unit_arguments(&unit, program, socket.path(), data_dir));
+        // systemd-run's own errors are shipped (SPEC-AGENT-LOGS 1); the
+        // helper's go to the journal.
+        let connected = connect::start(
+            socket,
+            &Peer::new(0, &unit, Manager::System),
+            command,
+            "console-helper",
+            &AtomicBool::new(false),
+        )
+        .context("Could not start the console capture helper")?;
         log::info!("Started the console capture helper {unit}");
         crate::timeline::step("helper-started", &unit);
+        let reading = connected.stream.try_clone()?;
+        let closing = connected.stream.try_clone()?;
         Ok(HelperClient::over(
-            Box::new(input),
-            Box::new(output),
-            Box::new(UnitGuard { child, unit }),
+            Box::new(connected.stream),
+            Box::new(reading),
+            Box::new(UnitGuard {
+                child: connected.systemd_run,
+                unit,
+                stream: closing,
+            }),
         ))
     }
 

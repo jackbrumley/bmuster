@@ -90,13 +90,42 @@ impl Join {
 
 #[derive(Subcommand)]
 enum Command {
+    /// The portal helper a Wayland desktop session starts as the user's unit
     #[cfg(target_os = "linux")]
     #[command(hide = true)]
-    WaylandHelper,
+    WaylandHelper {
+        /// The agent's connect-back socket for this unit
+        socket: PathBuf,
+    },
     /// The KMS screen reader a desktop session starts as a root unit
     #[cfg(target_os = "linux")]
     #[command(hide = true)]
-    ConsoleHelper,
+    ConsoleHelper {
+        /// The agent's connect-back socket for this unit
+        socket: PathBuf,
+    },
+    /// A terminal session's unit program: makes the pty in the unit and
+    /// runs the shell on it for the agent (not for use by hand)
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    PtyHost {
+        /// The agent's connect-back socket for this unit
+        socket: PathBuf,
+        /// The shell and its arguments
+        #[arg(last = true, required = true, value_parser = clap::value_parser!(std::ffi::OsString))]
+        command: Vec<std::ffi::OsString>,
+    },
+    /// A command or files session's unit program: runs the program with
+    /// pipes and relays them for the agent (not for use by hand)
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    StdioHost {
+        /// The agent's connect-back socket for this unit
+        socket: PathBuf,
+        /// The program and its arguments
+        #[arg(last = true, required = true, value_parser = clap::value_parser!(std::ffi::OsString))]
+        command: Vec<std::ffi::OsString>,
+    },
     /// Print what the kernel scans out to each display and save one PNG per
     /// display (run as root; nothing is sent anywhere)
     #[cfg(target_os = "linux")]
@@ -166,7 +195,7 @@ enum Command {
         sessions: SessionMode,
     },
     /// Serve one files session over stdin and stdout (run by the agent in a
-    /// transient systemd service; not for use by hand)
+    /// transient systemd service, under stdio-host; not for use by hand)
     #[cfg(target_os = "linux")]
     #[command(hide = true)]
     FilesHelper,
@@ -288,13 +317,23 @@ fn run_windows_service() -> ExitCode {
 fn dispatch(command: Command) -> Result<ExitCode> {
     match command {
         #[cfg(target_os = "linux")]
-        Command::WaylandHelper => {
-            wayland::helper::run()?;
+        Command::WaylandHelper { socket } => {
+            wayland::helper::run(&socket)?;
             Ok(ExitCode::SUCCESS)
         }
         #[cfg(target_os = "linux")]
-        Command::ConsoleHelper => {
-            console_helper::run()?;
+        Command::ConsoleHelper { socket } => {
+            console_helper::run(&socket)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        #[cfg(target_os = "linux")]
+        Command::PtyHost { socket, command } => {
+            exec::pty_host::run(&socket, &command)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        #[cfg(target_os = "linux")]
+        Command::StdioHost { socket, command } => {
+            exec::stdio_host::run(&socket, &command)?;
             Ok(ExitCode::SUCCESS)
         }
         #[cfg(target_os = "linux")]

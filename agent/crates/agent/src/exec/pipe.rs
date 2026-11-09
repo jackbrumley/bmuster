@@ -98,9 +98,149 @@ fn in_process(launch: &Launch) -> Command {
     command
 }
 
+/// The running command: the agent's own child, or a unit's `stdio-host`.
+enum Running {
+    Local {
+        child: std::process::Child,
+        tree: Tree,
+    },
+    #[cfg(target_os = "linux")]
+    Unit {
+        exit: super::host::Exit,
+        systemd_run: super::host::SystemdRun,
+    },
+}
+
+type Outputs = Vec<(Stream, Box<dyn Read + Send>)>;
+
+impl Running {
+    fn start(
+        launch: &Launch,
+        placement: &Placement,
+        limits: Limits,
+        stop: &AtomicBool,
+    ) -> Result<(Running, Outputs)> {
+        match placement {
+            Placement::InProcess => {
+                // Only a unit waits to connect (stop) or has a limit of its own.
+                let _ = (stop, limits);
+                let mut command = in_process(launch);
+                command
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::CommandExt as _;
+                    // SAFETY: setsid is async-signal-safe. The command leads its own
+                    // session, so everything it starts can be found and ended.
+                    unsafe {
+                        command.pre_exec(|| {
+                            if libc::setsid() == -1 {
+                                return Err(std::io::Error::last_os_error());
+                            }
+                            Ok(())
+                        });
+                    }
+                }
+                let mut child = command.spawn().with_context(|| {
+                    format!(
+                        "could not start {}",
+                        std::path::Path::new(command.get_program()).display()
+                    )
+                })?;
+                let tree = Tree::of(&child)?;
+                let mut outputs: Outputs = Vec::new();
+                if let Some(stdout) = child.stdout.take() {
+                    outputs.push((Stream::Stdout, Box::new(stdout)));
+                }
+                if let Some(stderr) = child.stderr.take() {
+                    outputs.push((Stream::Stderr, Box::new(stderr)));
+                }
+                Ok((Running::Local { child, tree }, outputs))
+            }
+            #[cfg(target_os = "linux")]
+            Placement::Unit(unit) => {
+                use super::host::{self, HostProgram};
+                let started =
+                    host::start(unit, HostProgram::Stdio, launch, Some(limits.timeout), stop)?;
+                let host::Started {
+                    channels,
+                    systemd_run,
+                } = started;
+                // A command gets no input.
+                channels
+                    .input
+                    .close_input()
+                    .context("could not reach the command's host")?;
+                let outputs: Outputs = vec![
+                    (Stream::Stdout, Box::new(channels.stdout)),
+                    (Stream::Stderr, Box::new(channels.stderr)),
+                ];
+                Ok((
+                    Running::Unit {
+                        exit: channels.exit,
+                        systemd_run,
+                    },
+                    outputs,
+                ))
+            }
+        }
+    }
+
+    /// Its exit code once it ended.
+    fn exited(&mut self) -> Result<Option<i32>> {
+        match self {
+            Running::Local { child, .. } => Ok(child
+                .try_wait()
+                .context("could not check the command")?
+                .map(exit_code_of)),
+            #[cfg(target_os = "linux")]
+            Running::Unit { exit, .. } => exit.peek().code(),
+        }
+    }
+
+    /// Ends everything it started (after the unit, for a unit).
+    fn end(&self, placement: &Placement) {
+        placement.end();
+        match self {
+            Running::Local { tree, .. } => tree.end(),
+            #[cfg(target_os = "linux")]
+            Running::Unit { systemd_run, .. } => systemd_run.end(),
+        }
+    }
+
+    /// Kills it and waits for it, at the time limit or a stop.
+    fn kill(&mut self) -> Result<()> {
+        match self {
+            Running::Local { child, .. } => {
+                let _ = child.kill();
+                child.wait().context("could not wait for the command")?;
+            }
+            #[cfg(target_os = "linux")]
+            Running::Unit { systemd_run, .. } => systemd_run.end(),
+        }
+        Ok(())
+    }
+
+    /// Waits for its exit code.
+    fn wait(&mut self) -> Result<i32> {
+        match self {
+            Running::Local { child, .. } => Ok(exit_code_of(
+                child.wait().context("could not wait for the command")?,
+            )),
+            #[cfg(target_os = "linux")]
+            Running::Unit { exit, .. } => exit
+                .wait()
+                .code()?
+                .context("the command's host gave no exit code"),
+        }
+    }
+}
+
 /// Runs `launch` to the end, the time limit, or `stop`, handing output to
-/// `sink` as it arrives (never more than the cap in total). For a unit,
-/// `systemd-run` hands its pipes to the service and exits with its code.
+/// `sink` as it arrives (never more than the cap in total). For a unit, the
+/// unit's `stdio-host` relays the command's streams and exit code.
 pub fn run(
     launch: &Launch,
     placement: &Placement,
@@ -109,56 +249,13 @@ pub fn run(
     mut sink: impl FnMut(Stream, &[u8]),
 ) -> Result<Outcome> {
     let started = Instant::now();
-    let mut command = match placement {
-        Placement::InProcess => in_process(launch),
-        #[cfg(target_os = "linux")]
-        Placement::Unit(unit) => unit.command(
-            super::unit::Io::Pipe {
-                runtime_max: Some(limits.timeout),
-            },
-            launch,
-        ),
-    };
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        // SAFETY: setsid is async-signal-safe. The command leads its own
-        // session, so everything it starts can be found and ended.
-        unsafe {
-            command.pre_exec(|| {
-                if libc::setsid() == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-    }
-    let mut child = command.spawn().with_context(|| {
-        format!(
-            "could not start {}",
-            std::path::Path::new(command.get_program()).display()
-        )
-    })?;
-    let tree = Tree::of(&child)?;
-    let end = || {
-        placement.end();
-        tree.end();
-    };
+    let (mut running, outputs) = Running::start(launch, placement, limits, stop)?;
 
     let (events, inbox) = mpsc::channel();
     let mut readers = 0;
-    if let Some(stdout) = child.stdout.take() {
+    for (stream, source) in outputs {
         let events = events.clone();
-        std::thread::spawn(move || read_into(stdout, Stream::Stdout, events));
-        readers += 1;
-    }
-    if let Some(stderr) = child.stderr.take() {
-        let events = events.clone();
-        std::thread::spawn(move || read_into(stderr, Stream::Stderr, events));
+        std::thread::spawn(move || read_into(source, stream, events));
         readers += 1;
     }
     drop(events);
@@ -172,16 +269,17 @@ pub fn run(
 
     while readers > 0 {
         if status.is_none() {
-            if let Some(exit) = child.try_wait().context("could not check the command")? {
-                status = Some(exit);
+            let exited = running.exited().inspect_err(|_| running.end(placement))?;
+            if let Some(code) = exited {
+                status = Some(code);
                 // Anything it left running goes too; its output so far is kept.
-                end();
+                running.end(placement);
                 drain_until = Some(Instant::now() + DRAIN);
             } else if stop.load(Ordering::SeqCst) || Instant::now() >= deadline {
                 timed_out = !stop.load(Ordering::SeqCst);
-                end();
-                let _ = child.kill();
-                status = Some(child.wait().context("could not wait for the command")?);
+                running.end(placement);
+                running.kill()?;
+                status = Some(-1);
                 drain_until = Some(Instant::now() + DRAIN);
             }
         }
@@ -207,12 +305,16 @@ pub fn run(
     }
     let status = match status {
         Some(status) => status,
-        None => child.wait().context("could not wait for the command")?,
+        None => {
+            let code = running.wait();
+            running.end(placement);
+            code?
+        }
     };
     let exit_code = if timed_out || stop.load(Ordering::SeqCst) {
         -1
     } else {
-        exit_code_of(status)
+        status
     };
     Ok(Outcome {
         exit_code,

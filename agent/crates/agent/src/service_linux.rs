@@ -347,5 +347,11 @@ mod tests {
         assert!(unit.contains("Environment=BMUSTER_SESSIONS=systemd\n"));
         assert!(unit.contains("ProtectSystem=strict\n"));
         assert!(unit.contains("ProtectHome=read-only\n"));
+        // Units connect back over /run/bmuster/connect (SPEC-SESSION-UNITS,
+        // Version 2): the runtime folder is the one writable place under
+        // /run, and the sandbox needs nothing more.
+        assert!(unit.contains("RuntimeDirectory=bmuster\n"));
+        assert!(unit.contains("ReadWritePaths=/var/lib/bmuster\n"));
+        assert!(unit.contains("RestrictAddressFamilies=AF_UNIX "));
     }
 }

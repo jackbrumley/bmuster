@@ -3,6 +3,8 @@ use super::{
     png_stream,
     wire::{self, Command, Event, Packet},
 };
+use crate::exec::connect::{self, ConnectSocket, Folder, Peer};
+use crate::exec::unit::Manager;
 use anyhow::{bail, Context as _, Result};
 use bmuster_desktop::capture::{
     CaptureError, CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState,
@@ -11,6 +13,9 @@ use bmuster_desktop::capture::{
 use bmuster_desktop::input::{
     keymap::KeyPosition, Axis, Button, InputBackend, InputError, InputResult,
 };
+use std::ffi::OsString;
+use std::io::BufReader;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::{
@@ -31,6 +36,8 @@ pub struct Bridge {
     child: Mutex<Child>,
     unit: String,
     _reservation: Reservation,
+    /// The helper's connection; closing it ends the helper.
+    stream: UnixStream,
 }
 
 static ACTIVE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<(u32, bool)>>> =
@@ -62,6 +69,7 @@ impl Drop for Reservation {
 impl Drop for Bridge {
     fn drop(&mut self) {
         let _ = self.commands.try_send(Command::Stop);
+        let _ = self.stream.shutdown(std::net::Shutdown::Both);
         let _ = std::process::Command::new("systemctl")
             .args(["stop", "--no-block", &self.unit])
             .stdout(Stdio::null())
@@ -81,6 +89,37 @@ pub fn token_path(dir: &Path, uid: u32, control: bool) -> PathBuf {
     ))
 }
 
+/// `systemd-run`'s arguments for the helper unit `unit`, run as `uid`. Its
+/// standard streams are systemd's own (`/dev/null`, the journal): the
+/// helper connects back to `socket`, its one argument (SPEC-SESSION-UNITS,
+/// Version 2).
+pub fn unit_arguments(unit: &str, uid: u32, program: &Path, socket: &Path) -> Vec<OsString> {
+    let mut args: Vec<OsString> = [
+        "--quiet".to_string(),
+        "--wait".to_string(),
+        "--collect".to_string(),
+        "--service-type=exec".to_string(),
+        format!("--unit={unit}"),
+        format!("--uid={uid}"),
+        "--property=KillMode=control-group".to_string(),
+        "--property=TimeoutStopSec=3".to_string(),
+        "--property=NoNewPrivileges=yes".to_string(),
+        "--property=UMask=0077".to_string(),
+        "--property=StandardInput=null".to_string(),
+        "--property=StandardOutput=journal".to_string(),
+        "--property=StandardError=journal".to_string(),
+        format!("--setenv=XDG_RUNTIME_DIR=/run/user/{uid}"),
+        format!("--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus"),
+        "--".to_string(),
+    ]
+    .map(OsString::from)
+    .to_vec();
+    args.push(program.into());
+    args.push("wayland-helper".into());
+    args.push(socket.into());
+    args
+}
+
 pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
     if uid == 0 {
         bail!("A Wayland helper cannot run as root");
@@ -88,41 +127,26 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
     let reservation = Reservation::acquire(uid, control)?;
     let program = super::helper_program()?;
     let unit = format!(
-        "bmuster-wayland-{}-{}",
+        "bmuster-wayland-{}-{}.service",
         std::process::id(),
         super::next_id()
     );
-    let mut child = ChildGuard(Some(
-        std::process::Command::new("systemd-run")
-            .args([
-                "--quiet",
-                "--pipe",
-                "--wait",
-                "--collect",
-                "--service-type=exec",
-                &format!("--unit={unit}"),
-                &format!("--uid={uid}"),
-                "--property=KillMode=control-group",
-                "--property=TimeoutStopSec=3",
-                "--property=NoNewPrivileges=yes",
-                "--property=UMask=0077",
-                &format!("--setenv=XDG_RUNTIME_DIR=/run/user/{uid}"),
-                &format!("--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus"),
-                "--",
-            ])
-            .arg(program)
-            .arg("wayland-helper")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("Could not launch the Wayland user helper")?,
-    ));
-    // Its stderr carries gst-launch's too (SPEC-AGENT-LOGS 1).
-    crate::diagnostics::ship_helper_stderr(
+    // The socket is the user's: the helper runs as them.
+    let socket = ConnectSocket::create(&Folder::system(), uid)?;
+    let mut command = std::process::Command::new("systemd-run");
+    command.args(unit_arguments(&unit, uid, &program, socket.path()));
+    // systemd-run's own errors are shipped (SPEC-AGENT-LOGS 1); the
+    // helper's and gst-launch's go to the journal.
+    let connected = connect::start(
+        socket,
+        &Peer::new(uid, &unit, Manager::System),
+        command,
         "wayland-helper",
-        child.0.as_mut().and_then(|process| process.stderr.take()),
-    );
+        &std::sync::atomic::AtomicBool::new(false),
+    )
+    .context("Could not launch the Wayland user helper")?;
+    let stream = connected.stream;
+    let mut child = ChildGuard(Some(connected.systemd_run));
     let result = (|| -> Result<Arc<Bridge>> {
         let token_file = token_path(dir, uid, control);
         let restore_token = match std::fs::read(&token_file) {
@@ -133,9 +157,8 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => return Err(error.into()),
         };
-        let process = child.0.as_mut().context("Helper process absent")?;
-        let mut input = process.stdin.take().context("Helper stdin absent")?;
-        let mut output = process.stdout.take().context("Helper stdout absent")?;
+        let mut input = stream.try_clone()?;
+        let mut output = BufReader::new(stream.try_clone()?);
         wire::json(
             &mut input,
             &Command::Configure {
@@ -219,6 +242,7 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
             state,
             commands: send,
             child: Mutex::new(child.0.take().context("Helper process absent")?),
+            stream: stream.try_clone()?,
             unit: unit.clone(),
             _reservation: reservation,
         }))

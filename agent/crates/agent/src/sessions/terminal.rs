@@ -14,8 +14,7 @@ use crate::exec::PtySize;
 use crate::socket::Socket;
 use anyhow::Result;
 use bmuster_protocol::session::{SessionControl, SessionEvent, Shell};
-use std::fs::File;
-use std::io::{Read as _, Write as _};
+use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::Arc;
@@ -29,7 +28,7 @@ const OUTPUT_QUEUE: usize = 16;
 const INPUT_LIMIT: usize = 1024 * 1024;
 /// After the shell exits, how long to wait for its last output.
 const LAST_OUTPUT_WAIT: Duration = Duration::from_secs(1);
-/// A shell that fails this soon did not really start (a unit's exit 208, say).
+/// A shell that fails this soon did not really start (its shell could not run, say).
 const EARLY_EXIT: Duration = Duration::from_secs(5);
 
 /// What to start.
@@ -86,7 +85,7 @@ pub fn run(socket: &mut Socket, spawned: Spawned, stop: &AtomicBool) -> Result<E
                         timeline.step("exited", &format!("exit code {code}"));
                     }
                     if code != 0 && started.elapsed() < EARLY_EXIT {
-                        // It did not really start (a unit's exit 208, say).
+                        // It did not really start (its shell could not run, say).
                         if let Some(timeline) = &timeline {
                             timeline.ship(
                                 &crate::logging::SHIP,
@@ -156,7 +155,7 @@ fn spawn(name: &str, work: impl FnOnce() + Send + 'static) -> Result<()> {
 /// Terminal → socket. Once the socket side is gone it keeps reading and
 /// dropping, so a shell (or ConPTY's close) never waits on a full buffer.
 fn read_terminal(
-    mut reader: File,
+    mut reader: impl Read,
     output: &SyncSender<Outgoing>,
     timeline: Option<&crate::timeline::Timeline>,
 ) {
@@ -189,7 +188,7 @@ fn read_terminal(
 }
 
 /// Socket → terminal.
-fn write_terminal(mut writer: File, inbox: &mpsc::Receiver<Vec<u8>>, queued: &AtomicUsize) {
+fn write_terminal(mut writer: impl Write, inbox: &mpsc::Receiver<Vec<u8>>, queued: &AtomicUsize) {
     for bytes in inbox {
         let result = writer.write_all(&bytes).and_then(|()| writer.flush());
         queued.fetch_sub(bytes.len(), Ordering::SeqCst);

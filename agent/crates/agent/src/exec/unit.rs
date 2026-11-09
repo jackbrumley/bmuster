@@ -6,9 +6,13 @@
 //! admin's terminal is full root. `--scope` would not do: a scope's process
 //! is forked by the caller and keeps the caller's mount namespace.
 //!
-//! - `--wait` keeps `systemd-run` running until the service ends and makes
-//!   its exit code the service's, so the agent waits for `systemd-run` as it
-//!   would for the program itself.
+//! Nothing of the agent's passes through systemd (Version 2): the unit's
+//! standard input is `/dev/null` and its output goes to the journal. The
+//! program it runs is a BMuster host (`pty-host`, `stdio-host`) that
+//! connects back to the agent over a per-session socket ([`super::connect`]).
+//!
+//! - `--wait` keeps `systemd-run` running until the service ends, so the
+//!   agent can tell when a unit ended before it connected.
 //! - `--collect` unloads the unit when it ends, even when it failed.
 //! - `--service-type=exec` makes a program that cannot start an error of
 //!   `systemd-run`, not a service that failed later.
@@ -23,7 +27,6 @@ use super::spawn::Launch;
 use anyhow::{bail, Result};
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -46,22 +49,6 @@ impl Manager {
             Manager::User => Some("--user"),
         }
     }
-}
-
-/// How the service's standard streams are connected.
-#[derive(Debug, Clone, Copy)]
-pub enum Io<'a> {
-    /// The session's pseudo-terminal: systemd opens it as the service's
-    /// standard streams and controlling terminal, so resizing it reaches the
-    /// shell directly.
-    Terminal { tty: &'a Path },
-    /// `systemd-run`'s own stdin, stdout and stderr are handed to the
-    /// service (`--pipe`), so the two output streams stay apart. A time
-    /// limit also stops the unit if the agent is gone.
-    Pipe { runtime_max: Option<Duration> },
-    /// No streams (systemd's default, `/dev/null`): the self-check's
-    /// `systemd-run` unit, which tests the unit itself without a pty or pipe.
-    Detached,
 }
 
 /// One session's transient service.
@@ -129,8 +116,14 @@ impl TransientUnit {
         &self.name
     }
 
-    /// `systemd-run`'s arguments for running `launch` as this unit.
-    pub fn arguments(&self, io: Io<'_>, launch: &Launch) -> Vec<OsString> {
+    pub fn manager(&self) -> Manager {
+        self.manager
+    }
+
+    /// `systemd-run`'s arguments for running `launch` as this unit. A
+    /// `runtime_max` (a command's own limit) also stops the unit, with some
+    /// slack, if the agent is gone.
+    pub fn arguments(&self, runtime_max: Option<Duration>, launch: &Launch) -> Vec<OsString> {
         let mut args: Vec<OsString> = Vec::new();
         if let Some(flag) = self.manager.flag() {
             args.push(flag.into());
@@ -151,23 +144,12 @@ impl TransientUnit {
             OsStr::new("WorkingDirectory="),
             launch.cwd.as_os_str(),
         ]));
-        match io {
-            Io::Terminal { tty } => {
-                property(joined(&[OsStr::new("TTYPath="), tty.as_os_str()]));
-                property("StandardInput=tty".into());
-                property("StandardOutput=tty".into());
-                property("StandardError=tty".into());
-            }
-            Io::Pipe { runtime_max } => {
-                args.push("--pipe".into());
-                if let Some(limit) = runtime_max {
-                    args.push("-p".into());
-                    args.push(
-                        format!("RuntimeMaxSec={}", (limit + RUNTIME_SLACK).as_secs()).into(),
-                    );
-                }
-            }
-            Io::Detached => {}
+        // Nothing of the agent's: no terminal, pipe or descriptor.
+        property("StandardInput=null".into());
+        property("StandardOutput=journal".into());
+        property("StandardError=journal".into());
+        if let Some(limit) = runtime_max {
+            property(format!("RuntimeMaxSec={}", (limit + RUNTIME_SLACK).as_secs()).into());
         }
         for (name, value) in &launch.env {
             args.push(joined(&[
@@ -179,10 +161,6 @@ impl TransientUnit {
         }
         args.push("--".into());
         args.push(escaped(launch.program.path.as_os_str()));
-        // systemd cannot set argv[0]; a login shell (`-bash`) asks with -l.
-        if launch.program.arg0.as_bytes().starts_with(b"-") {
-            args.push("-l".into());
-        }
         args.extend(launch.program.args.iter().map(|arg| escaped(arg)));
         args
     }
@@ -190,9 +168,11 @@ impl TransientUnit {
     /// A `systemd-run` command that runs `launch` as this unit. It keeps the
     /// agent's environment (the user manager is found through it); the
     /// service gets only `launch.env`.
-    pub fn command(&self, io: Io<'_>, launch: &Launch) -> Command {
+    pub fn command(&self, runtime_max: Option<Duration>, launch: &Launch) -> Command {
         let mut command = Command::new("systemd-run");
-        command.args(self.arguments(io, launch)).current_dir("/");
+        command
+            .args(self.arguments(runtime_max, launch))
+            .current_dir("/");
         command
     }
 
@@ -202,11 +182,12 @@ impl TransientUnit {
         if self.stopped.swap(true, Ordering::SeqCst) {
             return;
         }
-        systemctl_stop(self.manager, &[self.name.as_str()]);
+        stop_units(self.manager, &[self.name.as_str()]);
     }
 }
 
-fn systemctl_stop(manager: Manager, units: &[&str]) {
+/// `systemctl stop` for `units` of `manager`; failures are logged.
+pub fn stop_units(manager: Manager, units: &[&str]) {
     let mut command = Command::new("systemctl");
     if let Some(flag) = manager.flag() {
         command.arg(flag);
@@ -228,14 +209,15 @@ pub fn sweep(manager: Manager) {
     let patterns =
         [Kind::Terminal, Kind::Exec, Kind::Files].map(|kind| format!("{}*", prefix(kind)));
     let patterns: Vec<&str> = patterns.iter().map(String::as_str).collect();
-    systemctl_stop(manager, &patterns);
+    stop_units(manager, &patterns);
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::host::{hosted, HostProgram};
     use super::super::spawn::Program;
     use super::*;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     fn launch(arg0: &str, args: &[&str]) -> Launch {
         Launch {
@@ -259,16 +241,18 @@ mod tests {
     }
 
     const ID: &str = "0b0e8c1e-7f43-4b8e-9d1c-5a2f3e4d5c6b";
+    const SOCKET: &str = "/run/bmuster/connect/00112233445566778899aabbccddeeff.sock";
 
     #[test]
-    fn a_terminal_is_a_login_shell_on_its_own_terminal() {
+    fn a_terminal_is_a_login_shell_under_pty_host() {
         let unit = TransientUnit::new(Manager::System, Kind::Terminal, ID).unwrap();
-        let args = strings(&unit.arguments(
-            Io::Terminal {
-                tty: Path::new("/dev/pts/7"),
-            },
+        let hosted = hosted(
+            HostProgram::Pty,
+            Path::new("/opt/bmuster-agent"),
+            Path::new(SOCKET),
             &launch("-bash", &[]),
-        ));
+        );
+        let args = strings(&unit.arguments(None, &hosted));
         assert_eq!(
             args,
             [
@@ -288,15 +272,17 @@ mod tests {
                 "-p",
                 "WorkingDirectory=/root",
                 "-p",
-                "TTYPath=/dev/pts/7",
+                "StandardInput=null",
                 "-p",
-                "StandardInput=tty",
+                "StandardOutput=journal",
                 "-p",
-                "StandardOutput=tty",
-                "-p",
-                "StandardError=tty",
+                "StandardError=journal",
                 "--setenv=HOME=/root",
                 "--setenv=BMUSTER_USER=Jack B",
+                "--",
+                "/opt/bmuster-agent",
+                "pty-host",
+                SOCKET,
                 "--",
                 "/bin/bash",
                 "-l",
@@ -305,30 +291,88 @@ mod tests {
     }
 
     #[test]
-    fn a_command_pipes_its_streams_and_keeps_its_dollars() {
+    fn a_command_runs_under_stdio_host_and_keeps_its_dollars() {
         let unit = TransientUnit::new(Manager::System, Kind::Exec, ID).unwrap();
-        let args = strings(&unit.arguments(
-            Io::Pipe {
-                runtime_max: Some(Duration::from_secs(60)),
-            },
+        let hosted = hosted(
+            HostProgram::Stdio,
+            Path::new("/opt/bmuster-agent"),
+            Path::new(SOCKET),
             &launch("/bin/bash", &["-lc", "X=1; echo $X ${HOME} $$ %h"]),
-        ));
-        let pipe = args.iter().position(|arg| arg == "--pipe").unwrap();
-        assert_eq!(args[pipe + 1..pipe + 3], ["-p", "RuntimeMaxSec=70"]);
+        );
+        let args = strings(&unit.arguments(Some(Duration::from_secs(60)), &hosted));
+        assert!(args.contains(&"RuntimeMaxSec=70".to_string()));
         assert!(args.contains(&format!("--unit=bmuster-exec-{ID}.service")));
-        assert!(!args.iter().any(|arg| arg.starts_with("TTYPath=")));
         let program = args.iter().position(|arg| arg == "--").unwrap();
         assert_eq!(
             args[program + 1..],
-            ["/bin/bash", "-lc", "X=1; echo $$X $${HOME} $$$$ %h"]
+            [
+                "/opt/bmuster-agent",
+                "stdio-host",
+                SOCKET,
+                "--",
+                "/bin/bash",
+                "-lc",
+                "X=1; echo $$X $${HOME} $$$$ %h"
+            ]
         );
+    }
+
+    /// CB3: no unit property passes a pty path or an agent descriptor.
+    #[test]
+    fn units_take_no_agent_descriptors() {
+        let forbidden = |arg: &String| {
+            arg == "--pipe"
+                || arg == "--pty"
+                || arg.starts_with("--pty")
+                || arg.starts_with("TTYPath=")
+                || arg.ends_with("=tty")
+                || arg.contains("=fd")
+                || arg.starts_with("StandardInput=socket")
+        };
+        for (kind, host, limit) in [
+            (Kind::Terminal, HostProgram::Pty, None),
+            (Kind::Exec, HostProgram::Stdio, Some(Duration::from_secs(5))),
+            (Kind::Files, HostProgram::Stdio, None),
+        ] {
+            let unit = TransientUnit::new(Manager::System, kind, ID).unwrap();
+            let hosted = hosted(
+                host,
+                Path::new("/opt/bmuster-agent"),
+                Path::new(SOCKET),
+                &launch("-bash", &[]),
+            );
+            let args = strings(&unit.arguments(limit, &hosted));
+            assert!(!args.iter().any(forbidden), "{args:?}");
+            assert!(args.contains(&"StandardInput=null".to_string()));
+            let program = args.iter().position(|arg| arg == "--").unwrap();
+            assert_eq!(
+                args[program + 3],
+                SOCKET,
+                "the socket is the host's one argument"
+            );
+        }
+        let console = strings(&crate::console_helper::unit_arguments(
+            "bmuster-console-1-1.service",
+            Path::new("/run/bmuster/bmuster-user-helper"),
+            Path::new(SOCKET),
+            Path::new("/var/lib/bmuster"),
+        ));
+        assert!(!console.iter().any(forbidden), "{console:?}");
+        let wayland = strings(&crate::wayland::capture::unit_arguments(
+            "bmuster-wayland-1-1.service",
+            1000,
+            Path::new("/run/bmuster/bmuster-user-helper"),
+            Path::new(SOCKET),
+        ));
+        assert!(!wayland.iter().any(forbidden), "{wayland:?}");
+        assert_eq!(wayland.last().map(String::as_str), Some(SOCKET));
     }
 
     #[cfg(debug_assertions)]
     #[test]
     fn the_development_user_manager_is_asked_with_user() {
         let unit = TransientUnit::new(Manager::User, Kind::Files, ID).unwrap();
-        let args = unit.arguments(Io::Pipe { runtime_max: None }, &launch("x", &[]));
+        let args = unit.arguments(None, &launch("x", &[]));
         assert_eq!(args[0], "--user");
         assert!(!strings(&args)
             .iter()
@@ -345,15 +389,18 @@ mod tests {
         }
     }
 
-    /// Runs against the developer's own systemd user manager:
-    /// `cargo test -- --ignored`.
+    /// Runs against the developer's own systemd user manager, with the
+    /// built agent as the host: `cargo build && cargo test -- --ignored`.
     #[cfg(debug_assertions)]
     mod user_manager {
         use super::super::super::pipe::{self, Limits, Stream};
         use super::super::super::placement::Placement;
-        use super::super::super::spawn::{agent_account, command_line, environment};
+        use super::super::super::pty::Pty;
+        use super::super::super::spawn::{agent_account, command_line, environment, interactive};
+        use super::super::super::PtySize;
         use super::*;
         use bmuster_protocol::session::Shell;
+        use std::io::{Read as _, Write as _};
 
         fn session_id() -> String {
             let mut bytes = [0u8; 8];
@@ -398,7 +445,7 @@ mod tests {
         }
 
         #[test]
-        #[ignore = "needs a systemd user manager"]
+        #[ignore = "needs a systemd user manager and the built agent"]
         fn a_command_runs_in_its_own_unit_with_split_streams_and_its_exit_code() {
             let limits = Limits {
                 timeout: Duration::from_secs(20),
@@ -419,7 +466,7 @@ mod tests {
         }
 
         #[test]
-        #[ignore = "needs a systemd user manager"]
+        #[ignore = "needs a systemd user manager and the built agent"]
         fn a_command_past_its_time_limit_is_stopped_with_its_unit() {
             let limits = Limits {
                 timeout: Duration::from_millis(1500),
@@ -434,6 +481,60 @@ mod tests {
                 unit_is_gone(&name),
                 "the unit and its background sleep are gone"
             );
+        }
+
+        #[test]
+        #[ignore = "needs a systemd user manager and the built agent"]
+        fn a_terminal_unit_has_its_own_pty_and_resizes() {
+            let id = session_id();
+            let unit = TransientUnit::new(Manager::User, Kind::Terminal, &id).unwrap();
+            let name = unit.name().to_string();
+            let program = interactive(Shell::Sh).unwrap();
+            let account = agent_account();
+            let env = environment(&account, &program, "tester", true);
+            let launch = Launch {
+                program,
+                env,
+                cwd: account.home,
+            };
+            let spawned =
+                Pty::spawn(&launch, Placement::Unit(unit), PtySize::clamped(80, 24)).unwrap();
+            let mut writer = spawned.writer;
+            let mut reader = spawned.reader;
+            let (send, seen) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let mut buffer = [0u8; 4096];
+                while let Ok(n) = reader.read(&mut buffer) {
+                    if n == 0 || send.send(buffer[..n].to_vec()).is_err() {
+                        return;
+                    }
+                }
+            });
+            let mut shown = String::new();
+            let wait_for = |text: &str, shown: &mut String| {
+                let until = std::time::Instant::now() + Duration::from_secs(10);
+                while !shown.contains(text) {
+                    let left = until.saturating_duration_since(std::time::Instant::now());
+                    let bytes = seen.recv_timeout(left).unwrap_or_else(|_| {
+                        panic!("{text:?} never showed; the terminal showed {shown:?}")
+                    });
+                    shown.push_str(&String::from_utf8_lossy(&bytes));
+                }
+            };
+            writer
+                .write_all(b"cat /proc/self/cgroup; stty size; echo do''ne\n")
+                .unwrap();
+            wait_for("done", &mut shown);
+            assert!(shown.contains(&format!("/{name}")), "{shown}");
+            assert!(shown.contains("24 80"), "{shown}");
+            spawned.pty.resize(PtySize::clamped(132, 43)).unwrap();
+            writer.write_all(b"stty size\n").unwrap();
+            wait_for("43 132", &mut shown);
+            writer.write_all(b"exit 7\n").unwrap();
+            let mut process = spawned.process;
+            assert_eq!(process.wait().unwrap(), 7);
+            spawned.pty.end();
+            assert!(unit_is_gone(&name));
         }
     }
 }

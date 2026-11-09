@@ -9,11 +9,14 @@ use ashpd::desktop::{
     screencast::{CursorMode, Screencast, SourceType},
     PersistMode,
 };
+use std::io::{BufReader, Read};
 use std::os::fd::AsRawFd as _;
+use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
 
-type Output = Arc<Mutex<std::io::Stdout>>;
+type Output = Arc<Mutex<UnixStream>>;
 fn event(output: &Output, value: &Event) -> Result<()> {
     wire::json(
         &mut *output
@@ -106,12 +109,9 @@ fn capture(fd: std::os::fd::OwnedFd, node: u32, output: Output) -> Result<Captur
     Ok(child)
 }
 
-pub fn run() -> Result<()> {
-    if unsafe { libc::geteuid() } == 0 {
-        bail!("The Wayland helper must run as the signed-in user");
-    }
-    set_wayland_display()?;
-    let Packet::Json(config) = wire::read(std::io::stdin())? else {
+/// The agent's first packet: whether to control, and a saved permission.
+fn configuration(input: &mut impl Read) -> Result<(bool, Option<String>)> {
+    let Packet::Json(config) = wire::read(input)? else {
         bail!("Missing helper configuration");
     };
     let Command::Configure {
@@ -121,30 +121,47 @@ pub fn run() -> Result<()> {
     else {
         bail!("Invalid helper configuration");
     };
-    let output = Arc::new(Mutex::new(std::io::stdout()));
+    Ok((control, restore_token))
+}
+
+/// The agent's commands, until its socket closes; then `Stop`, so a closed
+/// socket ends the helper.
+fn forward_commands(mut input: impl Read, send: &tokio::sync::mpsc::Sender<Command>) {
+    loop {
+        let command = match wire::read(&mut input) {
+            Ok(Packet::Json(bytes)) if bytes.len() <= 4096 => {
+                serde_json::from_slice::<Command>(&bytes)
+            }
+            _ => break,
+        };
+        match command {
+            Ok(command) => {
+                if send.blocking_send(command).is_err() {
+                    return;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    let _ = send.blocking_send(Command::Stop);
+}
+
+/// `bmuster-agent wayland-helper <socket>`: connects back to the agent
+/// (SPEC-SESSION-UNITS, Version 2) and owns the portal session for it.
+pub fn run(socket: &Path) -> Result<()> {
+    if unsafe { libc::geteuid() } == 0 {
+        bail!("The Wayland helper must run as the signed-in user");
+    }
+    let stream = UnixStream::connect(socket)
+        .with_context(|| format!("could not connect to {}", socket.display()))?;
+    set_wayland_display()?;
+    let mut input = BufReader::new(stream.try_clone()?);
+    let (control, restore_token) = configuration(&mut input)?;
+    let output = Arc::new(Mutex::new(stream));
     let (send, mut receive) = tokio::sync::mpsc::channel(32);
     std::thread::Builder::new()
         .name("wayland input".into())
-        .spawn(move || {
-            let mut stdin = std::io::stdin();
-            loop {
-                let command = match wire::read(&mut stdin) {
-                    Ok(Packet::Json(bytes)) if bytes.len() <= 4096 => {
-                        serde_json::from_slice::<Command>(&bytes)
-                    }
-                    _ => break,
-                };
-                match command {
-                    Ok(command) => {
-                        if send.blocking_send(command).is_err() {
-                            return;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            let _ = send.blocking_send(Command::Stop);
-        })?;
+        .spawn(move || forward_commands(input, &send))?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(2)
@@ -258,6 +275,77 @@ fn find_wayland_display(runtime: &std::path::Path) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    /// CB6: the helper's end of a real connect socket owned by its user
+    /// reads its configuration and the agent's commands, and a closed
+    /// socket ends it with `Stop`.
+    #[test]
+    fn over_socket() {
+        use super::super::wire::{self, Command};
+        use crate::exec::connect::{ConnectSocket, Folder, Peer, CONNECT_WAIT};
+        use crate::exec::unit::Manager;
+        use std::io::BufReader;
+        use std::os::unix::net::UnixStream;
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: geteuid cannot fail.
+        let uid = unsafe { libc::geteuid() };
+        let socket = ConnectSocket::create(&Folder::at(dir.path()), uid).unwrap();
+        let path = socket.path().to_path_buf();
+        let helper = std::thread::spawn(move || {
+            let stream = UnixStream::connect(&path).unwrap();
+            let mut input = BufReader::new(stream);
+            let configured = super::configuration(&mut input).unwrap();
+            let (send, mut receive) = tokio::sync::mpsc::channel(32);
+            std::thread::spawn(move || super::forward_commands(input, &send));
+            let mut commands = Vec::new();
+            while let Some(command) = receive.blocking_recv() {
+                let stop = matches!(command, Command::Stop);
+                commands.push(command);
+                if stop {
+                    break;
+                }
+            }
+            (configured, commands)
+        });
+        let unit = "bmuster-wayland-1-1.service";
+        let mut agent = socket
+            .accept_checked(
+                &Peer::new(uid, unit, Manager::System),
+                CONNECT_WAIT,
+                &mut || None,
+                &|_| Ok(format!("0::/system.slice/{unit}\n")),
+            )
+            .unwrap();
+        wire::json(
+            &mut agent,
+            &Command::Configure {
+                control: true,
+                restore_token: Some("saved".into()),
+            },
+        )
+        .unwrap();
+        wire::json(
+            &mut agent,
+            &Command::Key {
+                code: 30,
+                down: true,
+            },
+        )
+        .unwrap();
+        agent.shutdown(std::net::Shutdown::Both).unwrap();
+        let (configured, commands) = helper.join().unwrap();
+        assert_eq!(configured, (true, Some("saved".to_string())));
+        assert!(matches!(
+            commands.as_slice(),
+            [
+                Command::Key {
+                    code: 30,
+                    down: true
+                },
+                Command::Stop
+            ]
+        ));
+    }
+
     #[test]
     fn display_name_must_match_one_user_socket() {
         let dir = tempfile::tempdir().unwrap();
