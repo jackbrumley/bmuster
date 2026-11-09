@@ -75,3 +75,39 @@ The shell is started with `-l` (systemd cannot set `argv[0]` to `-bash`). `syste
   - `systemd-user`: the shell's `/proc/self/cgroup` was `…/bmuster-terminal-<id>.service`; `stty size` went from `24 80` to `43 132` after a resize; Ctrl+C interrupted `sleep`; `umask` was `0022`; `BMUSTER_USER` was set; writing under `$HOME` worked; ending the session left no unit and killed a background `sleep`. A files session made a folder, uploaded 28 kB and downloaded the same bytes under `$HOME`. Stopping the agent stopped the open files unit; killing it with SIGKILL left no session units; a leftover `bmuster-exec-*` unit was stopped when the agent started again.
 
 **Needs real root to verify:** the system manager path from inside the installed unit (`/run/systemd/private` on a read-only `/run`, `ProtectControlGroups`, `NoNewPrivileges`), a root shell in `/system.slice/bmuster-terminal-<id>.service` that can write to `/home`, use `sudo` and see the real `/tmp`, and PID 1 opening the agent's `/dev/pts/N`.
+
+## Version 2: units connect back; nothing of the agent's passes through systemd
+
+**Status:** `APPROVED` 2026-11-09 (Jack: "go" on "helpers connect back over a root-only socket, no file descriptors passed through systemd") · security work.
+
+### Evidence (Fedora 44, SELinux enforcing, agent 0.4.2)
+
+- Terminal exit 208: `avc: denied { open } for pid=1 comm="systemd" path="/dev/pts/3" scontext=system_u:system_r:init_t:s0 tcontext=system_u:object_r:devpts_t:s0`. systemd (init_t) may not open the pty the agent (unconfined_service_t) made, so `TTYPath=` + `StandardInput=tty` fails before bash starts.
+- Console and Wayland helpers: `systemd-run --pipe` fails with "Failed to start transient service unit: Connection reset by peer": systemd refuses the agent's pipe file descriptors sent over D-Bus.
+- The policy is correct for systemd; BMuster must not need an exception. No SELinux policy, boolean or label changes.
+
+### Design
+
+1. Every transient unit (terminal, command, files, console capture helper, Wayland helper) is started with plain stdio (`StandardInput=null`, output to the journal) and runs a BMuster program, never the target directly.
+2. Before starting the unit, the agent creates a listening Unix socket for that one session: `/run/bmuster/connect/<random 128-bit name>.sock`. The folder is `0711 root`; the socket is `0600` owned by the uid the unit runs as (root for terminal-as-root, files and console; the user for the Wayland helper and for terminals that run as a user). The socket path is the only argument passed; it is not a secret.
+3. The unit's program connects to the socket. The agent accepts **one** connection and checks the peer with `SO_PEERCRED`: its uid must be the unit's, and `/proc/<pid>/cgroup` must name exactly the unit the agent started. Anything else is closed and logged. The listening socket is removed as soon as the connection is accepted, and after 10 seconds if nobody connects (the session then fails with "The session's helper did not connect" and the startup diagnostics run).
+4. **Terminal:** the unit runs `bmuster-agent pty-host <socket> -- <shell> -l`. `pty-host` creates the pty itself, inside the unit, starts the shell as its controlling terminal, and relays bytes, resize and exit status over the socket using the existing terminal framing. systemd never sees the pty.
+5. **Command and files:** the unit runs `bmuster-agent stdio-host <socket> -- <program>`, which relays stdin, stdout, stderr and the exit status as framed channels.
+6. **Console capture and Wayland helpers:** the helpers speak their existing pipe protocol over the socket instead of stdin/stdout.
+7. Ending a session closes the socket and stops the unit (`systemctl stop`), as now. A helper whose socket closes exits at once.
+
+### Checks and diagnostics
+
+The SPEC-DIAGNOSTICS checks `systemd-run-pipe` and `terminal-pty` are replaced by `unit-connect-back` (a unit that connects back, passes the peer check and echoes a line) and `pty-host` (a terminal unit that runs `/bin/true` under `pty-host`). The old paths are deleted, not kept as fallbacks.
+
+### Acceptance criteria
+
+| #   | Criterion                                                                                                           | Named test                                                       |
+| :-- | :------------------------------------------------------------------------------------------------------------------ | :--------------------------------------------------------------- |
+| CB1 | The connect socket is per session, `0600` for the unit's uid in a `0711` folder, removed on accept or after 10 s.   | Rust `connect::tests::socket_lifecycle`                          |
+| CB2 | Only a peer with the unit's uid in exactly the started unit's cgroup is accepted; others are refused and logged.    | Rust `connect::tests::peer_must_be_the_unit`                     |
+| CB3 | No unit property passes a pty path or an agent file descriptor (`TTYPath`, `StandardInput=tty`, `--pipe` are gone). | Rust `exec::unit::tests::units_take_no_agent_descriptors`        |
+| CB4 | `pty-host` gives the shell a controlling terminal, relays resize and exit status, and exits when the socket closes. | Rust `pty_host::tests::shell_round_trip` (runs without root)     |
+| CB5 | Command and files sessions relay stdin, stdout, stderr and exit status through `stdio-host`.                        | Rust `stdio_host::tests::channels_round_trip`                    |
+| CB6 | Console and Wayland helpers work over the socket; a closed socket ends them.                                        | Rust `console_helper::tests::over_socket`, `wayland` helper test |
+| CB7 | Native: terminal, files and desktop on the Fedora SELinux laptop and on Mint; no new AVC denials.                   | Manual, read through `npm run diagnostics`                       |
