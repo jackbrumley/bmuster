@@ -1,6 +1,19 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.0',
+		changes: [
+			'Agents send their logs to the server all the time, keeping them while offline, so Manage shows a machine’s logs even after a crash or restart.',
+			'Turn on verbose logging for one machine for up to four hours from Manage.',
+			'Show each machine’s screen setup (session type, desktop, graphics cards, input support) on a new Display card.',
+			'Add read-only diagnostics tokens in Settings so support tools can read machine logs and reports.',
+			'Linux machines on Wayland now show the sign-in screen, the lock screen and text consoles, and can be controlled without approval at the machine.',
+			'The server updates itself completely, including its launcher and runtime, and rolls back a release that does not start. Servers on 0.3.x need the installer run once more to move to this.',
+			'Agents update their own launcher and roll back to the previous version if a new one cannot start.',
+			'The install script checks the release signature before installing.'
+		]
+	},
+	{
 		version: '0.3.3',
 		changes: [
 			'Keep the Updates page open while the server restarts, and reconnect automatically when it returns or rolls back.'
