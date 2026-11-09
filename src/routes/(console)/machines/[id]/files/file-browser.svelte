@@ -20,6 +20,7 @@
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import { confirmAction, confirmByTyping } from '#lib/ui/confirm-action.svelte.ts';
 	import EmptyState from '#lib/ui/empty-state.svelte';
+	import LoadingVeil from '#lib/ui/loading-veil.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import BreadcrumbBar from './breadcrumb-bar.svelte';
 	import EntryList from './entry-list.svelte';
@@ -345,7 +346,12 @@
 
 	{#if view.kind === 'roots'}
 		{#if roots.kind === 'loading'}
-			<p class="note" aria-live="polite">Loading drives…</p>
+			<LoadingVeil
+				active={true}
+				title="Reading the drives"
+				detail={undefined}
+				children={undefined}
+			/>
 		{:else if roots.kind === 'failed'}
 			<EmptyState
 				icon={IconAlertTriangle}
@@ -394,7 +400,12 @@
 		</div>
 
 		{#if listing.kind === 'loading'}
-			<p class="note" aria-live="polite">Loading…</p>
+			<LoadingVeil
+				active={true}
+				title="Opening the folder"
+				detail={undefined}
+				children={undefined}
+			/>
 		{:else if listing.kind === 'failed'}
 			<EmptyState
 				icon={IconAlertTriangle}
@@ -502,12 +513,6 @@
 
 	.picker {
 		display: none;
-	}
-
-	.note {
-		margin: 0;
-		color: var(--muted);
-		font-size: var(--text-sm);
 	}
 
 	.dock {

@@ -4,6 +4,7 @@
 	import Button from '#lib/ui/button.svelte';
 	import Checkbox from '#lib/ui/checkbox.svelte';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
+	import LoadingVeil from '#lib/ui/loading-veil.svelte';
 	import Panel from '#lib/ui/panel.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { agentRecordLine, type AgentLogRecordView } from '#lib/domain/logs/logs.ts';
@@ -201,49 +202,51 @@
 	{/if}
 {/snippet}
 
-<Panel heading="Logs" actions={verboseAction} tone="normal" padding="normal">
-	<div class="filters">
-		<ChipGroup label="Level" options={LEVEL_OPTIONS} bind:value={level} />
-		<ChipGroup label="Source" options={SOURCE_OPTIONS} bind:value={source} />
-		<ChipGroup label="Time" options={SPAN_OPTIONS} bind:value={span} />
-	</div>
-	<div class="actions">
-		<Checkbox label="Live" error={undefined} bind:checked={live} />
-		<Button variant="secondary" size="compact" type="button" onclick={() => void copyShown()}>
-			<IconCopy size={18} /> Copy shown
-		</Button>
-		<Button variant="secondary" size="compact" type="button" onclick={download}>
-			<IconDownload size={18} /> Download
-		</Button>
-	</div>
-	{#if failure !== undefined}
-		<p class="failure" role="alert">
-			{failure}{records.length > 0 ? ' The records below are from the last read.' : ''}
-		</p>
-	{/if}
-	{#if loaded && records.length === 0}
-		<p class="muted">
-			{sendsLogs
-				? 'No records match. Try a longer time or a lower level.'
-				: 'This agent is too old to send its logs; update it.'}
-		</p>
-	{:else if records.length > 0}
-		<p class="muted">
-			{records.length} records, newest first. Terminal output and commands are never sent.
-		</p>
-		<pre aria-label="Agent log">{#each records as record (recordKey(record))}<span
-					class="line {record.level}"
-					>{agentRecordLine(record)}
-</span>{/each}</pre>
-		{#if older !== null}
-			<div>
-				<Button variant="secondary" size="compact" type="button" onclick={() => void loadOlder()}>
-					Show older
-				</Button>
-			</div>
+<LoadingVeil active={!loaded} title="Reading the log" detail={undefined}>
+	<Panel heading="Logs" actions={verboseAction} tone="normal" padding="normal">
+		<div class="filters">
+			<ChipGroup label="Level" options={LEVEL_OPTIONS} bind:value={level} />
+			<ChipGroup label="Source" options={SOURCE_OPTIONS} bind:value={source} />
+			<ChipGroup label="Time" options={SPAN_OPTIONS} bind:value={span} />
+		</div>
+		<div class="actions">
+			<Checkbox label="Live" error={undefined} bind:checked={live} />
+			<Button variant="secondary" size="compact" type="button" onclick={() => void copyShown()}>
+				<IconCopy size={18} /> Copy shown
+			</Button>
+			<Button variant="secondary" size="compact" type="button" onclick={download}>
+				<IconDownload size={18} /> Download
+			</Button>
+		</div>
+		{#if failure !== undefined}
+			<p class="failure" role="alert">
+				{failure}{records.length > 0 ? ' The records below are from the last read.' : ''}
+			</p>
 		{/if}
-	{/if}
-</Panel>
+		{#if loaded && records.length === 0}
+			<p class="muted">
+				{sendsLogs
+					? 'No records match. Try a longer time or a lower level.'
+					: 'This agent is too old to send its logs; update it.'}
+			</p>
+		{:else if records.length > 0}
+			<p class="muted">
+				{records.length} records, newest first. Terminal output and commands are never sent.
+			</p>
+			<pre aria-label="Agent log">{#each records as record (recordKey(record))}<span
+						class="line {record.level}"
+						>{agentRecordLine(record)}
+</span>{/each}</pre>
+			{#if older !== null}
+				<div>
+					<Button variant="secondary" size="compact" type="button" onclick={() => void loadOlder()}>
+						Show older
+					</Button>
+				</div>
+			{/if}
+		{/if}
+	</Panel>
+</LoadingVeil>
 
 <style>
 	.filters,

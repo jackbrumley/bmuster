@@ -116,5 +116,21 @@ export const componentFixtures: readonly RuleFixture[] = [
 		good: uiComponents(
 			'<script lang="ts">\n\tasync function remove() {\n\t\tif (await confirmAction({ title: \'Remove?\' })) void removeMachine();\n\t}\n</script>'
 		)
+	},
+	{
+		rule: 'loading-text-forbidden',
+		bad: uiComponents('{#if loading}<p class="note">Loading drives…</p>{/if}'),
+		good: uiComponents(
+			'{#if loading}<LoadingVeil active={true} title="Reading the drives" detail={undefined} children={undefined} />{/if}'
+		)
+	},
+	{
+		rule: 'loading-text-forbidden',
+		bad: uiComponents(
+			'<span class="spinner"></span>\n<style>\n\t@keyframes spin {\n\t\tto {\n\t\t\ttransform: rotate(1turn);\n\t\t}\n\t}\n</style>'
+		),
+		good: uiComponents(
+			'<Button variant="secondary" size="compact" type="button" onclick={check}><RadarSpinner size="small" /> Checking</Button>'
+		)
 	}
 ];

@@ -10,6 +10,7 @@
 	} from '@tabler/icons-svelte-runes';
 	import CopyField from '#lib/ui/copy-field.svelte';
 	import Panel from '#lib/ui/panel.svelte';
+	import RadarSpinner from '#lib/ui/radar-spinner.svelte';
 	import {
 		hasBuildFor,
 		oneLineInstallCommand,
@@ -109,7 +110,7 @@
 			{:else if joinCode.kind === 'failed'}
 				<p class="error">{joinCode.message}</p>
 			{:else}
-				<p class="hint">Making a join code…</p>
+				<p class="hint"><RadarSpinner size="small" /> Making a join code</p>
 			{/if}
 		</div>
 		<Button

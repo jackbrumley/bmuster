@@ -210,6 +210,7 @@ The design is in `docs/access-and-sign-in.md`.
 ## 12. UI components and forms
 
 - **Feedback:** toasts for results, `confirmAction` for anything destructive. Never `alert()` or `confirm()`.
+- **Waiting:** `LoadingVeil` over the block that is loading, `RadarSpinner` (small) inside a busy button or row. Never a page's own "Loading…" text or spinner.
 - **Records:** a data table, then a view modal, then an edit modal (Save and Cancel in the footer).
 - **Forms** validate with the same zod schema the server uses; field errors sit under their field.
 - **Buttons** always have `type`. Icon-only buttons have `aria-label`.
@@ -339,6 +340,11 @@ The design is in `docs/access-and-sign-in.md`.
 - `lint-bypass-forbidden` (violation, §7): Bypass pragmas (eslint, TypeScript,
   Svelte) hide real problems from the checks. **Fix:** Delete the pragma and fix
   the code so it passes natively.
+- `loading-text-forbidden` (violation, §12): A page’s own “Loading…” text or
+  hand-made spinner looks stuck on a long wait and differs on every screen.
+  **Fix:** Cover the block with `<LoadingVeil>`
+  (src/lib/ui/loading-veil.svelte), or put `<RadarSpinner size="small" />` in
+  the button or row.
 - `naming` (violation, §2): File and folder names are kebab-case so imports work
   on case-sensitive Linux builds. **Fix:** Rename the file or folder to
   kebab-case (SvelteKit route files and `[param]` folders are exempt).

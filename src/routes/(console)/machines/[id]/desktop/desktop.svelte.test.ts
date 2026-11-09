@@ -132,6 +132,27 @@ describe('the desktop tab', () => {
 		]);
 	});
 
+	it('L4: waits under the veil while connecting and until the first picture, then lifts it', async () => {
+		const screen = await renderTab(CONTROL);
+		await screen.getByRole('button', { name: 'Connect' }).click();
+		const stage = screen.getByRole('application', { name: `Screen of ${TEST_MACHINE.name}` });
+		await expect
+			.element(stage.getByRole('status').getByText(`Connecting to ${TEST_MACHINE.name}`))
+			.toBeVisible();
+		expect(stage.element().getAttribute('aria-busy')).toBe('true');
+		expect(stage.element().querySelector('[data-radar="large"]')).not.toBeNull();
+		await expect.poll(() => FakeSocket.last?.url ?? '').toContain('ticket=t-1');
+		const socket = FakeSocket.last;
+		if (socket === undefined) throw new Error('no socket');
+		attach(socket);
+		await expect
+			.element(stage.getByRole('status').getByText('Waiting for the first picture'))
+			.toBeVisible();
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [200, 10, 10] }]));
+		await expect.element(stage.getByText('Waiting for the first picture')).not.toBeInTheDocument();
+		expect(stage.element().getAttribute('aria-busy')).toBe('false');
+	});
+
 	it('R4, R5: draws a frame from all its batches and acknowledges it only after the last', async () => {
 		const { screen, socket } = await open(CONTROL, 'Connect');
 		socket.receive(batch(1, 1, [{ x: 0, y: 0, rgb: [200, 10, 10] }]));

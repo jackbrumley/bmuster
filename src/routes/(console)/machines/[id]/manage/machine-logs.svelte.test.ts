@@ -220,4 +220,22 @@ describe('Manage tab: Logs panel (SPEC-AGENT-LOGS AL12)', () => {
 		expect(block.scrollWidth).toBeLessThanOrEqual(block.clientWidth);
 		expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
 	});
+
+	it('L4: the first load waits under the veil, then shows the records', async () => {
+		let answer: (response: Response) => void = () => undefined;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn<typeof globalThis.fetch>(
+				() =>
+					new Promise<Response>((resolve) => {
+						answer = resolve;
+					})
+			)
+		);
+		const screen = await render(MachineLogs, props({}));
+		await expect.element(screen.getByRole('status').getByText('Reading the log')).toBeVisible();
+		answer(reply(logPage([record(1, { text: 'first record' })], 'n-1')));
+		await expect.element(screen.getByText(/first record/)).toBeVisible();
+		await expect.element(screen.getByText('Reading the log')).not.toBeInTheDocument();
+	});
 });

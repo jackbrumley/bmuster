@@ -4,7 +4,11 @@ import type {
 	ServerUpdateView
 } from '#lib/schemas/releases/server-updates.ts';
 import type { ApiResult } from '#lib/utils/api-client.ts';
-import { startServerRestartMonitor, type RestartReturn } from './server-restart-monitor.ts';
+import {
+	startServerRestartMonitor,
+	type RestartProgress,
+	type RestartReturn
+} from './server-restart-monitor.ts';
 
 const REQUESTED_AT = '2026-11-09T10:00:00.000Z';
 const AFTER = '2026-11-09T10:01:00.000Z';
@@ -40,13 +44,15 @@ function reply(
 
 function monitor(read: () => Promise<ApiResult<ServerUpdateView>>) {
 	const onReturned = vi.fn<(result: RestartReturn) => void>();
+	const onProgress = vi.fn<(progress: RestartProgress) => void>();
 	const handle = startServerRestartMonitor({
 		expectedVersion: '0.4.1',
 		requestedAtIso: REQUESTED_AT,
 		read,
+		onProgress,
 		onReturned
 	});
-	return { onReturned, handle };
+	return { onReturned, onProgress, handle };
 }
 
 afterEach(() => {
@@ -128,5 +134,34 @@ describe('server restart monitor (SPEC-SERVER-UPDATES SU9)', () => {
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect(read).toHaveBeenCalledOnce();
 		expect(onReturned).not.toHaveBeenCalled();
+	});
+
+	it("L3: reports the updater's current step, and when the server cannot be reached", async () => {
+		vi.useFakeTimers();
+		const step: ApiResult<ServerUpdateView> = {
+			ok: true,
+			data: {
+				...VIEW,
+				operation: { ...VIEW.operation, phase: 'downloading', message: 'Downloading BMuster 0.4.1' }
+			}
+		};
+		const read = vi
+			.fn<() => Promise<ApiResult<ServerUpdateView>>>()
+			.mockResolvedValueOnce(reply('0.4.0', 'idle', BEFORE))
+			.mockResolvedValueOnce(step)
+			.mockResolvedValueOnce({ ok: false, message: 'Bad gateway', status: 502 })
+			.mockResolvedValue(reply('0.4.1', 'healthy'));
+		const { onProgress, handle } = monitor(read);
+		await vi.advanceTimersByTimeAsync(0);
+		// A result left by an earlier update is not this update's step.
+		expect(onProgress).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(onProgress).toHaveBeenLastCalledWith({
+			kind: 'step',
+			message: 'Downloading BMuster 0.4.1'
+		});
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(onProgress).toHaveBeenLastCalledWith({ kind: 'unreachable' });
+		handle.stop();
 	});
 });

@@ -24,6 +24,7 @@
 	import EmptyState from '#lib/ui/empty-state.svelte';
 	import Notice from '#lib/ui/notice.svelte';
 	import Panel from '#lib/ui/panel.svelte';
+	import LoadingVeil from '#lib/ui/loading-veil.svelte';
 	import NoPermission from '../no-permission.svelte';
 	import { DesktopCanvas } from './desktop-canvas.ts';
 	import { DesktopSession } from './desktop-session.svelte.ts';
@@ -108,6 +109,24 @@
 				return 'Open in another window';
 			case 'ended':
 				return 'Ended';
+		}
+	});
+
+	/** Until the first picture arrives the stage waits under the veil, saying what it waits for. */
+	const connectingTitle = $derived.by(() => {
+		if (frame !== undefined || !running) return undefined;
+		switch (connection.kind) {
+			case 'starting':
+			case 'connecting':
+				return `Connecting to ${machine.name}`;
+			case 'reconnecting':
+				return 'Reconnecting';
+			case 'live':
+				return connection.ready ? 'Waiting for the first picture' : 'Waiting for the machine';
+			case 'idle':
+			case 'moved':
+			case 'ended':
+				return undefined;
 		}
 	});
 
@@ -394,6 +413,7 @@
 			style:aspect-ratio={frame !== undefined ? `${frame.width} / ${frame.height}` : '16 / 9'}
 			role="application"
 			aria-label="Screen of {machine.name}"
+			aria-busy={connectingTitle !== undefined}
 		>
 			<canvas class="screen" bind:this={screenCanvas} aria-hidden="true"></canvas>
 			<canvas class="cursor" bind:this={cursorCanvas} aria-hidden="true"></canvas>
@@ -411,8 +431,15 @@
 				</div>
 			{:else if screenState?.kind === 'unavailable'}
 				<p class="waiting unavailable">{screenLabel(screenState)}</p>
-			{:else if frame === undefined && running}
-				<p class="waiting">{status}</p>
+			{:else if connectingTitle !== undefined}
+				<div class="connecting">
+					<LoadingVeil
+						active={true}
+						title={connectingTitle}
+						detail={undefined}
+						children={undefined}
+					/>
+				</div>
 			{/if}
 			{#if fullScreen && stage !== undefined}
 				<FullScreenBar
@@ -572,6 +599,12 @@
 		margin: 0;
 		color: var(--terminal-text);
 		font-size: var(--text-sm);
+	}
+
+	.connecting {
+		position: absolute;
+		inset: 0;
+		display: grid;
 	}
 
 	.waiting.unavailable {

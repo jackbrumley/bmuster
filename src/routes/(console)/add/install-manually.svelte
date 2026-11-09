@@ -10,6 +10,7 @@
 	import type { ServedPin } from '#lib/domain/settings/local-tls.ts';
 	import CopyField from '#lib/ui/copy-field.svelte';
 	import SegmentedControl from '#lib/ui/segmented-control.svelte';
+	import RadarSpinner from '#lib/ui/radar-spinner.svelte';
 	import { formatBytes } from '#lib/utils/format.ts';
 	import type { CodeState } from './join-code.ts';
 	import RolloutCode from './rollout-code.svelte';
@@ -140,7 +141,7 @@
 				{:else if joinCode.kind === 'failed'}
 					<p class="hint">No join code: {joinCode.message}</p>
 				{:else}
-					<p class="hint">Making a join code…</p>
+					<p class="hint"><RadarSpinner size="small" /> Making a join code</p>
 				{/if}
 			</div>
 

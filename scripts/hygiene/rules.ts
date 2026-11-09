@@ -225,6 +225,12 @@ export const HYGIENE_RULES = {
 		why: '`alert`, `confirm` and `prompt` block the page and look different on every device.',
 		fix: 'Show a toast for results and use `confirmAction()` for anything destructive.'
 	},
+	'loading-text-forbidden': {
+		severity: 'violation',
+		section: '12',
+		why: 'A page’s own “Loading…” text or hand-made spinner looks stuck on a long wait and differs on every screen.',
+		fix: 'Cover the block with `<LoadingVeil>` (src/lib/ui/loading-veil.svelte), or put `<RadarSpinner size="small" />` in the button or row.'
+	},
 
 	// Input font size (scripts/hygiene/input-font-size.ts)
 	'input-font-size-ios-zoom': {

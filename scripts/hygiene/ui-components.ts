@@ -25,11 +25,39 @@ function codeText(file: SourceFile): string | null {
 	);
 }
 
+/**
+ * Waiting states (AGENTS.md §12, SPEC-LOADING): one look for every wait. A
+ * placeholder that says "Loading…", "Working…" or "Please wait…", or a
+ * spinner a page animates itself, goes through LoadingVeil or RadarSpinner.
+ */
+const loadingTextRegex = /\b(?:Loading|Working|Please wait)\b[^\n'"`<>{}]{0,40}?(?:…|\.\.\.)/gi;
+const ownSpinnerRegex = /@keyframes\s+[\w-]*(?:spin|loader|loading)[\w-]*/gi;
+const LOADING_COMPONENTS = new Set([
+	'src/lib/ui/radar-spinner.svelte',
+	'src/lib/ui/loading-veil.svelte'
+]);
+
+function checkLoadingText(file: SourceFile, code: string, violation: Reporter['violation']): void {
+	if (LOADING_COMPONENTS.has(file.relPath)) return;
+	const found = [
+		...(code.match(loadingTextRegex) ?? []),
+		...(file.content.match(ownSpinnerRegex) ?? [])
+	];
+	if (found.length > 0) {
+		violation(
+			'loading-text-forbidden',
+			file.relPath,
+			`Found a page's own loading state: ${found.join(', ')}. Use LoadingVeil over the block, or RadarSpinner in the button or row.`
+		);
+	}
+}
+
 export function checkUiComponents(file: SourceFile, { violation }: Reporter): void {
 	const { relPath } = file;
 	if (isTestFile(relPath) || isServerOnly(relPath) || !isUiSourceFile(relPath)) return;
 	const code = codeText(file);
 	if (code === null) return;
+	checkLoadingText(file, code, violation);
 	const matches = code.match(browserDialogRegex);
 	if (matches) {
 		violation(
