@@ -116,3 +116,16 @@ export const machineInventory = sqliteTable('machine_inventory', {
 	data: text().notNull(),
 	updatedAt: integer({ mode: 'timestamp_ms' }).notNull()
 });
+
+/**
+ * The agent's latest self-check results (SPEC-DIAGNOSTICS 1), replaced as a set. `results` is
+ * JSON: `{ kind: 'pending' } | { kind: 'results', results: CheckResult[] }`; no row means the
+ * agent has never reported checks (an agent before 0.4.3).
+ */
+export const machineChecks = sqliteTable('machine_checks', {
+	machineId: text()
+		.primaryKey()
+		.references(() => machines.id),
+	results: text().notNull(),
+	checkedAt: integer({ mode: 'timestamp_ms' }).notNull()
+});

@@ -15,6 +15,7 @@ export { joinCodes } from './schema/join-codes.ts';
 export { localCertificates } from './schema/local-certificates.ts';
 export { agentLogRecords, serverLogRecords } from './schema/logs.ts';
 export {
+	machineChecks,
 	machineInventory,
 	machineLocalPages,
 	machineNotes,

@@ -27,7 +27,8 @@ function checkIn(signedInUser: { kind: 'none' } | { kind: 'user'; name: string }
 		signedInUser,
 		load: { cpuPercent: 5, memoryUsedBytes: 1024 },
 		inventory: { kind: 'full' as const, hash: HASH, data: SAMPLE_INVENTORY },
-		localUsers: { kind: 'unsupported' as const }
+		localUsers: { kind: 'unsupported' as const },
+		checks: { kind: 'unreported' as const }
 	};
 }
 

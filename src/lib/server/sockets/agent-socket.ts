@@ -12,6 +12,7 @@ import {
 } from '../services/agents/live-agents.ts';
 import { socketClosed, socketOpened } from '../services/agents/presence.ts';
 import { storeLogBatch } from '../services/logs/agent-logs.ts';
+import { storeCheckResults } from '../services/logs/machine-checks.ts';
 import { serverLog } from '../services/logs/server-log.ts';
 import { verboseOnConnect } from '../services/logs/verbose.ts';
 import { sessionRelay } from '../services/sessions/relay.ts';
@@ -21,7 +22,7 @@ const AGENT_SOCKET_PATH = '/agent/v1/socket';
 
 /**
  * An agent's live socket (SPEC-ENROLMENT 8): signed upgrade, live figures,
- * session refusals and log batches in, commands, session requests and log
+ * session refusals, log batches and check results in, commands, session requests and log
  * acknowledgements out. Session bytes travel on each session's own socket
  * (session-sockets.ts). Log records are stored for the socket's own machine
  * only (SPEC-AGENT-LOGS 2).
@@ -108,19 +109,20 @@ export const agentSocketRoute = defineSocketRoute<{
 				return;
 			case 'log-batch': {
 				const result = storeLogBatch(database, peer.context.machineId, parsed.data, Date.now());
-				switch (result.kind) {
-					case 'stored':
-						peer.context.peer?.send({
-							type: 'log-ack',
-							instance: parsed.data.instance,
-							seq: result.ackSeq
-						});
-						return;
-					case 'rate-limited':
-						// Not acknowledged: the agent sends it again once it has waited.
-						return;
+				// A rate-limited batch is not acknowledged: the agent sends it again once it has waited.
+				if (result.kind === 'stored') {
+					peer.context.peer?.send({
+						type: 'log-ack',
+						instance: parsed.data.instance,
+						seq: result.ackSeq
+					});
 				}
+				return;
 			}
+			case 'checks':
+				// Results after Run checks, for the socket's own machine (SPEC-DIAGNOSTICS 1).
+				storeCheckResults(database, peer.context.machineId, parsed.data.results, Date.now());
+				return;
 		}
 	},
 	binary(peer) {

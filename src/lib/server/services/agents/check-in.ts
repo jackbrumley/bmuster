@@ -3,6 +3,7 @@ import type { CheckInReply, CheckInRequest } from '#lib/schemas/agents/agent-pro
 import { machineInventory, machineStatus, machines } from '../../database/schema.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import type { AuthenticatedAgent } from './agent-auth.ts';
+import { storeCheckInChecks } from '../logs/machine-checks.ts';
 import { localCodesFrom, localUsersUpdate } from './local-users.ts';
 
 /** What a check-in records, before the update offer is added (SPEC-AGENT-UPDATES). */
@@ -45,6 +46,9 @@ export function recordCheckIn(
 			.values({ machineId: agent.machineId, ...status })
 			.onConflictDoUpdate({ target: machineStatus.machineId, set: status })
 			.run();
+
+		// The latest self-check results replace the last set (SPEC-DIAGNOSTICS 1).
+		storeCheckInChecks(tx, agent.machineId, checkIn.checks, now);
 
 		let inventoryWanted = false;
 		switch (checkIn.inventory.kind) {

@@ -149,7 +149,8 @@ describe('the local page in the console (SPEC-AGENT-LOCAL)', () => {
 					signedInUser: { kind: 'none' },
 					load: { cpuPercent: 1, memoryUsedBytes: 1 },
 					inventory: { kind: 'full', hash: 'c'.repeat(64), data: SAMPLE_INVENTORY },
-					localUsers: { kind: 'none' }
+					localUsers: { kind: 'none' },
+					checks: { kind: 'unreported' }
 				},
 				NOW + 5
 			);

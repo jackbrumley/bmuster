@@ -11,7 +11,9 @@ import {
 	MAX_RECORD_TARGET,
 	MAX_RECORD_TEXT
 } from '#lib/domain/logs/logs.ts';
+import { MAX_CHECKS } from '#lib/domain/logs/checks.ts';
 import { displayReportSchema } from '#lib/schemas/agents/display-report.ts';
+import { checkResultSchema, checksReportSchema } from '#lib/schemas/logs/checks.ts';
 
 const osFamilySchema = z.enum(['windows', 'linux', 'macos']);
 
@@ -154,7 +156,9 @@ export const checkInRequestSchema = z.object({
 		z.object({ kind: z.literal('full'), hash: z.string().length(64), data: inventorySchema })
 	]),
 	localUsers: localUsersHeldSchema.default({ kind: 'unsupported' }),
-	update: updateReportSchema
+	update: updateReportSchema,
+	/** The latest self-check results (SPEC-DIAGNOSTICS 1); agents before 0.4.3 send none. */
+	checks: checksReportSchema.default({ kind: 'unreported' })
 });
 
 export type CheckInRequest = z.infer<typeof checkInRequestSchema>;
@@ -283,7 +287,9 @@ export const agentSocketMessageSchema = z.discriminatedUnion('type', [
 			)
 			.min(1)
 			.max(MAX_BATCH_RECORDS)
-	})
+	}),
+	/** The self-check results after `run-checks` (SPEC-DIAGNOSTICS 1). */
+	z.object({ type: z.literal('checks'), results: z.array(checkResultSchema).max(MAX_CHECKS) })
 ]);
 
 export type LogBatchMessage = Extract<
@@ -313,7 +319,9 @@ export type ServerSocketMessage =
 	| { type: 'log-ack'; instance: string; seq: number }
 	/** The agent's own debug records until `untilMs`, or back to info. */
 	| { type: 'log-level'; level: 'debug'; untilMs: number }
-	| { type: 'log-level'; level: 'info' };
+	| { type: 'log-level'; level: 'info' }
+	/** Run the fixed self-checks now (SPEC-DIAGNOSTICS 1); nothing in it changes what they do. */
+	| { type: 'run-checks' };
 
 export type RefusalReason =
 	| 'bad-request'

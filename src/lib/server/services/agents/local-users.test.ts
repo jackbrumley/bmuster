@@ -20,7 +20,8 @@ function checkIn(database: AppDatabase, machineId: string, localUsers: LocalUser
 			signedInUser: { kind: 'none' },
 			load: { cpuPercent: 1, memoryUsedBytes: 1 },
 			inventory: { kind: 'full', hash: 'c'.repeat(64), data: SAMPLE_INVENTORY },
-			localUsers
+			localUsers,
+			checks: { kind: 'unreported' }
 		},
 		NOW + 1
 	).localUsers;

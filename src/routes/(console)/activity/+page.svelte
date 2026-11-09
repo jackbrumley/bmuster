@@ -184,9 +184,11 @@
 				return IconPin;
 			case 'agent-logs-viewed':
 			case 'server-logs-viewed':
+			case 'agent-sessions-viewed':
 				return IconFileText;
 			case 'agent-verbose-started':
 			case 'agent-verbose-stopped':
+			case 'agent-checks-requested':
 				return IconBug;
 			case 'diagnostics-token-created':
 			case 'diagnostics-token-revoked':
