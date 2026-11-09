@@ -10,7 +10,7 @@
  * the first has stopped. Nothing listens while it waits, so /healthz and
  * /readyz answer only once the lock is held and the migrations are applied.
  */
-import { publishReady } from './src/lib/server/services/server-updates/preparation.ts';
+import { publishReady } from './src/lib/server/services/server-updates/readiness.ts';
 import { createServer, type RequestListener } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
 import { acquireDataLock } from './src/lib/server/database/data-lock.ts';

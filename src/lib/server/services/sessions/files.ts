@@ -125,8 +125,6 @@ function allowed(context: FilesContext): FilesOutcome<Allowed> {
 function channelFor(context: FilesContext, access: Allowed): FilesOutcome<FilesChannel> {
 	const { database, relay, secretsKey, user, machineId, ip, now } = context;
 	const found = context.channels.get(user.id, machineId, (local, onEnded) => {
-		if (!relay.accepting())
-			return { kind: 'refused', status: 409, message: 'The server is updating.' };
 		if (relay.countFor(user.id) >= MAX_SESSIONS_PER_PERSON) {
 			return {
 				kind: 'refused',

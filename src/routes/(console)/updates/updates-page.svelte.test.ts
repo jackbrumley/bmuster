@@ -52,10 +52,17 @@ const MACHINES: Data['machines'] = [
 	})
 ];
 
+const IDLE: Data['server']['operation'] = {
+	phase: 'idle',
+	from: null,
+	to: null,
+	message: '',
+	atIso: null
+};
+
 const SERVER_RELEASE: Data['server'] = {
 	installedVersion: '0.3.1',
 	deployment: 'installed',
-	launcherVersion: '0.3.0',
 	checkedAtIso: '2026-11-08T10:00:00.000Z',
 	lastSuccessAtIso: '2026-11-08T10:00:00.000Z',
 	release: {
@@ -76,7 +83,7 @@ const SERVER_RELEASE: Data['server'] = {
 	},
 	problem: null,
 	install: { allowed: true, reason: '' },
-	operation: { current: null, previous: null, pending: null, phase: 'idle', message: '' }
+	operation: IDLE
 };
 
 function renderPage(overrides: Partial<Data>) {
@@ -92,13 +99,12 @@ function renderPage(overrides: Partial<Data>) {
 			server: {
 				installedVersion: '0.3.0',
 				deployment: 'source',
-				launcherVersion: null,
 				checkedAtIso: null,
 				lastSuccessAtIso: null,
 				release: null,
 				problem: null,
 				install: { allowed: false, reason: 'Source run' },
-				operation: { current: null, previous: null, pending: null, phase: 'idle', message: '' }
+				operation: IDLE
 			},
 			policy: 'automatic',
 			rollout: ROLLOUT,
@@ -188,7 +194,6 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 			server: {
 				installedVersion: '0.3.0',
 				deployment: 'installed',
-				launcherVersion: '0.3.0',
 				checkedAtIso: '2026-11-08T09:19:25.000Z',
 				lastSuccessAtIso: '2026-11-08T09:13:52.000Z',
 				release: null,
@@ -198,13 +203,7 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 					reason:
 						'Could not confirm whether a newer signed release is available. Check for updates again.'
 				},
-				operation: {
-					current: null,
-					previous: null,
-					pending: null,
-					phase: 'idle',
-					message: ''
-				}
+				operation: IDLE
 			}
 		});
 		await expect
@@ -218,10 +217,13 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
 			if (input === '/api/server-updates/install' && init?.method === 'POST') {
 				return Promise.resolve(
-					new Response(JSON.stringify(SERVER_RELEASE), {
-						status: 200,
-						headers: { 'content-type': 'application/json' }
-					})
+					new Response(
+						JSON.stringify({ requestedAtIso: '2026-11-08T10:05:00.000Z', view: SERVER_RELEASE }),
+						{
+							status: 202,
+							headers: { 'content-type': 'application/json' }
+						}
+					)
 				);
 			}
 			if (input === '/api/server-updates' && init?.method === 'GET') {
@@ -246,6 +248,53 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		await vi.waitFor(() => {
 			expect(fetch.mock.calls.some(([url]) => url === '/api/server-updates')).toBe(true);
 		});
+	});
+
+	it("SU9: shows the root updater's progress and says what happens if the new version fails", async () => {
+		await render(ConfirmDialog);
+		const screen = await renderPage({
+			server: {
+				...SERVER_RELEASE,
+				install: { allowed: false, reason: 'A server update is already in progress.' },
+				operation: {
+					phase: 'downloading',
+					from: '0.3.1',
+					to: '0.3.2',
+					message: 'Downloading and checking BMuster 0.3.2',
+					atIso: '2026-11-08T10:05:00.000Z'
+				}
+			}
+		});
+		await expect.element(screen.getByText('Server update: downloading')).toBeVisible();
+		await expect.element(screen.getByText('Downloading and checking BMuster 0.3.2')).toBeVisible();
+		await expect.element(screen.getByText('A server update is already in progress.')).toBeVisible();
+		await expect
+			.element(screen.getByRole('button', { name: 'Update now' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('SU9: the confirmation names automatic rollback only when the release declares it', async () => {
+		await render(ConfirmDialog);
+		const screen = await renderPage({
+			server: {
+				...SERVER_RELEASE,
+				release:
+					SERVER_RELEASE.release === null
+						? null
+						: {
+								...SERVER_RELEASE.release,
+								manifest: { ...SERVER_RELEASE.release.manifest, rollbackFrom: [] }
+							}
+			}
+		});
+		await screen.getByRole('button', { name: 'Update now' }).click();
+		const dialog = screen.getByRole('dialog', { name: 'Update BMuster to 0.3.2?' });
+		await expect
+			.element(dialog.getByText(/the server stays stopped for an administrator/))
+			.toBeVisible();
+		await expect
+			.element(dialog.getByText(/including Node|launcher, Node and the console/))
+			.toBeVisible();
 	});
 
 	it('U8: links to the built-in Early updates group, inviting a first machine when it is empty', async () => {

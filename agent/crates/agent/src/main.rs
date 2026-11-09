@@ -17,6 +17,7 @@ mod log_spool;
 mod logging;
 mod paths;
 mod relocate;
+mod rescue;
 #[cfg(target_os = "linux")]
 mod service_linux;
 #[cfg(windows)]
@@ -203,6 +204,14 @@ enum Command {
         #[arg(long)]
         data_dir: Option<PathBuf>,
     },
+    /// Put the previous version back after the service failed to start
+    /// (run by the service manager from the rescue copy; needs root or
+    /// Administrator)
+    Rescue,
+    /// Make the running version the rescue copy (run by the agent itself
+    /// after a day of health; not for use by hand)
+    #[command(hide = true)]
+    RefreshRescue,
     /// Stop and remove the service and the installed binary
     Uninstall {
         /// Also delete the data folder (identity and key)
@@ -373,6 +382,14 @@ fn dispatch(command: Command) -> Result<ExitCode> {
             platform::uninstall(purge)?;
             Ok(ExitCode::SUCCESS)
         }
+        Command::Rescue => {
+            rescue::run()?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::RefreshRescue => {
+            platform::refresh_service()?;
+            Ok(ExitCode::SUCCESS)
+        }
         #[cfg(target_os = "linux")]
         Command::FilesHelper => {
             sessions::files_helper::serve(std::io::stdin(), std::io::stdout())?;
@@ -517,8 +534,8 @@ fn status(data_dir: &Path) -> Result<ExitCode> {
 #[cfg(target_os = "linux")]
 mod platform {
     pub use crate::service_linux::{
-        install, require_admin, schedule_uninstall, service_state, start_service, stop_service,
-        uninstall,
+        finish_rescue, install, refresh_rescue_copy, refresh_service, require_admin,
+        schedule_uninstall, service_state, start_service, stop_service, uninstall,
     };
 
     const _: () = assert!(crate::service_linux::REVOKED_EXIT_CODE == crate::EXIT_REVOKED);
@@ -527,8 +544,8 @@ mod platform {
 #[cfg(windows)]
 mod platform {
     pub use crate::service_windows::{
-        install, require_admin, schedule_uninstall, service_state, start_service, stop_service,
-        uninstall,
+        finish_rescue, install, refresh_rescue_copy, refresh_service, require_admin,
+        schedule_uninstall, service_state, start_service, stop_service, uninstall,
     };
 
     const _: () = assert!(crate::service_windows::REVOKED_EXIT_CODE == crate::EXIT_REVOKED as u32);
@@ -570,5 +587,17 @@ mod platform {
 
     pub fn schedule_uninstall() -> Result<()> {
         bail!("uninstalling a service is supported on Linux and Windows only")
+    }
+
+    pub fn finish_rescue() -> Result<()> {
+        Ok(())
+    }
+
+    pub fn refresh_rescue_copy() -> Result<()> {
+        Ok(())
+    }
+
+    pub fn refresh_service() -> Result<()> {
+        bail!("the rescue copy is supported on Linux and Windows only")
     }
 }

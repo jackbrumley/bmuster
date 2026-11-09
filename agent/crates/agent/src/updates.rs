@@ -29,7 +29,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// This build's version: `BMUSTER_VERSION` at build time, else Cargo's.
 pub const VERSION: &str = env!("BMUSTER_VERSION");
@@ -307,6 +307,19 @@ impl Layout {
     }
 }
 
+/// Puts `bytes` in `current` as `version`, unsigned: the build that was
+/// installed (or the rescue copy), which the machine trusts as it is.
+pub fn seed_current(layout: &Layout, bytes: &[u8], version: &str) -> Result<()> {
+    let release = Release {
+        version: version.to_string(),
+        target: TARGET.to_string(),
+        size: bytes.len() as u64,
+        sha256: sha256_hex(bytes),
+        signature: String::new(),
+    };
+    layout.store(Slot::Current, &release, bytes)
+}
+
 /// Removes every version folder (uninstall without --purge keeps only the identity).
 pub fn remove_versions(data_dir: &Path) -> Result<()> {
     let root = Layout::new(data_dir).root;
@@ -359,6 +372,7 @@ pub fn report(data_dir: &Path, launched: bool) -> UpdateReport {
     if launched {
         UpdateReport::Launcher {
             last: last_event(data_dir),
+            launcher_version: crate::rescue::recorded_version(data_dir),
         }
     } else {
         UpdateReport::NoLauncher
@@ -401,6 +415,10 @@ pub struct WorkerUpdates {
     launched: bool,
     keys: Vec<VerifyingKey>,
     marked: AtomicBool,
+    /// When this worker started; after a day of check-ins it becomes the
+    /// rescue copy (`rescue.rs`), once per run.
+    started: Instant,
+    refresh_asked: AtomicBool,
     /// Builds refused in this run (version, SHA-256): not downloaded again.
     refused: Mutex<Vec<(String, String)>>,
 }
@@ -425,6 +443,8 @@ impl WorkerUpdates {
             launched,
             keys,
             marked: AtomicBool::new(false),
+            started: Instant::now(),
+            refresh_asked: AtomicBool::new(false),
             refused: Mutex::new(Vec::new()),
         }
     }
@@ -433,9 +453,26 @@ impl WorkerUpdates {
         report(&self.data_dir, self.launched)
     }
 
-    /// After a successful check-in: tells the launcher this version works.
+    /// After a successful check-in: tells the launcher this version works,
+    /// and after a day of them makes it the rescue copy.
     pub fn checked_in(&self) {
-        if !self.launched || self.marked.load(Ordering::SeqCst) {
+        if !self.launched {
+            return;
+        }
+        if !self.refresh_asked.load(Ordering::SeqCst)
+            && crate::rescue::refresh_due(
+                crate::rescue::recorded_version(&self.data_dir).as_deref(),
+                VERSION,
+                self.started.elapsed(),
+            )
+        {
+            self.refresh_asked.store(true, Ordering::SeqCst);
+            log::info!("Version {VERSION} has been healthy for a day; making it the rescue copy.");
+            if let Err(e) = crate::platform::refresh_rescue_copy() {
+                log::error!("Could not refresh the rescue copy: {e:#}");
+            }
+        }
+        if self.marked.load(Ordering::SeqCst) {
             return;
         }
         let marker = Layout::new(&self.data_dir).checked_in_marker();
@@ -656,7 +693,8 @@ pub mod tests {
         assert_eq!(
             updates.report(),
             UpdateReport::Launcher {
-                last: UpdateEvent::None
+                last: UpdateEvent::None,
+                launcher_version: None,
             }
         );
         updates.checked_in();

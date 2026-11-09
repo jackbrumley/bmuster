@@ -1,20 +1,35 @@
-//! Bounded HTTPS downloads and signature/hash checks before extraction.
+//! Where releases come from (GitHub over HTTPS, bounded), and staging one
+//! into `releases/<version>`: size and SHA-256 against the signed manifest,
+//! then the archive rules, then its own VERSION.
 use super::{archive, manifest};
-use anyhow::{bail, Result};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use ed25519_dalek::VerifyingKey;
+use crate::layout::{bundle_version, check_bundle};
+use crate::releases;
+use anyhow::{bail, Context as _, Result};
+use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
-use std::io::{Read as _, Write as _};
+use std::io::{Read, Write as _};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-fn client() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .https_only(true)
-        .max_redirects(5)
-        .timeout_connect(Some(std::time::Duration::from_secs(15)))
-        .timeout_global(Some(std::time::Duration::from_secs(120)))
-        .build()
-        .into()
+const REPOSITORY: &str = "jackbrumley/bmuster";
+const MAX_RELEASE_JSON: u64 = 256 * 1024;
+
+/// The releases an updater can install.
+pub trait Source {
+    /// The newest stable release's version.
+    fn latest(&self) -> Result<String>;
+    /// One asset of a release.
+    fn open(&self, version: &str, asset: &str) -> Result<Box<dyn Read>>;
+}
+
+/// Reads at most `limit` bytes, failing when there are more.
+pub fn read_limited(mut input: impl Read, limit: u64) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    input.by_ref().take(limit + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit {
+        bail!("the download is larger than {limit} bytes");
+    }
+    Ok(bytes)
 }
 
 pub fn asset_url(version: &str, asset: &str) -> Result<String> {
@@ -27,69 +42,116 @@ pub fn asset_url(version: &str, asset: &str) -> Result<String> {
         bail!("Invalid release asset name");
     }
     Ok(format!(
-        "https://github.com/jackbrumley/bmuster/releases/download/v{version}/{asset}"
+        "https://github.com/{REPOSITORY}/releases/download/v{version}/{asset}"
     ))
 }
 
-pub fn stage(root: &Path, wanted: &str, current: &str) -> Result<PathBuf> {
-    let target = env!("BMUSTER_TARGET");
-    let key: [u8; 32] = BASE64
-        .decode(include_str!("../../../agent/release-key.pub").trim())?
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("Invalid compiled release key"))?;
-    let key = VerifyingKey::from_bytes(&key)?;
-    let mut response = client()
-        .get(asset_url(wanted, &format!("bmuster-app-{target}.json"))?)
-        .call()?;
-    let mut bytes = Vec::new();
-    response
-        .body_mut()
-        .as_reader()
-        .take(32 * 1024 + 1)
-        .read_to_end(&mut bytes)?;
-    let manifest = manifest::verify(&bytes, &key, target, current, env!("CARGO_PKG_VERSION"))?;
-    if manifest.version != wanted {
-        bail!("Update manifest names a different version");
-    }
-    let incoming = root.join("incoming");
-    let versions = root.join("versions");
-    let destination = versions.join(wanted);
-    if destination.exists() {
-        bail!("This application version is already staged; it was left intact");
-    }
-    match std::fs::symlink_metadata(&incoming) {
-        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
-            std::fs::remove_dir_all(&incoming)?;
+#[derive(Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    draft: bool,
+    prerelease: bool,
+}
+
+/// GitHub's latest release, over HTTPS only (the platform's certificate
+/// check), with bounded sizes and times.
+pub struct GitHub;
+
+fn client(timeout: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .https_only(true)
+        .max_redirects(5)
+        .timeout_connect(Some(Duration::from_secs(15)))
+        .timeout_global(Some(timeout))
+        .user_agent(concat!(
+            "bmuster-server-updater/",
+            env!("CARGO_PKG_VERSION")
+        ))
+        .build()
+        .into()
+}
+
+impl Source for GitHub {
+    fn latest(&self) -> Result<String> {
+        let response = client(Duration::from_secs(60))
+            .get(format!(
+                "https://api.github.com/repos/{REPOSITORY}/releases/latest"
+            ))
+            .header("Accept", "application/vnd.github+json")
+            .call()
+            .context("could not ask GitHub for the latest release")?;
+        let bytes = read_limited(response.into_body().into_reader(), MAX_RELEASE_JSON)?;
+        let release: GitHubRelease =
+            serde_json::from_slice(&bytes).context("GitHub's release reply is not understood")?;
+        if release.draft || release.prerelease {
+            bail!("GitHub returned a non-stable release");
         }
-        Ok(_) => bail!("The server update staging path is not a regular directory"),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
+        let Some(version) = release.tag_name.strip_prefix('v') else {
+            bail!("the latest release tag {} is not vX.Y.Z", release.tag_name);
+        };
+        manifest::version(version)?;
+        Ok(version.to_string())
     }
-    std::fs::create_dir(&incoming)?;
+
+    fn open(&self, version: &str, asset: &str) -> Result<Box<dyn Read>> {
+        let url = asset_url(version, asset)?;
+        let response = client(Duration::from_secs(30 * 60))
+            .get(&url)
+            .call()
+            .with_context(|| format!("could not download {url}"))?;
+        Ok(Box::new(response.into_body().into_reader()))
+    }
+}
+
+/// Downloads, checks and unpacks a verified manifest's archive into
+/// `releases/<version>`. A failure leaves no release folder behind.
+pub fn stage(prefix: &Path, manifest: &manifest::Manifest, source: &dyn Source) -> Result<PathBuf> {
+    let version = &manifest.version;
+    std::fs::create_dir_all(releases::releases_dir(prefix))?;
+    let target = releases::release_dir(prefix, version);
+    let incoming = releases::incoming_dir(prefix, version);
+    let download = releases::download_file(prefix, version);
+    if releases::current_version(prefix)?.as_deref() == Some(version.as_str()) {
+        bail!("{version} is already the running release");
+    }
+    for leftover in [&target, &incoming] {
+        if leftover.exists() {
+            std::fs::remove_dir_all(leftover)
+                .with_context(|| format!("could not remove {}", leftover.display()))?;
+        }
+    }
     let result = (|| -> Result<()> {
-        stage_checked(&incoming, &manifest)?;
-        std::fs::write(incoming.join("verified-manifest.json"), bytes)?;
+        fetch_checked(&download, manifest, source)?;
+        std::fs::create_dir(&incoming)?;
+        archive::extract(std::fs::File::open(&download)?, &incoming)?;
+        check_bundle(&incoming)?;
+        if bundle_version(&incoming) != *version {
+            bail!("the unpacked release's VERSION differs from its signed manifest");
+        }
+        let package: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(incoming.join("app/package.json"))?)?;
+        if package.get("version").and_then(|v| v.as_str()) != Some(version.as_str()) {
+            bail!("the application's package version differs from its signed manifest");
+        }
+        std::fs::rename(&incoming, &target)?;
         Ok(())
     })();
+    let _ = std::fs::remove_file(&download);
     if result.is_err() {
         let _ = std::fs::remove_dir_all(&incoming);
     }
     result?;
-    std::fs::create_dir_all(&versions)?;
-    std::fs::rename(&incoming, &destination)?;
-    Ok(destination)
+    Ok(target)
 }
 
-fn stage_checked(incoming: &Path, manifest: &manifest::Manifest) -> Result<()> {
-    let archive_path = incoming.join("archive.tar.gz");
+fn fetch_checked(path: &Path, manifest: &manifest::Manifest, source: &dyn Source) -> Result<()> {
     let mut file = std::fs::OpenOptions::new()
         .write(true)
-        .create_new(true)
-        .open(&archive_path)?;
-    let mut response = client()
-        .get(asset_url(&manifest.version, &manifest.archive)?)
-        .call()?;
-    let mut input = response.body_mut().as_reader();
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .with_context(|| format!("could not create {}", path.display()))?;
+    let mut input = source.open(&manifest.version, &manifest.archive)?;
     let mut total = 0;
     let mut hash = Sha256::new();
     let mut buffer = [0; 64 * 1024];
@@ -106,20 +168,8 @@ fn stage_checked(incoming: &Path, manifest: &manifest::Manifest) -> Result<()> {
         file.write_all(&buffer[..count])?;
     }
     file.sync_all()?;
-    drop(file);
     if total != manifest.bytes || hex::encode(hash.finalize()) != manifest.sha256 {
         bail!("Server update hash or size does not match its signed manifest");
-    }
-    archive::extract(std::fs::File::open(&archive_path)?, incoming)?;
-    std::fs::remove_file(archive_path)?;
-    let version = std::fs::read_to_string(incoming.join("VERSION"))?;
-    if version.trim() != manifest.version {
-        bail!("The staged application's version differs from its signed manifest");
-    }
-    let package: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(incoming.join("app/package.json"))?)?;
-    if package.get("version").and_then(|v| v.as_str()) != Some(&manifest.version) {
-        bail!("The application's package version differs from its signed manifest");
     }
     Ok(())
 }
@@ -130,10 +180,17 @@ mod tests {
     fn asset_paths_cannot_escape_the_release() {
         assert!(super::asset_url("../latest", "archive").is_err());
         assert!(super::asset_url("0.3.1", "https://evil/archive").is_err());
+        assert!(super::asset_url("0.3.1", "../../x").is_err());
         assert!(
             super::asset_url("0.3.1", "bmuster-app-x86_64-unknown-linux-gnu.tar.gz")
                 .unwrap()
                 .starts_with("https://github.com/jackbrumley/bmuster/releases/download/v0.3.1/")
         );
+    }
+
+    #[test]
+    fn reading_stops_at_the_limit() {
+        assert_eq!(super::read_limited(&b"abc"[..], 3).unwrap(), b"abc");
+        assert!(super::read_limited(&b"abcd"[..], 3).is_err());
     }
 }

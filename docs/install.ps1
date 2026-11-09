@@ -136,7 +136,7 @@ for ($try = 0; $try -lt 90 -and -not $ready; $try++) {
 if (-not $ready) { Fail "the server did not become ready on port $listenPort; see $log" }
 
 $address = ''
-foreach ($line in & (Join-Path $Prefix 'bmuster-server.exe') status --prefix $Prefix --data-dir $DataDir) {
+foreach ($line in & (Join-Path $Prefix 'current\bmuster-server.exe') status --prefix $Prefix --data-dir $DataDir) {
 	if ($line -match '^Address:\s*(.+)$') { $address = $Matches[1] }
 }
 $code = ''
@@ -168,6 +168,6 @@ if ($address.StartsWith('https://')) {
 	Write-Host "  Add machine shows the certificate's fingerprint to compare."
 }
 Write-Host "  Windows Firewall now allows TCP port $listenPort."
-Write-Host "  Status:      & '$Prefix\bmuster-server.exe' status"
+Write-Host "  Status:      & '$Prefix\current\bmuster-server.exe' status"
 Write-Host "  Log:         $log"
-Write-Host "  Uninstall:   & '$Prefix\bmuster-server.exe' uninstall  (add --purge to delete the data)"
+Write-Host "  Uninstall:   & '$Prefix\current\bmuster-server.exe' uninstall  (add --purge to delete the data)"

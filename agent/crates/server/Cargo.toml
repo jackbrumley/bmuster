@@ -11,6 +11,11 @@ rust-version.workspace = true
 name = "bmuster-server"
 path = "src/main.rs"
 
+[features]
+# The scratch install test only: releases from a folder and a script for
+# the service (SPEC-SERVER-UPDATES). Never enabled in a release build.
+scratch-test = []
+
 [dependencies]
 bmuster-service.workspace = true
 anyhow.workspace = true

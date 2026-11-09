@@ -50,11 +50,12 @@
 		};
 	});
 
-	function onServerRestarting(version: string): void {
+	function onServerRestarting(version: string, requestedAtIso: string): void {
 		restartExpectedVersion = version;
 		restartMonitor?.stop();
 		restartMonitor = startServerRestartMonitor({
 			expectedVersion: version,
+			requestedAtIso,
 			read: () =>
 				apiRequest({
 					method: 'GET',
@@ -108,9 +109,10 @@
 	<Panel heading="Updating BMuster server" actions={undefined} tone="normal" padding="normal">
 		<Notice tone="info" title="Reconnecting automatically">
 			<p>
-				BMuster is installing version {restartExpectedVersion} and restarting. Nginx may briefly show
-				an unavailable or host-not-found error while the server returns. Leave this tab open; it will
-				reconnect and reload the page when the update finishes or rolls back.
+				BMuster is installing version {restartExpectedVersion} (the whole server, including Node) and
+				restarting. Nginx may briefly show an unavailable or host-not-found error while the server returns.
+				Leave this tab open; it will reconnect and reload the page when the update finishes, rolls back
+				or stops.
 			</p>
 		</Notice>
 	</Panel>

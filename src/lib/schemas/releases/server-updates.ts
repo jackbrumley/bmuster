@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
 export const stableVersionSchema = z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
+/**
+ * The signed release manifest (bmuster-app-<target>.json). Field names are the release contract
+ * installed servers already read; `minimumLauncher` is the oldest installed version that can
+ * update to this release by itself (SPEC-SERVER-UPDATES).
+ */
 export const serverManifestSchema = z.strictObject({
 	schemaVersion: z.literal(1),
 	version: stableVersionSchema,
@@ -16,7 +21,7 @@ export const serverManifestSchema = z.strictObject({
 		.max(1024 ** 3),
 	sha256: z.string().regex(/^[a-f0-9]{64}$/),
 	minimumLauncher: stableVersionSchema,
-	nodeMajor: z.literal(26),
+	nodeMajor: z.int().positive(),
 	rollbackFrom: z.array(stableVersionSchema).max(32)
 });
 export type ServerManifest = z.infer<typeof serverManifestSchema>;
@@ -26,20 +31,30 @@ const updateReleaseSchema = z.strictObject({
 	publishedAtIso: z.iso.datetime(),
 	manifest: serverManifestSchema
 });
-export const serverUpdateStateSchema = z.strictObject({
-	current: stableVersionSchema.nullable(),
-	previous: stableVersionSchema.nullable(),
-	pending: stableVersionSchema.nullable(),
+/** update-status.json, written only by the root updater. */
+export const updaterStatusSchema = z.strictObject({
 	phase: z.enum([
-		'idle',
+		'checking',
+		'up-to-date',
 		'downloading',
-		'preparing',
+		'switching',
 		'starting',
-		'updated',
-		'failed',
-		'rolled-back'
+		'healthy',
+		'rolled-back',
+		'failed'
 	]),
-	message: z.string().max(4000)
+	from: stableVersionSchema.nullable(),
+	to: stableVersionSchema.nullable(),
+	message: z.string().max(4000),
+	atMs: z.int().nonnegative()
+});
+/** What the console shows: the updater's status, or the app's own request waiting for it. */
+const serverUpdateOperationSchema = z.strictObject({
+	phase: z.enum(['idle', 'requested', ...updaterStatusSchema.shape.phase.options]),
+	from: stableVersionSchema.nullable(),
+	to: stableVersionSchema.nullable(),
+	message: z.string().max(4000),
+	atIso: z.iso.datetime().nullable()
 });
 export const updateCacheSchema = z.strictObject({
 	checkedAtIso: z.iso.datetime().nullable(),
@@ -50,13 +65,18 @@ export const updateCacheSchema = z.strictObject({
 export const serverUpdateViewSchema = z.strictObject({
 	installedVersion: stableVersionSchema,
 	deployment: z.enum(['source', 'docker', 'installed']),
-	launcherVersion: stableVersionSchema.nullable(),
 	checkedAtIso: z.iso.datetime().nullable(),
 	lastSuccessAtIso: z.iso.datetime().nullable(),
 	release: updateReleaseSchema.nullable(),
 	problem: z.string().nullable(),
 	install: z.strictObject({ allowed: z.boolean(), reason: z.string() }),
-	operation: serverUpdateStateSchema
+	operation: serverUpdateOperationSchema
 });
 export type ServerUpdateView = z.infer<typeof serverUpdateViewSchema>;
+/** Update now's reply: when the request was written, so the page ignores older updater results. */
+export const serverUpdateRequestedSchema = z.strictObject({
+	requestedAtIso: z.iso.datetime(),
+	view: serverUpdateViewSchema
+});
+export type ServerUpdateOperation = z.infer<typeof serverUpdateOperationSchema>;
 export type UpdateCache = z.infer<typeof updateCacheSchema>;
