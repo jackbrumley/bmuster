@@ -1,6 +1,10 @@
 <script lang="ts">
 	import Panel from '#lib/ui/panel.svelte';
-	import { linuxDisplayFacts, type DisplayReport } from '#lib/domain/machines/display-report.ts';
+	import {
+		linuxDisplayFacts,
+		windowsDisplayFacts,
+		type DisplayReport
+	} from '#lib/domain/machines/display-report.ts';
 
 	/**
 	 * Overview → Display (SPEC-AGENT-LOGS 3): what a remote desktop on this machine depends on,
@@ -16,12 +20,7 @@
 			case 'linux':
 				return linuxDisplayFacts(report);
 			case 'windows':
-				return [
-					{
-						label: 'Console session',
-						value: report.console.kind === 'user' ? report.console.name : 'Nobody signed in'
-					}
-				];
+				return windowsDisplayFacts(report);
 			case 'unsupported':
 			case 'unreported':
 				return [];

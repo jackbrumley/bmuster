@@ -15,7 +15,9 @@
 	import LocalPage from './local-page.svelte';
 	import MachineDetails from './machine-details.svelte';
 	import MachineGroups from './machine-groups.svelte';
+	import MachineChecks from './machine-checks.svelte';
 	import MachineLogs from './machine-logs.svelte';
+	import MachineSessions from './machine-sessions.svelte';
 	import ReinstallAgent from './reinstall-agent.svelte';
 	import type { PageProps } from './$types';
 
@@ -101,6 +103,10 @@
 		machine.inventory.display.kind !== 'unreported'}
 	verboseUntilIso={data.verboseUntilIso}
 />
+
+<MachineChecks machineId={machine.id} machineName={machine.name} />
+
+<MachineSessions machineId={machine.id} />
 
 <Panel heading="Danger zone" actions={undefined} tone="danger" padding="normal">
 	<div class="danger-row">

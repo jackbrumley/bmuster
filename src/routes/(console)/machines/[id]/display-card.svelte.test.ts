@@ -58,9 +58,14 @@ describe('Overview: Display card (SPEC-AGENT-LOGS AL12)', () => {
 
 	it('AL12: says what is missing for Windows, older agents and no inventory yet', async () => {
 		const windows = await render(DisplayCard, {
-			report: { kind: 'windows', console: { kind: 'user', name: 'kim' } }
+			report: {
+				kind: 'windows',
+				console: { kind: 'user', name: 'kim' },
+				system: { kind: 'unreported' }
+			}
 		});
 		await expect.element(windows.getByText('kim')).toBeVisible();
+		await expect.element(windows.getByText('Not reported by this agent')).toBeVisible();
 		await windows.unmount();
 		const old = await render(DisplayCard, { report: { kind: 'unreported' } });
 		await expect
@@ -69,6 +74,43 @@ describe('Overview: Display card (SPEC-AGENT-LOGS AL12)', () => {
 		await old.unmount();
 		const pending = await render(DisplayCard, { report: undefined });
 		await expect.element(pending.getByText('Waiting for the first inventory.')).toBeVisible();
+	});
+
+	it('D8: renders the Windows build, console session, secure desktop, outputs and SAS policy', async () => {
+		const screen = await render(DisplayCard, {
+			report: {
+				kind: 'windows',
+				console: { kind: 'none' },
+				system: {
+					kind: 'reported',
+					build: '26100.2314',
+					edition: 'Professional',
+					consoleSession: { kind: 'attached', id: 1, state: 'active' },
+					secureDesktop: { kind: 'known', active: true },
+					outputs: [
+						{
+							adapter: 'Intel(R) UHD Graphics',
+							name: '\\\\.\\DISPLAY1',
+							width: 1920,
+							height: 1080,
+							rotation: 90
+						}
+					],
+					sasPolicy: { kind: 'set', value: 3 }
+				}
+			}
+		});
+		const fact = (label: string) =>
+			[...screen.container.querySelectorAll('.fact')]
+				.find((element) => element.querySelector('dt')?.textContent === label)
+				?.querySelector('dd');
+		await expect.element(screen.getByText('Build 26100.2314 Professional')).toBeVisible();
+		expect(fact('Console session')?.textContent).toBe('1 (active)');
+		expect(fact('Secure desktop')?.textContent).toBe('Showing (sign-in, lock or UAC)');
+		expect(fact('\\\\.\\DISPLAY1')?.textContent).toBe(
+			'Intel(R) UHD Graphics · 1920x1080, rotated 90°'
+		);
+		expect(fact('SAS policy')?.textContent).toBe('3 (services and apps)');
 	});
 
 	it('AL12: at phone width the card does not overflow', async () => {
