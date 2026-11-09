@@ -360,6 +360,14 @@ fn serve(mut socket: Socket, serving: &Serving<'_>, probe: &mut Probe) -> Result
                     log::info!("The server asked for the self-checks.");
                     crate::checks::request(crate::checks::Trigger::Asked);
                 }
+                Ok(ServerMessage::PowerPolicy { keep_awake_on_ac }) => {
+                    // A change goes to the console at once, not at the next check-in.
+                    if crate::power::set_policy(keep_awake_on_ac)
+                        && signals.send(Signal::CheckInNow).is_err()
+                    {
+                        return Ok(Ended::Stopped);
+                    }
+                }
                 Ok(ServerMessage::SessionOpen { ticket, signature }) => {
                     if let Err(refused) = sessions.open(&ticket, &signature) {
                         log::warn!("{}", refused.message);

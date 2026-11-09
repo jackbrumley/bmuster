@@ -175,6 +175,8 @@ pub fn run(
         data_dir: options.data_dir.clone(),
         mode: options.sessions,
     });
+    // The saved policy applies before the server is reachable (SPEC-STAY-AWAKE).
+    let power = crate::power::start(options.data_dir.clone());
     let server_key = decode_public_key(&identity.server_public_key)
         .context("identity.json holds an unreadable server key")?;
     let sessions = Sessions::new(
@@ -219,6 +221,7 @@ pub fn run(
         },
     );
     stop.store(true, Ordering::SeqCst);
+    crate::power::stop(power);
     if socket_thread.join().is_err() {
         log::error!("the live socket thread failed");
     }

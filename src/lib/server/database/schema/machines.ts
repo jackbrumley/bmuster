@@ -54,7 +54,12 @@ export const machines = sqliteTable('machines', {
 	 * Until when the agent logs its own debug records (SPEC-AGENT-LOGS 1); null at the normal
 	 * level. Sent to the agent again when it reconnects before then.
 	 */
-	verboseUntil: integer({ mode: 'timestamp_ms' })
+	verboseUntil: integer({ mode: 'timestamp_ms' }),
+	/**
+	 * Stay awake on mains power (SPEC-STAY-AWAKE): admins set it, the agent gets it on its live
+	 * socket when it changes and on every connect, and keeps the last one itself.
+	 */
+	keepAwakeOnAc: integer({ mode: 'boolean' }).notNull().default(false)
 });
 
 /**

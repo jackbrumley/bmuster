@@ -21,7 +21,8 @@ function inventory(
 		displayCount: 1,
 		addresses: [],
 		gpus: [],
-		display: { kind: 'unreported' }
+		display: { kind: 'unreported' },
+		power: { kind: 'unreported' }
 	};
 }
 

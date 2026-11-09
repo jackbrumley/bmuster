@@ -140,6 +140,13 @@ export const SAMPLE_INVENTORY: InventoryWire = {
 		agentVersion: '0.4.0',
 		launcherVersion: { kind: 'known', version: '0.4.0' },
 		selinux: { kind: 'absent' }
+	},
+	power: {
+		kind: 'reported',
+		source: 'mains',
+		batteryPercent: null,
+		keepAwake: 'off',
+		inhibitor: { kind: 'none' }
 	}
 };
 

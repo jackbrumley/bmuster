@@ -103,7 +103,9 @@ const AUDIT_KINDS = [
 	'support-code-started',
 	'support-code-cancelled',
 	'support-code-entered',
-	'support-code-scam-stop'
+	'support-code-scam-stop',
+	// SPEC-STAY-AWAKE
+	'machine-power-policy-changed'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -312,5 +314,7 @@ export function activityLabel(kind: AuditKind): string {
 			return 'A support code was entered on /join';
 		case 'support-code-scam-stop':
 			return 'A support code was stopped by the scam check';
+		case 'machine-power-policy-changed':
+			return 'Changed Stay awake on mains power';
 	}
 }

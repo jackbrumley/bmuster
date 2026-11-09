@@ -67,6 +67,7 @@ pub fn checks() -> Vec<Check> {
             title: "Fixed Event Log query",
             run: event_log,
         },
+        super::stay_awake_check(),
     ]
 }
 

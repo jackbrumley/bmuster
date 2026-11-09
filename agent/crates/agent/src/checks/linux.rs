@@ -97,6 +97,7 @@ pub fn checks() -> Vec<Check> {
             title: "Audit denials (last 15 minutes)",
             run: audit,
         },
+        super::stay_awake_check(),
     ]
 }
 
@@ -627,7 +628,8 @@ pub mod tests {
                 "x11-display",
                 "portal",
                 "journal",
-                "audit"
+                "audit",
+                "stay-awake"
             ]
         );
         // Sessions in the agent's own process: the unit checks do not apply.

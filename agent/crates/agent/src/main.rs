@@ -17,6 +17,7 @@ mod local_page;
 mod log_spool;
 mod logging;
 mod paths;
+mod power;
 mod relocate;
 mod rescue;
 #[cfg(target_os = "linux")]

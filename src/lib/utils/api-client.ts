@@ -11,7 +11,7 @@ export type ApiResult<T> = { ok: true; data: T } | { ok: false; message: string;
 const UNREACHABLE = 'Could not reach the server. Check your connection.';
 
 export async function apiRequest<Reply>(options: {
-	method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+	method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 	url: string;
 	body: unknown;
 	reply: z.ZodType<Reply>;

@@ -12,6 +12,7 @@ import {
 } from '../services/agents/live-agents.ts';
 import { socketClosed, socketOpened } from '../services/agents/presence.ts';
 import { storeLogBatch } from '../services/logs/agent-logs.ts';
+import { powerPolicyOnConnect } from '../services/machines/power-policy.ts';
 import { storeCheckResults } from '../services/logs/machine-checks.ts';
 import { serverLog } from '../services/logs/server-log.ts';
 import { verboseOnConnect } from '../services/logs/verbose.ts';
@@ -72,6 +73,8 @@ export const agentSocketRoute = defineSocketRoute<{
 		if (verbose !== undefined) {
 			live.send(verbose);
 		}
+		// Every connection hears the stay-awake setting, so a change made while it was offline lands.
+		live.send(powerPolicyOnConnect(database, peer.context.machineId));
 		socketOpened(database, peer.context.machineId, now);
 		serverLog('info', 'agents', 'Live socket opened.', peer.context.machineId, now);
 	},

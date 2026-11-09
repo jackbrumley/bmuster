@@ -28,6 +28,7 @@
 		IconPhone,
 		IconPhoneOff,
 		IconPin,
+		IconPlug,
 		IconRocket,
 		IconShieldLock,
 		IconShieldX,
@@ -217,6 +218,8 @@
 				return IconPhoneOff;
 			case 'support-code-scam-stop':
 				return IconShieldX;
+			case 'machine-power-policy-changed':
+				return IconPlug;
 		}
 	}
 </script>
