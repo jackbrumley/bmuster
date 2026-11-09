@@ -1,7 +1,7 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
-		version: '0.4.0',
+		version: '0.4.1',
 		changes: [
 			'Agents send their logs to the server all the time, keeping them while offline, so Manage shows a machine’s logs even after a crash or restart.',
 			'Turn on verbose logging for one machine for up to four hours from Manage.',

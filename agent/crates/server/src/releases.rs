@@ -72,20 +72,24 @@ pub fn point_current(prefix: &Path, version: &str) -> Result<()> {
     let link = prefix.join(CURRENT);
     let staged = prefix.join(format!("{CURRENT}.new"));
     remove_link(&staged)?;
-    link_to(&release, &Path::new(RELEASES).join(version), &staged)?;
+    link_to(&Path::new(RELEASES).join(version), &staged)?;
     swap_link(&staged, &link)?;
     sync_dir(prefix)
 }
 
+/// The link is relative (`releases/<version>`) on every platform, so it
+/// still points at the release after the installer renames the staged
+/// program folder into place; an absolute link would keep pointing at the
+/// staged folder's old name.
 #[cfg(unix)]
-fn link_to(_absolute: &Path, relative: &Path, link: &Path) -> Result<()> {
+fn link_to(relative: &Path, link: &Path) -> Result<()> {
     std::os::unix::fs::symlink(relative, link)
         .with_context(|| format!("could not create the link {}", link.display()))
 }
 
 #[cfg(windows)]
-fn link_to(absolute: &Path, _relative: &Path, link: &Path) -> Result<()> {
-    std::os::windows::fs::symlink_dir(absolute, link)
+fn link_to(relative: &Path, link: &Path) -> Result<()> {
+    std::os::windows::fs::symlink_dir(relative, link)
         .with_context(|| format!("could not create the link {}", link.display()))
 }
 
@@ -189,6 +193,21 @@ pub fn place(source: &Path, prefix: &Path, version: &str) -> Result<()> {
 mod tests {
     use super::*;
     use crate::layout::tests::{fake_bundle_named, scratch};
+
+    #[test]
+    fn current_still_resolves_after_the_program_folder_is_renamed() {
+        // The installer stages `<prefix>.new` and renames it into place; the
+        // Windows v0.4.0 install test failed because the link was absolute.
+        let root = scratch("releases-rename");
+        let staged = root.join("opt.new");
+        let bundle = fake_bundle_named(&root, "bundle", "1.0.0");
+        place(&bundle, &staged, "1.0.0").unwrap();
+        point_current(&staged, "1.0.0").unwrap();
+        assert!(fs::read_link(staged.join(CURRENT)).unwrap().is_relative());
+        let prefix = root.join("opt");
+        fs::rename(&staged, &prefix).unwrap();
+        assert_eq!(bundle_version(&prefix.join(CURRENT)), "1.0.0");
+    }
 
     #[test]
     fn current_moves_between_releases_and_pruning_keeps_what_is_asked() {
