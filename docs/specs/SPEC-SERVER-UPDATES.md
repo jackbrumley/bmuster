@@ -1,97 +1,75 @@
-# SPEC-SERVER-UPDATES: Check, install and recover server updates
+# SPEC-SERVER-UPDATES: Whole-install updates by a root updater, for server and agent
 
-**Status:** Implemented in v0.3.3 · 2026-11-09.
+**Status:** `APPROVED` 2026-11-09 (Jack: "go", then "build everything") · second version. Replaces the v0.3.0–v0.3.3 application-slot design (see "Version 1" at the end).
 
-## Open decisions and security
+## Problem
 
-This is security work: a server update controls the console and every enrolled machine.
+Version 1 updated only the Node application inside a service-owned slot. The launcher and the bundled Node runtime in `/opt/bmuster-server` stayed fixed until someone re-ran the installer, so `bmuster-server --version` said 0.3.0 while 0.3.2 was running, and Node security fixes never reached installed servers. Jack does not want any part of BMuster to need a manual update.
 
-The approved product flow is a daily GitHub check, an immediate **Check for updates** button, an update notice and modal, followed by an installed-service update or Docker instructions. The earlier conversation did not resolve these implementation constraints:
+## Design
 
-1. Installed services run as `bmuster-server` on Linux and LocalService on Windows. They can write their data folder, but cannot replace `/opt/bmuster-server` or Program Files. Keep those privileges unchanged. Use the existing launcher to supervise signed application versions in a dedicated, service-owned version folder, rather than granting the web process root or Administrator. The fixed launcher and its bundled runtime are upgraded by rerunning the administrator installer. Changes requiring a new launcher/runtime show those instructions instead of offering an in-console update.
-2. A checksum fetched beside an archive detects corruption; it does not authenticate the archive. Sign the server update manifest with the offline release key and verify it in the launcher against its compiled public key. Fail closed when the signature, target, version, size or hash is wrong. Never publish a production release without signatures.
-3. A healthy HTTP response alone is insufficient after a schema change. Only offer automatic rollback when the release declares compatibility with the previous application's schema and this is exercised in release tests. Keep an online SQLite backup before applying migrations, but never automatically overwrite the operator's database to roll back. A schema incompatibility requires operator recovery with explicit instructions.
+**The web app says when; a root updater decides what.** An update is the installer running itself, for the whole install.
 
-Recommendation: approve all three constraints. They preserve the existing service permissions and make the limit of automatic rollback explicit.
+1. **Request.** An admin confirms **Update now**. The app (unprivileged) writes an empty file `<data>/update-requested`. That is all the app can do. The flag's contents are ignored.
+2. **Trigger.** On Linux, `bmuster-server-update.path` (`PathExists=`) starts `bmuster-server-update.service`, a root one-shot that runs `/opt/bmuster-server/current/bmuster-server update --data-dir <data>`. On Windows, a SYSTEM scheduled task runs the same command every two minutes and exits at once when there is no flag.
+3. **Updater.** It deletes the flag first (no loops), takes an exclusive lock, and then, writing each step to `<data>/update-status.json` (readable by the service user, writable only by root):
+   1. asks GitHub for the latest stable release (the version 1 channel rules: no drafts or prereleases, validated repository and asset names);
+   2. downloads the signed manifest and the bundle for its own target over HTTPS with size limits;
+   3. verifies the manifest's Ed25519 signature against the release public key **compiled into the updater**, then the bundle's size and SHA-256; refuses anything not newer than the running version (no downgrades);
+   4. extracts the bundle to `/opt/bmuster-server/releases/<version>.incoming` with the version 1 archive rules (no traversal, links or unexpected files), then renames it to `releases/<version>`;
+   5. stops the service; writes a pre-update database copy to `<data>/backups/pre-update-<old>-to-<new>.db` (the stopped server has checkpointed its WAL);
+   6. writes the switch record `<data>/update-switch.json` (`from`, `to`, `step`), then atomically repoints `/opt/bmuster-server/current` (a symlink replaced with `rename`) to the new release;
+   7. lets the new release refresh its own unit files (`bmuster-server install --refresh-units`), reloads systemd and starts the service;
+   8. waits up to 120 seconds for the readiness reply with the expected version (the version 1 readiness file and nonce);
+   9. **healthy:** deletes the switch record, keeps the previous release, deletes releases older than that, and records `healthy`;
+   10. **not healthy:** repoints `current` to the previous release and starts it, if the new release's manifest declares `rollbackCompatibleFrom` covering the old version (migrations are additive; the old app must accept the newer schema). Otherwise it leaves the service stopped and records `failed` with recovery instructions naming the pre-update database copy. The database is never replaced automatically.
+4. **Interruption.** The updater service also runs `--recover` at boot (`Before=bmuster-server.service`). A leftover switch record is completed or rolled back with the same rules. Every step is safe to repeat.
+5. **The app** reads `update-status.json` to show progress, and the version 1 page behaviour (stay rendered across the restart, reload when healthy or rolled back) is kept.
 
-## Mental model
+**Layout.** `/opt/bmuster-server/releases/<version>/{bmuster-server, node/, app/, VERSION}` and `/opt/bmuster-server/current → releases/<version>`. The service runs `/opt/bmuster-server/current/bmuster-server run`. The launcher is part of each release: it starts Node, restarts it if it crashes and hands the database lock over, but it no longer downloads, stages or switches anything. `bmuster-server --version` and the console both show the one running version.
 
-A GitHub release is a box containing the server and its signed agents. Checking for updates only looks for a newer box. For a compatible installed-service update, the launcher validates and stages the new application, stops the old application, starts the new one and waits up to two minutes for readiness and the expected version. It retains the previous application for recovery. The persistent database, settings and secrets stay in the data folder.
+**Installer.** `bmuster-server install` creates the same layout from an extracted bundle and installs the `.service`, `.path` and updater units. `docs/install.sh` additionally verifies the manifest signature (with the public key printed in the script) instead of trusting a checksum downloaded beside the archive.
 
-Once healthy, the new server offers its agents through the existing staged rollout. Updating the server does not mean every machine updates immediately: pins, pauses, manual policy and offline machines still apply. The Updates page shows these states as they change.
+**Moving from version 1.** A version 1 launcher cannot get root, so moving to this layout needs the installer re-run once (the Updates page says so for v0.3.x servers). From then on every part updates itself.
 
-For Docker/Coolify, the image is the box. BMuster reports the newer version and explains which image tag to deploy. It never mounts the Docker socket or changes the container from inside.
+**Docker/Coolify** is unchanged: the image is the update, and the page explains how to deploy the new tag.
+
+### Agents
+
+The agent already runs as root and updates its worker under `<data>/versions` with a health check (SPEC-AGENT-UPDATES). Its launcher stays fixed in `/opt/bmuster/bmuster-agent`. Change:
+
+- The unit runs `<data>/versions/current/bmuster-agent launch`, so the launcher is the current version's own binary and updates with it. The binary in `/opt/bmuster/bmuster-agent` becomes the **rescue copy**: the installer's binary, used only to roll back.
+- `OnFailure=bmuster-agent-rescue.service` (with `StartLimitBurst=3` in 5 minutes) runs `/opt/bmuster/bmuster-agent rescue`, which repoints `current` to `previous` and starts the agent again, recording the reason for the next check-in.
+- Each healthy agent version also refreshes the rescue copy from itself after 24 hours of health, so the rescue copy is at most one version behind.
+- Windows: the service's recovery actions run `bmuster-agent.exe rescue` from Program Files, with the same rules.
+- `bmuster-agent --version` prints the running version; the check-in reports the rescue copy's version as `launcherVersion`.
+
+## Security
+
+This is security work: the updater runs as root and installs code that controls every enrolled machine.
+
+- The web app never gains root, Administrator or a way to choose what is installed. A compromised app can at most trigger an update to the genuine latest signed release.
+- The release key stays offline; its public half is compiled into the updater and the agent. Fail closed on any signature, version, target, size or hash problem. No unsigned fallback.
+- `update-requested` lives in the service-owned data folder; everything the updater writes outside it is root-owned. The updater refuses to follow symlinks in the data folder.
+- The release workflow refuses to publish without signatures (version 1 rule, kept).
 
 ## Acceptance criteria
 
-| #    | Behaviour                                                                                                                                                                                                                                                                                                                                    | Named test                                                                 |
-| :--- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------- |
-| SU1  | Check GitHub daily when enabled; Check now performs a new check immediately. Coalesce concurrent requests, retry transient network/gateway failures a bounded number of times, retry failed scheduled checks after five minutes, and never report “no newer release” after a failed check. Show the last successful result labelled by time. | `server-release.test.ts`, `service.test.ts`, `updates-page.svelte.test.ts` |
-| SU2  | Only newer, supported releases are offered; drafts and prereleases are excluded on the stable channel; validate repository, asset names, sizes and metadata.                                                                                                                                                                                 | `server-release.test.ts`                                                   |
-| SU3  | Admin-only check/install endpoints; no install for Docker, source dev runs or incompatible launcher versions. Changes are audited and origin checked.                                                                                                                                                                                        | `server-update-guards.test.ts`                                             |
-| SU4  | Banner and modal show installed/new versions, release notes, interruption of sessions and staged agent rollout. Installation requires confirmation.                                                                                                                                                                                          | `server-update-panel.svelte.test.ts`                                       |
-| SU5  | Launcher verifies the signed manifest, version, target, size and SHA-256 before activation; bounded HTTPS downloads and extraction reject traversal, links and unexpected files.                                                                                                                                                             | Rust `server::updates::verification` and `server::updates::archive`        |
-| SU6  | Fixed launcher supervises current/previous/incoming application slots with a durable switch record; interruption at every switch step recovers deterministically. Runtime/launcher changes require administrator installation.                                                                                                               | Rust `server::updates::recovery`                                           |
-| SU7  | Staged application must answer readiness with its expected version within 120 seconds; compatible failure restores the previous application and records the reason. Database is never replaced automatically.                                                                                                                                | Rust `server::updates::health`, scratch-server rollback test               |
-| SU8  | Only one updater runs; active sessions are ended with a clear update reason; the database lock is handed over before the next app starts.                                                                                                                                                                                                    | `server-update-handover.test.ts`                                           |
-| SU9  | Updates page refreshes every visible few seconds and shows every machine's version, stage/estimated turn, pins, failures and offline state; filters preserve scroll and selection.                                                                                                                                                           | `updates-live.svelte.test.ts`                                              |
-| SU10 | Release workflow signs server manifests and agent builds and tests compatible A→B and broken B→A before publication. No unsigned release fallback.                                                                                                                                                                                           | release dry run and scratch install/update test                            |
-| SU11 | Docker notice gives tag/deploy instructions and has no self-update action; checks can be disabled and manually requested.                                                                                                                                                                                                                    | `server-update-panel.svelte.test.ts`, `server-update-check.test.ts`        |
-| SU12 | After an installed server update is accepted, keep the Updates page rendered, stop normal page refreshes, retry readiness through temporary proxy/DNS failures, and reload only after the expected version is healthy or the previous version reports failure/rollback.                                                                      | `server-restart-monitor.test.ts`, `updates-page.svelte.test.ts`            |
+| #    | Criterion                                                                                                                                       | Named test                                                      |
+| :--- | :---------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------- |
+| SU1  | Checks: daily and Check now, coalesced, bounded retries, truthful failures (version 1 SU1, kept).                                               | `server-release.test.ts`, `service.test.ts`                     |
+| SU2  | Update now writes only the empty flag; admin-only, origin-checked and audited; refused for Docker and source runs.                              | `server-update-guards.test.ts`                                  |
+| SU3  | The updater ignores flag contents, deletes the flag first, holds one lock and refuses symlinked data paths.                                     | Rust `updater::tests::flag_is_only_a_trigger`                   |
+| SU4  | Verification: signature with the compiled key, target, size, hash, newer-only; archive rules.                                                   | Rust `updates::verification`, `updates::archive` (kept)         |
+| SU5  | The switch repoints `current` atomically, keeps one previous release and prunes older ones.                                                     | Rust `updater::tests::switch_keeps_previous_and_prunes`         |
+| SU6  | Healthy within 120 s commits; unhealthy rolls back only when declared compatible, else stops with instructions; the database is never replaced. | Rust `updater::tests::health_commit_and_rollback_rules`         |
+| SU7  | Interruption at every step is recovered at boot by `--recover`.                                                                                 | Rust `updater::tests::recover_from_every_step`                  |
+| SU8  | Installer and updater make the same layout and units; `--version` reports the running release.                                                  | Rust `install::tests::layout_and_units`, `service_linux` tests  |
+| SU9  | Updates page shows updater progress from the status file, survives the restart and reloads when healthy or rolled back.                         | `server-restart-monitor.test.ts`, `updates-page.svelte.test.ts` |
+| SU10 | Agent: the unit runs the current version, a failing start rolls back through the rescue copy, and the rescue copy refreshes after 24 h.         | Rust `launcher::tests::rescue_rolls_back`, `rescue_refresh`     |
+| SU11 | `install.sh` verifies the manifest signature before installing.                                                                                 | `install-scripts.test.ts`                                       |
+| SU12 | Release workflow: signed bundles only; a scratch install updates A→B and rolls back a broken B.                                                 | release dry run, scratch update test                            |
 
-## Schema and routes
+## Version 1 (v0.3.0–v0.3.3, replaced)
 
-Use the existing typed settings for automatic-check policy. Store only validated release metadata, check times and a visible failure reason; no release signing secrets live on the server. Persist updater state beside the version slots, with restrictive file permissions. Any new database columns or tables require generated additive migrations.
-
-Proposed admin endpoints: `POST /api/server-updates/check`, `POST /api/server-updates/install`, `GET /api/server-updates`. A readiness reply includes the running application version. Deployment mode and launcher compatibility are supplied by trusted local startup configuration, never a browser field.
-
-## Build order
-
-1. Signed manifest contract, release verification and version bookkeeping.
-2. Update checks, manual Check now, notice/modal, Docker instructions and live agent rows.
-3. Launcher slots, authenticated local update request, staging and crash recovery on Linux.
-4. Scratch integration test: normal update, bad signature, failed readiness, crash recovery and schema compatibility.
-5. Windows implementation and real Windows test; first publication only after the workflow dry run.
-
-## Current limits
-
-The v0.3.0 candidate introduces the first server self-update-capable launcher. The existing administrator installer remains required to move from earlier versions whose launcher has no update supervisor. No release is tagged or published by this document. The release key's presence in GitHub must be checked without revealing its contents before a release dry run.
-
-## As built
-
-- The Rust launcher supervisor has bounded downloads, Ed25519 manifest
-  verification, archive validation, version slots, health/readiness confirmation,
-  durable recovery state and rollback to the prior application slot. The
-  launcher and bundled Node runtime remain fixed; an administrator installer
-  is required when either changes. Existing database files are never rolled
-  back automatically.
-- The Node app checks GitHub's latest stable release daily and on an
-  administrator-triggered request, stores bounded release metadata, audits
-  checks and update requests, and serves admin-guarded check/install/view APIs.
-  The console shows a global notice, confirmation panel and live agent rollout
-  rows. Docker/source runs explain that an installer or image deployment is
-  required.
-- Transient HTTP 408/5xx responses and network timeouts are retried up to three
-  times with bounded backoff. Failed scheduled checks become due again after
-  five minutes; successful checks retain the daily interval. A failed check
-  with no cached release is shown as inconclusive, never as confirmation that
-  no update exists. Signature, metadata and asset validation remain fail-closed.
-- After an installed update is accepted, the Updates page stays rendered and
-  stops its normal data refreshes. It checks the authenticated update view with
-  a five-second request timeout and bounded backoff, tolerates proxy/DNS errors,
-  and reloads when the expected version is marked healthy or the launcher
-  reports failure/rollback. Returning to the foreground triggers an immediate
-  check.
-- The release workflow builds Linux x64, Linux arm64 and Windows x64 bundles,
-  signs agent and app manifests, and uploads dry-run artifacts on manual
-  dispatch. The initial v0.3.0 manifest intentionally has no rollback source;
-  the first supported self-update is from v0.3.0 to a later release that
-  explicitly declares tested compatibility.
-- Automated unit coverage exercises manifest verification, extraction
-  restrictions, updater state recovery, preparation requests, check coalescing
-  and cached-release handling, transient HTTP retry bounds and truthful display
-  after check failures. The existing workflow install test verifies
-  install/reinstall/uninstall, but does **not yet** exercise a real app A→B
-  update followed by failed-readiness rollback. Native Windows service
-  update/recovery has not been run. These remain release gates and are not
-  claimed as verified behaviour.
+The unprivileged launcher downloaded a version named by the app (`request.json`), verified it and switched between `current`/`previous`/`incoming` application slots under the data folder, with a durable state file and readiness check. The launcher and Node runtime were fixed. The verification, archive, download and readiness code carries over into the updater; the slot supervisor, `request.json`, `prepare.json`/`prepared.json` and the app-side preparation step are deleted.
