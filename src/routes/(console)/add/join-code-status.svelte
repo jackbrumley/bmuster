@@ -6,6 +6,7 @@
 		type JoinCodeStatusReply
 	} from '#lib/schemas/machines/join-codes.ts';
 	import Button from '#lib/ui/button.svelte';
+	import RadarSpinner from '#lib/ui/radar-spinner.svelte';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 
 	/**
@@ -91,7 +92,7 @@
 
 <div class="status" aria-live="polite">
 	{#if view.kind === 'checking'}
-		<p class="hint">Checking the code…</p>
+		<p class="hint"><RadarSpinner size="small" /> Checking the code</p>
 	{:else if view.kind === 'failed'}
 		<p class="error">{view.message}</p>
 	{:else if mode.kind === 'single'}
@@ -111,7 +112,7 @@
 		{:else if status.state === 'used-up'}
 			<p class="hint">Used.</p>
 		{:else}
-			<p class="hint waiting">Waiting for a machine to join…</p>
+			<p class="hint waiting"><RadarSpinner size="small" /> Waiting for a machine to join…</p>
 		{/if}
 	{:else}
 		{@const status = view.status}

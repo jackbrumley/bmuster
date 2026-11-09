@@ -9,6 +9,8 @@
 	import Button from '#lib/ui/button.svelte';
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
+	import LoadingVeil from '#lib/ui/loading-veil.svelte';
+	import RadarSpinner from '#lib/ui/radar-spinner.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import type { CheckResultView, MachineChecks } from '#lib/domain/logs/checks.ts';
 	import { machineChecksSchema, runChecksReplySchema } from '#lib/schemas/logs/checks.ts';
@@ -38,11 +40,18 @@
 		const passed = results.filter((result) => result.status === 'pass').length;
 		return `${passed} passed, ${failed} failed · ${formatRelative(checks.receivedIso, now)}`;
 	});
+	/** The first read, or a run whose results have not arrived yet: the card waits under the veil. */
+	const waiting = $derived.by(() => {
+		if (following > 0) return 'Running the checks';
+		if (checks === undefined && failure === undefined) return 'Reading the checks';
+		return undefined;
+	});
 	const empty = $derived.by(() => {
 		if (failure !== undefined) return failure;
 		switch (checks?.kind) {
 			case undefined:
-				return 'Reading the checks…';
+				// The first read: the veil says so.
+				return '';
 			case 'unreported':
 				return 'This agent is too old to run checks; update it.';
 			case 'pending':
@@ -106,8 +115,11 @@
 
 {#snippet actions()}
 	<Button variant="secondary" size="compact" type="button" onclick={() => void runChecks()}>
-		<IconPlayerPlay size={18} />
-		{following > 0 ? 'Running…' : 'Run checks'}
+		{#if following > 0}
+			<RadarSpinner size="small" /> Running checks
+		{:else}
+			<IconPlayerPlay size={18} /> Run checks
+		{/if}
 	</Button>
 {/snippet}
 
@@ -137,15 +149,21 @@
 	</ListRow>
 {/snippet}
 
-<ListCard
-	heading={summary === undefined ? 'Checks' : `Checks · ${summary}`}
-	{actions}
-	label="Self-checks, in the order the agent runs them"
-	items={results}
-	key={(result: CheckResultView) => result.id}
-	{row}
-	{empty}
-/>
+<LoadingVeil
+	active={waiting !== undefined}
+	title={waiting ?? ''}
+	detail={following > 0 ? `${machineName} sends the results within a minute.` : undefined}
+>
+	<ListCard
+		heading={summary === undefined ? 'Checks' : `Checks · ${summary}`}
+		{actions}
+		label="Self-checks, in the order the agent runs them"
+		items={results}
+		key={(result: CheckResultView) => result.id}
+		{row}
+		{empty}
+	/>
+</LoadingVeil>
 
 <style>
 	.icon {

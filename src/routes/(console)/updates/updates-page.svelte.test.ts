@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import ConfirmDialog from '#lib/ui/confirm-dialog.svelte';
 import UpdatesPage from './+page.svelte';
+import { reloadPage } from './reload-page.ts';
 import type { PageData } from './$types';
+
+const refreshAll = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock('$app/navigation', () => ({ refreshAll }));
+vi.mock('./reload-page.ts', () => ({ reloadPage: vi.fn() }));
 
 type Data = PageData;
 
@@ -117,6 +122,51 @@ function renderPage(overrides: Partial<Data>) {
 			...overrides
 		}
 	});
+}
+
+/** Serves Update now, then the update view as the root updater reports each step. */
+function serveUpdate(views: Data['server'][]) {
+	const queue = [...views];
+	const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+		const json = (body: unknown, status: number) =>
+			Promise.resolve(
+				new Response(JSON.stringify(body), {
+					status,
+					headers: { 'content-type': 'application/json' }
+				})
+			);
+		if (input === '/api/server-updates/install' && init?.method === 'POST') {
+			return json({ requestedAtIso: '2026-11-08T10:05:00.000Z', view: SERVER_RELEASE }, 202);
+		}
+		if (input === '/api/server-updates' && init?.method === 'GET') {
+			const next = queue.length > 1 ? queue.shift() : queue[0];
+			return json(next, 200);
+		}
+		return json({}, 200);
+	});
+	vi.stubGlobal('fetch', fetch);
+	return fetch;
+}
+
+function step(
+	phase: Data['server']['operation']['phase'],
+	message: string,
+	installedVersion = '0.3.1'
+): Data['server'] {
+	return {
+		...SERVER_RELEASE,
+		installedVersion,
+		operation: { phase, from: '0.3.1', to: '0.3.2', message, atIso: '2026-11-08T10:05:30.000Z' }
+	};
+}
+
+async function startUpdate(screen: Awaited<ReturnType<typeof renderPage>>): Promise<void> {
+	await screen
+		.getByRole('region', { name: 'Server' })
+		.getByRole('button', { name: 'Update now' })
+		.click();
+	const dialog = screen.getByRole('dialog', { name: 'Update BMuster to 0.3.2?' });
+	await dialog.getByRole('button', { name: 'Update now' }).click();
 }
 
 describe('Updates page (SPEC-AGENT-UPDATES)', () => {
@@ -240,7 +290,10 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		await dialog.getByRole('button', { name: 'Update now' }).click();
 
 		await expect
-			.element(screen.getByRole('heading', { name: 'Updating BMuster server' }))
+			.element(screen.getByRole('status').getByText('Updating BMuster to 0.3.2'))
+			.toBeVisible();
+		await expect
+			.element(screen.getByRole('status').getByText('Waiting for the server to come back'))
 			.toBeVisible();
 		await expect.element(screen.getByText('Reconnecting automatically')).toBeVisible();
 		await expect.element(screen.getByText(/host-not-found error/)).toBeVisible();
@@ -295,6 +348,7 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		await expect
 			.element(dialog.getByText(/including Node|launcher, Node and the console/))
 			.toBeVisible();
+		await dialog.getByRole('button', { name: 'Cancel' }).click();
 	});
 
 	it('U8: links to the built-in Early updates group, inviting a first machine when it is empty', async () => {
@@ -318,5 +372,71 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		await expect
 			.element(screen.getByText(/Machines in Early updates get new versions first/))
 			.toBeVisible();
+	});
+
+	it("L3: veils the server panel with the updater's step, and lifts it when it rolls back", async () => {
+		serveUpdate([
+			step('downloading', 'Downloading and checking BMuster 0.3.2'),
+			step('rolled-back', 'BMuster 0.3.2 did not start; 0.3.1 is back')
+		]);
+		await render(ConfirmDialog);
+		const screen = await renderPage({ server: SERVER_RELEASE });
+		await startUpdate(screen);
+		const veil = screen.getByRole('status');
+		await expect.element(veil.getByText('Updating BMuster to 0.3.2')).toBeVisible();
+		await expect.element(veil.getByText('Downloading and checking BMuster 0.3.2')).toBeVisible();
+		// The server panel stays in place under the veil, busy and out of reach.
+		await expect
+			.element(screen.getByRole('heading', { name: 'Server', exact: true }))
+			.toBeInTheDocument();
+		expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+		await vi.waitFor(() => {
+			expect(refreshAll).toHaveBeenCalled();
+		}, 5000);
+		await expect.element(screen.getByText('Updating BMuster to 0.3.2')).not.toBeInTheDocument();
+		await expect.element(screen.getByRole('heading', { name: 'Roll-out' })).toBeVisible();
+		expect(reloadPage).not.toHaveBeenCalled();
+	});
+
+	it('L3: lifts the veil and loads the new console when the new version is healthy', async () => {
+		serveUpdate([
+			step('starting', 'Starting BMuster 0.3.2'),
+			step('healthy', 'BMuster 0.3.2 is running', '0.3.2')
+		]);
+		await render(ConfirmDialog);
+		const screen = await renderPage({ server: SERVER_RELEASE });
+		await startUpdate(screen);
+		await expect
+			.element(screen.getByRole('status').getByText('Starting BMuster 0.3.2'))
+			.toBeVisible();
+		await vi.waitFor(() => {
+			expect(reloadPage).toHaveBeenCalledOnce();
+		}, 5000);
+		await expect.element(screen.getByText('Updating BMuster to 0.3.2')).not.toBeInTheDocument();
+	});
+
+	it('L4: Check for updates shows a small radar in the button while it checks', async () => {
+		let answer: (response: Response) => void = () => undefined;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn<typeof globalThis.fetch>(
+				() =>
+					new Promise<Response>((resolve) => {
+						answer = resolve;
+					})
+			)
+		);
+		const screen = await renderPage({ server: SERVER_RELEASE });
+		await screen.getByRole('button', { name: 'Check for updates' }).click();
+		const busy = screen.getByRole('button', { name: 'Checking for updates' });
+		await expect.element(busy).toBeVisible();
+		expect(busy.element().querySelector('[data-radar="small"]')).not.toBeNull();
+		answer(
+			new Response(JSON.stringify(SERVER_RELEASE), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			})
+		);
+		await expect.element(screen.getByRole('button', { name: 'Check for updates' })).toBeVisible();
 	});
 });

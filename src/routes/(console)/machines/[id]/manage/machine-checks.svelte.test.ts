@@ -88,7 +88,11 @@ describe('Manage tab: Checks card (SPEC-DIAGNOSTICS D10)', () => {
 		const post = fetch.mock.calls.find(([, init]) => init?.method === 'POST');
 		expect(urlOf(post?.[0] ?? '').pathname).toBe(`/api/machines/${MACHINE_ID}/checks`);
 		expect(post?.[1]?.body).toBeNull();
-		await expect.element(screen.getByRole('button', { name: 'Running…' })).toBeVisible();
+		const running = screen.getByRole('button', { name: 'Running checks' });
+		await expect.element(running).toBeInTheDocument();
+		expect(running.element().querySelector('[data-radar="small"]')).not.toBeNull();
+		// L4: the card waits under the veil until the new results arrive.
+		await expect.element(screen.getByRole('status').getByText('Running the checks')).toBeVisible();
 	});
 
 	it('D10: at phone width long details wrap and nothing overflows', async () => {
@@ -102,5 +106,23 @@ describe('Manage tab: Checks card (SPEC-DIAGNOSTICS D10)', () => {
 		const screen = await render(MachineChecks, { machineId: MACHINE_ID, machineName: 'fedora' });
 		await expect.element(screen.getByText('Check audit')).toBeVisible();
 		expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
+	});
+
+	it('L4: the first read waits under the veil, then shows the results', async () => {
+		let answer: (response: Response) => void = () => undefined;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn<typeof globalThis.fetch>(
+				() =>
+					new Promise<Response>((resolve) => {
+						answer = resolve;
+					})
+			)
+		);
+		const screen = await render(MachineChecks, { machineId: MACHINE_ID, machineName: 'fedora' });
+		await expect.element(screen.getByRole('status').getByText('Reading the checks')).toBeVisible();
+		answer(reply(RESULTS));
+		await expect.element(screen.getByText('Check terminal-pty')).toBeVisible();
+		await expect.element(screen.getByText('Reading the checks')).not.toBeInTheDocument();
 	});
 });

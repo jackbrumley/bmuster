@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
+	import LoadingVeil from '#lib/ui/loading-veil.svelte';
 	import { statsLine, stepLine, type MachineSessionView } from '#lib/domain/logs/checks.ts';
 	import { machineSessionsSchema } from '#lib/schemas/logs/checks.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
@@ -20,7 +21,7 @@
 	const empty = $derived(
 		failure ??
 			(sessions === undefined
-				? 'Reading the sessions…'
+				? ''
 				: 'No sessions in the last 7 days. Agents before 0.4.3 send no timelines.')
 	);
 
@@ -108,15 +109,17 @@
 	</ListRow>
 {/snippet}
 
-<ListCard
-	heading="Sessions"
-	actions={undefined}
-	label="Sessions on this machine, newest first"
-	items={sessions ?? []}
-	key={(session: MachineSessionView) => session.sessionId}
-	{row}
-	{empty}
-/>
+<LoadingVeil active={sessions === undefined} title="Reading the sessions" detail={undefined}>
+	<ListCard
+		heading="Sessions"
+		actions={undefined}
+		label="Sessions on this machine, newest first"
+		items={sessions ?? []}
+		key={(session: MachineSessionView) => session.sessionId}
+		{row}
+		{empty}
+	/>
+</LoadingVeil>
 
 <style>
 	.body {

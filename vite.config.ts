@@ -57,7 +57,13 @@ export default defineConfig(({ command, mode }) => ({
 					browser: {
 						enabled: true,
 						provider: playwright(),
-						instances: [{ browser: 'chromium', headless: true }]
+						instances: [{ browser: 'chromium', headless: true }],
+						commands: {
+							// Lets a test see a component as someone who asked for reduced motion does.
+							emulateReducedMotion: async ({ page }, reduce: boolean) => {
+								await page.emulateMedia({ reducedMotion: reduce ? 'reduce' : 'no-preference' });
+							}
+						}
 					},
 					include: ['src/**/*.svelte.test.ts'],
 					exclude: ['src/lib/server/**']

@@ -14,6 +14,7 @@
 	import { rolloutReplySchema } from '#lib/schemas/machines/agent-updates.ts';
 	import { serverUpdateViewSchema } from '#lib/schemas/releases/server-updates.ts';
 	import Button from '#lib/ui/button.svelte';
+	import LoadingVeil from '#lib/ui/loading-veil.svelte';
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
 	import Notice from '#lib/ui/notice.svelte';
@@ -23,7 +24,8 @@
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import { formatRelative } from '#lib/utils/format.ts';
 	import UpdateMachines from './update-machines.svelte';
-	import { startServerRestartMonitor } from './server-restart-monitor.ts';
+	import { startServerRestartMonitor, type RestartProgress } from './server-restart-monitor.ts';
+	import { reloadPage } from './reload-page.ts';
 	import type { PageProps } from './$types';
 
 	/**
@@ -31,11 +33,14 @@
 	 * roll-out has got, every machine's version and update state, Pause and Update now.
 	 */
 	let { data }: PageProps = $props();
-	let restartExpectedVersion = $state<string | null>(null);
+	/** After Update now: the version being installed and the updater's latest step (SPEC-LOADING). */
+	let restart = $state<{ kind: 'none' } | { kind: 'restarting'; version: string; detail: string }>({
+		kind: 'none'
+	});
 	let restartMonitor: ReturnType<typeof startServerRestartMonitor> | undefined;
 	onMount(() => {
 		const timer = setInterval(() => {
-			if (restartExpectedVersion === null && document.visibilityState === 'visible') {
+			if (restart.kind === 'none' && document.visibilityState === 'visible') {
 				void refreshAll();
 			}
 		}, 3000);
@@ -50,8 +55,17 @@
 		};
 	});
 
+	function progressLine(progress: RestartProgress): string {
+		switch (progress.kind) {
+			case 'step':
+				return progress.message;
+			case 'unreachable':
+				return 'Waiting for the server to come back';
+		}
+	}
+
 	function onServerRestarting(version: string, requestedAtIso: string): void {
-		restartExpectedVersion = version;
+		restart = { kind: 'restarting', version, detail: 'Starting the update' };
 		restartMonitor?.stop();
 		restartMonitor = startServerRestartMonitor({
 			expectedVersion: version,
@@ -64,8 +78,21 @@
 					reply: serverUpdateViewSchema,
 					signal: AbortSignal.timeout(5000)
 				}),
-			onReturned: () => {
-				window.location.reload();
+			onProgress: (progress) => {
+				if (restart.kind === 'restarting') restart = { ...restart, detail: progressLine(progress) };
+			},
+			onReturned: (result) => {
+				restart = { kind: 'none' };
+				switch (result.kind) {
+					case 'ready':
+						// The console's own code changed with the server.
+						reloadPage();
+						return;
+					case 'failed':
+						// The same version runs again: fresh data shows how the update ended.
+						void refreshAll();
+						return;
+				}
 			}
 		});
 	}
@@ -105,20 +132,23 @@
 	actions={undefined}
 />
 
-{#if restartExpectedVersion !== null}
-	<Panel heading="Updating BMuster server" actions={undefined} tone="normal" padding="normal">
-		<Notice tone="info" title="Reconnecting automatically">
-			<p>
-				BMuster is installing version {restartExpectedVersion} (the whole server, including Node) and
-				restarting. Nginx may briefly show an unavailable or host-not-found error while the server returns.
-				Leave this tab open; it will reconnect and reload the page when the update finishes, rolls back
-				or stops.
-			</p>
-		</Notice>
-	</Panel>
-{:else}
+<LoadingVeil
+	active={restart.kind === 'restarting'}
+	title={restart.kind === 'restarting' ? `Updating BMuster to ${restart.version}` : ''}
+	detail={restart.kind === 'restarting' ? restart.detail : undefined}
+>
 	<ServerUpdatePanel view={data.server} onRestarting={onServerRestarting} />
+</LoadingVeil>
 
+{#if restart.kind === 'restarting'}
+	<Notice tone="info" title="Reconnecting automatically">
+		<p>
+			BMuster is installing version {restart.version} (the whole server, including Node) and restarting.
+			Nginx may briefly show an unavailable or host-not-found error while the server returns. Leave this
+			tab open; it will reconnect and reload the page when the update finishes, rolls back or stops.
+		</p>
+	</Notice>
+{:else}
 	<Panel heading="Release notes" actions={undefined} tone="normal" padding="normal">
 		{#each CHANGELOG as release (release.version)}
 			<h2>BMuster {release.version}</h2>

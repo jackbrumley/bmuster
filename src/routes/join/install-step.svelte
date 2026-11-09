@@ -6,6 +6,7 @@
 	import Button from '#lib/ui/button.svelte';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import Notice from '#lib/ui/notice.svelte';
+	import RadarSpinner from '#lib/ui/radar-spinner.svelte';
 	import { copyText } from '#lib/utils/clipboard.ts';
 
 	/**
@@ -124,7 +125,9 @@
 		{/if}
 	{/if}
 
-	<p class="waiting" aria-live="polite">Waiting for your computer to connect…</p>
+	<p class="waiting" aria-live="polite">
+		<RadarSpinner size="small" /> Waiting for your computer to connect…
+	</p>
 </div>
 
 <style>

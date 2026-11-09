@@ -8,6 +8,7 @@
 	import Panel from '#lib/ui/panel.svelte';
 	import Button from '#lib/ui/button.svelte';
 	import Notice from '#lib/ui/notice.svelte';
+	import RadarSpinner from '#lib/ui/radar-spinner.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
@@ -24,10 +25,11 @@
 			? `If it does not, BMuster ${view.installedVersion} comes back automatically on the same database.`
 			: `If it does not, the server stays stopped for an administrator, with a copy of the database from before the update.`;
 	}
-	let busy = $state(false);
+	/** What the panel is asking the server: nothing, a check, or to install. */
+	let busy = $state<'idle' | 'checking' | 'installing'>('idle');
 	async function check(): Promise<void> {
-		if (busy) return;
-		busy = true;
+		if (busy !== 'idle') return;
+		busy = 'checking';
 		try {
 			const result = await apiRequest({
 				method: 'POST',
@@ -48,11 +50,11 @@
 			);
 			await refreshAll();
 		} finally {
-			busy = false;
+			busy = 'idle';
 		}
 	}
 	async function install(): Promise<void> {
-		if (busy || !view.install.allowed || view.release === null) return;
+		if (busy !== 'idle' || !view.install.allowed || view.release === null) return;
 		const version = view.release.version;
 		if (
 			!(await confirmAction({
@@ -62,7 +64,7 @@
 			}))
 		)
 			return;
-		busy = true;
+		busy = 'installing';
 		try {
 			const result = await apiRequest({
 				method: 'POST',
@@ -76,7 +78,7 @@
 				onRestarting(version, result.data.requestedAtIso);
 			}
 		} finally {
-			busy = false;
+			busy = 'idle';
 		}
 	}
 </script>
@@ -112,10 +114,15 @@
 				</p>{/if}</Notice
 		>{/if}
 	<div class="actions">
-		{#if !busy}<Button type="button" variant="secondary" size="compact" onclick={() => void check()}
-				>Check for updates</Button
-			>{:else}<p>Working…</p>{/if}
-		{#if view.install.allowed && !busy}<Button
+		{#if busy !== 'installing'}<Button
+				type="button"
+				variant="secondary"
+				size="compact"
+				onclick={() => void check()}
+				>{#if busy === 'checking'}<RadarSpinner size="small" /> Checking for updates{:else}Check for
+					updates{/if}</Button
+			>{/if}
+		{#if view.install.allowed && busy === 'idle'}<Button
 				type="button"
 				variant="primary"
 				size="compact"
@@ -139,7 +146,7 @@
 		gap: var(--space-3);
 	}
 	.muted {
-		color: var(--text-muted);
+		color: var(--muted);
 	}
 	.notes {
 		white-space: pre-wrap;

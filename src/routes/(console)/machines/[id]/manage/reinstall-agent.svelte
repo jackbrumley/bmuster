@@ -12,6 +12,7 @@
 	import Button from '#lib/ui/button.svelte';
 	import Panel from '#lib/ui/panel.svelte';
 	import CopyField from '#lib/ui/copy-field.svelte';
+	import RadarSpinner from '#lib/ui/radar-spinner.svelte';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
 	import CertificatePin from '../../../add/certificate-pin.svelte';
@@ -85,7 +86,7 @@
 			>
 		</div>
 	{:else if code.kind === 'making'}
-		<p class="muted">Making a reinstall code…</p>
+		<p class="muted"><RadarSpinner size="small" /> Making a reinstall code</p>
 	{:else if code.kind === 'failed'}
 		<p class="error">{code.message}</p>
 		<div>

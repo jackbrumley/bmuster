@@ -9,6 +9,7 @@
 	import Panel from '#lib/ui/panel.svelte';
 	import Notice from '#lib/ui/notice.svelte';
 	import CopyField from '#lib/ui/copy-field.svelte';
+	import RadarSpinner from '#lib/ui/radar-spinner.svelte';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 
 	/**
@@ -149,7 +150,7 @@
 					>
 				</div>
 			{:else if codeState.kind === 'loading'}
-				<p class="muted">Getting the code…</p>
+				<p class="muted"><RadarSpinner size="small" /> Getting the code</p>
 			{:else if codeState.kind === 'shown'}
 				<div class="shown">
 					<div class="code-row">

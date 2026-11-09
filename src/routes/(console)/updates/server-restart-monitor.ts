@@ -7,6 +7,9 @@ const MAX_RETRY_MS = 5000;
 /** The root updater's results that end its run without the new version (SPEC-SERVER-UPDATES). */
 const ENDED_WITHOUT_UPDATE = new Set(['failed', 'rolled-back', 'up-to-date']);
 
+/** What the Updates page shows under its veil while it waits: the updater's step, or a gap. */
+export type RestartProgress = { kind: 'step'; message: string } | { kind: 'unreachable' };
+
 export type RestartReturn =
 	{ kind: 'ready'; view: ServerUpdateView } | { kind: 'failed'; view: ServerUpdateView };
 
@@ -19,6 +22,7 @@ export function startServerRestartMonitor(options: {
 	expectedVersion: string;
 	requestedAtIso: string;
 	read: () => Promise<ApiResult<ServerUpdateView>>;
+	onProgress: (progress: RestartProgress) => void;
 	onReturned: (result: RestartReturn) => void;
 }): { checkNow: () => void; stop: () => void } {
 	let stopped = false;
@@ -59,10 +63,14 @@ export function startServerRestartMonitor(options: {
 			const result = await options.read();
 			if (isStopped()) return;
 			if (!result.ok) {
+				options.onProgress({ kind: 'unreachable' });
 				schedule();
 				return;
 			}
 			const view = result.data;
+			if (isFromThisUpdate(view) && view.operation.message !== '') {
+				options.onProgress({ kind: 'step', message: view.operation.message });
+			}
 			if (isFromThisUpdate(view) && ENDED_WITHOUT_UPDATE.has(view.operation.phase)) {
 				stop();
 				options.onReturned({ kind: 'failed', view });
@@ -79,6 +87,7 @@ export function startServerRestartMonitor(options: {
 			}
 			schedule();
 		} catch {
+			options.onProgress({ kind: 'unreachable' });
 			schedule();
 		} finally {
 			checking = false;
