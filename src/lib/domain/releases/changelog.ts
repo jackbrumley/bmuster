@@ -1,6 +1,15 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.5',
+		changes: [
+			'On Linux, the agent’s program files move to /opt/bmuster and its data stays in /var/lib/bmuster, so systemd may start its session helpers on SELinux machines such as Fedora. Installed agents move themselves on their next start.',
+			'A self-check that is refused by the system’s security policy runs once per agent version, so the machine is not shown a security alert every six hours.',
+			'Add Stay awake on mains power to each machine’s Manage page: the machine does not idle-sleep while plugged in (USB-C chargers included) and sleeps normally on battery.',
+			'Show a calm radar and a soft loading veil while the server updates and restarts, while logs, checks and files load, and while a desktop connects.'
+		]
+	},
+	{
 		version: '0.4.4',
 		changes: [
 			'On Linux, each terminal, command, file and desktop session’s helper now connects back to the agent over its own private socket. systemd is no longer handed the agent’s terminal or pipes, which SELinux (as on Fedora) refuses and which stopped those sessions from starting.',
