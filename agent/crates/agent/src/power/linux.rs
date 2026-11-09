@@ -58,8 +58,12 @@ pub fn read(dir: &Path) -> Reading {
     for entry in entries.flatten() {
         let supply = entry.path();
         match attribute(&supply, "type").as_deref() {
-            Some("Mains") => {
-                if attribute(&supply, "online").as_deref() == Some("1") {
+            // A USB-C charger (UCSI, USB PD) is the only mains supply on
+            // many laptops; a USB supply that powers a device is not.
+            Some(kind) if kind == "Mains" || kind.starts_with("USB") => {
+                if attribute(&supply, "online").as_deref() == Some("1")
+                    && attribute(&supply, "scope").as_deref() != Some("Device")
+                {
                     mains_online = true;
                 }
             }
@@ -241,6 +245,18 @@ mod tests {
         );
         fs::write(laptop.path().join("ADP1/online"), "0\n").unwrap();
         assert_eq!(read(laptop.path()).source, PowerSource::Battery);
+        // A USB-C charger alone counts as mains.
+        fs::write(
+            laptop.path().join("ucsi-source-psy-USBC000:001/online"),
+            "1\n",
+        )
+        .unwrap();
+        assert_eq!(read(laptop.path()).source, PowerSource::Mains);
+        fs::write(
+            laptop.path().join("ucsi-source-psy-USBC000:001/online"),
+            "0\n",
+        )
+        .unwrap();
 
         // None: no supplies, or no folder at all, is a machine without a battery.
         let empty = tempfile::tempdir().unwrap();
