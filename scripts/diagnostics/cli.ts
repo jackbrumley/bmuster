@@ -10,7 +10,15 @@ import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
+import {
+	checkLine,
+	statsLine,
+	stepLine,
+	type MachineChecks,
+	type MachineSessionView
+} from '../../src/lib/domain/logs/checks.ts';
 import { agentRecordLine, serverRecordLine, type LogPage } from '../../src/lib/domain/logs/logs.ts';
+import { machineChecksSchema, machineSessionsSchema } from '../../src/lib/schemas/logs/checks.ts';
 import { agentLogPageSchema, serverLogPageSchema } from '../../src/lib/schemas/logs/logs.ts';
 
 export type CliIo = {
@@ -20,7 +28,12 @@ export type CliIo = {
 	fetch: typeof globalThis.fetch;
 	out: (line: string) => void;
 	err: (line: string) => void;
+	/** Waits before the next poll of --follow and watch; false stops (tests). */
+	wait: (ms: number) => Promise<boolean>;
 };
+
+/** How often --follow and watch read again. */
+const FOLLOW_EVERY_MS = 3000;
 
 export const TOKEN_PATH = ['.config', 'bmuster', 'diagnostics-token'] as const;
 
@@ -30,6 +43,12 @@ const USAGE = `Usage: npm run diagnostics -- <command> [options]
   logs <name-or-id>              a machine's agent log, oldest first
   report <name-or-id>            a machine's latest inventory, display report and status
   server                         the server's own log, oldest first
+  checks <name-or-id>            a machine's latest self-check results
+  sessions <name-or-id>          a machine's sessions with their timelines and desktop figures
+  watch <name-or-id>             follow a machine's log, check results and online state together
+
+Every command:
+  --json                         raw JSON instead of text (one JSON line per event when following)
 
 Options for logs and server:
   --since <1h|30m|2d|ISO time>   from this long ago or this time (default: 1h)
@@ -39,6 +58,11 @@ Options for logs and server:
   --area <sessions|agents|…>        (server)
   --limit <n>                    at most 2000 (default 200)
   --cursor <cursor>              continue from a "more" line
+  --follow                       keep reading new records every 3 s (logs, server)
+
+Options for sessions:
+  --since <1h|30m|2d|ISO time>   (default: 7 days)
+  --limit <n>                    at most 200 (default 20)
 
 Needs BMUSTER_URL and a token in ~/.config/bmuster/diagnostics-token (mode 0600),
 made on Settings → Diagnostics in the console.`;
@@ -197,7 +221,18 @@ function logQuery(values: LogOptions, extra: 'source' | 'area', now: number): UR
 	return query;
 }
 
-function printPage<R>(io: CliIo, page: LogPage<R>, line: (record: R) => string): void {
+type Output = 'text' | 'json';
+
+function printPage<R>(
+	io: CliIo,
+	page: LogPage<R>,
+	line: (record: R) => string,
+	output: Output
+): void {
+	if (output === 'json') {
+		io.out(JSON.stringify(page));
+		return;
+	}
 	for (const record of [...page.records].reverse()) {
 		io.out(line(record));
 	}
@@ -206,6 +241,115 @@ function printPage<R>(io: CliIo, page: LogPage<R>, line: (record: R) => string):
 			? `(${page.records.length} records; more before these: --cursor ${page.older.cursor})`
 			: `(${page.records.length} records)`
 	);
+}
+
+/** New records after a read, oldest first, one line (or JSON line) each. */
+function printNew<R>(io: CliIo, page: LogPage<R>, line: (record: R) => string, output: Output) {
+	for (const record of [...page.records].reverse()) {
+		io.out(output === 'json' ? JSON.stringify(record) : line(record));
+	}
+}
+
+/** Reads a log page, then (with --follow) every 3 s what arrived since, by the `newer` cursor. */
+async function readLog<R>(
+	io: CliIo,
+	read: (cursor: string | undefined) => Promise<LogPage<R>>,
+	line: (record: R) => string,
+	follow: boolean,
+	output: Output
+): Promise<void> {
+	const first = await read(undefined);
+	printPage(io, first, line, output);
+	let newer = first.newer;
+	while (follow && (await io.wait(FOLLOW_EVERY_MS))) {
+		const page = await read(newer);
+		printNew(io, page, line, output);
+		newer = page.newer;
+	}
+}
+
+function printChecks(io: CliIo, checks: MachineChecks, output: Output): void {
+	if (output === 'json') {
+		io.out(JSON.stringify(checks));
+		return;
+	}
+	switch (checks.kind) {
+		case 'unreported':
+			io.out('This agent is too old to run checks (before 0.4.3).');
+			return;
+		case 'pending':
+			io.out(`The agent has not finished its first checks yet (since ${checks.receivedIso}).`);
+			return;
+		case 'results':
+			io.out(`Checks received ${checks.receivedIso}:`);
+			for (const result of checks.results) {
+				io.out(checkLine(result));
+			}
+	}
+}
+
+function sessionLines(session: MachineSessionView): string[] {
+	const who =
+		session.server.kind === 'known'
+			? ` by ${session.server.userName}, ${session.server.ended.kind === 'running' ? 'running' : `ended ${session.server.ended.endedIso} (${session.server.ended.how})`}`
+			: '';
+	const lines = [`${session.startedIso} ${session.kind} ${session.sessionId}${who}`];
+	if (session.timeline.kind === 'shipped') {
+		lines.push(`  ${session.timeline.outcome}: ${session.timeline.reason}`);
+		for (const step of session.timeline.steps) {
+			lines.push(`    ${stepLine(step)}`);
+		}
+		if (session.timeline.omitted > 0) {
+			lines.push(`    (${session.timeline.omitted} steps left out)`);
+		}
+	} else {
+		lines.push('  no timeline from the agent');
+	}
+	for (const stats of [...session.stats].reverse()) {
+		lines.push(`  ${stats.atIso} ${statsLine(stats)}`);
+	}
+	return lines;
+}
+
+/** Follows a machine's log, its check results and whether it is online, until stopped. */
+async function watch(io: CliIo, id: string, query: URLSearchParams, output: Output): Promise<void> {
+	const emit = (kind: string, text: string, value: unknown) => {
+		io.out(output === 'json' ? JSON.stringify({ kind, value }) : text);
+	};
+	let online: boolean | undefined;
+	let checked = '';
+	let newer: string | undefined;
+	do {
+		const machine = (await machines(io)).find((found) => found.id === id);
+		if (machine !== undefined && machine.online !== online) {
+			online = machine.online;
+			emit('online', `-- ${machine.name} is ${online ? 'online' : 'offline'}`, online);
+		}
+		const checks = await get(
+			io,
+			`/api/diagnostics/machines/${id}/checks`,
+			new URLSearchParams(),
+			machineChecksSchema
+		);
+		const received = checks.kind === 'unreported' ? 'unreported' : checks.receivedIso;
+		if (received !== checked) {
+			checked = received;
+			if (output === 'json') emit('checks', '', checks);
+			else printChecks(io, checks, output);
+		}
+		const logQuery = new URLSearchParams(query);
+		if (newer !== undefined) logQuery.set('cursor', newer);
+		const page = await get(
+			io,
+			`/api/diagnostics/machines/${id}/logs`,
+			logQuery,
+			agentLogPageSchema
+		);
+		for (const record of [...page.records].reverse()) {
+			emit('log', agentRecordLine(record), record);
+		}
+		newer = page.newer;
+	} while (await io.wait(FOLLOW_EVERY_MS));
 }
 
 export async function runDiagnostics(args: string[], io: CliIo, now: number): Promise<number> {
@@ -221,17 +365,26 @@ export async function runDiagnostics(args: string[], io: CliIo, now: number): Pr
 				area: { type: 'string' },
 				limit: { type: 'string' },
 				cursor: { type: 'string' },
+				follow: { type: 'boolean' },
+				json: { type: 'boolean' },
 				help: { type: 'boolean' }
 			}
 		});
 		const [command, target] = positionals;
+		const output: Output = values.json === true ? 'json' : 'text';
+		const follow = values.follow === true;
 		if (values.help === true || command === undefined) {
 			io.out(USAGE);
 			return command === undefined && values.help !== true ? 1 : 0;
 		}
 		switch (command) {
-			case 'machines':
-				for (const machine of await machines(io)) {
+			case 'machines': {
+				const all = await machines(io);
+				if (output === 'json') {
+					io.out(JSON.stringify(all));
+					return 0;
+				}
+				for (const machine of all) {
 					io.out(
 						[
 							machine.name,
@@ -244,15 +397,21 @@ export async function runDiagnostics(args: string[], io: CliIo, now: number): Pr
 					);
 				}
 				return 0;
+			}
 			case 'logs': {
 				const id = await machineId(io, target);
-				const page = await get(
+				const query = logQuery(values, 'source', now);
+				await readLog(
 					io,
-					`/api/diagnostics/machines/${id}/logs`,
-					logQuery(values, 'source', now),
-					agentLogPageSchema
+					(cursor) => {
+						const next = new URLSearchParams(query);
+						if (cursor !== undefined) next.set('cursor', cursor);
+						return get(io, `/api/diagnostics/machines/${id}/logs`, next, agentLogPageSchema);
+					},
+					agentRecordLine,
+					follow,
+					output
 				);
-				printPage(io, page, agentRecordLine);
 				return 0;
 			}
 			case 'report': {
@@ -263,17 +422,58 @@ export async function runDiagnostics(args: string[], io: CliIo, now: number): Pr
 					new URLSearchParams(),
 					z.unknown()
 				);
-				io.out(JSON.stringify(report, null, 2));
+				io.out(output === 'json' ? JSON.stringify(report) : JSON.stringify(report, null, 2));
 				return 0;
 			}
 			case 'server': {
-				const page = await get(
+				const query = logQuery(values, 'area', now);
+				await readLog(
 					io,
-					'/api/diagnostics/server/logs',
-					logQuery(values, 'area', now),
-					serverLogPageSchema
+					(cursor) => {
+						const next = new URLSearchParams(query);
+						if (cursor !== undefined) next.set('cursor', cursor);
+						return get(io, '/api/diagnostics/server/logs', next, serverLogPageSchema);
+					},
+					serverRecordLine,
+					follow,
+					output
 				);
-				printPage(io, page, serverRecordLine);
+				return 0;
+			}
+			case 'checks': {
+				const id = await machineId(io, target);
+				const checks = await get(
+					io,
+					`/api/diagnostics/machines/${id}/checks`,
+					new URLSearchParams(),
+					machineChecksSchema
+				);
+				printChecks(io, checks, output);
+				return 0;
+			}
+			case 'sessions': {
+				const id = await machineId(io, target);
+				const query = new URLSearchParams({ since: sinceTime(values.since ?? '7d', now) });
+				if (values.limit !== undefined) query.set('limit', values.limit);
+				const { sessions } = await get(
+					io,
+					`/api/diagnostics/machines/${id}/sessions`,
+					query,
+					machineSessionsSchema
+				);
+				if (output === 'json') {
+					io.out(JSON.stringify(sessions));
+					return 0;
+				}
+				for (const session of [...sessions].reverse()) {
+					for (const line of sessionLines(session)) io.out(line);
+				}
+				io.out(`(${sessions.length} sessions)`);
+				return 0;
+			}
+			case 'watch': {
+				const id = await machineId(io, target);
+				await watch(io, id, logQuery(values, 'source', now), output);
 				return 0;
 			}
 			default:
