@@ -1,6 +1,13 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.4',
+		changes: [
+			'On Linux, each terminal, command, file and desktop session’s helper now connects back to the agent over its own private socket. systemd is no longer handed the agent’s terminal or pipes, which SELinux (as on Fedora) refuses and which stopped those sessions from starting.',
+			'The self-checks “Unit connects back to the agent” and “Terminal unit with its own pty” replace the two checks that tested the old way.'
+		]
+	},
+	{
 		version: '0.4.3',
 		changes: [
 			'Agents check what they can do on their machine a minute after they start, every six hours and after a failed session, and Manage shows each check passing or failing with the reason. Admins can run them again with Run checks.',
