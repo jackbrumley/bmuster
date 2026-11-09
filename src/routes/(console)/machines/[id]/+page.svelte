@@ -7,6 +7,7 @@
 	import { osLabel, signedInUserOf, type Gpu } from '#lib/domain/machines/machine.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import { canSendUserMessage } from '#lib/domain/machines/user-message.ts';
+	import DisplayCard from './display-card.svelte';
 	import SendMessage from './send-message.svelte';
 	import type { PageProps } from './$types';
 
@@ -150,6 +151,12 @@
 				{/each}
 			</dl>
 		</Panel>
+	</div>
+
+	<div class="wide">
+		<DisplayCard
+			report={machine.inventory.kind === 'known' ? machine.inventory.display : undefined}
+		/>
 	</div>
 </div>
 
