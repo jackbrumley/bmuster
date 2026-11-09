@@ -14,19 +14,19 @@ The agent runs a fixed set of **checks** that each try one capability for real, 
 
 **Linux checks:**
 
-| id                 | What it does                                                                                                  |
-| :----------------- | :------------------------------------------------------------------------------------------------------------ |
-| `systemd-run`      | Runs `/bin/true` as a transient unit, the way terminal sessions do (no pty).                                  |
-| `systemd-run-pipe` | Runs `/bin/cat` as a transient unit with `--pipe`, writes a line, reads it back (the helpers' path).          |
-| `terminal-pty`     | Runs `/bin/true` as a transient unit with the terminal's `TTYPath` and `StandardInput=tty` on a fresh pty.    |
-| `logind-seat`      | Reads seat0's active session, as the desktop follower does.                                                   |
-| `kms-capture`      | Starts the console helper unit and asks it for the display list and one frame's size (pixels are discarded).  |
-| `egl`              | Loads the EGL, GLES and GBM libraries and creates a context on each render node.                              |
-| `uinput`           | Opens `/dev/uinput` and creates and destroys a device with no keys or buttons (it can never type or click).   |
-| `x11-display`      | On an X11 screen: connects with the found Xauthority and reads the root window size.                          |
-| `portal`           | On a Wayland desktop: checks the user's session bus has `org.freedesktop.portal.Desktop` (no portal session). |
-| `journal`          | Runs the fixed journal query with `--lines=1`.                                                                |
-| `audit`            | Runs the fixed audit query; `pass` with the denial count.                                                     |
+| id                  | What it does                                                                                                                                                                            |
+| :------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `systemd-run`       | Runs `/bin/true` as a transient unit, the way terminal sessions do (no pty).                                                                                                            |
+| `unit-connect-back` | Runs `/bin/cat` under `stdio-host` in a transient unit that connects back, passes the peer check and echoes a line (v0.4.4, SPEC-SESSION-UNITS Version 2; replaced `systemd-run-pipe`). |
+| `pty-host`          | Runs `/bin/true` under `pty-host`, which makes the pty inside a terminal unit (v0.4.4; replaced `terminal-pty`).                                                                        |
+| `logind-seat`       | Reads seat0's active session, as the desktop follower does.                                                                                                                             |
+| `kms-capture`       | Starts the console helper unit and asks it for the display list and one frame's size (pixels are discarded).                                                                            |
+| `egl`               | Loads the EGL, GLES and GBM libraries and creates a context on each render node.                                                                                                        |
+| `uinput`            | Opens `/dev/uinput` and creates and destroys a device with no keys or buttons (it can never type or click).                                                                             |
+| `x11-display`       | On an X11 screen: connects with the found Xauthority and reads the root window size.                                                                                                    |
+| `portal`            | On a Wayland desktop: checks the user's session bus has `org.freedesktop.portal.Desktop` (no portal session).                                                                           |
+| `journal`           | Runs the fixed journal query with `--lines=1`.                                                                                                                                          |
+| `audit`             | Runs the fixed audit query; `pass` with the denial count.                                                                                                                               |
 
 **Windows checks:** `service-account` (runs as LocalSystem), `console-session` (`WTSGetActiveConsoleSessionId`, user name), `helper-launch` (starts the desktop helper in the console session with a `--check` argument that exits at once), `dxgi-duplication` (helper: opens Desktop Duplication on each output, one frame size), `gdi-capture` (helper), `send-input` (helper: `SendInput` with zero events), `sas-policy` (reads `SoftwareSASGeneration`), `event-log` (runs the fixed event-log query with one result).
 
@@ -91,7 +91,7 @@ Every acceptance criterion has a passing test with the name the table gives, exc
 
 - **Wire shapes** (`protocol/src/checks.rs`). A result is `{ id, title, status: 'pass' | 'fail' | 'not-applicable', detail, durationMs, checkedAt }` (unix ms). The check-in's `checks` is `{ kind: 'pending' }` until the first run, then `{ kind: 'results', results }`; the server reads a missing field as `unreported`, and a `pending` check-in never overwrites stored results. `run-checks` is `{ type: 'run-checks' }`; the agent answers `{ type: 'checks', results }` after every run while connected, not only after `run-checks`.
 - **Schedule** (`checks/mod.rs`). One `checks` thread runs the list one check at a time (each on its own thread with its 10-second deadline, the run within 60 seconds); asks that arrive during a run are answered by it. A failed session asks for a run at most once in five minutes; an admin's ask always runs. A run with failures also ships the fixed journal and audit queries once (as a failed session does), until a run passes again. Each failed check is one `warn` record with target `checks`.
-- **Linux checks** (`checks/linux.rs`), all in the spec's order:
+- **Linux checks** (`checks/linux.rs`), all in the spec's order (in v0.4.4 `systemd-run-pipe` and `terminal-pty` became `unit-connect-back` and `pty-host`, and `Io::Detached` and `unit_arguments_running` went; see SPEC-SESSION-UNITS Version 2):
   - `systemd-run` and `terminal-pty` follow the agent's session mode: with sessions in the agent's process they are `not-applicable`. They use `TransientUnit` as sessions do, named `bmuster-terminal-check-<8 hex>`, so the shipped journal query and the agent's start-up sweep cover them. `systemd-run` uses a new `Io::Detached` (no streams) so it tests the unit alone; `terminal-pty` is `Pty::spawn` on a fresh pty, exactly the terminal's path, and names exit 208 in its detail.
   - `systemd-run-pipe` runs `/bin/cat` in the console helper's own unit arguments (`unit_arguments_running`, `bmuster-console-check-<hex>`), writes a line and reads it back; its detail carries `systemd-run`'s stderr (where "Connection reset by peer" shows). The Wayland helper's unit differs only by `--uid` and its environment.
   - `systemd-run-pipe` and `kms-capture` are `not-applicable` when the agent is not root (a development run), so a check never asks polkit for a password.
