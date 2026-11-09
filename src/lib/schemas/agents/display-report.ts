@@ -47,7 +47,20 @@ export const displayReportSchema = z
 			launcherVersion: z.discriminatedUnion('kind', [
 				z.object({ kind: z.literal('none') }),
 				z.object({ kind: z.literal('known'), version: word })
-			])
+			]),
+			// Agents before 0.4.2 do not send it.
+			selinux: z
+				.discriminatedUnion('kind', [
+					z.object({ kind: z.literal('unreported') }),
+					z.object({ kind: z.literal('absent') }),
+					z.object({
+						kind: z.literal('present'),
+						enforcing: z.boolean(),
+						agentContext: word,
+						initContext: word
+					})
+				])
+				.default({ kind: 'unreported' })
 		}),
 		z.object({
 			kind: z.literal('windows'),

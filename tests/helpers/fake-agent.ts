@@ -138,7 +138,8 @@ export const SAMPLE_INVENTORY: InventoryWire = {
 		programs: { xdgDesktopPortal: true, gstreamer: true, pipewiresrc: true },
 		kernel: '6.8.0-45-generic',
 		agentVersion: '0.4.0',
-		launcherVersion: { kind: 'known', version: '0.4.0' }
+		launcherVersion: { kind: 'known', version: '0.4.0' },
+		selinux: { kind: 'absent' }
 	}
 };
 

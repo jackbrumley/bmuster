@@ -10,7 +10,7 @@ use bmuster_protocol::DisplayReport;
 #[cfg(target_os = "linux")]
 use bmuster_protocol::{
     DrmCard, DrmConnector, LauncherVersion, LinuxDisplay, LockedHint, NvidiaModeset, Programs,
-    SeatSession, Uinput,
+    SeLinux, SeatSession, Uinput,
 };
 #[cfg(target_os = "linux")]
 use std::path::{Path, PathBuf};
@@ -148,7 +148,28 @@ fn linux_report(
             .unwrap_or_default(),
         agent_version,
         launcher_version: launcher,
+        selinux: selinux(sources),
     }))
+}
+
+/// SELinux's mode and the contexts of the agent and of systemd: on Fedora
+/// these decide whether systemd may use the agent's pty and pipes.
+#[cfg(target_os = "linux")]
+fn selinux(sources: &Sources) -> SeLinux {
+    let Some(enforce) = sources.read(&sources.path("sys/fs/selinux/enforce")) else {
+        return SeLinux::Absent;
+    };
+    let context = |relative: &str| {
+        sources
+            .read(&sources.path(relative))
+            .map(|text| text.trim_end_matches(['\0', '\n']).to_string())
+            .unwrap_or_default()
+    };
+    SeLinux::Present {
+        enforcing: enforce.trim() == "1",
+        agent_context: context("proc/self/attr/current"),
+        init_context: context("proc/1/attr/current"),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -322,6 +343,13 @@ mod tests {
             "proc/sys/kernel/osrelease",
             "6.17.1-300.fc43.x86_64\n",
         );
+        write(root, "sys/fs/selinux/enforce", "1");
+        write(
+            root,
+            "proc/self/attr/current",
+            "system_u:system_r:unconfined_service_t:s0\0",
+        );
+        write(root, "proc/1/attr/current", "system_u:system_r:init_t:s0\0");
         // /dev/uinput is a named pipe here: it must be seen without being opened.
         fs::create_dir_all(root.join("dev")).unwrap();
         let fifo = std::ffi::CString::new(root.join("dev/uinput").to_str().unwrap()).unwrap();
@@ -399,6 +427,14 @@ mod tests {
         );
         assert_eq!(linux.kernel, "6.17.1-300.fc43.x86_64");
         assert_eq!(linux.agent_version, "0.4.0");
+        assert_eq!(
+            linux.selinux,
+            SeLinux::Present {
+                enforcing: true,
+                agent_context: "system_u:system_r:unconfined_service_t:s0".into(),
+                init_context: "system_u:system_r:init_t:s0".into(),
+            }
+        );
 
         // No active session, no DRM, nothing installed: reported as such.
         let empty = tempfile::tempdir().unwrap();
@@ -415,5 +451,6 @@ mod tests {
         assert!(bare.cards.is_empty());
         assert_eq!(bare.nvidia_modeset, NvidiaModeset::Absent);
         assert_eq!(bare.kernel, "");
+        assert_eq!(bare.selinux, SeLinux::Absent);
     }
 }

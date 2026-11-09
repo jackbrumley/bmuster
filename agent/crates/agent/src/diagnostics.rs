@@ -20,6 +20,10 @@ const MAX_JOURNAL_BYTES: usize = 192 * 1024;
 #[cfg(target_os = "linux")]
 const MAX_JOURNAL_LINES: usize = 250;
 #[cfg(target_os = "linux")]
+const MAX_AUDIT_LINES: usize = 100;
+#[cfg(target_os = "linux")]
+const MAX_AUDIT_BYTES: u64 = 512 * 1024;
+#[cfg(target_os = "linux")]
 const JOURNAL_TIMEOUT: Duration = Duration::from_secs(5);
 /// At most one journal query a minute, however many sessions fail.
 const JOURNAL_EVERY: Duration = Duration::from_secs(60);
@@ -36,6 +40,8 @@ fn journal_arguments() -> Vec<OsString> {
         "--unit=bmuster-agent.service".to_string(),
         "--unit=bmuster-terminal-*.service".to_string(),
         "--unit=bmuster-files-*.service".to_string(),
+        "--unit=bmuster-console-*.service".to_string(),
+        "--unit=bmuster-wayland-*.service".to_string(),
     ]
     .into_iter()
     .map(OsString::from)
@@ -83,6 +89,73 @@ fn cap_lines(lines: Vec<String>, max: usize) -> (Vec<String>, bool) {
     (lines.into_iter().skip(start).collect(), truncated)
 }
 
+/// SELinux and other audit denials from the journal, last 15 minutes: they
+/// explain a transient unit that systemd may not hand the agent's pty or
+/// pipes to. Fixed arguments; nothing from the server or browser.
+#[cfg(target_os = "linux")]
+fn audit_arguments() -> Vec<OsString> {
+    [
+        "--no-pager".to_string(),
+        "--output=short-iso".to_string(),
+        "--since=15 minutes ago".to_string(),
+        format!("--lines={MAX_AUDIT_LINES}"),
+        "_TRANSPORT=audit".to_string(),
+        "--grep=denied".to_string(),
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect()
+}
+
+/// When journald does not collect audit records, auditd's own log: the
+/// denial lines of its last [`MAX_AUDIT_BYTES`] from the last 15 minutes.
+#[cfg(target_os = "linux")]
+const AUDIT_LOG: &str = "/var/log/audit/audit.log";
+
+/// The `denied` lines of an audit log's tail newer than `since_epoch`
+/// seconds, newest [`MAX_AUDIT_LINES`] kept.
+#[cfg(target_os = "linux")]
+fn audit_denials(text: &str, since_epoch: u64) -> Vec<String> {
+    let recent = |line: &str| {
+        line.split_once("msg=audit(")
+            .and_then(|(_, rest)| rest.split_once('.'))
+            .and_then(|(seconds, _)| seconds.parse::<u64>().ok())
+            .is_some_and(|seconds| seconds >= since_epoch)
+    };
+    let lines: Vec<String> = text
+        .lines()
+        .filter(|line| line.contains("denied") && recent(line))
+        .map(str::to_string)
+        .collect();
+    let skip = lines.len().saturating_sub(MAX_AUDIT_LINES);
+    lines.into_iter().skip(skip).collect()
+}
+
+#[cfg(target_os = "linux")]
+fn audit_log_denials() -> Journal {
+    use std::io::{Seek as _, SeekFrom};
+    let mut file = match std::fs::File::open(AUDIT_LOG) {
+        Ok(file) => file,
+        Err(error) => {
+            return Journal::Unavailable {
+                reason: format!("No audit denials in the journal, and {AUDIT_LOG}: {error}"),
+            }
+        }
+    };
+    let length = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let _ = file.seek(SeekFrom::Start(length.saturating_sub(MAX_AUDIT_BYTES)));
+    let mut bytes = Vec::new();
+    let _ = file.take(MAX_AUDIT_BYTES).read_to_end(&mut bytes);
+    let since = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|now| now.as_secs().saturating_sub(15 * 60))
+        .unwrap_or(0);
+    Journal::Available {
+        lines: audit_denials(&String::from_utf8_lossy(&bytes), since),
+        truncated: false,
+    }
+}
+
 /// A session of `kind` (terminal, files, desktop) failed to start: ship the
 /// fixed journal query, on its own thread, at most once a minute.
 pub fn session_failed(kind: &'static str) {
@@ -96,7 +169,10 @@ pub fn session_failed(kind: &'static str) {
     }
     let started = std::thread::Builder::new()
         .name("journal diagnostics".into())
-        .spawn(move || ship_journal(&SHIP, kind, journal()));
+        .spawn(move || {
+            ship_journal(&SHIP, kind, journal());
+            ship_denials(&SHIP, kind, denials());
+        });
     if let Err(error) = started {
         log::warn!("Could not start the journal query: {error}");
     }
@@ -161,15 +237,58 @@ fn journal() -> Journal {
     }
     #[cfg(target_os = "linux")]
     {
-        linux_journal()
+        run_journal(journal_arguments())
+    }
+}
+
+/// Audit denials from the journal, else from auditd's log.
+fn denials() -> Journal {
+    #[cfg(not(target_os = "linux"))]
+    {
+        Journal::Unsupported
+    }
+    #[cfg(target_os = "linux")]
+    {
+        match run_journal(audit_arguments()) {
+            Journal::Available { lines, truncated } if !lines.is_empty() => {
+                Journal::Available { lines, truncated }
+            }
+            _ => audit_log_denials(),
+        }
+    }
+}
+
+/// Queues the audit denials found after a failed `kind` session.
+fn ship_denials(queue: &ShipQueue, kind: &str, denials: Journal) {
+    let push = |level, text: &str| queue.push(level, LogSource::Journal, JOURNAL_TARGET, text);
+    match denials {
+        Journal::Available { lines, .. } if lines.is_empty() => push(
+            LogLevel::Info,
+            &format!("No audit denials in the last 15 minutes after the failed {kind} session."),
+        ),
+        Journal::Available { lines, .. } => {
+            push(
+                LogLevel::Info,
+                &format!("Audit denials in the last 15 minutes, after the failed {kind} session:"),
+            );
+            for line in lines {
+                push(LogLevel::Info, &line);
+            }
+        }
+        Journal::Unavailable { reason } => push(
+            LogLevel::Warn,
+            &format!("The audit denials could not be read: {reason}"),
+        ),
+        #[cfg(not(target_os = "linux"))]
+        Journal::Unsupported => {}
     }
 }
 
 #[cfg(target_os = "linux")]
-fn linux_journal() -> Journal {
+fn run_journal(arguments: Vec<OsString>) -> Journal {
     let mut child = match Command::new("/usr/bin/timeout")
         .args(["--kill-after=1s", "5s", "/usr/bin/journalctl"])
-        .args(journal_arguments())
+        .args(arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -370,7 +489,69 @@ mod tests {
                 "--unit=bmuster-agent.service",
                 "--unit=bmuster-terminal-*.service",
                 "--unit=bmuster-files-*.service",
+                "--unit=bmuster-console-*.service",
+                "--unit=bmuster-wayland-*.service",
             ]
         );
+        let audit: Vec<String> = audit_arguments()
+            .into_iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            audit,
+            [
+                "--no-pager",
+                "--output=short-iso",
+                "--since=15 minutes ago",
+                "--lines=100",
+                "_TRANSPORT=audit",
+                "--grep=denied",
+            ]
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn audit_log_denials_are_recent_denied_lines_only() {
+        let log = "\
+type=AVC msg=audit(1000.100:1): avc:  denied  { read write } for pid=1 comm=\"systemd\" name=\"3\" dev=\"devpts\"
+type=SYSCALL msg=audit(2000.100:2): arch=c000003e syscall=257 success=no
+type=AVC msg=audit(2000.200:3): avc:  denied  { use } for pid=1 comm=\"systemd\" path=\"pipe:[1]\"
+not an audit line denied
+";
+        assert_eq!(
+            audit_denials(log, 1500),
+            vec![
+                "type=AVC msg=audit(2000.200:3): avc:  denied  { use } for pid=1 comm=\"systemd\" path=\"pipe:[1]\"".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn session_failure_ships_audit_denials() {
+        let queue: &'static ShipQueue = Box::leak(Box::new(ShipQueue::new()));
+        queue.enable();
+        ship_denials(
+            queue,
+            "terminal",
+            Journal::Available {
+                lines: vec!["avc:  denied  { read write } for pid=1 comm=\"systemd\"".into()],
+                truncated: false,
+            },
+        );
+        ship_denials(
+            queue,
+            "desktop",
+            Journal::Available {
+                lines: Vec::new(),
+                truncated: false,
+            },
+        );
+        let (records, _) = queue.take();
+        let texts: Vec<&str> = records.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(texts.len(), 3, "{texts:?}");
+        assert!(texts[0].starts_with("Audit denials in the last 15 minutes"));
+        assert!(texts[1].contains("comm=\"systemd\""));
+        assert!(texts[2].starts_with("No audit denials"));
     }
 }

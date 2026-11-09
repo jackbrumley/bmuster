@@ -303,9 +303,11 @@ impl HelperClient {
             .current_dir("/")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
             .context("Could not start the console capture helper")?;
+        // systemd-run's own errors and the helper's (SPEC-AGENT-LOGS 1).
+        crate::diagnostics::ship_helper_stderr("console-helper", child.stderr.take());
         let (Some(input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
             let _ = child.kill();
             let _ = child.wait();
@@ -348,6 +350,13 @@ impl HelperClient {
     }
 
     fn fail(&mut self, message: String) -> CaptureError {
+        if self.broken.is_none() {
+            log::warn!("{message}");
+            // It never answered: it failed to start, so ship the journal.
+            if !self.answered {
+                crate::diagnostics::session_failed("desktop");
+            }
+        }
         self.broken = Some(message.clone());
         CaptureError::new(message)
     }

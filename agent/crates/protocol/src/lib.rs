@@ -18,7 +18,7 @@ pub mod session;
 mod updates;
 pub use display::{
     DisplayReport, DrmCard, DrmConnector, LauncherVersion, LinuxDisplay, LockedHint, NvidiaModeset,
-    Programs, SeatSession, Uinput,
+    Programs, SeLinux, SeatSession, Uinput,
 };
 pub use updates::{
     release_message, release_message_of, release_path, AgentVersion, UpdateEvent, UpdateOffer,
@@ -985,6 +985,11 @@ mod tests {
             launcher_version: LauncherVersion::Known {
                 version: "0.4.0".into(),
             },
+            selinux: SeLinux::Present {
+                enforcing: true,
+                agent_context: "system_u:system_r:unconfined_service_t:s0".into(),
+                init_context: "system_u:system_r:init_t:s0".into(),
+            },
         }));
         assert_eq!(
             serde_json::to_value(&report).unwrap(),
@@ -1003,7 +1008,12 @@ mod tests {
                 "programs": { "xdgDesktopPortal": true, "gstreamer": true, "pipewiresrc": false },
                 "kernel": "6.17.1",
                 "agentVersion": "0.4.0",
-                "launcherVersion": { "kind": "known", "version": "0.4.0" }
+                "launcherVersion": { "kind": "known", "version": "0.4.0" },
+                "selinux": {
+                    "kind": "present", "enforcing": true,
+                    "agentContext": "system_u:system_r:unconfined_service_t:s0",
+                    "initContext": "system_u:system_r:init_t:s0"
+                }
             })
         );
         assert_eq!(

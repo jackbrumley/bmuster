@@ -28,7 +28,13 @@ const FEDORA: LinuxDisplay = {
 	programs: { xdgDesktopPortal: true, gstreamer: true, pipewiresrc: false },
 	kernel: '6.17.1-300.fc43.x86_64',
 	agentVersion: '0.4.0',
-	launcherVersion: { kind: 'known', version: '0.3.3' }
+	launcherVersion: { kind: 'known', version: '0.3.3' },
+	selinux: {
+		kind: 'present',
+		enforcing: true,
+		agentContext: 'system_u:system_r:unconfined_service_t:s0',
+		initContext: 'system_u:system_r:init_t:s0'
+	}
 };
 
 describe('Overview: Display card (SPEC-AGENT-LOGS AL12)', () => {
@@ -45,6 +51,9 @@ describe('Overview: Display card (SPEC-AGENT-LOGS AL12)', () => {
 		expect(fact('GStreamer')?.textContent).toBe('Yes, pipewiresrc missing');
 		expect(fact('Kernel')?.textContent).toBe('6.17.1-300.fc43.x86_64');
 		expect(fact('Agent')?.textContent).toBe('v0.4.0, launcher v0.3.3');
+		expect(fact('SELinux')?.textContent).toBe('Enforcing');
+		expect(fact('Agent context')?.textContent).toBe('system_u:system_r:unconfined_service_t:s0');
+		expect(fact('systemd context')?.textContent).toBe('system_u:system_r:init_t:s0');
 	});
 
 	it('AL12: says what is missing for Windows, older agents and no inventory yet', async () => {

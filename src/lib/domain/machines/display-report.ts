@@ -32,7 +32,32 @@ export type LinuxDisplay = {
 	kernel: string;
 	agentVersion: string;
 	launcherVersion: { kind: 'none' } | { kind: 'known'; version: string };
+	selinux: SeLinux;
 };
+
+type SeLinux =
+	| { kind: 'unreported' }
+	| { kind: 'absent' }
+	| { kind: 'present'; enforcing: boolean; agentContext: string; initContext: string };
+
+function contextLabel(context: string): string {
+	return context === '' ? 'not readable' : context;
+}
+
+function selinuxFacts(selinux: SeLinux): DisplayFact[] {
+	switch (selinux.kind) {
+		case 'unreported':
+			return [{ label: 'SELinux', value: 'Not reported by this agent' }];
+		case 'absent':
+			return [{ label: 'SELinux', value: 'Not enabled' }];
+		case 'present':
+			return [
+				{ label: 'SELinux', value: selinux.enforcing ? 'Enforcing' : 'Permissive' },
+				{ label: 'Agent context', value: contextLabel(selinux.agentContext) },
+				{ label: 'systemd context', value: contextLabel(selinux.initContext) }
+			];
+	}
+}
 
 export type DisplayReport =
 	| LinuxDisplay
@@ -91,6 +116,7 @@ export function linuxDisplayFacts(report: LinuxDisplay): DisplayFact[] {
 				: 'No'
 		},
 		{ label: 'Kernel', value: report.kernel === '' ? 'Not reported' : report.kernel },
+		...selinuxFacts(report.selinux),
 		{
 			label: 'Agent',
 			value: `v${report.agentVersion}${report.launcherVersion.kind === 'known' ? `, launcher v${report.launcherVersion.version}` : ', no launcher'}`

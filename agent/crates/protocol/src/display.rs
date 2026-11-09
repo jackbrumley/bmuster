@@ -34,6 +34,28 @@ pub struct LinuxDisplay {
     pub kernel: String,
     pub agent_version: String,
     pub launcher_version: LauncherVersion,
+    /// SELinux mode and security contexts; older agents do not send it.
+    #[serde(default)]
+    pub selinux: SeLinux,
+}
+
+/// SELinux, read from `/sys/fs/selinux/enforce` and `/proc/<pid>/attr/current`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SeLinux {
+    /// From an agent before 0.4.2.
+    #[default]
+    Unreported,
+    /// No SELinux file system: not enabled.
+    Absent,
+    #[serde(rename_all = "camelCase")]
+    Present {
+        enforcing: bool,
+        /// The agent's own context, e.g. `system_u:system_r:unconfined_service_t:s0`.
+        agent_context: String,
+        /// systemd's (PID 1) context.
+        init_context: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

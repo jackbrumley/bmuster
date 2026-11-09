@@ -107,3 +107,11 @@ Every acceptance criterion has a passing test with the name the spec gives: the 
 - **The CLI** also takes `--since 1h|30m|2d|<ISO>` (default 1h), `--until`, `--level`, `--source` / `--area`, `--limit` and `--cursor`; prints logs oldest first and the report as JSON. It refuses a token file readable by others.
 - **Removed:** `POST /api/machines/[id]/logs`, the `diagnostics-request` / `diagnostics` messages (both ends), `services/agents/diagnostics.ts`, `schemas/agents/diagnostics.ts` and the Recent agent logs panel. The `agent-logs-viewed` audit kind is kept for existing entries and now reads "Read agent logs".
 - **Not natively tested:** the agent's spool and shipping against a real server, the display report on real Fedora/Ubuntu machines (including an NVIDIA one), the journal query after a real exit 208 (version 1's AL7 is still outstanding and now covered by this pipeline), and the Windows display report. These need a release build on the Fedora test machine.
+
+## Additions in 0.4.2
+
+Added after reading the Fedora laptop's first shipped logs (terminal exit 208: systemd refused to open the session's pty; the portal and KMS helpers failed handing their pipes to systemd).
+
+- The machine report's `selinux`: `unreported` (agents before 0.4.2), `absent`, or `present` with `enforcing`, the agent's context (`/proc/self/attr/current`) and systemd's (`/proc/1/attr/current`). Display card rows SELinux, Agent context and systemd context. Tests: Rust `display_report::tests::report_from_fixture_tree`, `display-report.test.ts`, `display-card.svelte.test.ts`.
+- On a failed session start, a second fixed query ships audit denials from the last 15 minutes: `journalctl _TRANSPORT=audit --grep=denied` (100 lines), else the `denied` lines of the last 512 KiB of `/var/log/audit/audit.log`. Tests: Rust `diagnostics::tests::journal_query_is_fixed_and_excludes_arbitrary_commands`, `audit_log_denials_are_recent_denied_lines_only`, `session_failure_ships_audit_denials`.
+- The fixed journal query also covers `bmuster-console-*` and `bmuster-wayland-*` units. The console capture helper's stderr is shipped as `console-helper`, its failure reason is logged, and a helper that fails before its first answer runs the startup diagnostics as a failed desktop session.

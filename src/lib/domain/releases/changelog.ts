@@ -1,6 +1,14 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.2',
+		changes: [
+			'Show SELinux’s mode and the agent’s and systemd’s security contexts on the Display card.',
+			'When a session fails to start, also send the SELinux and other audit denials from the last 15 minutes.',
+			'Send the console capture helper’s errors to the server, and run the startup diagnostics when it fails to start.'
+		]
+	},
+	{
 		version: '0.4.1',
 		changes: [
 			'Agents send their logs to the server all the time, keeping them while offline, so Manage shows a machine’s logs even after a crash or restart.',
