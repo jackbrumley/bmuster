@@ -70,6 +70,38 @@ pub struct Check {
     pub run: fn(&Context) -> Outcome,
 }
 
+/// Takes the sleep inhibitor and releases it at once (SPEC-STAY-AWAKE 5):
+/// nothing else changes, and the keeper's own lock (if it holds one) is
+/// untouched, since logind and Windows each allow several.
+#[cfg(any(target_os = "linux", windows))]
+fn stay_awake_check() -> Check {
+    Check {
+        id: "stay-awake",
+        title: "Hold off automatic sleep (Stay awake on mains power)",
+        run: stay_awake,
+    }
+}
+
+#[cfg(any(target_os = "linux", windows))]
+fn stay_awake(_: &Context) -> Outcome {
+    stay_awake_with(&mut crate::power::platform_inhibitor())
+}
+
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+fn stay_awake_with<I: crate::power::Inhibit>(inhibit: &mut I) -> Outcome {
+    match inhibit.take() {
+        Ok(lock) => {
+            drop(lock);
+            #[cfg(windows)]
+            let what = "Set and cleared ES_SYSTEM_REQUIRED on a thread of its own.";
+            #[cfg(not(windows))]
+            let what = "Took and released a logind sleep:idle inhibitor lock.";
+            Outcome::Pass(what.into())
+        }
+        Err(reason) => Outcome::Fail(reason),
+    }
+}
+
 /// This operating system's checks, in the order the console lists them.
 pub fn platform_checks() -> Vec<Check> {
     #[cfg(target_os = "linux")]
@@ -573,6 +605,26 @@ mod tests {
         assert_eq!(ours.len(), 1, "one record per failed check");
         assert_eq!(ours[0].level, LogLevel::Warn);
         assert!(ours[0].text.starts_with("A check (fails): broken"));
+    }
+
+    /// SPEC-STAY-AWAKE P8: the check takes the inhibitor once and releases
+    /// it, and a refusal fails with the reason.
+    #[test]
+    fn stay_awake_check() {
+        use crate::power::tests::FakeInhibitor;
+        let fake = FakeInhibitor::default();
+        let outcome = stay_awake_with(&mut fake.clone());
+        assert!(matches!(outcome, Outcome::Pass(_)), "{outcome:?}");
+        assert_eq!(fake.state.borrow().taken, 1);
+        assert_eq!(fake.state.borrow().live, 0, "released");
+
+        fake.state.borrow_mut().fail_with = Some("Access denied".into());
+        assert_eq!(
+            stay_awake_with(&mut fake.clone()),
+            Outcome::Fail("Access denied".into())
+        );
+        #[cfg(any(target_os = "linux", windows))]
+        assert_eq!(super::stay_awake_check().id, "stay-awake");
     }
 
     /// SPEC-DIAGNOSTICS D3.

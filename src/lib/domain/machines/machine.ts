@@ -2,6 +2,7 @@
 import type { SessionInUse, TerminalShell } from '../sessions/session.ts';
 import type { MachineUpdateState } from './agent-updates.ts';
 import type { DisplayReport } from './display-report.ts';
+import type { PowerReport } from './power.ts';
 
 export type OsFamily = 'windows' | 'linux' | 'macos';
 
@@ -55,6 +56,8 @@ export type MachineInventory =
 			gpus: Gpu[];
 			/** What a remote desktop depends on (SPEC-AGENT-LOGS 3). */
 			display: DisplayReport;
+			/** The power source and whether the agent keeps it awake (SPEC-STAY-AWAKE). */
+			power: PowerReport;
 	  };
 
 export type Machine = {

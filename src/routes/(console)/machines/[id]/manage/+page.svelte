@@ -18,6 +18,7 @@
 	import MachineChecks from './machine-checks.svelte';
 	import MachineLogs from './machine-logs.svelte';
 	import MachineSessions from './machine-sessions.svelte';
+	import PowerPolicy from './power-policy.svelte';
 	import ReinstallAgent from './reinstall-agent.svelte';
 	import type { PageProps } from './$types';
 
@@ -86,6 +87,13 @@
 		moved. The local page below can do the same.
 	</p>
 </Panel>
+
+<PowerPolicy
+	machineId={machine.id}
+	machineName={machine.name}
+	keepAwakeOnAc={data.keepAwakeOnAc}
+	power={machine.inventory.kind === 'known' ? machine.inventory.power : { kind: 'pending' }}
+/>
 
 <LocalPage machineId={machine.id} localPage={data.localPage} />
 

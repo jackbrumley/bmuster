@@ -1,0 +1,1 @@
+ALTER TABLE `machines` ADD `keep_awake_on_ac` integer DEFAULT false NOT NULL;

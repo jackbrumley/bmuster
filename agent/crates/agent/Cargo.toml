@@ -48,6 +48,8 @@ ashpd = { version = "=0.12.3", default-features = false, features = ["tokio"] }
 tokio = { version = "=1.54.1", features = ["rt-multi-thread", "time", "sync", "macros"] }
 png = "=0.18.1"
 ksni = { version = "=0.3.7", features = ["blocking"] }
+# logind's inhibitor lock for Stay awake (SPEC-STAY-AWAKE); already in the build through ashpd and ksni.
+zbus = { version = "=5.19.0", default-features = false, features = ["tokio"] }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
@@ -60,7 +62,7 @@ wmi = { version = "=0.18.4", default-features = false }
 # Video memory over 4 GB, which Win32_VideoController's 32-bit AdapterRAM cannot hold.
 windows-registry = "=0.6.1"
 # Terminal sessions: ConPTY, pipes, processes and Job Objects; Files: drives and free space (already in the build through other crates).
-windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Threading"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Power", "Win32_System_Threading"] }
 
 [build-dependencies]
 base64.workspace = true

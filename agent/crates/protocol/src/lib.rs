@@ -15,6 +15,7 @@ pub mod checks;
 mod display;
 pub mod files;
 pub mod logs;
+pub mod power;
 pub mod session;
 mod updates;
 pub use display::{
@@ -345,6 +346,10 @@ pub struct Inventory {
     pub gpus: Vec<GpuInfo>,
     /// What a remote desktop depends on (SPEC-AGENT-LOGS 3).
     pub display: DisplayReport,
+    /// The power source and whether the agent keeps the machine awake
+    /// (SPEC-STAY-AWAKE); older agents leave it out.
+    #[serde(default)]
+    pub power: power::PowerReport,
 }
 
 impl Inventory {
@@ -634,6 +639,12 @@ pub enum ServerMessage {
     /// Run the fixed self-checks now (SPEC-DIAGNOSTICS 1). Carries nothing:
     /// what the checks do is fixed in the agent.
     RunChecks,
+    /// Stay awake on mains power, or not (SPEC-STAY-AWAKE): sent when an
+    /// admin changes it and on every connect. Only a boolean.
+    PowerPolicy {
+        #[serde(rename = "keepAwakeOnAc")]
+        keep_awake_on_ac: bool,
+    },
 }
 
 /// Agent to server.
@@ -1100,6 +1111,26 @@ mod tests {
         assert_eq!(
             serde_json::to_value(AgentMessage::Checks { results: vec![] }).unwrap(),
             json!({ "type": "checks", "results": [] })
+        );
+    }
+
+    #[test]
+    fn the_power_policy_is_only_a_boolean() {
+        assert_eq!(
+            serde_json::from_value::<ServerMessage>(
+                json!({ "type": "power-policy", "keepAwakeOnAc": true })
+            )
+            .unwrap(),
+            ServerMessage::PowerPolicy {
+                keep_awake_on_ac: true
+            }
+        );
+        assert!(serde_json::from_value::<ServerMessage>(
+            json!({ "type": "power-policy", "keepAwakeOnAc": "yes" })
+        )
+        .is_err());
+        assert!(
+            serde_json::from_value::<ServerMessage>(json!({ "type": "power-policy" })).is_err()
         );
     }
 }

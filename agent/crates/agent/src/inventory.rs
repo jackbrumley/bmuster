@@ -100,6 +100,7 @@ impl Probe {
             network: network(),
             gpus: crate::gpus::gpus(),
             display: crate::display_report::report(),
+            power: crate::power::report(),
         })
     }
 }

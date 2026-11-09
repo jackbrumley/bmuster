@@ -13,6 +13,7 @@ import {
 } from '#lib/domain/logs/logs.ts';
 import { MAX_CHECKS } from '#lib/domain/logs/checks.ts';
 import { displayReportSchema } from '#lib/schemas/agents/display-report.ts';
+import { powerReportSchema } from '#lib/schemas/agents/power-report.ts';
 import { checkResultSchema, checksReportSchema } from '#lib/schemas/logs/checks.ts';
 
 const osFamilySchema = z.enum(['windows', 'linux', 'macos']);
@@ -94,7 +95,9 @@ export const inventorySchema = z.object({
 	/** Agents before 0.2 sent no `gpus`; their inventories read as none reported. */
 	gpus: z.array(gpuSchema).max(32).default([]),
 	/** Agents from before SPEC-AGENT-LOGS send none: `unreported`. */
-	display: displayReportSchema
+	display: displayReportSchema,
+	/** Agents from before SPEC-STAY-AWAKE send none: `unreported`. */
+	power: powerReportSchema
 });
 
 export type InventoryWire = z.infer<typeof inventorySchema>;
@@ -321,7 +324,9 @@ export type ServerSocketMessage =
 	| { type: 'log-level'; level: 'debug'; untilMs: number }
 	| { type: 'log-level'; level: 'info' }
 	/** Run the fixed self-checks now (SPEC-DIAGNOSTICS 1); nothing in it changes what they do. */
-	| { type: 'run-checks' };
+	| { type: 'run-checks' }
+	/** Stay awake on mains power (SPEC-STAY-AWAKE): on every connect and when an admin changes it. */
+	| { type: 'power-policy'; keepAwakeOnAc: boolean };
 
 export type RefusalReason =
 	| 'bad-request'
