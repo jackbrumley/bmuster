@@ -257,6 +257,8 @@ fn watch_never_opens_uinput() {
             Ok(device as Arc<dyn Sink>)
         })
     };
+    // Following sessions move the notice bar, which is shared by every test.
+    let _turn = crate::notice::test_turn();
     let hello = r#"{"type":"hello","codecs":["jpeg"],"viewport":{"width":800,"height":600,"pixelRatio":1}}"#;
     let session = |mode: Mode| {
         let now = Instant::now();
