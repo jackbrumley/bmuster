@@ -1,6 +1,12 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.14',
+		changes: [
+			'Add a Test channel: a built-in Test machine group gets agent test builds (tags like v0.4.15-test.1) straight away, while every other machine stays on full releases. The Updates page shows the channel of each machine.'
+		]
+	},
+	{
 		version: '0.4.13',
 		changes: [
 			'The Linux tray icon now starts in signed-in desktops on SELinux machines such as Fedora, where 0.4.12 could not start it.'

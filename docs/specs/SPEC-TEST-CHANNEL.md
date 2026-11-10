@@ -1,6 +1,6 @@
 # SPEC-TEST-CHANNEL: Test builds for a chosen machine group
 
-**Status:** `IMPLEMENTED (pending release)` 2026-11-11 · approved 2026-11-11 (Jack: "Prerelease tags would go only to a 'Test' machine group") · **Date:** 2026-11-11
+**Status:** `IMPLEMENTED (v0.4.14)` 2026-11-11 · approved 2026-11-11 (Jack: "Prerelease tags would go only to a 'Test' machine group") · **Date:** 2026-11-11
 
 ## Problem
 
