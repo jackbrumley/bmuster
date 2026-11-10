@@ -24,13 +24,14 @@
 		surface,
 		mode,
 		canSwitch,
-		windows,
 		settingsOpen,
 		settings,
+		keysOpen,
+		keys,
 		onexit,
 		onswitch,
 		onsettings,
-		onctrlaltdel,
+		onkeys,
 		ondisconnect
 	}: {
 		surface: HTMLElement;
@@ -38,16 +39,16 @@
 		mode: DesktopMode | undefined;
 		/** The person may control, so they may change mode. */
 		canSwitch: boolean;
-		/** Ctrl+Alt+Del is a Windows key. */
-		windows: boolean;
 		settingsOpen: boolean;
 		/** The picture settings, shown under the bar while open. */
 		settings: Snippet;
+		/** The Keys menu (control sessions only), shown under the bar while open. */
+		keysOpen: boolean;
+		keys: Snippet;
 		onexit: () => void;
 		onswitch: (mode: DesktopMode) => void;
 		onsettings: () => void;
-		/** Ctrl+Alt+Del on the machine (Windows, control sessions). */
-		onctrlaltdel: () => void;
+		onkeys: () => void;
 		ondisconnect: () => void;
 	} = $props();
 
@@ -60,7 +61,7 @@
 	let hovering = $state(false);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
-	const pinned = $derived(hovering || settingsOpen);
+	const pinned = $derived(hovering || settingsOpen || keysOpen);
 
 	function reveal(): void {
 		shown = true;
@@ -160,13 +161,8 @@
 				>
 					<IconAdjustmentsHorizontal size={20} />
 				</ToolButton>
-				{#if windows && mode === 'control'}
-					<ToolButton
-						label="Ctrl+Alt+Del"
-						pressed={undefined}
-						disabled={false}
-						onclick={act(onctrlaltdel)}
-					>
+				{#if mode === 'control'}
+					<ToolButton label="Keys" pressed={keysOpen} disabled={false} onclick={act(onkeys)}>
 						<IconKeyboard size={20} />
 					</ToolButton>
 				{/if}
@@ -177,6 +173,9 @@
 		</div>
 		{#if settingsOpen && mode !== undefined}
 			<div class="settings">{@render settings()}</div>
+		{/if}
+		{#if keysOpen && mode === 'control'}
+			<div class="settings">{@render keys()}</div>
 		{/if}
 	</div>
 {/if}

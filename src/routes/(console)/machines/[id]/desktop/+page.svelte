@@ -7,6 +7,7 @@
 		IconDeviceDesktop,
 		IconEye,
 		IconHandFinger,
+		IconKeyboard,
 		IconPlugConnected,
 		IconPointer
 	} from '@tabler/icons-svelte-runes';
@@ -33,6 +34,7 @@
 	import type { Geometry } from './input.ts';
 	import { attachScreenInput } from './screen-input.ts';
 	import KeyBar from './key-bar.svelte';
+	import KeysMenu from './keys-menu.svelte';
 	import ToolButton from './tool-button.svelte';
 	import type { PageProps } from './$types';
 
@@ -54,7 +56,8 @@
 	let cursorCanvas = $state<HTMLCanvasElement>();
 	let session = $state<DesktopSession>();
 	let touchMode = $state<'trackpad' | 'touch'>('trackpad');
-	let showSettings = $state(false);
+	/** The block under the bar: picture settings or the Keys menu, never both. */
+	let open = $state<'none' | 'settings' | 'keys'>('none');
 	let fullScreen = $state(false);
 
 	const connection = $derived(session?.connection ?? { kind: 'idle' as const });
@@ -65,6 +68,8 @@
 			connection.kind === 'reconnecting'
 	);
 	const watchOnly = $derived(session?.mode === 'watch');
+	/** Only a control session sends keys (SPEC-DESKTOP-KEYS 7). */
+	const keysOpen = $derived(open === 'keys' && running && !watchOnly);
 	/**
 	 * Connect and Watch only are offered whenever no session runs: at first,
 	 * after Disconnect and after the session ended. A reload or a dropped
@@ -151,13 +156,26 @@
 		};
 	}
 
+	function toggle(block: 'settings' | 'keys'): void {
+		open = open === block ? 'none' : block;
+	}
+
+	/** After a key from the Keys menu, typing goes to the machine again. */
+	function backToScreen(): void {
+		stage?.focus();
+	}
+
+	function sendInput(message: InputMessage): void {
+		session?.input(message);
+	}
+
 	function start(mode: DesktopMode): void {
-		showSettings = false;
+		open = 'none';
 		void session?.start(mode);
 	}
 
 	function switchMode(mode: DesktopMode): void {
-		showSettings = false;
+		open = 'none';
 		void session?.switchMode(mode);
 	}
 
@@ -293,12 +311,26 @@
 						{/if}
 					</ToolButton>
 				{/if}
+				{#if running && !watchOnly}
+					<ToolButton
+						label="Keys"
+						pressed={keysOpen}
+						disabled={false}
+						onclick={() => {
+							toggle('keys');
+						}}
+					>
+						<IconKeyboard size={20} />
+					</ToolButton>
+				{/if}
 				{#if running}
 					<ToolButton
 						label="Picture settings"
-						pressed={showSettings}
+						pressed={open === 'settings'}
 						disabled={false}
-						onclick={() => (showSettings = !showSettings)}
+						onclick={() => {
+							toggle('settings');
+						}}
 					>
 						<IconAdjustmentsHorizontal size={20} />
 					</ToolButton>
@@ -397,11 +429,15 @@
 			</Panel>
 		{/if}
 
-		{#if showSettings && session !== undefined && running && !fullScreen}
+		{#if open === 'settings' && session !== undefined && running && !fullScreen}
 			<DesktopSettings
 				settings={session.settings}
 				onchange={(next: PictureSettings) => session?.changeSettings(next)}
 			/>
+		{/if}
+
+		{#if keysOpen && !fullScreen}
+			<KeysMenu osFamily={machine.osFamily} send={sendInput} afterSend={backToScreen} />
 		{/if}
 
 		<div
@@ -446,12 +482,16 @@
 					surface={stage}
 					mode={running ? session?.mode : undefined}
 					canSwitch={canControl}
-					windows={machine.osFamily === 'windows'}
-					settingsOpen={showSettings}
+					settingsOpen={open === 'settings'}
+					{keysOpen}
 					onexit={() => void toggleFullScreen()}
 					onswitch={switchMode}
-					onsettings={() => (showSettings = !showSettings)}
-					onctrlaltdel={() => session?.input({ type: 'special', name: 'ctrl-alt-del' })}
+					onsettings={() => {
+						toggle('settings');
+					}}
+					onkeys={() => {
+						toggle('keys');
+					}}
 					ondisconnect={() => void endSession()}
 				>
 					{#snippet settings()}
@@ -462,13 +502,16 @@
 							/>
 						{/if}
 					{/snippet}
+					{#snippet keys()}
+						<KeysMenu osFamily={machine.osFamily} send={sendInput} afterSend={backToScreen} />
+					{/snippet}
 				</FullScreenBar>
 			{/if}
 		</div>
 
 		{#if running && !watchOnly}
 			<div class="phone-keys">
-				<KeyBar send={(message: InputMessage) => session?.input(message)} />
+				<KeyBar osFamily={machine.osFamily} send={sendInput} />
 			</div>
 			<p class="mode">
 				{touchMode === 'trackpad'

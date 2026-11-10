@@ -7,16 +7,20 @@
 		IconKeyboard
 	} from '@tabler/icons-svelte-runes';
 	import type { InputMessage } from '#lib/domain/desktop/messages.ts';
-	import { characterKeys, KEY_BAR, type BarKey } from './key-bar.ts';
+	import type { OsFamily } from '#lib/domain/machines/machine.ts';
+	import { characterKeys, chordMessages, keyBarFor, type BarKey, type Modifier } from './keys.ts';
 
 	/**
 	 * The phone's keys for the remote screen (SPEC-DESKTOP 5.3): Esc, Tab,
-	 * Ctrl, Alt, the Windows key, arrows and Ctrl+Alt+Del, and a button that
-	 * opens the phone's own keyboard, whose characters go as `text`. Ctrl and
-	 * Alt stay pressed for the next key. Pressing a key never takes focus
-	 * from the typing area, so the phone's keyboard stays open.
+	 * Ctrl, Alt, the Windows key, arrows, and a button that opens the phone's
+	 * own keyboard, whose characters go as `text`. Ctrl and Alt stay pressed
+	 * for the next key. Pressing a key never takes focus from the typing
+	 * area, so the phone's keyboard stays open. Ctrl+Alt+Del and other
+	 * combinations are on the Keys menu (SPEC-DESKTOP-KEYS).
 	 */
-	let { send }: { send: (message: InputMessage) => void } = $props();
+	let { osFamily, send }: { osFamily: OsFamily; send: (message: InputMessage) => void } = $props();
+
+	const keys = $derived(keyBarFor(osFamily));
 
 	let ctrl = $state(false);
 	let alt = $state(false);
@@ -32,14 +36,12 @@
 
 	/** Presses `code` with any latched Ctrl and Alt around it, then lets them go. */
 	function tap(code: string, key: string): void {
-		const held = [...(ctrl ? ['ControlLeft'] : []), ...(alt ? ['AltLeft'] : [])];
-		for (const modifier of held) {
-			send({ type: 'key', code: modifier, key: modifier, down: true, altGr: false });
-		}
-		send({ type: 'key', code, key, down: true, altGr: false });
-		send({ type: 'key', code, key, down: false, altGr: false });
-		for (const modifier of held.reverse()) {
-			send({ type: 'key', code: modifier, key: modifier, down: false, altGr: false });
+		const modifiers: Modifier[] = [
+			...(ctrl ? ['ctrl' as const] : []),
+			...(alt ? ['alt' as const] : [])
+		];
+		for (const message of chordMessages({ modifiers, key: { code, key } })) {
+			send(message);
 		}
 		ctrl = false;
 		alt = false;
@@ -52,10 +54,6 @@
 				return;
 			case 'alt':
 				alt = !alt;
-				return;
-			case 'ctrl-alt-del':
-				// Windows: the agent's service sends it with SendSAS; Linux: the key chord.
-				send({ type: 'special', name: 'ctrl-alt-del' });
 				return;
 			case 'key':
 				tap(key.code, key.key);
@@ -114,7 +112,7 @@
 		}}
 		onclick={toggleKeyboard}><IconKeyboard size={18} /></button
 	>
-	{#each KEY_BAR as key (key.id)}
+	{#each keys as key (key.id)}
 		<button
 			data-raw-button="key"
 			type="button"

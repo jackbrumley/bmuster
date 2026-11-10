@@ -7,7 +7,7 @@ import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import DesktopTab from './+page.svelte';
 
-// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17.
+// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6.
 
 const SESSION = '33333333-3333-4333-8333-333333333333';
 
@@ -367,17 +367,59 @@ describe('the desktop tab', () => {
 		await expect.element(screen.getByRole('button', { name: 'Full screen' })).toBeVisible();
 	});
 
-	it('R13: full screen on a Windows machine sends Ctrl+Alt+Del as the special key', async () => {
+	it('K6, R13: the Keys menu sends from the bar, and in full screen Ctrl+Alt+Del on Windows', async () => {
 		const windows = { ...TEST_MACHINE, osFamily: 'windows' as const };
 		const { screen, socket } = await open(CONTROL, 'Connect', windows);
 		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await screen.getByRole('button', { name: 'Keys', exact: true }).click();
+		const menu = screen.getByRole('region', { name: 'Keys' });
+		await menu.getByRole('button', { name: /^Alt\+Tab/ }).click();
+		expect(socket.messages().slice(-4)).toEqual([
+			{ type: 'key', code: 'AltLeft', key: 'Alt', down: true, altGr: false },
+			{ type: 'key', code: 'Tab', key: 'Tab', down: true, altGr: false },
+			{ type: 'key', code: 'Tab', key: 'Tab', down: false, altGr: false },
+			{ type: 'key', code: 'AltLeft', key: 'Alt', down: false, altGr: false }
+		]);
+		await expect.element(screen.getByRole('application', { name: /Screen of/ })).toHaveFocus();
+
+		// Opening Picture settings closes the menu: one block under the bar at a time.
+		await screen.getByRole('button', { name: 'Picture settings' }).click();
+		await expect.element(menu).not.toBeInTheDocument();
+
 		await screen.getByRole('button', { name: 'Full screen' }).click();
 		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
 		const bar = screen.getByRole('group', { name: 'Full screen controls' });
-		await bar.getByRole('button', { name: 'Ctrl+Alt+Del' }).click();
+		await bar.getByRole('button', { name: 'Keys', exact: true }).click();
+		await screen.getByRole('button', { name: /^Ctrl\+Alt\+Del/ }).click();
+		expect(confirmation.current.kind).toBe('none');
 		expect(socket.messages()).toContainEqual({ type: 'special', name: 'ctrl-alt-del' });
 		await bar.getByRole('button', { name: 'Leave full screen' }).click();
 		await expect.poll(() => document.fullscreenElement).toBeNull();
+	});
+
+	it('K6: the Keys menu shows on a phone too', async () => {
+		await page.viewport(390, 844);
+		const { screen } = await open(CONTROL, 'Connect');
+		await screen.getByRole('button', { name: 'Keys', exact: true }).click();
+		await expect.element(screen.getByRole('region', { name: 'Keys' })).toBeVisible();
+		await expect.element(screen.getByRole('button', { name: 'Super key' })).toBeVisible();
+	});
+
+	it('K6: a watch-only session has no Keys button, in the bar or in full screen', async () => {
+		const { screen, socket } = await open(CONTROL, 'Watch only');
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await expect.element(screen.getByText('View only')).toBeVisible();
+		await expect
+			.element(screen.getByRole('button', { name: 'Keys', exact: true }))
+			.not.toBeInTheDocument();
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+		const bar = screen.getByRole('group', { name: 'Full screen controls' });
+		await expect.element(bar).toBeVisible();
+		await expect
+			.element(bar.getByRole('button', { name: 'Keys', exact: true }))
+			.not.toBeInTheDocument();
+		await document.exitFullscreen();
 	});
 
 	it('follows the browser leaving full screen by itself (Esc)', async () => {
