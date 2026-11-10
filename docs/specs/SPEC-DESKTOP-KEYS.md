@@ -24,15 +24,16 @@ The viewer's own system catches some key combinations before the browser sees th
 
 ## Acceptance criteria
 
-| #   | Criterion                                                                                                                        | Named test                      |
-| :-- | :------------------------------------------------------------------------------------------------------------------------------- | :------------------------------ |
-| K1  | A chord sends modifiers down in Ctrl, Alt, Shift, Win order, the key down and up, then the modifiers up in reverse, once each.   | `keys.test.ts` "K1"             |
-| K2  | Each OS family gets its own list and labels; only Windows has Win+R and Ctrl+Shift+Esc; macOS has no Ctrl+Alt+Del.               | `keys.test.ts` "K2"             |
-| K3  | Every pickable key is one the agent's keymap knows, and Press a key accepts exactly the pickable keys.                           | `keys.test.ts` "K3"             |
-| K4  | The menu sends a shortcut's key messages, a custom combination built by toggles and picks or by pressing a key, and release-all. | `keys-menu.svelte.test.ts` "K4" |
-| K5  | Ctrl+Alt+Del on Linux asks first and sends nothing when cancelled; on Windows it sends `special ctrl-alt-del` without asking.    | `keys-menu.svelte.test.ts` "K5" |
-| K6  | The Keys button shows in the bar and in full screen for control sessions, sends from both, and never shows for watch-only.       | `desktop.svelte.test.ts` "K6"   |
-| K7  | The phone key bar sends latched Ctrl and Alt with the next key through the shared chord function.                                | `keys.test.ts` "K7"             |
+| #   | Criterion                                                                                                                                                                                                                                            | Named test                      |
+| :-- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------ |
+| K1  | A chord sends modifiers down in Ctrl, Alt, Shift, Win order, the key down and up, then the modifiers up in reverse, once each.                                                                                                                       | `keys.test.ts` "K1"             |
+| K2  | Each OS family gets its own list and labels; only Windows has Win+R and Ctrl+Shift+Esc; macOS has no Ctrl+Alt+Del.                                                                                                                                   | `keys.test.ts` "K2"             |
+| K3  | Every pickable key is one the agent's keymap knows, and Press a key accepts exactly the pickable keys.                                                                                                                                               | `keys.test.ts` "K3"             |
+| K4  | The menu sends a shortcut's key messages, a custom combination built by toggles and picks or by pressing a key, and release-all.                                                                                                                     | `keys-menu.svelte.test.ts` "K4" |
+| K5  | Ctrl+Alt+Del on Linux asks first and sends nothing when cancelled; on Windows it sends `special ctrl-alt-del` without asking.                                                                                                                        | `keys-menu.svelte.test.ts` "K5" |
+| K6  | The Keys button shows in the bar and in full screen for control sessions, sends from both, and never shows for watch-only.                                                                                                                           | `desktop.svelte.test.ts` "K6"   |
+| K7  | The phone key bar sends latched Ctrl and Alt with the next key through the shared chord function.                                                                                                                                                    | `keys.test.ts` "K7"             |
+| K8  | The everyday shortcuts are small pills in one row (two lines at most at phone width); the other shortcuts, the custom combination and Release all keys wait under More. The hint is a tooltip and part of the accessible name, not text on the pill. | `keys-menu.svelte.test.ts` "K8" |
 
 ## Security notes
 
@@ -51,3 +52,7 @@ None.
 - The page keeps one `open` state (`none`, `settings`, `keys`) for both blocks, so they never show together; in full screen the menu shows under the full-screen bar, which stays visible while it is open.
 - The `special` names `win`, `alt-tab` and `print-screen` are no longer sent by the browser (they go as plain keys). They stay in the protocol and the agent, since removing them is a protocol change and costs nothing to keep.
 - Tests: `keys.test.ts` (K1, K2, K3, K7), `keys-menu.svelte.test.ts` (K4, K5, and macOS without Ctrl+Alt+Del), `desktop.svelte.test.ts` (K6, replacing the full-screen-only Ctrl+Alt+Del test). Not yet checked on a real Windows machine: Windows may refuse an injected Win+L (it guards the lock shortcut); if so, Win+L needs its own `special` that calls `LockWorkStation` in the user's session.
+
+### Refined (2026-11-10)
+
+Jack: "It takes up a lot of space … the custom combination is also good but most people won't need it most of the time … make it a little more modular so that it's there if you want it … make sure that all of this scales on mobile." The menu is now a headingless Panel with one row of 40px pills (label only, `title` and accessible name carry the hint) for the everyday shortcuts: Ctrl+Alt+Del, Win or Super, Alt+Tab, Alt+F4 and lock on Windows and Linux, all four on macOS. **More** (`aria-expanded`) opens the rest: Show desktop, Run, Task Manager and Print Screen, the custom combination, and Release all keys. Every capability stays; each `Shortcut` carries `everyday`.

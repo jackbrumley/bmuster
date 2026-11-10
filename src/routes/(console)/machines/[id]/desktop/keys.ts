@@ -140,13 +140,22 @@ export function groupOf(code: string): PickGroupId | undefined {
 	return PICK_GROUPS.find((group) => group.keys.some((item) => item.code === code))?.id;
 }
 
-/** One entry of the Keys menu: `hint` says what it does on that machine. */
-export type Shortcut = { id: string; label: string; hint: string } & (
+/**
+ * One entry of the Keys menu: `hint` says what it does on that machine (a tooltip and part of
+ * the accessible name, never shown as text); `everyday` ones are always on view, the others
+ * under More.
+ */
+export type Shortcut = { id: string; label: string; hint: string; everyday: boolean } & (
 	{ kind: 'chord'; chord: Chord } | { kind: 'ctrl-alt-del' }
 );
 
 function shortcut(id: string, hint: string, chord: Chord, os: OsFamily): Shortcut {
-	return { id, label: chordLabel(chord, os), hint, kind: 'chord', chord };
+	return { id, label: chordLabel(chord, os), hint, everyday: true, kind: 'chord', chord };
+}
+
+/** A shortcut kept under More. */
+function rarely(item: Shortcut): Shortcut {
+	return { ...item, everyday: false };
 }
 
 /** The Windows key pressed on its own, named for the machine. */
@@ -155,7 +164,7 @@ function metaKey(os: OsFamily): PlainKey {
 }
 
 function ctrlAltDel(hint: string): Shortcut {
-	return { id: 'ctrl-alt-del', label: 'Ctrl+Alt+Del', hint, kind: 'ctrl-alt-del' };
+	return { id: 'ctrl-alt-del', label: 'Ctrl+Alt+Del', hint, everyday: true, kind: 'ctrl-alt-del' };
 }
 
 /** The Keys menu's shortcuts for the machine's OS family, labelled for it. */
@@ -164,7 +173,9 @@ export function shortcutsFor(os: OsFamily): readonly Shortcut[] {
 	const altTab = shortcut('alt-tab', 'Switch windows', { modifiers: ['alt'], key: TAB }, os);
 	const altF4 = shortcut('alt-f4', 'Close window', { modifiers: ['alt'], key: functionKey(4) }, os);
 	const lock = shortcut('lock', 'Lock', { modifiers: ['win'], key: letter('L') }, os);
-	const print = shortcut('print-screen', 'Screenshot', { modifiers: [], key: PRINT_SCREEN }, os);
+	const print = rarely(
+		shortcut('print-screen', 'Screenshot', { modifiers: [], key: PRINT_SCREEN }, os)
+	);
 	switch (os) {
 		case 'windows':
 			return [
@@ -173,9 +184,16 @@ export function shortcutsFor(os: OsFamily): readonly Shortcut[] {
 				altTab,
 				altF4,
 				lock,
-				shortcut('desktop', 'Show desktop', { modifiers: ['win'], key: letter('D') }, os),
-				shortcut('run', 'Run', { modifiers: ['win'], key: letter('R') }, os),
-				shortcut('task-manager', 'Task Manager', { modifiers: ['ctrl', 'shift'], key: ESCAPE }, os),
+				rarely(shortcut('desktop', 'Show desktop', { modifiers: ['win'], key: letter('D') }, os)),
+				rarely(shortcut('run', 'Run', { modifiers: ['win'], key: letter('R') }, os)),
+				rarely(
+					shortcut(
+						'task-manager',
+						'Task Manager',
+						{ modifiers: ['ctrl', 'shift'], key: ESCAPE },
+						os
+					)
+				),
 				print
 			];
 		case 'linux':

@@ -21,9 +21,11 @@
 	} from './keys.ts';
 
 	/**
-	 * The Keys menu (SPEC-DESKTOP-KEYS): combinations the viewer's own system
-	 * would catch, a custom combination, and Release all keys. Shown only for
-	 * control sessions. `afterSend` gives the keyboard back to the screen.
+	 * The Keys menu (SPEC-DESKTOP-KEYS): one row of small pills for the
+	 * everyday combinations the viewer's own system would catch, and More for
+	 * the rest: the other shortcuts, a custom combination and Release all
+	 * keys. Shown only for control sessions. `afterSend` gives the keyboard
+	 * back to the screen.
 	 */
 	let {
 		osFamily,
@@ -37,6 +39,10 @@
 
 	const uid = $props.id();
 	const shortcuts = $derived(shortcutsFor(osFamily));
+	const everyday = $derived(shortcuts.filter((shortcut) => shortcut.everyday));
+	const others = $derived(shortcuts.filter((shortcut) => !shortcut.everyday));
+
+	let more = $state(false);
 
 	let modifiers = $state<Modifier[]>([]);
 	let group = $state<PickGroupId | null>('letters');
@@ -123,88 +129,105 @@
 	}
 </script>
 
-<Panel heading="Keys" actions={undefined} tone="normal" padding="normal">
-	<div class="shortcuts">
-		{#each shortcuts as shortcut (shortcut.id)}
-			<Button variant="secondary" size="compact" type="button" onclick={() => void run(shortcut)}>
-				<span class="shortcut">
-					<span class="label">{shortcut.label}</span>
-					<span class="hint">{shortcut.hint}</span>
-				</span>
-			</Button>
+{#snippet pill(shortcut: Shortcut)}
+	<button
+		data-raw-button="chip"
+		type="button"
+		class="chip"
+		title={shortcut.hint}
+		aria-label="{shortcut.label}, {shortcut.hint}"
+		onclick={() => void run(shortcut)}>{shortcut.label}</button
+	>
+{/snippet}
+
+<Panel heading={undefined} actions={undefined} tone="normal" padding="normal">
+	<div class="row" role="group" aria-label="Keys">
+		{#each everyday as shortcut (shortcut.id)}
+			{@render pill(shortcut)}
 		{/each}
+		<button
+			data-raw-button="chip"
+			type="button"
+			class="chip more"
+			aria-expanded={more}
+			aria-controls="{uid}-more"
+			onclick={() => (more = !more)}>{more ? 'Fewer' : 'More'}</button
+		>
 	</div>
 
-	<div class="custom" role="group" aria-labelledby="{uid}-custom">
-		<SectionHeading id="{uid}-custom" text="Custom combination" tone="normal" />
-		<div class="modifiers" role="group" aria-label="Modifiers">
-			{#each MODIFIERS as modifier (modifier)}
-				<button
-					data-raw-button="chip"
-					type="button"
-					class="chip"
-					aria-pressed={modifiers.includes(modifier)}
-					onclick={() => {
-						toggle(modifier);
-					}}>{modifierLabel(modifier, osFamily)}</button
-				>
-			{/each}
-		</div>
-		<ChipGroup label="Key group" options={groups} bind:value={group} />
-		<ChipGroup label="Key" options={keyOptions} bind:value={code} />
-		<div class="send">
-			<button
-				data-raw-button="key"
-				type="button"
-				class="chip"
-				aria-pressed={listening}
-				onclick={() => (listening = true)}
-				onkeydown={onCaptureKey}
-				onblur={() => (listening = false)}>{listening ? 'Press a key now…' : 'Press a key'}</button
-			>
-			{#if custom !== undefined}
+	{#if more}
+		<div class="extra" id="{uid}-more">
+			{#if others.length > 0}
+				<div class="row" role="group" aria-label="More shortcuts">
+					{#each others as shortcut (shortcut.id)}
+						{@render pill(shortcut)}
+					{/each}
+				</div>
+			{/if}
+
+			<div class="custom" role="group" aria-labelledby="{uid}-custom">
+				<SectionHeading id="{uid}-custom" text="Custom combination" tone="normal" />
+				<div class="row" role="group" aria-label="Modifiers">
+					{#each MODIFIERS as modifier (modifier)}
+						<button
+							data-raw-button="chip"
+							type="button"
+							class="chip"
+							aria-pressed={modifiers.includes(modifier)}
+							onclick={() => {
+								toggle(modifier);
+							}}>{modifierLabel(modifier, osFamily)}</button
+						>
+					{/each}
+				</div>
+				<ChipGroup label="Key group" options={groups} bind:value={group} />
+				<ChipGroup label="Key" options={keyOptions} bind:value={code} />
+				<div class="row">
+					<button
+						data-raw-button="key"
+						type="button"
+						class="chip"
+						aria-pressed={listening}
+						onclick={() => (listening = true)}
+						onkeydown={onCaptureKey}
+						onblur={() => (listening = false)}
+						>{listening ? 'Press a key now…' : 'Press a key'}</button
+					>
+					{#if custom !== undefined}
+						<Button
+							variant="primary"
+							size="compact"
+							type="button"
+							onclick={() => {
+								sendAll(chordMessages(custom));
+							}}>Send {chordLabel(custom, osFamily)}</Button
+						>
+					{:else}
+						<span class="hint">Pick a key to send.</span>
+					{/if}
+				</div>
+			</div>
+
+			<div>
 				<Button
-					variant="primary"
+					variant="secondary"
 					size="compact"
 					type="button"
 					onclick={() => {
-						sendAll(chordMessages(custom));
-					}}>Send {chordLabel(custom, osFamily)}</Button
+						sendAll([{ type: 'release-all' }]);
+					}}>Release all keys</Button
 				>
-			{:else}
-				<span class="hint">Pick a key to send.</span>
-			{/if}
+			</div>
 		</div>
-	</div>
-
-	<div class="release">
-		<Button
-			variant="secondary"
-			size="compact"
-			type="button"
-			onclick={() => {
-				sendAll([{ type: 'release-all' }]);
-			}}>Release all keys</Button
-		>
-	</div>
+	{/if}
 </Panel>
 
 <style>
-	.shortcuts {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+	.row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
 		gap: var(--space-2);
-	}
-
-	.shortcut {
-		display: grid;
-		justify-items: center;
-		line-height: 1.2;
-	}
-
-	.label {
-		color: var(--text);
-		font-weight: var(--weight-semibold);
 	}
 
 	.hint {
@@ -212,34 +235,32 @@
 		font-size: var(--text-xs);
 	}
 
+	.extra,
 	.custom {
 		display: grid;
 		gap: var(--space-3);
 	}
 
-	.modifiers,
-	.send {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-2);
-	}
-
 	.chip {
-		min-width: 44px;
+		min-width: 40px;
 		min-height: 40px;
-		padding: 0 var(--space-4);
+		padding: 0 var(--space-3);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-pill);
 		background: var(--surface-elevated);
-		color: var(--text-soft);
+		color: var(--text);
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
+		white-space: nowrap;
 		cursor: pointer;
 	}
 
 	.chip:hover {
 		background: var(--surface-muted);
+	}
+
+	.chip.more {
+		color: var(--brand);
 	}
 
 	.chip[aria-pressed='true'] {

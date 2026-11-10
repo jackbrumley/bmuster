@@ -372,7 +372,7 @@ describe('the desktop tab', () => {
 		const { screen, socket } = await open(CONTROL, 'Connect', windows);
 		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
 		await screen.getByRole('button', { name: 'Keys', exact: true }).click();
-		const menu = screen.getByRole('region', { name: 'Keys' });
+		const menu = screen.getByRole('group', { name: 'Keys', exact: true });
 		await menu.getByRole('button', { name: /^Alt\+Tab/ }).click();
 		expect(socket.messages().slice(-4)).toEqual([
 			{ type: 'key', code: 'AltLeft', key: 'Alt', down: true, altGr: false },
@@ -401,7 +401,7 @@ describe('the desktop tab', () => {
 		await page.viewport(390, 844);
 		const { screen } = await open(CONTROL, 'Connect');
 		await screen.getByRole('button', { name: 'Keys', exact: true }).click();
-		await expect.element(screen.getByRole('region', { name: 'Keys' })).toBeVisible();
+		await expect.element(screen.getByRole('group', { name: 'Keys', exact: true })).toBeVisible();
 		await expect.element(screen.getByRole('button', { name: 'Super key' })).toBeVisible();
 	});
 
