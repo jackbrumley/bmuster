@@ -1,6 +1,9 @@
 //! Tiled and compressed framebuffers through the GPU (SPEC-CONSOLE-CAPTURE,
-//! Capture 3): import the dma-buf into EGL with its modifier, draw it into
-//! a plain RGBA texture with GLES 2 and read the pixels back.
+//! Capture 3 and version 2): import each plane's dma-buf into EGL with its
+//! modifier, draw it as a textured quad where the plane lands (scaled,
+//! rotated, blended with its alpha), all into one plain RGBA texture with
+//! GLES 2, and read the pixels back once. The maths is
+//! [`super::compose::Placement`]'s, as on the CPU path.
 //!
 //! `libEGL.so.1`, `libGLESv2.so.2` and `libgbm.so.1` are opened with
 //! `dlopen` the first time a tiled buffer appears, so the agent has no
@@ -11,8 +14,10 @@
 //! The context is surfaceless (`EGL_KHR_surfaceless_context`) on a GBM
 //! device for the card's render node, so no display server is involved.
 
+use super::compose::Placement;
 use super::egl_api::*;
-use crate::capture::{Frame, Rect};
+use super::Blend;
+use crate::capture::Frame;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
 use std::os::fd::{AsRawFd, BorrowedFd};
@@ -52,10 +57,10 @@ pub struct DmaBuffer<'a> {
 }
 
 const VERTEX_SHADER: &str = "attribute vec2 position;
-uniform vec4 area;
+attribute vec2 texture_position;
 varying vec2 coordinate;
 void main() {
-  coordinate = area.xy + (position * 0.5 + 0.5) * area.zw;
+  coordinate = texture_position;
   gl_Position = vec4(position, 0.0, 1.0);
 }
 ";
@@ -67,14 +72,37 @@ precision highp float;
 precision mediump float;
 #endif
 uniform samplerExternalOES image;
+uniform float plane_alpha;
+uniform float pixel_alpha;
+uniform float premultiplied;
 varying vec2 coordinate;
 void main() {
-  gl_FragColor = vec4(texture2D(image, coordinate).rgb, 1.0);
+  vec4 colour = texture2D(image, coordinate);
+  float alpha = mix(1.0, colour.a, pixel_alpha);
+  vec3 rgb = mix(colour.rgb * alpha, colour.rgb, premultiplied);
+  gl_FragColor = vec4(rgb, alpha) * plane_alpha;
 }
 ";
 
-/// A full-screen quad as a triangle strip.
-const QUAD: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0];
+/// The uniforms of the drawing program.
+#[derive(Debug, Clone, Copy)]
+struct Uniforms {
+    image: i32,
+    plane_alpha: i32,
+    pixel_alpha: i32,
+    premultiplied: i32,
+}
+
+/// The shader's pixel-alpha and pre-multiplied switches for a blend mode:
+/// pre-multiplied colour is used as it is, coverage colour is multiplied
+/// by its alpha, and none ignores the pixel's alpha.
+fn blend_switches(blend: Blend) -> (f32, f32) {
+    match blend {
+        Blend::Premultiplied => (1.0, 1.0),
+        Blend::Coverage => (1.0, 0.0),
+        Blend::None => (0.0, 1.0),
+    }
+}
 
 /// A GPU context for one card's render node.
 pub struct Gpu {
@@ -87,7 +115,7 @@ pub struct Gpu {
     display: Display,
     context: Context,
     program: u32,
-    area: i32,
+    uniforms: Uniforms,
     /// The texture and framebuffer drawn into, and their size.
     target: Option<(u32, u32, u32, u32)>,
     modifiers: bool,
@@ -138,7 +166,12 @@ impl Gpu {
             display: std::ptr::null_mut(),
             context: std::ptr::null_mut(),
             program: 0,
-            area: -1,
+            uniforms: Uniforms {
+                image: -1,
+                plane_alpha: -1,
+                pixel_alpha: -1,
+                premultiplied: -1,
+            },
             target: None,
             modifiers: false,
         };
@@ -225,6 +258,17 @@ impl Gpu {
             return Err(self.egl_error("eglMakeCurrent"));
         }
         self.program = self.link()?;
+        let location = |name: &str| -> Result<i32, String> {
+            let text = CString::new(name).map_err(|e| e.to_string())?;
+            // SAFETY: a linked program and a NUL-terminated name.
+            Ok(unsafe { (self.gl.gl_get_uniform_location)(self.program, text.as_ptr()) })
+        };
+        self.uniforms = Uniforms {
+            image: location("image")?,
+            plane_alpha: location("plane_alpha")?,
+            pixel_alpha: location("pixel_alpha")?,
+            premultiplied: location("premultiplied")?,
+        };
         Ok(())
     }
 
@@ -253,6 +297,7 @@ impl Gpu {
         let vertex = self.shader(GL_VERTEX_SHADER, VERTEX_SHADER)?;
         let fragment = self.shader(GL_FRAGMENT_SHADER, FRAGMENT_SHADER)?;
         let position = CString::new("position").map_err(|e| e.to_string())?;
+        let texture_position = CString::new("texture_position").map_err(|e| e.to_string())?;
         let mut linked = 0;
         // SAFETY: a current context and two compiled shaders.
         let program = unsafe {
@@ -260,6 +305,7 @@ impl Gpu {
             (self.gl.gl_attach_shader)(program, vertex);
             (self.gl.gl_attach_shader)(program, fragment);
             (self.gl.gl_bind_attrib_location)(program, 0, position.as_ptr());
+            (self.gl.gl_bind_attrib_location)(program, 1, texture_position.as_ptr());
             (self.gl.gl_link_program)(program);
             (self.gl.gl_get_programiv)(program, GL_LINK_STATUS, &mut linked);
             (self.gl.gl_delete_shader)(vertex);
@@ -392,99 +438,134 @@ impl Gpu {
         Ok(image)
     }
 
-    /// `crop` of `buffer` as BGRX.
-    pub fn read(&mut self, buffer: &DmaBuffer<'_>, crop: Rect) -> Result<Frame, String> {
-        if crop.width == 0
-            || crop.height == 0
-            || crop.x < 0
-            || crop.y < 0
-            || crop.x as u64 + u64::from(crop.width) > u64::from(buffer.width)
-            || crop.y as u64 + u64::from(crop.height) > u64::from(buffer.height)
-        {
-            return Err("The screen area to copy is outside the framebuffer".to_string());
+    /// The layers drawn bottom first onto a black `width` × `height`
+    /// canvas, as BGRX.
+    pub fn compose(
+        &mut self,
+        width: u32,
+        height: u32,
+        layers: &[(DmaBuffer<'_>, Placement)],
+    ) -> Result<Frame, String> {
+        if width == 0 || height == 0 {
+            return Err("The screen to copy is empty".to_string());
         }
-        let image = self.import(buffer)?;
-        let result = self.draw(image, buffer, crop);
-        // SAFETY: destroying the image made above; the texture that used it
-        // is deleted in `draw`.
-        unsafe { (self.extensions.egl_destroy_image_khr)(self.display, image) };
+        let mut images = Vec::with_capacity(layers.len());
+        let mut result = Ok(());
+        for (buffer, _) in layers {
+            match self.import(buffer) {
+                Ok(image) => images.push(image),
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            }
+        }
+        let result = result.and_then(|()| self.draw(width, height, layers, &images));
+        for image in images {
+            // SAFETY: destroying each image made above once; the textures
+            // that used them are deleted in `draw`.
+            unsafe { (self.extensions.egl_destroy_image_khr)(self.display, image) };
+        }
         result
     }
 
-    fn draw(&mut self, image: Image, buffer: &DmaBuffer<'_>, crop: Rect) -> Result<Frame, String> {
-        self.target(crop.width, crop.height)?;
-        let name = CString::new("area").map_err(|e| e.to_string())?;
-        let sampler = CString::new("image").map_err(|e| e.to_string())?;
-        let (fw, fh) = (buffer.width as f32, buffer.height as f32);
-        let mut rgba = vec![0u8; crop.width as usize * crop.height as usize * 4];
-        let mut source = 0;
-        // SAFETY: a current context; the external texture is bound to the
-        // live image; the vertex array is a static slice read during
-        // glDrawArrays; `rgba` holds exactly width × height × 4 bytes for
+    fn draw(
+        &mut self,
+        width: u32,
+        height: u32,
+        layers: &[(DmaBuffer<'_>, Placement)],
+        images: &[Image],
+    ) -> Result<Frame, String> {
+        self.target(width, height)?;
+        let quads: Vec<([f32; 8], [f32; 8])> = layers
+            .iter()
+            .map(|(_, placement)| placement.quad(width, height))
+            .collect();
+        let mut rgba = vec![0u8; width as usize * height as usize * 4];
+        let mut textures = vec![0u32; images.len()];
+        let uniforms = self.uniforms;
+        // SAFETY: a current context; each external texture is bound to its
+        // live image; the vertex arrays live in `quads` until after
+        // glFinish; `rgba` holds exactly width × height × 4 bytes for
         // glReadPixels with pack alignment 1.
         let error = unsafe {
-            (self.gl.gl_gen_textures)(1, &mut source);
-            (self.gl.gl_active_texture)(GL_TEXTURE0);
-            (self.gl.gl_bind_texture)(GL_TEXTURE_EXTERNAL_OES, source);
-            (self.gl.gl_tex_parameteri)(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            (self.gl.gl_tex_parameteri)(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            (self.gl.gl_tex_parameteri)(
-                GL_TEXTURE_EXTERNAL_OES,
-                GL_TEXTURE_WRAP_S,
-                GL_CLAMP_TO_EDGE,
-            );
-            (self.gl.gl_tex_parameteri)(
-                GL_TEXTURE_EXTERNAL_OES,
-                GL_TEXTURE_WRAP_T,
-                GL_CLAMP_TO_EDGE,
-            );
-            (self.extensions.gl_eglimage_target_texture2_does)(GL_TEXTURE_EXTERNAL_OES, image);
+            (self.gl.gl_viewport)(0, 0, width as i32, height as i32);
+            (self.gl.gl_clear_color)(0.0, 0.0, 0.0, 1.0);
+            (self.gl.gl_clear)(GL_COLOR_BUFFER_BIT);
             (self.gl.gl_use_program)(self.program);
-            if self.area < 0 {
-                self.area = (self.gl.gl_get_uniform_location)(self.program, name.as_ptr());
+            (self.gl.gl_uniform1i)(uniforms.image, 0);
+            (self.gl.gl_enable)(GL_BLEND);
+            (self.gl.gl_blend_func)(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            (self.gl.gl_active_texture)(GL_TEXTURE0);
+            if !images.is_empty() {
+                (self.gl.gl_gen_textures)(images.len() as i32, textures.as_mut_ptr());
             }
-            (self.gl.gl_uniform1i)(
-                (self.gl.gl_get_uniform_location)(self.program, sampler.as_ptr()),
-                0,
-            );
-            (self.gl.gl_uniform4f)(
-                self.area,
-                crop.x as f32 / fw,
-                crop.y as f32 / fh,
-                crop.width as f32 / fw,
-                crop.height as f32 / fh,
-            );
-            (self.gl.gl_vertex_attrib_pointer)(
-                0,
-                2,
-                GL_FLOAT,
-                0,
-                0,
-                QUAD.as_ptr() as *const c_void,
-            );
-            (self.gl.gl_enable_vertex_attrib_array)(0);
-            (self.gl.gl_viewport)(0, 0, crop.width as i32, crop.height as i32);
-            (self.gl.gl_draw_arrays)(GL_TRIANGLE_STRIP, 0, 4);
+            for (index, ((_, placement), image)) in layers.iter().zip(images).enumerate() {
+                let filter = if placement.scaled() {
+                    GL_LINEAR
+                } else {
+                    GL_NEAREST
+                };
+                (self.gl.gl_bind_texture)(GL_TEXTURE_EXTERNAL_OES, textures[index]);
+                (self.gl.gl_tex_parameteri)(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, filter);
+                (self.gl.gl_tex_parameteri)(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, filter);
+                (self.gl.gl_tex_parameteri)(
+                    GL_TEXTURE_EXTERNAL_OES,
+                    GL_TEXTURE_WRAP_S,
+                    GL_CLAMP_TO_EDGE,
+                );
+                (self.gl.gl_tex_parameteri)(
+                    GL_TEXTURE_EXTERNAL_OES,
+                    GL_TEXTURE_WRAP_T,
+                    GL_CLAMP_TO_EDGE,
+                );
+                (self.extensions.gl_eglimage_target_texture2_does)(GL_TEXTURE_EXTERNAL_OES, *image);
+                let (pixel_alpha, premultiplied) = blend_switches(placement.blend);
+                (self.gl.gl_uniform1f)(uniforms.plane_alpha, f32::from(placement.alpha) / 65535.0);
+                (self.gl.gl_uniform1f)(uniforms.pixel_alpha, pixel_alpha);
+                (self.gl.gl_uniform1f)(uniforms.premultiplied, premultiplied);
+                let (positions, texture) = &quads[index];
+                (self.gl.gl_vertex_attrib_pointer)(
+                    0,
+                    2,
+                    GL_FLOAT,
+                    0,
+                    0,
+                    positions.as_ptr() as *const c_void,
+                );
+                (self.gl.gl_enable_vertex_attrib_array)(0);
+                (self.gl.gl_vertex_attrib_pointer)(
+                    1,
+                    2,
+                    GL_FLOAT,
+                    0,
+                    0,
+                    texture.as_ptr() as *const c_void,
+                );
+                (self.gl.gl_enable_vertex_attrib_array)(1);
+                (self.gl.gl_draw_arrays)(GL_TRIANGLE_STRIP, 0, 4);
+            }
+            (self.gl.gl_disable)(GL_BLEND);
             (self.gl.gl_pixel_storei)(GL_PACK_ALIGNMENT, 1);
             (self.gl.gl_read_pixels)(
                 0,
                 0,
-                crop.width as i32,
-                crop.height as i32,
+                width as i32,
+                height as i32,
                 GL_RGBA,
                 GL_UNSIGNED_BYTE,
                 rgba.as_mut_ptr() as *mut c_void,
             );
             (self.gl.gl_finish)();
-            (self.gl.gl_delete_textures)(1, &source);
+            if !textures.is_empty() {
+                (self.gl.gl_delete_textures)(textures.len() as i32, textures.as_ptr());
+            }
             (self.gl.gl_get_error)()
         };
         if error != 0 {
             return Err(format!("The GPU copy failed (GL error 0x{error:04x})"));
         }
-        // Row 0 of the read is the bottom of the drawing, which sampled the
-        // buffer's first row, so rows already run top first.
-        let mut frame = Frame::new(crop.width, crop.height);
+        let mut frame = Frame::new(width, height);
         for (from, to) in rgba.chunks_exact(4).zip(frame.data.chunks_exact_mut(4)) {
             to.copy_from_slice(&[from[2], from[1], from[0], 0xFF]);
         }

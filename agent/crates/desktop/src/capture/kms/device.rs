@@ -1,10 +1,12 @@
 //! [`KmsReader`]: every card's screens as one [`KmsSource`], which the root
-//! `console-helper` serves (SPEC-CONSOLE-CAPTURE, Capture 2–4). The cards
-//! themselves are in [`super::card`].
+//! `console-helper` serves (SPEC-CONSOLE-CAPTURE, Capture 2–4 and version
+//! 2: every plane on the CRTC). The cards themselves are in
+//! [`super::card`], the plane maths in [`super::compose`].
 
-use super::card::{card_paths, Card, Framebuffer, Mapping};
+use super::card::{card_paths, Card, Framebuffer, FramebufferInfo, Mapping};
+use super::compose::{self, CpuLayer, Placement, PlaneWatch};
 use super::convert::{self, BufferLayout, MOD_INVALID};
-use super::egl::{DmaBuffer, Gpu};
+use super::egl::{DmaBuffer, DmaPlane, Gpu};
 use super::{displays_from_resources, KmsCursor, KmsDisplay, KmsSource, Plane, PlaneKind};
 use crate::capture::{CaptureError, CaptureResult, CursorImage, Frame, Rect};
 use std::collections::HashMap;
@@ -23,6 +25,14 @@ fn no_kms_reason() -> String {
     }
 }
 
+/// The planes now, the layers they make on one CRTC, and each layer's
+/// framebuffer and placement.
+struct Scanout {
+    planes: Vec<Plane>,
+    found: Vec<compose::Layer>,
+    layers: Vec<(Framebuffer, Placement)>,
+}
+
 struct LastCursor {
     shape: u32,
     image: CursorImage,
@@ -37,6 +47,8 @@ pub struct KmsReader {
     /// One GPU context per card, made on the first tiled buffer.
     gpus: HashMap<String, Result<Gpu, String>>,
     cursors: Vec<LastCursor>,
+    /// Each display's planes as last logged.
+    watch: PlaneWatch,
 }
 
 impl KmsReader {
@@ -66,6 +78,7 @@ impl KmsReader {
             last: HashMap::new(),
             gpus: HashMap::new(),
             cursors: Vec::new(),
+            watch: PlaneWatch::default(),
         })
     }
 
@@ -80,6 +93,20 @@ impl KmsReader {
             .ok_or_else(|| CaptureError::new(format!("The graphics card {name} went away")))
     }
 
+    fn card_mut(&mut self, name: &str) -> CaptureResult<&mut Card> {
+        self.cards
+            .iter_mut()
+            .find(|c| c.name == name)
+            .ok_or_else(|| CaptureError::new(format!("The graphics card {name} went away")))
+    }
+
+    /// Every plane on the card now.
+    fn planes(&mut self, card: &str) -> CaptureResult<Vec<Plane>> {
+        self.card_mut(card)?
+            .planes()
+            .map_err(|e| CaptureError::new(format!("Cannot list planes: {e}")))
+    }
+
     fn display(&mut self, id: &str) -> CaptureResult<KmsDisplay> {
         if let Some(display) = self.displays.iter().find(|d| d.id == id) {
             return Ok(display.clone());
@@ -92,21 +119,28 @@ impl KmsReader {
             .ok_or_else(|| CaptureError::new(format!("The display {id} is off")))
     }
 
-    /// Reads `crop` of a framebuffer: mapped when linear, through the GPU
-    /// otherwise.
-    fn read(&mut self, card: &str, fb: &Framebuffer, crop: Rect) -> CaptureResult<Frame> {
-        if fb.linear() && convert::bytes_per_pixel(fb.info.format).is_some() {
-            let (fd, offset, pitch) = &fb.planes[0];
-            let mapping = Mapping::new(fd.as_fd())
-                .map_err(|e| CaptureError::new(format!("Cannot map the framebuffer: {e}")))?;
-            let layout = BufferLayout {
-                format: fb.info.format,
-                pitch: *pitch,
-                offset: *offset,
-                width: fb.info.width,
-                height: fb.info.height,
-            };
-            return convert::convert(mapping.bytes(), &layout, crop).map_err(CaptureError::new);
+    /// The layers drawn into one `width` × `height` frame: on the CPU when
+    /// every framebuffer is linear in a format it reads, else all of them
+    /// on the GPU.
+    fn compose(
+        &mut self,
+        card: &str,
+        (width, height): (u32, u32),
+        layers: &[(Framebuffer, Placement)],
+    ) -> CaptureResult<Frame> {
+        let cpu = layers
+            .iter()
+            .all(|(fb, _)| fb.linear() && convert::bytes_per_pixel(fb.info.format).is_some());
+        if cpu {
+            let mut drawn = Vec::with_capacity(layers.len());
+            for (fb, placement) in layers {
+                drawn.push(CpuLayer {
+                    placement: *placement,
+                    pixels: read_linear(fb, placement.source_box())?,
+                    alpha_channel: convert::has_alpha(fb.info.format),
+                });
+            }
+            return Ok(compose::compose_cpu(width, height, drawn));
         }
         let render_node = self.card(card)?.render_node();
         let gpu = self
@@ -121,28 +155,74 @@ impl KmsReader {
                 "The screen uses a tiled buffer and EGL is not available: {e}"
             ))
         })?;
-        let planes = fb.dma();
-        gpu.read(
-            &DmaBuffer {
-                width: fb.info.width,
-                height: fb.info.height,
-                format: fb.info.format,
-                modifier: fb.info.modifier.unwrap_or(MOD_INVALID),
-                planes: &planes,
-            },
-            crop,
-        )
-        .map_err(CaptureError::new)
+        let planes: Vec<Vec<DmaPlane<'_>>> = layers.iter().map(|(fb, _)| fb.dma()).collect();
+        let buffers: Vec<(DmaBuffer<'_>, Placement)> = layers
+            .iter()
+            .zip(&planes)
+            .map(|((fb, placement), planes)| {
+                (
+                    DmaBuffer {
+                        width: fb.info.width,
+                        height: fb.info.height,
+                        format: fb.info.format,
+                        modifier: fb.info.modifier.unwrap_or(MOD_INVALID),
+                        planes,
+                    },
+                    *placement,
+                )
+            })
+            .collect();
+        gpu.compose(width, height, &buffers)
+            .map_err(CaptureError::new)
+    }
+
+    /// What `crtc` scans out now.
+    fn scanout(&mut self, display: &KmsDisplay, crtc: &super::Crtc) -> CaptureResult<Scanout> {
+        let planes = self.planes(&display.card)?;
+        let found = compose::layers(crtc, &planes);
+        let mut layers = Vec::with_capacity(found.len());
+        for layer in &found {
+            let fb = self.card(&display.card)?.framebuffer(layer.fb_id)?;
+            let placement =
+                Placement::new(layer, fb.info.width, fb.info.height).map_err(CaptureError::new)?;
+            layers.push((fb, placement));
+        }
+        Ok(Scanout {
+            planes,
+            found,
+            layers,
+        })
+    }
+
+    /// Logs the planes on `display`'s CRTC when they changed.
+    fn log_planes(
+        &mut self,
+        display: &KmsDisplay,
+        planes: &[Plane],
+        layers: &[(Framebuffer, Placement)],
+        fb_ids: &[u32],
+    ) {
+        let card = self.card(&display.card).ok();
+        let described: Vec<(Plane, Option<FramebufferInfo>)> = planes
+            .iter()
+            .filter(|p| p.crtc_id == display.crtc_id && p.fb_id != 0)
+            .map(|plane| {
+                let info = match fb_ids.iter().position(|id| *id == plane.fb_id) {
+                    Some(index) => Some(layers[index].0.info.clone()),
+                    None => card.and_then(|c| c.framebuffer_info(plane.fb_id).ok()),
+                };
+                (plane.clone(), info)
+            })
+            .collect();
+        if let Some(lines) = self.watch.update(&display.id, &described) {
+            for line in lines {
+                log::info!("{line}");
+            }
+        }
     }
 
     fn cursor_plane(&mut self, display: &KmsDisplay) -> CaptureResult<Option<Plane>> {
-        let card = self
-            .cards
-            .iter_mut()
-            .find(|c| c.name == display.card)
-            .ok_or_else(|| {
-                CaptureError::new(format!("The graphics card {} went away", display.card))
-            })?;
+        let card = self.card_mut(&display.card)?;
         for id in card
             .plane_ids()
             .map_err(|e| CaptureError::new(format!("Cannot list planes: {e}")))?
@@ -169,6 +249,8 @@ impl KmsSource for KmsReader {
         self.displays = displays_from_resources(&all);
         self.last
             .retain(|id, _| self.displays.iter().any(|d| &d.id == id));
+        let displays = &self.displays;
+        self.watch.retain(|id| displays.iter().any(|d| d.id == id));
         Ok(self.displays.clone())
     }
 
@@ -178,17 +260,31 @@ impl KmsSource for KmsReader {
             .card(&display.card)?
             .crtc(display.crtc_id)
             .map_err(|e| CaptureError::new(format!("Cannot read CRTC {}: {e}", display.crtc_id)))?;
-        if crtc.fb_id == 0 || crtc.mode.is_none() {
+        let Some(mode) = crtc.mode.clone() else {
+            return Err(CaptureError::new(format!("The display {id} turned off")));
+        };
+        // A client's framebuffer can be removed between reading the planes
+        // and exporting it (the compositor flipped away from it): read the
+        // planes again rather than fail the frame.
+        let mut attempt = 0;
+        let Scanout {
+            planes,
+            found,
+            layers,
+        } = loop {
+            attempt += 1;
+            match self.scanout(&display, &crtc) {
+                Ok(read) => break read,
+                Err(error) if attempt == 3 => return Err(error),
+                Err(_) => {}
+            }
+        };
+        if found.is_empty() {
             return Err(CaptureError::new(format!("The display {id} turned off")));
         }
-        let fb = self.card(&display.card)?.framebuffer(crtc.fb_id)?;
-        let crop = Rect::new(
-            crtc.x as i32,
-            crtc.y as i32,
-            display.width.min(fb.info.width.saturating_sub(crtc.x)),
-            display.height.min(fb.info.height.saturating_sub(crtc.y)),
-        );
-        let frame = self.read(&display.card, &fb, crop)?;
+        let fb_ids: Vec<u32> = found.iter().map(|l| l.fb_id).collect();
+        self.log_planes(&display, &planes, &layers, &fb_ids);
+        let frame = self.compose(&display.card, (mode.width, mode.height), &layers)?;
         if !full && self.last.get(id) == Some(&frame) {
             return Ok(None);
         }
@@ -236,8 +332,8 @@ impl KmsSource for KmsReader {
         }
         Ok(KmsCursor {
             visible: true,
-            x: plane.crtc_x,
-            y: plane.crtc_y,
+            x: plane.crtc.x,
+            y: plane.crtc.y,
             shape,
         })
     }
@@ -249,6 +345,21 @@ impl KmsSource for KmsReader {
             .find(|c| c.shape == shape)
             .map(|c| c.image.clone()))
     }
+}
+
+/// `crop` of a linear framebuffer as BGRX (or BGRA), through a map.
+fn read_linear(fb: &Framebuffer, crop: Rect) -> CaptureResult<Frame> {
+    let (fd, offset, pitch) = &fb.planes[0];
+    let mapping = Mapping::new(fd.as_fd())
+        .map_err(|e| CaptureError::new(format!("Cannot map the framebuffer: {e}")))?;
+    let layout = BufferLayout {
+        format: fb.info.format,
+        pitch: *pitch,
+        offset: *offset,
+        width: fb.info.width,
+        height: fb.info.height,
+    };
+    convert::convert(mapping.bytes(), &layout, crop).map_err(CaptureError::new)
 }
 
 /// FNV-1a over the size and pixels; never 0, which means "hidden".

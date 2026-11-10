@@ -47,6 +47,11 @@ pub fn bytes_per_pixel(format: u32) -> Option<usize> {
     }
 }
 
+/// True when the format's fourth channel is alpha, not padding.
+pub fn has_alpha(format: u32) -> bool {
+    matches!(format, ARGB8888 | ABGR8888 | ARGB2101010 | ABGR2101010)
+}
+
 /// Where the pixels sit in a mapped buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BufferLayout {
@@ -117,6 +122,7 @@ fn convert_row(format: u32, source: &[u8], target: &mut [u8]) {
         }
         XRGB2101010 | ARGB2101010 | XBGR2101010 | ABGR2101010 => {
             let red_high = matches!(format, XRGB2101010 | ARGB2101010);
+            let alpha = has_alpha(format);
             for (from, to) in source
                 .chunks_exact(4)
                 .zip(target.chunks_exact_mut(BYTES_PER_PIXEL))
@@ -125,7 +131,9 @@ fn convert_row(format: u32, source: &[u8], target: &mut [u8]) {
                 let channel = |shift: u32| ((word >> shift) & 0x3FF) as u16 >> 2;
                 let (high, middle, low) = (channel(20) as u8, channel(10) as u8, channel(0) as u8);
                 let (red, blue) = if red_high { (high, low) } else { (low, high) };
-                to.copy_from_slice(&[blue, middle, red, 0xFF]);
+                // Two bits of alpha, 0 to 3, as 0 to 255.
+                let a = if alpha { (word >> 30) as u8 * 85 } else { 0xFF };
+                to.copy_from_slice(&[blue, middle, red, a]);
             }
         }
         RGB565 => {

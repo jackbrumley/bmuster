@@ -36,13 +36,18 @@ pub(super) const EGL_PLANE_MODIFIERS: [[EglInt; 2]; 4] = [
 ];
 pub(super) const MOD_INVALID: u64 = 0x00ff_ffff_ffff_ffff;
 
+pub(super) const GL_ONE: u32 = 1;
 pub(super) const GL_TRIANGLE_STRIP: u32 = 0x0005;
+pub(super) const GL_ONE_MINUS_SRC_ALPHA: u32 = 0x0303;
+pub(super) const GL_BLEND: u32 = 0x0BE2;
+pub(super) const GL_COLOR_BUFFER_BIT: u32 = 0x4000;
 pub(super) const GL_TEXTURE_2D: u32 = 0x0DE1;
 pub(super) const GL_PACK_ALIGNMENT: u32 = 0x0D05;
 pub(super) const GL_UNSIGNED_BYTE: u32 = 0x1401;
 pub(super) const GL_FLOAT: u32 = 0x1406;
 pub(super) const GL_RGBA: u32 = 0x1908;
 pub(super) const GL_NEAREST: i32 = 0x2600;
+pub(super) const GL_LINEAR: i32 = 0x2601;
 pub(super) const GL_TEXTURE_MAG_FILTER: u32 = 0x2800;
 pub(super) const GL_TEXTURE_MIN_FILTER: u32 = 0x2801;
 pub(super) const GL_TEXTURE_WRAP_S: u32 = 0x2802;
@@ -168,7 +173,12 @@ functions!(Gles {
     gl_delete_program = "glDeleteProgram": fn(u32);
     gl_get_uniform_location = "glGetUniformLocation": fn(u32, *const c_char) -> i32;
     gl_uniform1i = "glUniform1i": fn(i32, i32);
-    gl_uniform4f = "glUniform4f": fn(i32, f32, f32, f32, f32);
+    gl_uniform1f = "glUniform1f": fn(i32, f32);
+    gl_clear_color = "glClearColor": fn(f32, f32, f32, f32);
+    gl_clear = "glClear": fn(u32);
+    gl_enable = "glEnable": fn(u32);
+    gl_disable = "glDisable": fn(u32);
+    gl_blend_func = "glBlendFunc": fn(u32, u32);
     gl_vertex_attrib_pointer = "glVertexAttribPointer": fn(u32, i32, u32, u8, i32, *const c_void);
     gl_enable_vertex_attrib_array = "glEnableVertexAttribArray": fn(u32);
     gl_active_texture = "glActiveTexture": fn(u32);
