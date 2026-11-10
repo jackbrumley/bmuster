@@ -20,6 +20,8 @@
 mod denied;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod tray;
 use denied::Denied;
 #[cfg(windows)]
 pub mod windows;

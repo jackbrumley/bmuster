@@ -1,6 +1,6 @@
 # SPEC-AGENT-TRAY: Visible installation and local management
 
-**Status:** Implementation built for v0.3.0 candidate, 2026-11-08. Native Linux and Windows validation remains outstanding.
+**Status:** Implementation built for v0.3.0 candidate, 2026-11-08. Native Linux and Windows validation remains outstanding. On Linux, SPEC-TRAY-SESSIONS now has the agent start the helper in desktops already signed in and keep the shortcuts current at every start, replacing "self-update must not claim to install them" below.
 
 ## Security decision for review
 

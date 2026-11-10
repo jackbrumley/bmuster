@@ -189,6 +189,9 @@ pub fn run(
     // Installs from before SPEC-SESSION-UNITS Version 3 move to /opt.
     #[cfg(target_os = "linux")]
     crate::move_to_opt::start(&options.data_dir, options.launched, sessions.clone());
+    // The tray in desktops already signed in (SPEC-TRAY-SESSIONS).
+    #[cfg(target_os = "linux")]
+    crate::tray::starter::start(&options.data_dir, options.launched, Arc::clone(&stop));
     let socket_thread = {
         let session = Arc::clone(&session);
         let stop = Arc::clone(&stop);

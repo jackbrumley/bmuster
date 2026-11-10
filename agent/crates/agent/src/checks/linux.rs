@@ -88,6 +88,11 @@ pub fn checks() -> Vec<Check> {
             run: portal,
         },
         Check {
+            id: "tray",
+            title: "Tray icon in each signed-in desktop",
+            run: super::tray::tray,
+        },
+        Check {
             id: "journal",
             title: "Fixed journal query",
             run: journal,
@@ -494,7 +499,7 @@ fn x11_display(_: &Context) -> Outcome {
 const PORTAL_NAME: &str = "org.freedesktop.portal.Desktop";
 
 /// `busctl` on `uid`'s session bus, as that user.
-fn bus_names(uid: u32, method: &str) -> Result<String, String> {
+pub(super) fn bus_names(uid: u32, method: &str) -> Result<String, String> {
     use std::os::unix::fs::MetadataExt as _;
     use std::os::unix::process::CommandExt as _;
     let runtime = format!("/run/user/{uid}");
@@ -627,6 +632,7 @@ pub mod tests {
                 "uinput",
                 "x11-display",
                 "portal",
+                "tray",
                 "journal",
                 "audit",
                 "stay-awake"

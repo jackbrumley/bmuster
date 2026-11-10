@@ -25,6 +25,7 @@ The agent runs a fixed set of **checks** that each try one capability for real, 
 | `uinput`            | Opens `/dev/uinput` and creates and destroys a device with no keys or buttons (it can never type or click).                                                                             |
 | `x11-display`       | On an X11 screen: connects with the found Xauthority and reads the root window size.                                                                                                    |
 | `portal`            | On a Wayland desktop: checks the user's session bus has `org.freedesktop.portal.Desktop` (no portal session).                                                                           |
+| `tray`              | For each person at a graphical session: the autostart entry starts the current program, their tray helper runs, and their bus has a StatusNotifierWatcher (SPEC-TRAY-SESSIONS).         |
 | `journal`           | Runs the fixed journal query with `--lines=1`.                                                                                                                                          |
 | `audit`             | Runs the fixed audit query; `pass` with the denial count.                                                                                                                               |
 

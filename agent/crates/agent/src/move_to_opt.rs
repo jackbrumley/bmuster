@@ -43,7 +43,7 @@ const STAGED_UNITS: &str = "staged-units";
 /// How often the worker looks for a moment without sessions to restart.
 const IDLE_POLL: Duration = Duration::from_secs(30);
 
-const INSTALL: &str = "/usr/bin/install";
+pub const INSTALL: &str = "/usr/bin/install";
 const LN: &str = "/usr/bin/ln";
 const SYSTEMCTL: &str = "/usr/bin/systemctl";
 
@@ -55,14 +55,14 @@ pub struct Step {
 }
 
 impl Step {
-    fn new(program: &'static str, args: &[&std::ffi::OsStr]) -> Self {
+    pub fn new(program: &'static str, args: &[&std::ffi::OsStr]) -> Self {
         Self {
             program,
             args: args.iter().map(|arg| arg.to_os_string()).collect(),
         }
     }
 
-    fn describe(&self) -> String {
+    pub fn describe(&self) -> String {
         let args: Vec<String> = self
             .args
             .iter()
@@ -251,9 +251,17 @@ pub fn pending(data_dir: &Path) -> bool {
     crate::paths::is_installed_data_dir(data_dir) && this_runs_from_var_lib()
 }
 
-/// Runs each step with `systemd-run --wait` as its own short unit.
-struct SystemdRunner {
+/// Runs each step with `systemd-run --wait` as its own short unit, named
+/// `bmuster-agent-<purpose>-<pid>-<n>`.
+pub struct SystemdRunner {
+    purpose: &'static str,
     count: u32,
+}
+
+impl SystemdRunner {
+    pub fn new(purpose: &'static str) -> Self {
+        Self { purpose, count: 0 }
+    }
 }
 
 impl Runner for SystemdRunner {
@@ -262,7 +270,8 @@ impl Runner for SystemdRunner {
         let output = Command::new("systemd-run")
             .args(["--quiet", "--wait", "--collect", "--service-type=exec"])
             .arg(format!(
-                "--unit=bmuster-agent-move-{}-{}",
+                "--unit=bmuster-agent-{}-{}-{}",
+                self.purpose,
                 std::process::id(),
                 self.count
             ))
@@ -296,7 +305,7 @@ pub fn start(data_dir: &Path, launched: bool, sessions: Sessions) {
         .name("move to /opt".into())
         .spawn(move || {
             carry_rescue_record(&data_dir);
-            let mut runner = SystemdRunner { count: 0 };
+            let mut runner = SystemdRunner::new("move");
             match move_from_var_lib(&Places::installed(&data_dir), &mut runner) {
                 Ok(_) => log::info!(
                     "Moved the program files to /opt/bmuster; they apply from the next start."

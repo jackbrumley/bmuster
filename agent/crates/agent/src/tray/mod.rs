@@ -1,6 +1,8 @@
 //! User-session shortcuts to authenticated local management.
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "linux")]
+pub mod starter;
 mod status;
 #[cfg(windows)]
 pub mod windows;
@@ -23,8 +25,14 @@ pub fn run(open_only: bool) -> Result<()> {
     if open_only {
         return open_management();
     }
+    // The autostart entry and the agent may both start a helper for the
+    // same person; the second one leaves quietly (SPEC-TRAY-SESSIONS 3).
     #[cfg(target_os = "linux")]
     {
+        let Some(_lock) = linux::single_instance(&linux::runtime_dir())? else {
+            log::info!("Another BMuster tray already runs for this person.");
+            return Ok(());
+        };
         linux::run()
     }
     #[cfg(windows)]
