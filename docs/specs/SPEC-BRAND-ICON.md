@@ -1,6 +1,6 @@
 # SPEC-BRAND-ICON: Light by default, and a light radar icon from one drawing
 
-**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-10 (Jack: "default the whole application to light mode by default unless someone changes the toggle to system, then we can just remember that, or dark mode and we can remember that"; a new icon in the light-mode radar style, "white radar with a couple of dark green dots on it, and a beam that's spinning halfway around", from the approved draft). See "As built" at the end.
+**Status:** `IMPLEMENTED (v0.4.9)` · approved 2026-11-10 (Jack: "default the whole application to light mode by default unless someone changes the toggle to system, then we can just remember that, or dark mode and we can remember that"; a new icon in the light-mode radar style, "white radar with a couple of dark green dots on it, and a beam that's spinning halfway around", from the approved draft). See "As built" at the end.
 
 ## Problem
 

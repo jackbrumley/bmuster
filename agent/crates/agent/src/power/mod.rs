@@ -384,7 +384,7 @@ pub fn start(data_dir: PathBuf) -> Option<std::thread::JoinHandle<()>> {
                 platform_inhibitor(Purpose::Sessions),
                 read_source,
             );
-            run(&mut power, &commands, CHECK_EVERY);
+            run(&mut power, &commands, CHECK_EVERY, sessions::open);
         });
     match started {
         Ok(thread) => Some(thread),
@@ -395,8 +395,15 @@ pub fn start(data_dir: PathBuf) -> Option<std::thread::JoinHandle<()>> {
     }
 }
 
-fn run<I: Inhibit>(power: &mut Power<I>, commands: &Receiver<Command>, every: Duration) {
-    publish(power.tick(sessions::open()));
+/// `open` counts the remote sessions open now (`sessions::open`; a test passes its own, since
+/// the real count is shared by every test in the process).
+fn run<I: Inhibit>(
+    power: &mut Power<I>,
+    commands: &Receiver<Command>,
+    every: Duration,
+    open: impl Fn() -> usize,
+) {
+    publish(power.tick(open()));
     loop {
         match commands.recv_timeout(every) {
             Ok(Command::Policy(on, changed)) => {
@@ -404,8 +411,8 @@ fn run<I: Inhibit>(power: &mut Power<I>, commands: &Receiver<Command>, every: Du
                 publish(power.set_policy(on));
                 let _ = changed.send(was != on);
             }
-            Ok(Command::Sessions) => power.sessions_changed(sessions::open()),
-            Err(RecvTimeoutError::Timeout) => publish(power.tick(sessions::open())),
+            Ok(Command::Sessions) => power.sessions_changed(open()),
+            Err(RecvTimeoutError::Timeout) => publish(power.tick(open())),
             Ok(Command::Stop) | Err(RecvTimeoutError::Disconnected) => {
                 power.stop();
                 publish(power.keeper.apply(false, (power.read)()));
@@ -618,7 +625,7 @@ pub mod tests {
         sender.send(Command::Policy(true, changed.clone())).unwrap();
         sender.send(Command::Policy(true, changed)).unwrap();
         sender.send(Command::Stop).unwrap();
-        run(&mut power, &commands, Duration::from_secs(5));
+        run(&mut power, &commands, Duration::from_secs(5), || 0);
         assert_eq!(
             is_changed.iter().collect::<Vec<_>>(),
             [true, false],

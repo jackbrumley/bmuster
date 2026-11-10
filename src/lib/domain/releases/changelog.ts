@@ -1,6 +1,13 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.9',
+		changes: [
+			'The console starts in light mode. Choosing System or Dark is remembered in that browser.',
+			'A new BMuster icon: a light radar with a sweeping beam, the same everywhere: the browser tab, phone home screens, the console logo, the agent’s local page and the Linux tray.'
+		]
+	},
+	{
 		version: '0.4.8',
 		changes: [
 			'On Linux, the BMuster tray icon now appears for everyone already signed in at a desktop, not only after their next sign-in, and its startup entry always points at the current version.',
