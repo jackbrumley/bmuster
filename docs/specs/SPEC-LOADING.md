@@ -1,6 +1,6 @@
 # SPEC-LOADING: A shared loading overlay with a radar sweep
 
-**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-09 (Jack: "a loading spinner or radar animation … a soft foggy overlay or something modern … use it on things like the update page"). See "As built" at the end.
+**Status:** `IMPLEMENTED (v0.4.5)` · approved 2026-11-09 (Jack: "a loading spinner or radar animation … a soft foggy overlay or something modern … use it on things like the update page"). See "As built" at the end.
 
 ## Problem
 

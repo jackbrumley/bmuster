@@ -1,6 +1,6 @@
 # SPEC-AGENT-LOGS: Agent and server logs, machine reports and read-only diagnostics access
 
-**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-09 (Jack: "go", then "build everything") · second version. Replaces the v0.3.1 on-demand 200-line pull (see "Version 1" at the end). See "As built" at the end.
+**Status:** `IMPLEMENTED (v0.4.1)` · approved 2026-11-09 (Jack: "go", then "build everything") · second version. Replaces the v0.3.1 on-demand 200-line pull (see "Version 1" at the end). See "As built" at the end.
 
 ## Problem
 

@@ -1,6 +1,13 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.8',
+		changes: [
+			'On Linux, the BMuster tray icon now appears for everyone already signed in at a desktop, not only after their next sign-in, and its startup entry always points at the current version.',
+			'A new self-check, “Tray icon in each signed-in desktop”, says for each signed-in person whether the startup entry, the tray helper and a tray to show it in are all there.'
+		]
+	},
+	{
 		version: '0.4.7',
 		changes: [
 			'Connecting to a machine whose screen has gone dark wakes it, and the screen stays on (and does not lock) while you control it. A laptop with its lid closed says so.',

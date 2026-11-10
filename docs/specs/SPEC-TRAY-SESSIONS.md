@@ -1,6 +1,6 @@
 # SPEC-TRAY-SESSIONS: The tray in every signed-in desktop
 
-**Status:** IMPLEMENTED (pending release). Approved by Jack, 2026-11-10. Extends SPEC-AGENT-TRAY.
+**Status:** `IMPLEMENTED (v0.4.8)` · Approved by Jack, 2026-11-10. Extends SPEC-AGENT-TRAY.
 
 **This is security work.** A root service now starts a program inside another person's desktop session. The rules below keep that to one fixed program with fixed arguments, run as that person, never as root, and never more than once per person.
 

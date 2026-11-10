@@ -139,7 +139,7 @@ The SPEC-DIAGNOSTICS checks `systemd-run-pipe` and `terminal-pty` are replaced b
 
 ## Version 3: everything systemd starts lives under /opt
 
-**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-09 (follows from the 0.4.4 native test; Jack: "get what you can done overnight") · security work. O6 (native test on Fedora and Mint) is pending; see As built.
+**Status:** `IMPLEMENTED (v0.4.5)` · approved 2026-11-09 (follows from the 0.4.4 native test; Jack: "get what you can done overnight") · security work. O6 (native test on Fedora and Mint) is pending; see As built.
 
 ### Evidence (Fedora 44, agent 0.4.4)
 

@@ -1,6 +1,6 @@
 # SPEC-STAY-AWAKE: Keep a machine awake while it is on mains power
 
-**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-09 (Jack: "on each machine you can tell it when on AC power don't go to sleep … want that same capability here") · security work. Native tests (an installed Linux agent as root, any Windows run) are pending; see As built.
+**Status:** `IMPLEMENTED (v0.4.5)` · approved 2026-11-09 (Jack: "on each machine you can tell it when on AC power don't go to sleep … want that same capability here") · security work. Native tests (an installed Linux agent as root, any Windows run) are pending; see As built.
 
 ## Problem
 

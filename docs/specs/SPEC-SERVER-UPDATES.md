@@ -1,6 +1,6 @@
 # SPEC-SERVER-UPDATES: Whole-install updates by a root updater, for server and agent
 
-**Status:** `IMPLEMENTED (pending release)` 2026-11-09 · approved 2026-11-09 (Jack: "go", then "build everything") · second version. Replaces the v0.3.0–v0.3.3 application-slot design (see "Version 1" at the end). See "As built" for what was tested natively and what still needs a real root, systemd or Windows run.
+**Status:** `IMPLEMENTED (v0.4.1)` 2026-11-09 · approved 2026-11-09 (Jack: "go", then "build everything") · second version. Replaces the v0.3.0–v0.3.3 application-slot design (see "Version 1" at the end). See "As built" for what was tested natively and what still needs a real root, systemd or Windows run.
 
 ## Problem
 
