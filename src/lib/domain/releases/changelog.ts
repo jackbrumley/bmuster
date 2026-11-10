@@ -1,6 +1,13 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.11',
+		changes: [
+			'On a phone or tablet in full screen, a round floating button replaces the top bar: drag it to either edge and it stays there, and a tap opens the keys, the phone keyboard, touch or trackpad, screens, picture settings and Disconnect.',
+			'Full screen works on iPhone too: where the browser cannot make the page full screen, the desktop fills the window instead.'
+		]
+	},
+	{
 		version: '0.4.10',
 		changes: [
 			'On Linux machines captured directly from the graphics card, windows the desktop draws on a separate hardware layer (as GNOME does for some apps, such as LocalSend) now show in place, instead of missing or stretched across the screen.'
