@@ -1,6 +1,15 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.7',
+		changes: [
+			'Connecting to a machine whose screen has gone dark wakes it, and the screen stays on (and does not lock) while you control it. A laptop with its lid closed says so.',
+			'A machine does not idle-sleep while any remote session is open on it; sleep someone asks for at the machine still works.',
+			'The Keys menu is compact: the everyday shortcuts are small buttons, and More opens the rest, the custom combination and Release all keys.',
+			'While the server updates, the Updates page shows the radar alone; release notes show the newest version, with earlier versions folded away.'
+		]
+	},
+	{
 		version: '0.4.6',
 		changes: [
 			'The remote desktop has a Keys menu at every screen size: Ctrl+Alt+Del, the Windows or Super key, Alt+Tab, Alt+F4, lock, show desktop, Print Screen and more, labelled for the machine’s system, plus any combination you build and Release all keys.',

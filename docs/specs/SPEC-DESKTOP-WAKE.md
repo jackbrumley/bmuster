@@ -1,6 +1,6 @@
 # SPEC-DESKTOP-WAKE: Wake the screen on connect and keep the machine awake while connected
 
-**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-10 (Jack: "surely we should be able to wake it up and remote control it … the screen should sort of come on by itself when we connect and stay awake whilst we're connected"; and "make sure it doesn't go to sleep again either whilst you're connected so that you don't wind up in a spot where you can't do anything") · **security work:** the agent injects input on someone's machine without a viewer asking for each event, and holds off sleep. Native tests on the Fedora laptop and on Windows are pending; see As built.
+**Status:** `IMPLEMENTED (v0.4.7)` · approved 2026-11-10 (Jack: "surely we should be able to wake it up and remote control it … the screen should sort of come on by itself when we connect and stay awake whilst we're connected"; and "make sure it doesn't go to sleep again either whilst you're connected so that you don't wind up in a spot where you can't do anything") · **security work:** the agent injects input on someone's machine without a viewer asking for each event, and holds off sleep. Native tests on the Fedora laptop and on Windows are pending; see As built.
 
 ## Problem
 
