@@ -1,6 +1,6 @@
 # SPEC-DESKTOP-KEYS: A Keys menu for the remote screen
 
-**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-10 (Jack: "We probably will need buttons both on mobile and desktop for things like pressing and submitting Windows keys, potentially submitting Ctrl+Alt+Del, and other keyboard combinations similar to MeshCentral.") · security work (it sends input to another person's computer). See "As built" at the end.
+**Status:** `IMPLEMENTED (v0.4.6)` · approved 2026-11-10 (Jack: "We probably will need buttons both on mobile and desktop for things like pressing and submitting Windows keys, potentially submitting Ctrl+Alt+Del, and other keyboard combinations similar to MeshCentral.") · security work (it sends input to another person's computer). See "As built" at the end.
 
 ## Problem
 

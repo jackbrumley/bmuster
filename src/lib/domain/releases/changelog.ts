@@ -1,6 +1,14 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.6',
+		changes: [
+			'The remote desktop has a Keys menu at every screen size: Ctrl+Alt+Del, the Windows or Super key, Alt+Tab, Alt+F4, lock, show desktop, Print Screen and more, labelled for the machine’s system, plus any combination you build and Release all keys.',
+			'On Linux, Ctrl+Alt+Del asks first, because at a text console it restarts the machine.',
+			'Sessions cut off by a server update or restart are now recorded as ended when the server starts, instead of showing as running for ever.'
+		]
+	},
+	{
 		version: '0.4.5',
 		changes: [
 			'On Linux, the agent’s program files move to /opt/bmuster and its data stays in /var/lib/bmuster, so systemd may start its session helpers on SELinux machines such as Fedora. Installed agents move themselves on their next start.',
