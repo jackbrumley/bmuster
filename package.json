@@ -22,7 +22,7 @@
 		"agent:sign": "node scripts/agent-sign.ts",
 		"admin:reset": "node scripts/admin-reset.ts",
 		"diagnostics": "node scripts/diagnostics.ts",
-		"brand:icons": "node scripts/brand-icons.ts",
+		"icons:generate": "node scripts/icons-generate.ts",
 		"prepare": "svelte-kit sync || echo ''; git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
 		"lint": "eslint .",

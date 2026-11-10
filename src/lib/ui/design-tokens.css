@@ -105,12 +105,6 @@
 	--screen-bg: light-dark(#1b2522, #121a17);
 	--shadow-tint: light-dark(rgba(22, 29, 20, 0.08), rgba(0, 0, 0, 0.45));
 
-	/* The logo is the same in both themes (static/brand/bmuster-logo.svg). */
-	--logo-body: #1b221d;
-	--logo-ring: #3f4a43;
-	--logo-lime: #a3e635;
-	--logo-screen: #f4f7f2;
-
 	/* Shadows (built from the themed tint) */
 	--shadow-card: 0 1px 2px var(--shadow-tint);
 	--shadow-bar: 0 -1px 0 var(--border);

@@ -64,9 +64,10 @@ pre.log { margin: 0; max-height: 26rem; overflow: auto; white-space: pre-wrap; o
 .bar span { display: block; height: 100%; background: var(--brand); }
 "#;
 
-/// The BMuster logo's small version (static/favicon.svg in the server),
-/// inline so the page loads nothing else. Decorative: the heading names it.
-const LOGO: &str = r##"<svg width="32" height="32" viewBox="8 8 240 240" aria-hidden="true"><rect x="8" y="8" width="240" height="240" rx="48" fill="#1b221d"/><circle cx="128" cy="128" r="88" fill="none" stroke="#3f4a43" stroke-width="14"/><path d="M128 128 L128 40 A88 88 0 0 1 204 84 Z" fill="#a3e635" opacity="0.35"/><path d="M128 128 L204 84" stroke="#a3e635" stroke-width="20" stroke-linecap="round"/><circle cx="128" cy="128" r="18" fill="#a3e635"/><rect x="150" y="144" width="56" height="42" rx="8" fill="#f4f7f2"/></svg>"##;
+/// The BMuster logo's small version (SPEC-BRAND-ICON), inline so the page
+/// loads nothing else; `npm run icons:generate` draws it from docs/logo.svg.
+/// Decorative: the heading names it.
+const LOGO: &str = include_str!("../../assets/logo-small.svg");
 
 /// Escapes text for HTML content and quoted attributes.
 pub fn esc(text: &str) -> String {

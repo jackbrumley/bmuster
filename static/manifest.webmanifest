@@ -4,8 +4,8 @@
 	"description": "Remote desktop, terminal and inventory for your machines.",
 	"start_url": "./",
 	"display": "standalone",
-	"background_color": "#0f1411",
-	"theme_color": "#0f1411",
+	"background_color": "#f4f7f2",
+	"theme_color": "#f4f7f2",
 	"icons": [
 		{ "src": "brand/icon-192.png", "sizes": "192x192", "type": "image/png" },
 		{ "src": "brand/icon-512.png", "sizes": "512x512", "type": "image/png" },

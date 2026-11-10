@@ -3,8 +3,10 @@
 	import { IconDeviceDesktop, IconMoon, IconSun } from '@tabler/icons-svelte-runes';
 
 	/**
-	 * System / Light / Dark. The choice is kept in this browser only
-	 * (localStorage `bmuster-theme`); app.html applies it before first paint.
+	 * System / Light / Dark (SPEC-BRAND-ICON). Light is the default; the choice
+	 * is kept in this browser only (localStorage `bmuster-theme`: 'light',
+	 * 'system' or 'dark') and app.html applies it before first paint. System
+	 * sets no `data-theme`, so the page follows the device.
 	 */
 	type Theme = 'system' | 'light' | 'dark';
 
@@ -15,21 +17,35 @@
 		return value === 'light' || value === 'dark' ? value : 'system';
 	}
 
-	let theme = $state<Theme>('system');
+	let theme = $state<Theme>('light');
 
 	onMount(() => {
 		theme = readTheme();
 	});
 
+	/** The browser bar colour follows the choice, as app.html sets it at start. */
+	function applyBarColour(next: Theme): void {
+		for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+			const scheme = meta.dataset['scheme'];
+			if (scheme === undefined) continue;
+			meta.media =
+				next === 'system'
+					? `(prefers-color-scheme: ${scheme})`
+					: scheme === next
+						? 'all'
+						: 'not all';
+		}
+	}
+
 	function choose(next: Theme): void {
 		theme = next;
 		if (next === 'system') {
 			delete document.documentElement.dataset['theme'];
-			localStorage.removeItem(STORAGE_KEY);
 		} else {
 			document.documentElement.dataset['theme'] = next;
-			localStorage.setItem(STORAGE_KEY, next);
 		}
+		localStorage.setItem(STORAGE_KEY, next);
+		applyBarColour(next);
 	}
 
 	const options = [
