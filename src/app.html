@@ -1,16 +1,30 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-		<meta name="theme-color" content="#f4f7f2" media="(prefers-color-scheme: light)" />
-		<meta name="theme-color" content="#0f1411" media="(prefers-color-scheme: dark)" />
+		<meta name="theme-color" content="#f4f7f2" data-scheme="light" />
+		<meta name="theme-color" content="#0f1411" data-scheme="dark" media="not all" />
 		<meta name="text-scale" content="scale" />
 		<script>
-			// Apply the saved theme before first paint (see src/lib/ui/theme-switch.svelte).
+			// Apply the saved theme before first paint (SPEC-BRAND-ICON, see
+			// src/lib/ui/theme-switch.svelte). Light unless the person chose dark, or
+			// system to follow the device; the markup above is already light.
 			try {
 				const theme = localStorage.getItem('bmuster-theme');
-				if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+				const root = document.documentElement;
+				if (theme === 'dark') root.dataset.theme = 'dark';
+				if (theme === 'system') delete root.dataset.theme;
+				const chosen = theme === 'dark' || theme === 'system' ? theme : 'light';
+				for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
+					const scheme = meta.dataset.scheme;
+					meta.media =
+						chosen === 'system'
+							? `(prefers-color-scheme: ${scheme})`
+							: scheme === chosen
+								? 'all'
+								: 'not all';
+				}
 			} catch {}
 		</script>
 		%sveltekit.head%

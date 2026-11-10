@@ -31,10 +31,9 @@ const GLOBAL_CSS_FILES: ReadonlySet<string> = new Set([
 
 /**
  * The folders src/lib/ is grouped into (AGENTS.md §2). It holds no modules of
- * its own; `assets/` holds static files SvelteKit imports (the favicon).
+ * its own.
  */
 const LIB_AREA_FOLDERS: ReadonlySet<string> = new Set([
-	'assets',
 	'domain',
 	'runes',
 	'schemas',

@@ -1,0 +1,33 @@
+<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 256 256">
+	<defs>
+		<clipPath id="disc"><circle cx="128" cy="128" r="92"/></clipPath>
+		<radialGradient id="glow-fill" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#46720e" stop-opacity="0.10"/><stop offset="1" stop-color="#46720e" stop-opacity="0"/></radialGradient>
+	</defs>
+	<rect id="tile" x="4" y="4" width="248" height="248" rx="56" fill="#ffffff" stroke="#161d14" stroke-opacity="0.12" stroke-width="8"/>
+	<g id="sweep" clip-path="url(#disc)">
+		<path d="M128 128 L61.53 61.53 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0640"/>
+		<path d="M128 128 L66.95 56.52 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0654"/>
+		<path d="M128 128 L72.75 51.95 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0669"/>
+		<path d="M128 128 L78.89 47.85 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0683"/>
+		<path d="M128 128 L85.32 44.25 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0698"/>
+		<path d="M128 128 L92.03 41.16 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0712"/>
+		<path d="M128 128 L98.95 38.60 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0726"/>
+		<path d="M128 128 L106.06 36.60 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0741"/>
+		<path d="M128 128 L113.30 35.16 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0755"/>
+		<path d="M128 128 L120.62 34.29 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0770"/>
+		<path d="M128 128 L128.00 34.00 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0784"/>
+		<path d="M128 128 L135.38 34.29 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0798"/>
+		<path d="M128 128 L142.70 35.16 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0813"/>
+		<path d="M128 128 L149.94 36.60 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0827"/>
+		<path d="M128 128 L157.05 38.60 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0842"/>
+		<path d="M128 128 L163.97 41.16 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0856"/>
+		<path d="M128 128 L170.68 44.25 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0870"/>
+		<path d="M128 128 L177.11 47.85 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0885"/>
+		<path d="M128 128 L183.25 51.95 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0899"/>
+		<path d="M128 128 L189.05 56.52 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0914"/>
+	</g>
+	<circle id="ring-outer" cx="128" cy="128" r="92" fill="none" stroke="#657061" stroke-opacity="0.6" stroke-width="14"/>
+	<path id="beam" d="M128 128 L193.05 62.95" stroke="#46720e" stroke-width="20" stroke-linecap="round"/>
+	<circle id="blip" cx="146.13" cy="68.71" r="18" fill="#2f5208"/>
+	<circle id="centre" cx="128" cy="128" r="20" fill="#46720e"/>
+</svg>

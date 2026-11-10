@@ -50,11 +50,14 @@ impl Tray for AgentTray {
         format!("BMuster: {}", self.state)
     }
     fn icon_pixmap(&self) -> Vec<Icon> {
-        vec![Icon {
-            width: 32,
-            height: 32,
-            data: super::icon_pixels(),
-        }]
+        super::ICONS
+            .iter()
+            .map(|(edge, pixels)| Icon {
+                width: *edge,
+                height: *edge,
+                data: pixels.to_vec(),
+            })
+            .collect()
     }
     fn activate(&mut self, _: i32, _: i32) {
         self.action(false);

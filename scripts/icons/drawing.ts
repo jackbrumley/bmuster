@@ -1,0 +1,152 @@
+/**
+ * The text and pixel transforms `npm run icons:generate` applies to the one
+ * source drawing, docs/logo.svg (SPEC-BRAND-ICON). Pure, so the unit tests
+ * can check every committed icon still matches the drawing.
+ */
+export const SOURCE = 'docs/logo.svg';
+
+/** Wedges of the sweep the small version keeps (the ones nearest the beam), and how much it darkens them. */
+const SMALL_SWEEP_WEDGES = 20;
+const SMALL_SWEEP_GAIN = 1.6;
+
+type Attributes = Readonly<Record<string, string>>;
+
+function elementPattern(id: string): RegExp {
+	return id === 'sweep'
+		? /<g id="sweep"[^>]*>[\s\S]*?<\/g>/
+		: new RegExp(`<[a-z]+ id="${id}"[^>]*/>`);
+}
+
+function find(svg: string, id: string): string {
+	const match = elementPattern(id).exec(svg);
+	if (match === null) throw new Error(`${SOURCE} has no element with id "${id}"`);
+	return match[0];
+}
+
+function drop(svg: string, id: string): string {
+	return svg.replace(new RegExp(`\\s*${literal(find(svg, id))}`), '');
+}
+
+function literal(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function setAttributes(element: string, attributes: Attributes): string {
+	let next = element;
+	for (const [name, value] of Object.entries(attributes)) {
+		const pattern = new RegExp(`\\s${name}="[^"]*"`);
+		if (!pattern.test(next)) throw new Error(`${SOURCE}: no ${name} on ${element}`);
+		next = next.replace(pattern, ` ${name}="${value}"`);
+	}
+	return next;
+}
+
+function change(svg: string, id: string, attributes: Attributes): string {
+	const element = find(svg, id);
+	return svg.replace(element, setAttributes(element, attributes));
+}
+
+export function withoutComments(svg: string): string {
+	return svg.replace(/\s*<!--[\s\S]*?-->/g, '');
+}
+
+/** Keeps the wedges nearest the beam (the last ones drawn) and darkens them to read at 16–32px. */
+function shortSweep(svg: string): string {
+	const group = find(svg, 'sweep');
+	const wedges = [...group.matchAll(/<path [^>]*\/>/g)].map((match) => match[0]);
+	if (wedges.length < SMALL_SWEEP_WEDGES) throw new Error(`${SOURCE}: the sweep is too short`);
+	const kept = wedges.slice(-SMALL_SWEEP_WEDGES).map((wedge) => {
+		const opacity = /fill-opacity="([0-9.]+)"/.exec(wedge);
+		if (opacity === null) throw new Error(`${SOURCE}: a sweep wedge has no fill-opacity`);
+		const darker = Math.min(1, Number(opacity[1]) * SMALL_SWEEP_GAIN).toFixed(4);
+		return setAttributes(wedge, { 'fill-opacity': darker });
+	});
+	const opening = group.slice(0, group.indexOf('>') + 1);
+	return svg.replace(group, `${opening}\n\t\t${kept.join('\n\t\t')}\n\t</g>`);
+}
+
+export function small(full: string): string {
+	let svg = full;
+	for (const id of ['glow', 'ring-inner', 'blip-halo', 'blip-faint']) svg = drop(svg, id);
+	svg = change(svg, 'tile', { 'stroke-width': '8' });
+	svg = change(svg, 'ring-outer', { 'stroke-width': '14', 'stroke-opacity': '0.6' });
+	svg = change(svg, 'beam', { 'stroke-width': '20' });
+	svg = change(svg, 'centre', { r: '20' });
+	svg = change(svg, 'blip', { r: '18' });
+	return shortSweep(svg);
+}
+
+/** iOS rounds the corners itself, so its icon is the tile filling the square. */
+export function fullBleed(svg: string): string {
+	return change(svg, 'tile', {
+		x: '0',
+		y: '0',
+		width: '256',
+		height: '256',
+		rx: '0',
+		'stroke-width': '0'
+	});
+}
+
+function sized(svg: string, size: number): string {
+	return svg.replace(/^<svg [^>]*>/, (root) =>
+		setAttributes(root, { width: String(size), height: String(size) })
+	);
+}
+
+/** For drawing inside a page beside the wordmark: decorative, so no title. */
+function decorative(svg: string, size: number): string {
+	return sized(svg, size)
+		.replace(/\s*<title>[^<]*<\/title>/, '')
+		.replace(/^<svg /, '<svg aria-hidden="true" ');
+}
+
+export function dataUri(svg: string): string {
+	return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+}
+
+/** StatusNotifierItem's pixmap format: ARGB32, network byte order. */
+export function argb(rgba: Buffer): Buffer {
+	const out = Buffer.alloc(rgba.length);
+	for (let i = 0; i < rgba.length; i += 4) {
+		out[i] = rgba[i + 3] ?? 0;
+		out[i + 1] = rgba[i] ?? 0;
+		out[i + 2] = rgba[i + 1] ?? 0;
+		out[i + 3] = rgba[i + 2] ?? 0;
+	}
+	return out;
+}
+
+/**
+ * Every generated SVG file and its contents, from the source drawing's text.
+ * The error page is not here: it carries the full mark as a data URI.
+ */
+export function svgFiles(sourceText: string): readonly (readonly [string, string])[] {
+	const source = withoutComments(sourceText);
+	const smallSvg = small(source);
+	return [
+		['static/brand/bmuster-logo.svg', source],
+		['static/favicon.svg', sized(smallSvg, 32)],
+		['docs/favicon.svg', sized(smallSvg, 32)],
+		['agent/crates/agent/assets/logo-small.svg', decorative(smallSvg, 32)]
+	];
+}
+
+/** The error page's logo, the full mark at 48px. */
+export function errorPageLogo(sourceText: string): string {
+	return dataUri(sized(withoutComments(sourceText), 48));
+}
+
+/** Pixel icons: file, which drawing, edge in pixels. */
+export const PNG_ICONS = [
+	{ file: 'static/brand/icon-192.png', drawing: 'full', size: 192 },
+	{ file: 'static/brand/icon-512.png', drawing: 'full', size: 512 },
+	{ file: 'static/apple-touch-icon.png', drawing: 'full-bleed', size: 180 }
+] as const;
+
+/** The agent's tray icons (raw ARGB), all the small drawing. */
+export const TRAY_SIZES = [22, 32, 48] as const;
+
+export function trayFile(size: number): string {
+	return `agent/crates/agent/assets/tray-${String(size)}.argb`;
+}

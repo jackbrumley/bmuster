@@ -62,23 +62,27 @@ fn copy_url(clipboard: &mut Option<arboard::Clipboard>) -> Result<()> {
     }
 }
 
-/// A small radar, in StatusNotifierItem's network-order ARGB format.
+/// The small BMuster mark (SPEC-BRAND-ICON) at each size the tray offers, as
+/// (edge in pixels, StatusNotifierItem's network-order ARGB pixels).
+/// `npm run icons:generate` draws them from docs/logo.svg.
 #[cfg(target_os = "linux")]
-fn icon_pixels() -> Vec<u8> {
-    let mut pixels = vec![0; 32 * 32 * 4];
-    for y in 0..32i32 {
-        for x in 0..32i32 {
-            let dx = x - 16;
-            let dy = y - 16;
-            let radius = dx * dx + dy * dy;
-            let ring = (156..=196).contains(&radius) || (42..=64).contains(&radius);
-            let sweep = dx >= 0 && dy == -dx && radius <= 196;
-            let centre = radius <= 5;
-            if ring || sweep || centre {
-                let i = ((y * 32 + x) * 4) as usize;
-                pixels[i..i + 4].copy_from_slice(&[255, 36, 164, 210]);
-            }
+const ICONS: [(i32, &[u8]); 3] = [
+    (22, include_bytes!("../../assets/tray-22.argb")),
+    (32, include_bytes!("../../assets/tray-32.argb")),
+    (48, include_bytes!("../../assets/tray-48.argb")),
+];
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    #[test]
+    fn each_tray_icon_is_square_argb_of_its_size() {
+        let sizes: Vec<i32> = super::ICONS.iter().map(|(edge, _)| *edge).collect();
+        assert_eq!(sizes, [22, 32, 48]);
+        for (edge, pixels) in super::ICONS {
+            assert_eq!(pixels.len(), (edge * edge * 4) as usize, "{edge}px icon");
+            // The tile's centre is opaque: ARGB starts with alpha.
+            let centre = ((edge / 2 * edge + edge / 2) * 4) as usize;
+            assert_eq!(pixels[centre], 255, "{edge}px icon centre alpha");
         }
     }
-    pixels
 }

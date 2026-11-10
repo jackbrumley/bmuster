@@ -1,11 +1,66 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="232" height="232" viewBox="12 12 232 232">
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+	<!--
+		The BMuster mark, "Radar" (SPEC-BRAND-ICON): the one source drawing. Every
+		icon file is generated from it by `npm run icons:generate`
+		(scripts/icons-generate.ts), which also draws the small version for 32px
+		and below by dropping and thickening the elements named by id here.
+		Edit this file, run the command and commit what it writes.
+	-->
 	<title>BMuster</title>
-	<rect x="12" y="12" width="232" height="232" rx="44" fill="#1b221d"/>
-	<g fill="none" stroke="#3f4a43" stroke-width="8"><circle cx="128" cy="128" r="88"/><circle cx="128" cy="128" r="56"/></g>
-	<path d="M128 128 L128 40 A88 88 0 0 1 204 84 Z" fill="#a3e635" opacity="0.35"/>
-	<path d="M128 128 L204 84" stroke="#a3e635" stroke-width="12" stroke-linecap="round"/>
-	<circle cx="128" cy="128" r="12" fill="#a3e635"/>
-	<rect x="160" y="148" width="40" height="30" rx="6" fill="#f4f7f2"/>
-	<circle cx="84" cy="96" r="9" fill="#a3e635"/>
-	<circle cx="92" cy="176" r="9" fill="#a3e635"/>
+	<defs>
+		<clipPath id="disc"><circle cx="128" cy="128" r="92"/></clipPath>
+		<radialGradient id="glow-fill" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#46720e" stop-opacity="0.10"/><stop offset="1" stop-color="#46720e" stop-opacity="0"/></radialGradient>
+	</defs>
+	<rect id="tile" x="4" y="4" width="248" height="248" rx="56" fill="#ffffff" stroke="#161d14" stroke-opacity="0.12" stroke-width="3"/>
+	<circle id="glow" cx="128" cy="128" r="92" fill="url(#glow-fill)"/>
+	<!-- The sweep: wedges that all end at the beam, so the overlap fades over half a turn. -->
+	<g id="sweep" clip-path="url(#disc)">
+		<path d="M128 128 L61.53 194.47 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0220"/>
+		<path d="M128 128 L56.52 189.05 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0229"/>
+		<path d="M128 128 L51.95 183.25 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0238"/>
+		<path d="M128 128 L47.85 177.11 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0247"/>
+		<path d="M128 128 L44.25 170.68 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0256"/>
+		<path d="M128 128 L41.16 163.97 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0265"/>
+		<path d="M128 128 L38.60 157.05 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0274"/>
+		<path d="M128 128 L36.60 149.94 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0283"/>
+		<path d="M128 128 L35.16 142.70 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0292"/>
+		<path d="M128 128 L34.29 135.38 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0301"/>
+		<path d="M128 128 L34.00 128.00 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0310"/>
+		<path d="M128 128 L34.29 120.62 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0319"/>
+		<path d="M128 128 L35.16 113.30 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0328"/>
+		<path d="M128 128 L36.60 106.06 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0337"/>
+		<path d="M128 128 L38.60 98.95 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0346"/>
+		<path d="M128 128 L41.16 92.03 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0355"/>
+		<path d="M128 128 L44.25 85.32 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0364"/>
+		<path d="M128 128 L47.85 78.89 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0373"/>
+		<path d="M128 128 L51.95 72.75 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0382"/>
+		<path d="M128 128 L56.52 66.95 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0391"/>
+		<path d="M128 128 L61.53 61.53 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0400"/>
+		<path d="M128 128 L66.95 56.52 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0409"/>
+		<path d="M128 128 L72.75 51.95 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0418"/>
+		<path d="M128 128 L78.89 47.85 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0427"/>
+		<path d="M128 128 L85.32 44.25 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0436"/>
+		<path d="M128 128 L92.03 41.16 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0445"/>
+		<path d="M128 128 L98.95 38.60 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0454"/>
+		<path d="M128 128 L106.06 36.60 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0463"/>
+		<path d="M128 128 L113.30 35.16 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0472"/>
+		<path d="M128 128 L120.62 34.29 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0481"/>
+		<path d="M128 128 L128.00 34.00 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0490"/>
+		<path d="M128 128 L135.38 34.29 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0499"/>
+		<path d="M128 128 L142.70 35.16 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0508"/>
+		<path d="M128 128 L149.94 36.60 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0517"/>
+		<path d="M128 128 L157.05 38.60 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0526"/>
+		<path d="M128 128 L163.97 41.16 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0535"/>
+		<path d="M128 128 L170.68 44.25 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0544"/>
+		<path d="M128 128 L177.11 47.85 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0553"/>
+		<path d="M128 128 L183.25 51.95 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0562"/>
+		<path d="M128 128 L189.05 56.52 A94 94 0 0 1 194.47 61.53 Z" fill="#46720e" fill-opacity="0.0571"/>
+	</g>
+	<circle id="ring-outer" cx="128" cy="128" r="92" fill="none" stroke="#657061" stroke-opacity="0.45" stroke-width="6"/>
+	<circle id="ring-inner" cx="128" cy="128" r="56" fill="none" stroke="#657061" stroke-opacity="0.28" stroke-width="5"/>
+	<path id="beam" d="M128 128 L193.05 62.95" stroke="#46720e" stroke-width="9" stroke-linecap="round"/>
+	<circle id="blip-halo" cx="146.13" cy="68.71" r="16" fill="#2f5208" fill-opacity="0.15"/>
+	<circle id="blip" cx="146.13" cy="68.71" r="9" fill="#2f5208"/>
+	<circle id="blip-faint" cx="55.50" cy="94.19" r="6.5" fill="#2f5208" fill-opacity="0.55"/>
+	<circle id="centre" cx="128" cy="128" r="12" fill="#46720e"/>
 </svg>
