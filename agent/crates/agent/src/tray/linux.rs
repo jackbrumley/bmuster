@@ -109,17 +109,22 @@ pub fn run() -> Result<()> {
 
 /// The autostart entry's path, which the `tray` check reads.
 pub const AUTOSTART: &str = "/etc/xdg/autostart/bmuster-agent.desktop";
+/// Where the desktop looks up `Icon=bmuster`.
+const APP_ICON: &str = "/usr/share/icons/hicolor/scalable/apps/bmuster.svg";
+
 /// The staging folder for rewritten shortcuts, under the data folder.
 const STAGED_SHORTCUTS: &str = "staged-shortcuts";
 
-/// The autostart entry and the applications-menu entry, each with the text
+/// The autostart entry, the applications-menu entry and their icon, each with the text
 /// this version writes: both start the current program under /opt
 /// (SPEC-TRAY-SESSIONS 5).
-pub fn shortcuts() -> [(&'static str, String); 2] {
+pub fn shortcuts() -> [(&'static str, String); 3] {
     let program = crate::paths::CURRENT_PROGRAM;
     [
-        (AUTOSTART, format!("[Desktop Entry]\nType=Application\nName=BMuster Agent\nComment=Show the BMuster connection status\nExec={program} tray\nIcon=network-workgroup\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")),
-        ("/usr/share/applications/bmuster-agent.desktop", format!("[Desktop Entry]\nType=Application\nName=BMuster\nComment=Open this computer's BMuster management page\nExec={program} tray --open\nIcon=network-workgroup\nTerminal=false\nCategories=System;RemoteAccess;\n")),
+        (AUTOSTART, format!("[Desktop Entry]\nType=Application\nName=BMuster Agent\nComment=Show the BMuster connection status\nExec={program} tray\nIcon=bmuster\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")),
+        ("/usr/share/applications/bmuster-agent.desktop", format!("[Desktop Entry]\nType=Application\nName=BMuster\nComment=Open this computer's BMuster management page\nExec={program} tray --open\nIcon=bmuster\nTerminal=false\nCategories=System;RemoteAccess;\n")),
+        // The radar, so the menu and autostart entries show BMuster's own icon.
+        (APP_ICON, include_str!("../../assets/bmuster.svg").to_string()),
     ]
 }
 

@@ -128,7 +128,9 @@ export function svgFiles(sourceText: string): readonly (readonly [string, string
 		['static/brand/bmuster-logo.svg', source],
 		['static/favicon.svg', sized(smallSvg, 32)],
 		['docs/favicon.svg', sized(smallSvg, 32)],
-		['agent/crates/agent/assets/logo-small.svg', decorative(smallSvg, 32)]
+		['agent/crates/agent/assets/logo-small.svg', decorative(smallSvg, 32)],
+		// The Linux applications-menu and autostart icon (hicolor scalable).
+		['agent/crates/agent/assets/bmuster.svg', source]
 	];
 }
 

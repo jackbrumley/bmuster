@@ -43,3 +43,5 @@ None: the icon and theme are presentation only. The tray change swaps embedded p
 - **Removed:** `scripts/brand-icons.ts` and `npm run brand:icons` (replaced), `src/lib/assets/favicon.svg` (an unused Svelte logo) and the hygiene layout's `assets` folder.
 - **Windows tray** still shows the stock information icon: it uses no `.ico`, and building a custom icon needs Windows-only code that could not be compiled here. A follow-up can load the same pixels with `CreateIcon`.
 - **Linux `.desktop` launchers** still name the stock `network-workgroup` icon; installing an icon file is installer work for a follow-up.
+
+- **Linux menu icon (added for 0.4.12).** `npm run icons:generate` also writes `agent/crates/agent/assets/bmuster.svg` (the full mark). The agent installs it as `/usr/share/icons/hicolor/scalable/apps/bmuster.svg` with the autostart and applications-menu entries (rewritten on every start when different, removed at uninstall), and both entries say `Icon=bmuster` instead of the stock `network-workgroup`.
