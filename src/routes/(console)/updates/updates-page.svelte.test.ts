@@ -1,3 +1,4 @@
+import { CHANGELOG } from '#lib/domain/releases/changelog.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import ConfirmDialog from '#lib/ui/confirm-dialog.svelte';
@@ -289,14 +290,18 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		const dialog = screen.getByRole('dialog', { name: 'Update BMuster to 0.3.2?' });
 		await dialog.getByRole('button', { name: 'Update now' }).click();
 
+		// The radar alone: the words are the status a screen reader hears, not shown.
+		await expect.element(screen.getByRole('status')).toBeVisible();
 		await expect
 			.element(screen.getByRole('status').getByText('Updating BMuster to 0.3.2'))
-			.toBeVisible();
+			.toBeInTheDocument();
 		await expect
 			.element(screen.getByRole('status').getByText('Waiting for the server to come back'))
-			.toBeVisible();
-		await expect.element(screen.getByText('Reconnecting automatically')).toBeVisible();
-		await expect.element(screen.getByText(/host-not-found error/)).toBeVisible();
+			.toBeInTheDocument();
+		await expect
+			.element(screen.getByRole('heading', { name: 'Server', exact: true }))
+			.not.toBeInTheDocument();
+		await expect.element(screen.getByText('Reconnecting automatically')).not.toBeInTheDocument();
 		await expect.element(screen.getByRole('heading', { name: 'Roll-out' })).not.toBeInTheDocument();
 		await vi.waitFor(() => {
 			expect(fetch.mock.calls.some(([url]) => url === '/api/server-updates')).toBe(true);
@@ -374,7 +379,7 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 			.toBeVisible();
 	});
 
-	it("L3: veils the server panel with the updater's step, and lifts it when it rolls back", async () => {
+	it("L3: shows the radar alone with the updater's step for screen readers, and lifts it when it rolls back", async () => {
 		serveUpdate([
 			step('downloading', 'Downloading and checking BMuster 0.3.2'),
 			step('rolled-back', 'BMuster 0.3.2 did not start; 0.3.1 is back')
@@ -383,13 +388,17 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		const screen = await renderPage({ server: SERVER_RELEASE });
 		await startUpdate(screen);
 		const veil = screen.getByRole('status');
-		await expect.element(veil.getByText('Updating BMuster to 0.3.2')).toBeVisible();
-		await expect.element(veil.getByText('Downloading and checking BMuster 0.3.2')).toBeVisible();
-		// The server panel stays in place under the veil, busy and out of reach.
+		await expect.element(veil.getByText('Updating BMuster to 0.3.2')).toBeInTheDocument();
+		await expect
+			.element(veil.getByText('Downloading and checking BMuster 0.3.2'))
+			.toBeInTheDocument();
+		// Nothing else shows while it updates: no server panel, release notes or roll-out.
 		await expect
 			.element(screen.getByRole('heading', { name: 'Server', exact: true }))
-			.toBeInTheDocument();
-		expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+			.not.toBeInTheDocument();
+		await expect
+			.element(screen.getByRole('heading', { name: 'Release notes' }))
+			.not.toBeInTheDocument();
 		await vi.waitFor(() => {
 			expect(refreshAll).toHaveBeenCalled();
 		}, 5000);
@@ -408,11 +417,25 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		await startUpdate(screen);
 		await expect
 			.element(screen.getByRole('status').getByText('Starting BMuster 0.3.2'))
-			.toBeVisible();
+			.toBeInTheDocument();
 		await vi.waitFor(() => {
 			expect(reloadPage).toHaveBeenCalledOnce();
 		}, 5000);
 		await expect.element(screen.getByText('Updating BMuster to 0.3.2')).not.toBeInTheDocument();
+	});
+
+	it('shows the newest release notes and folds the earlier versions away', async () => {
+		const [latest, previous] = CHANGELOG;
+		if (latest === undefined || previous === undefined) throw new Error('two releases expected');
+		const screen = await renderPage({});
+		await expect
+			.element(screen.getByRole('heading', { name: `BMuster ${latest.version}`, exact: true }))
+			.toBeVisible();
+		// Folded away, the older notes are not in the accessibility tree, so find them by text.
+		const older = screen.getByText(`BMuster ${previous.version}`, { exact: true });
+		await expect.element(older).not.toBeVisible();
+		await screen.getByText(`Earlier versions (${String(CHANGELOG.length - 1)})`).click();
+		await expect.element(older).toBeVisible();
 	});
 
 	it('L4: Check for updates shows a small radar in the button while it checks', async () => {

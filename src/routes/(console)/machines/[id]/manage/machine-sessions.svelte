@@ -109,7 +109,12 @@
 	</ListRow>
 {/snippet}
 
-<LoadingVeil active={sessions === undefined} title="Reading the sessions" detail={undefined}>
+<LoadingVeil
+	active={sessions === undefined}
+	title="Reading the sessions"
+	detail={undefined}
+	caption="shown"
+>
 	<ListCard
 		heading="Sessions"
 		actions={undefined}

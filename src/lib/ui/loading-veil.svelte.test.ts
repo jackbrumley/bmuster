@@ -17,6 +17,7 @@ describe('LoadingVeil (SPEC-LOADING L2)', () => {
 			active: true,
 			title: 'Updating BMuster to 0.4.5',
 			detail: 'Waiting for the server to come back',
+			caption: 'shown',
 			children: covered
 		});
 		const status = screen.getByRole('status');
@@ -38,6 +39,7 @@ describe('LoadingVeil (SPEC-LOADING L2)', () => {
 			active: true,
 			title: 'Reading the drives',
 			detail: undefined,
+			caption: 'shown',
 			children: undefined
 		});
 		const status = screen.getByRole('status');
@@ -50,6 +52,7 @@ describe('LoadingVeil (SPEC-LOADING L2)', () => {
 			active: true,
 			title: 'Reading the checks',
 			detail: undefined,
+			caption: 'shown',
 			children: covered
 		});
 		await expect.element(screen.getByRole('status')).toBeVisible();
@@ -64,6 +67,7 @@ describe('LoadingVeil (SPEC-LOADING L2)', () => {
 			active: true,
 			title: 'Reading the checks',
 			detail: undefined,
+			caption: 'shown',
 			children: covered
 		});
 		await screen.rerender({ active: false });

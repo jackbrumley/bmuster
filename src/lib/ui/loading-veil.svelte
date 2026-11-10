@@ -16,16 +16,21 @@
 	 *   load ends (a folder being read): the veil is the whole block.
 	 * - The veil and the block share one grid cell, so the block is at least
 	 *   as tall as the veil's content and nothing shifts when it fades in.
+	 * - `caption: 'hidden'` shows the radar alone, for a wait that needs no
+	 *   words (the server updating). The title and detail stay the status a
+	 *   screen reader hears; with nothing beneath, there is no fog either.
 	 */
 	let {
 		active,
 		title,
 		detail,
+		caption,
 		children
 	}: {
 		active: boolean;
 		title: string;
 		detail: string | undefined;
+		caption: 'shown' | 'hidden';
 		children: Snippet | undefined;
 	} = $props();
 
@@ -56,6 +61,7 @@
 			class="veil"
 			class:shown
 			class:alone={children === undefined}
+			class:bare={caption === 'hidden' && children === undefined}
 			role="status"
 			aria-live="polite"
 			out:fade={{ duration: 240 }}
@@ -63,9 +69,9 @@
 			<span class="haze" aria-hidden="true"></span>
 			<div class="message">
 				<RadarSpinner size="large" />
-				<p class="title">{title}</p>
+				<p class="title" class:unseen={caption === 'hidden'}>{title}</p>
 				{#if detail !== undefined}
-					<p class="detail">{detail}</p>
+					<p class="detail" class:unseen={caption === 'hidden'}>{detail}</p>
 				{/if}
 			</div>
 		</div>
@@ -115,6 +121,28 @@
 	/* With nothing beneath, the fog is the block: a quieter surface, no blur to show. */
 	.veil.alone {
 		background: color-mix(in oklab, var(--surface-muted) 55%, transparent);
+	}
+
+	/* The radar alone, on the page itself: no fog, room to breathe. */
+	.veil.bare {
+		padding: var(--space-12) var(--space-4);
+		background: none;
+		-webkit-backdrop-filter: none;
+		backdrop-filter: none;
+	}
+
+	.veil.bare .haze {
+		display: none;
+	}
+
+	/* Heard by screen readers, not shown. */
+	.unseen {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 
 	/*

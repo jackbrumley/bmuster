@@ -97,6 +97,9 @@
 		});
 	}
 
+	/** The newest release's notes show; older ones fold away. */
+	const [latest, ...earlier] = CHANGELOG;
+
 	const earlyCount = $derived(
 		`${String(data.earlyGroup.machines)} ${data.earlyGroup.machines === 1 ? 'machine' : 'machines'}`
 	);
@@ -132,31 +135,38 @@
 	actions={undefined}
 />
 
-<LoadingVeil
-	active={restart.kind === 'restarting'}
-	title={restart.kind === 'restarting' ? `Updating BMuster to ${restart.version}` : ''}
-	detail={restart.kind === 'restarting' ? restart.detail : undefined}
->
-	<ServerUpdatePanel view={data.server} onRestarting={onServerRestarting} />
-</LoadingVeil>
-
 {#if restart.kind === 'restarting'}
-	<Notice tone="info" title="Reconnecting automatically">
-		<p>
-			BMuster is installing version {restart.version} (the whole server, including Node) and restarting.
-			Nginx may briefly show an unavailable or host-not-found error while the server returns. Leave this
-			tab open; it will reconnect and reload the page when the update finishes, rolls back or stops.
-		</p>
-	</Notice>
+	<!-- The radar alone while the server updates; the reload follows when it is back (SPEC-LOADING). -->
+	<LoadingVeil
+		active={true}
+		title={`Updating BMuster to ${restart.version}`}
+		detail={restart.detail}
+		caption="hidden"
+		children={undefined}
+	/>
 {:else}
+	<ServerUpdatePanel view={data.server} onRestarting={onServerRestarting} />
+
 	<Panel heading="Release notes" actions={undefined} tone="normal" padding="normal">
-		{#each CHANGELOG as release (release.version)}
-			<h2>BMuster {release.version}</h2>
-			<ul>
-				{#each release.changes as change (change)}<li>{change}</li>{/each}
-			</ul>
-		{/each}
+		{#if latest !== undefined}
+			{@render releaseNotes(latest)}
+		{/if}
+		{#if earlier.length > 0}
+			<details class="earlier">
+				<summary>Earlier versions ({earlier.length})</summary>
+				{#each earlier as release (release.version)}
+					{@render releaseNotes(release)}
+				{/each}
+			</details>
+		{/if}
 	</Panel>
+
+	{#snippet releaseNotes(release: (typeof CHANGELOG)[number])}
+		<h2>BMuster {release.version}</h2>
+		<ul>
+			{#each release.changes as change (change)}<li>{change}</li>{/each}
+		</ul>
+	{/snippet}
 
 	{#if data.rollout.kind === 'rollout' && data.rollout.paused.kind === 'paused'}
 		<Notice
@@ -258,6 +268,17 @@
 {/if}
 
 <style>
+	.earlier summary {
+		color: var(--brand);
+		font-size: var(--text-sm);
+		font-weight: var(--weight-medium);
+		cursor: pointer;
+	}
+
+	.earlier[open] summary {
+		margin-bottom: var(--space-3);
+	}
+
 	.muted {
 		color: var(--muted);
 		font-size: var(--text-sm);

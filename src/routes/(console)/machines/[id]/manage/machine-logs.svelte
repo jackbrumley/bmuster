@@ -202,7 +202,7 @@
 	{/if}
 {/snippet}
 
-<LoadingVeil active={!loaded} title="Reading the log" detail={undefined}>
+<LoadingVeil active={!loaded} title="Reading the log" detail={undefined} caption="shown">
 	<Panel heading="Logs" actions={verboseAction} tone="normal" padding="normal">
 		<div class="filters">
 			<ChipGroup label="Level" options={LEVEL_OPTIONS} bind:value={level} />
