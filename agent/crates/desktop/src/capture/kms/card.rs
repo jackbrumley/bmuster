@@ -14,8 +14,8 @@
 use super::convert::{MOD_INVALID, MOD_LINEAR};
 use super::egl::DmaPlane;
 use super::uapi::*;
-use super::{CardResources, Connector, Crtc, Mode, Plane, PlaneKind};
-use crate::capture::{CaptureError, CaptureResult};
+use super::{Blend, CardResources, Connector, Crtc, Mode, Plane, PlaneKind, SourceRect};
+use crate::capture::{CaptureError, CaptureResult, Rect};
 use crate::ioctl;
 use std::collections::HashMap;
 use std::fs::File;
@@ -29,7 +29,23 @@ pub struct Card {
     pub name: String,
     pub path: PathBuf,
     file: File,
-    property_names: HashMap<u32, String>,
+    property_names: HashMap<u32, PropertyName>,
+}
+
+/// A property's name and, for an enum, the names of its values.
+#[derive(Debug, Clone)]
+struct PropertyName {
+    name: String,
+    enums: Vec<(u64, String)>,
+}
+
+/// One property of an object as it is now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Property {
+    pub name: String,
+    pub value: u64,
+    /// The value's name when the property is an enum.
+    pub enum_name: Option<String>,
 }
 
 /// A framebuffer's description, without its buffers (for the probe).
@@ -124,10 +140,7 @@ impl Card {
                 Err(error) => return Err(error),
             }
         }
-        let mut planes = Vec::new();
-        for id in self.plane_ids()? {
-            planes.push(self.plane(id)?);
-        }
+        let planes = self.planes()?;
         Ok(CardResources {
             card: self.name.clone(),
             crtcs,
@@ -246,7 +259,16 @@ impl Card {
         }
     }
 
-    /// One plane now, with its type and position from its properties.
+    /// Every plane now.
+    pub fn planes(&mut self) -> io::Result<Vec<Plane>> {
+        let mut planes = Vec::new();
+        for id in self.plane_ids()? {
+            planes.push(self.plane(id)?);
+        }
+        Ok(planes)
+    }
+
+    /// One plane now, with its type and placement from its properties.
     pub fn plane(&mut self, id: u32) -> io::Result<Plane> {
         let mut raw = PlaneRaw {
             plane_id: id,
@@ -255,26 +277,16 @@ impl Card {
         // SAFETY: count_format_types is 0, so no format list is copied.
         unsafe { ioctl::call_with(self.fd(), GETPLANE, &mut raw) }?;
         let properties = self.properties(id, OBJECT_PLANE)?;
-        let get = |name: &str| properties.iter().find(|(n, _)| n == name).map(|(_, v)| *v);
-        let kind = match get("type") {
-            Some(1) => PlaneKind::Primary,
-            Some(2) => PlaneKind::Cursor,
-            _ => PlaneKind::Overlay,
-        };
-        // CRTC_X and CRTC_Y are signed (the cursor can hang off the edge).
-        let signed = |name: &str| get(name).map_or(0, |v| v as i64 as i32);
-        Ok(Plane {
+        Ok(plane_from_properties(
             id,
-            kind,
-            crtc_id: raw.crtc_id,
-            fb_id: raw.fb_id,
-            crtc_x: signed("CRTC_X"),
-            crtc_y: signed("CRTC_Y"),
-        })
+            raw.crtc_id,
+            raw.fb_id,
+            &properties,
+        ))
     }
 
     /// An object's properties by name.
-    fn properties(&mut self, object: u32, kind: u32) -> io::Result<Vec<(String, u64)>> {
+    fn properties(&mut self, object: u32, kind: u32) -> io::Result<Vec<Property>> {
         let (ids, values) = loop {
             let mut counts = ObjProps {
                 obj_id: object,
@@ -303,12 +315,21 @@ impl Card {
         };
         let mut named = Vec::with_capacity(ids.len());
         for (id, value) in ids.into_iter().zip(values) {
-            named.push((self.property_name(id)?, value));
+            let property = self.property_name(id)?;
+            named.push(Property {
+                enum_name: property
+                    .enums
+                    .iter()
+                    .find(|(v, _)| *v == value)
+                    .map(|(_, n)| n.clone()),
+                name: property.name,
+                value,
+            });
         }
         Ok(named)
     }
 
-    fn property_name(&mut self, id: u32) -> io::Result<String> {
+    fn property_name(&mut self, id: u32) -> io::Result<PropertyName> {
         if let Some(name) = self.property_names.get(&id) {
             return Ok(name.clone());
         }
@@ -316,13 +337,36 @@ impl Card {
             prop_id: id,
             ..GetProperty::default()
         };
-        // SAFETY: counts are 0 and pointers null, so only the name and
-        // flags are filled.
+        // SAFETY: counts are 0 and pointers null, so only the name, flags
+        // and counts are filled.
         unsafe { ioctl::call_with(self.fd(), GETPROPERTY, &mut raw) }?;
-        let end = raw.name.iter().position(|&b| b == 0).unwrap_or(32);
-        let name = String::from_utf8_lossy(&raw.name[..end]).into_owned();
-        self.property_names.insert(id, name.clone());
-        Ok(name)
+        let mut enums = Vec::new();
+        if raw.count_enum_blobs > 0 {
+            let mut list: Vec<PropertyEnum> = (0..raw.count_enum_blobs)
+                .map(|_| PropertyEnum::default())
+                .collect();
+            let mut full = GetProperty {
+                prop_id: id,
+                enum_blob_ptr: pointer(&mut list),
+                count_enum_blobs: raw.count_enum_blobs,
+                ..GetProperty::default()
+            };
+            // SAFETY: the enum pointer is a buffer of `count_enum_blobs`
+            // drm_mode_property_enum; count_values is 0, so no values are
+            // copied.
+            unsafe { ioctl::call_with(self.fd(), GETPROPERTY, &mut full) }?;
+            let copied = (full.count_enum_blobs as usize).min(list.len());
+            enums = list[..copied]
+                .iter()
+                .map(|e| (e.value, c_name(&e.name)))
+                .collect();
+        }
+        let property = PropertyName {
+            name: c_name(&raw.name),
+            enums,
+        };
+        self.property_names.insert(id, property.clone());
+        Ok(property)
     }
 
     fn getfb2(&self, fb_id: u32) -> io::Result<Fb2> {
@@ -432,6 +476,62 @@ impl Card {
     }
 }
 
+/// A NUL-padded kernel name.
+fn c_name(bytes: &[u8; 32]) -> String {
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(32);
+    String::from_utf8_lossy(&bytes[..end]).into_owned()
+}
+
+/// A plane from `GETPLANE`'s CRTC and framebuffer and its properties.
+/// Properties a driver does not have take the kernel's defaults, except
+/// the source rectangle, which is `None` (no atomic properties at all).
+pub fn plane_from_properties(id: u32, crtc_id: u32, fb_id: u32, properties: &[Property]) -> Plane {
+    let get = |name: &str| properties.iter().find(|p| p.name == name);
+    let value = |name: &str| get(name).map(|p| p.value);
+    let kind = match value("type") {
+        Some(1) => PlaneKind::Primary,
+        Some(2) => PlaneKind::Cursor,
+        _ => PlaneKind::Overlay,
+    };
+    // CRTC_X and CRTC_Y are signed (a plane can hang off the edge); the
+    // rest are unsigned 32-bit.
+    let signed = |name: &str| value(name).map_or(0, |v| v as i64 as i32);
+    let unsigned = |name: &str| value(name).map(|v| v.min(u64::from(u32::MAX)) as u32);
+    let src = match (
+        unsigned("SRC_X"),
+        unsigned("SRC_Y"),
+        unsigned("SRC_W"),
+        unsigned("SRC_H"),
+    ) {
+        (Some(x), Some(y), Some(width), Some(height)) => Some(SourceRect {
+            x,
+            y,
+            width,
+            height,
+        }),
+        _ => None,
+    };
+    Plane {
+        id,
+        kind,
+        crtc_id,
+        fb_id,
+        crtc: Rect::new(
+            signed("CRTC_X"),
+            signed("CRTC_Y"),
+            unsigned("CRTC_W").unwrap_or(0),
+            unsigned("CRTC_H").unwrap_or(0),
+        ),
+        src,
+        zpos: value("zpos"),
+        alpha: value("alpha").map(|v| v.min(0xFFFF) as u16),
+        blend: get("pixel blend mode")
+            .and_then(|p| p.enum_name.as_deref())
+            .and_then(Blend::from_name),
+        rotation: value("rotation"),
+    }
+}
+
 fn plane_count(raw: &Fb2) -> usize {
     raw.handles.iter().take_while(|&&h| h != 0).count().max(1)
 }
@@ -529,29 +629,5 @@ pub fn card_paths() -> Vec<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn framebuffer_description() {
-        let mut raw = Fb2 {
-            width: 64,
-            height: 64,
-            pixel_format: super::super::convert::ARGB8888,
-            flags: FB_MODIFIERS,
-            ..Fb2::default()
-        };
-        raw.handles[0] = 7;
-        raw.pitches[0] = 256;
-        raw.modifier[0] = 0x0200_0000_0000_0001;
-        let info = info_of(&raw);
-        assert_eq!(info.modifier, Some(0x0200_0000_0000_0001));
-        assert_eq!(info.pitches, vec![256]);
-        assert!(info.has_handles);
-        raw.flags = 0;
-        raw.handles[0] = 0;
-        let info = info_of(&raw);
-        assert_eq!(info.modifier, None, "no modifier flag");
-        assert!(!info.has_handles, "the kernel withheld the handles");
-    }
-}
+#[path = "card_tests.rs"]
+mod tests;

@@ -2,6 +2,7 @@
 //! console helper's reader run in-process by a person checking a machine.
 
 use anyhow::{Context as _, Result};
+use bmuster_desktop::capture::kms::compose::describe;
 use bmuster_desktop::capture::kms::device::KmsReader;
 use bmuster_desktop::capture::kms::{KmsSource, PlaneKind};
 use std::path::{Path, PathBuf};
@@ -10,7 +11,6 @@ use std::path::{Path, PathBuf};
 /// one PNG per display (and its cursor) next to `png`, named after the
 /// display. Run as root on the machine; nothing is sent anywhere.
 pub fn probe(png: &Path) -> Result<()> {
-    use bmuster_desktop::capture::kms::convert::fourcc_name;
     println!(
         "BMuster KMS probe (bmuster-agent {})",
         crate::updates::VERSION
@@ -71,18 +71,15 @@ pub fn probe(png: &Path) -> Result<()> {
             if plane.fb_id == 0 {
                 continue;
             }
-            print!(
-                "  plane {} {:?} on CRTC {} at ({}, {}), framebuffer {}",
-                plane.id, plane.kind, plane.crtc_id, plane.crtc_x, plane.crtc_y, plane.fb_id
+            let info = card.framebuffer_info(plane.fb_id);
+            println!(
+                "  CRTC {}: {}",
+                plane.crtc_id,
+                describe(plane, info.as_ref().ok())
             );
-            match card.framebuffer_info(plane.fb_id) {
+            match info {
                 Ok(info) => println!(
-                    ": {}x{} {} modifier {} pitches {:?}{}",
-                    info.width,
-                    info.height,
-                    fourcc_name(info.format),
-                    info.modifier
-                        .map_or("none".to_string(), |m| format!("0x{m:016x}")),
+                    "    pitches {:?}{}",
                     info.pitches,
                     if info.has_handles {
                         ""
@@ -90,7 +87,7 @@ pub fn probe(png: &Path) -> Result<()> {
                         " (handles withheld: not root)"
                     }
                 ),
-                Err(error) => println!(": cannot describe it: {error}"),
+                Err(error) => println!("    cannot describe the framebuffer: {error}"),
             }
         }
     }

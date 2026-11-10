@@ -5,8 +5,10 @@
 //! - [`card`]: one DRM card through raw ioctls; [`device::KmsReader`]: every
 //!   card as one source, run in the root `console-helper` process (it needs
 //!   `CAP_SYS_ADMIN` for the framebuffer handles).
-//! - [`convert`]: linear buffers to BGRX; [`egl`]: tiled and compressed
-//!   buffers through EGL and GLES, loaded at run time.
+//! - [`compose`]: every plane on a CRTC (primary and overlays) drawn in
+//!   zpos order with its rectangles, alpha and blend mode; [`convert`]:
+//!   linear buffers to BGRX; [`egl`]: the same composition on the GPU for
+//!   tiled and compressed buffers, through EGL and GLES loaded at run time.
 //! - [`capturer::KmsCapturer`]: the session's [`super::Capturer`] over any
 //!   [`KmsSource`] (the helper's pipe in the agent, a fake in tests).
 //!
@@ -15,13 +17,14 @@
 
 pub mod capturer;
 pub mod card;
+pub mod compose;
 pub mod convert;
 pub mod device;
 pub mod egl;
 mod egl_api;
 mod uapi;
 
-use super::{CaptureResult, CursorImage, DisplayInfo, Frame};
+use super::{CaptureResult, CursorImage, DisplayInfo, Frame, Rect};
 use serde::{Deserialize, Serialize};
 
 /// What the session says when no CRTC is scanning anything out.
@@ -67,16 +70,77 @@ pub enum PlaneKind {
     Cursor,
 }
 
-/// One plane and where it is placed.
+/// How a plane's pixels mix with what is below (`pixel blend mode`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Blend {
+    /// Colour already multiplied by the pixel's alpha (the kernel default).
+    Premultiplied,
+    /// Straight colour, multiplied by the pixel's alpha when blending.
+    Coverage,
+    /// The pixel's alpha is ignored; only the plane alpha counts.
+    None,
+}
+
+impl Blend {
+    /// From the property's enum name, as the kernel spells it.
+    pub fn from_name(name: &str) -> Option<Blend> {
+        match name {
+            "Pre-multiplied" => Some(Blend::Premultiplied),
+            "Coverage" => Some(Blend::Coverage),
+            "None" => Some(Blend::None),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Blend::Premultiplied => "pre-multiplied",
+            Blend::Coverage => "coverage",
+            Blend::None => "none",
+        }
+    }
+}
+
+/// A plane's source rectangle (`SRC_*`): framebuffer pixels in 16.16
+/// fixed point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SourceRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl SourceRect {
+    /// Whole pixels, shifted into 16.16.
+    pub fn pixels(x: u32, y: u32, width: u32, height: u32) -> SourceRect {
+        SourceRect {
+            x: x << 16,
+            y: y << 16,
+            width: width << 16,
+            height: height << 16,
+        }
+    }
+}
+
+/// One plane and where it is placed (its atomic properties).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plane {
     pub id: u32,
     pub kind: PlaneKind,
     pub crtc_id: u32,
     pub fb_id: u32,
-    /// Position on the CRTC (`CRTC_X`, `CRTC_Y`); the cursor's top left.
-    pub crtc_x: i32,
-    pub crtc_y: i32,
+    /// Where it lands on the CRTC (`CRTC_X/Y/W/H`); the cursor's top left
+    /// is `crtc.x`, `crtc.y`. The position can be negative.
+    pub crtc: Rect,
+    /// `None` when the driver has no atomic properties.
+    pub src: Option<SourceRect>,
+    pub zpos: Option<u64>,
+    /// 0 (transparent) to 0xFFFF (opaque); `None` when the plane has none.
+    pub alpha: Option<u16>,
+    pub blend: Option<Blend>,
+    /// `DRM_MODE_ROTATE_*` | `DRM_MODE_REFLECT_*`.
+    pub rotation: Option<u64>,
 }
 
 /// Everything one card reported.
@@ -227,7 +291,6 @@ fn card_number(card: &str) -> u32 {
 mod tests {
     use super::convert::{convert, fourcc, BufferLayout};
     use super::*;
-    use crate::capture::Rect;
 
     fn mode(width: u32, height: u32) -> Option<Mode> {
         Some(Mode {
@@ -252,8 +315,12 @@ mod tests {
             kind,
             crtc_id,
             fb_id,
-            crtc_x: 0,
-            crtc_y: 0,
+            crtc: Rect::new(0, 0, 0, 0),
+            src: None,
+            zpos: None,
+            alpha: None,
+            blend: None,
+            rotation: None,
         }
     }
 
@@ -404,7 +471,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(frame.row(0), &[0, 0x80, 0xFF, 0xFF]);
-        let swapped: u32 = (0x200 << 10) | 0x3FF;
+        let swapped: u32 = (0b11 << 30) | (0x200 << 10) | 0x3FF;
         let frame = convert(
             &swapped.to_le_bytes(),
             &layout(fourcc(b"AB30"), 4, 1, 1),
@@ -412,6 +479,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(frame.row(0), &[0, 0x80, 0xFF, 0xFF]);
+        // ARGB2101010 keeps its two bits of alpha (one third here).
+        let third: u32 = (0b01 << 30) | (0x3FF << 20);
+        let frame = convert(
+            &third.to_le_bytes(),
+            &layout(fourcc(b"AR30"), 4, 1, 1),
+            Rect::new(0, 0, 1, 1),
+        )
+        .unwrap();
+        assert_eq!(frame.row(0), &[0, 0, 0xFF, 85]);
+        assert!(super::convert::has_alpha(fourcc(b"AR24")));
+        assert!(!super::convert::has_alpha(fourcc(b"XR24")));
         // RGB565 white and pure blue.
         let rgb565 = [0xFF, 0xFF, 0x1F, 0x00];
         let frame = convert(

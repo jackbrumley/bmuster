@@ -163,6 +163,14 @@ pub(super) struct GetProperty {
     pub(super) count_enum_blobs: u32,
 }
 
+/// `drm_mode_property_enum`: one value of an enum property and its name.
+#[repr(C)]
+#[derive(Default)]
+pub(super) struct PropertyEnum {
+    pub(super) value: u64,
+    pub(super) name: [u8; 32],
+}
+
 #[repr(C)]
 pub(super) struct DmaBufSync {
     pub(super) flags: u64,
@@ -244,5 +252,6 @@ mod tests {
         assert_eq!(OBJ_GETPROPERTIES, 0xc020_64b9);
         assert_eq!(GETPROPERTY, 0xc040_64aa);
         assert_eq!(DMA_BUF_IOCTL_SYNC, 0x4008_6200);
+        assert_eq!(std::mem::size_of::<PropertyEnum>(), 40);
     }
 }
