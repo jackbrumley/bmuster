@@ -62,5 +62,9 @@
 	"0.4.12": {
 		"minimumLauncher": "0.4.1",
 		"rollbackFrom": ["0.4.11"]
+	},
+	"0.4.13": {
+		"minimumLauncher": "0.4.1",
+		"rollbackFrom": ["0.4.12"]
 	}
 }

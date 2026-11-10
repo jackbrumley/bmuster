@@ -1,6 +1,12 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.13',
+		changes: [
+			'The Linux tray icon now starts in signed-in desktops on SELinux machines such as Fedora, where 0.4.12 could not start it.'
+		]
+	},
+	{
 		version: '0.4.12',
 		changes: [
 			'A machine with two or more screens offers All screens: every monitor in one wide picture at its real position, so you can drag a window from one screen onto the next.',

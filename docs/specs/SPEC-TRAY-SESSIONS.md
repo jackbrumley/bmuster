@@ -66,3 +66,7 @@ On a Fedora 44 GNOME laptop the BMuster tray icon never shows, although other St
 - `agent/crates/agent/src/checks/tray.rs`: the `tray` check and its pure verdict; the bus query reuses the `portal` check's `busctl` call.
 - Deviation: the task suggested `systemctl --machine=<user>@.host --user is-active bmuster-tray` before starting. The `/proc` lookup replaces it, because it also sees a helper started by the autostart entry, which runs outside that unit.
 - Not run natively yet: the start on Fedora 44 GNOME and the shortcut rewrite under SELinux. Record them in the release test before calling them verified.
+
+### Fix in 0.4.13
+
+On the Fedora laptop, 0.4.12 logged "Could not start the tray for jackbrumley (uid 1000): /usr/bin/systemd-run exited with exit status: 1: Failed to start transient service unit: Connection reset by peer". `systemd-run --machine=<user>@.host --user` reaches the user manager through a piped stdio bridge, and SELinux resets that pipe for the agent's domain, as it did `--pipe` in 0.4.1. The agent now runs `systemd-run --user` itself **as the person** (their uid, the gid of `/run/user/<uid>`, which must belong to them; a clean environment with only `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/<uid>/bus`), the same way the checks already ask that bus with `busctl`. The arguments are otherwise unchanged; the account-name check still decides who gets a helper.

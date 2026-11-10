@@ -57,7 +57,7 @@ fn fields(text: &str) -> HashMap<&str, &str> {
 }
 
 /// A plain account name: letters, digits, `_`, `-` and `.`, not starting
-/// with `-`, at most 32 bytes. Anything else never reaches `--machine=`.
+/// with `-`, at most 32 bytes. Anything else gets no helper.
 fn valid_user_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 32
@@ -111,12 +111,13 @@ pub fn read_tray_users(dir: &Path) -> Vec<TrayUser> {
     tray_users(records.iter().map(String::as_str))
 }
 
-/// `systemd-run`'s arguments to start the helper as `user` in their own
-/// user manager: their session's environment, their slice, stopped with
-/// their graphical session.
-pub fn start_arguments(user: &str) -> Vec<OsString> {
+/// `systemd-run`'s arguments to start the helper in the user manager of
+/// whoever runs it: their session's environment, their slice, stopped with
+/// their graphical session. It runs as that person, talking to their own
+/// bus; `--machine=<user>@.host` relays through a piped bridge that SELinux
+/// on Fedora resets ("Connection reset by peer"), as it did `--pipe`.
+pub fn start_arguments() -> Vec<OsString> {
     [
-        format!("--machine={user}@.host"),
         "--user".to_string(),
         "--quiet".to_string(),
         "--collect".to_string(),
@@ -259,8 +260,25 @@ impl Desktop for System {
     }
 
     fn start(&mut self, user: &TrayUser) -> Result<(), String> {
+        use std::os::unix::fs::MetadataExt as _;
+        use std::os::unix::process::CommandExt as _;
+        let runtime = format!("/run/user/{}", user.uid);
+        let folder = std::fs::metadata(&runtime).map_err(|error| format!("{runtime}: {error}"))?;
+        if folder.uid() != user.uid {
+            return Err(format!("{runtime} does not belong to uid {}", user.uid));
+        }
+        // As the person (std drops root's supplementary groups with the uid).
         let mut child = Command::new(SYSTEMD_RUN)
-            .args(start_arguments(&user.name))
+            .args(start_arguments())
+            .env_clear()
+            .env("XDG_RUNTIME_DIR", &runtime)
+            .env(
+                "DBUS_SESSION_BUS_ADDRESS",
+                format!("unix:path={runtime}/bus"),
+            )
+            .uid(user.uid)
+            .gid(folder.gid())
+            .current_dir("/")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -406,14 +424,13 @@ mod tests {
     /// SPEC-TRAY-SESSIONS TS2.
     #[test]
     fn the_start_command_is_fixed() {
-        let arguments: Vec<String> = start_arguments("jack")
+        let arguments: Vec<String> = start_arguments()
             .iter()
             .map(|argument| argument.to_string_lossy().into_owned())
             .collect();
         assert_eq!(
             arguments,
             [
-                "--machine=jack@.host",
                 "--user",
                 "--quiet",
                 "--collect",
