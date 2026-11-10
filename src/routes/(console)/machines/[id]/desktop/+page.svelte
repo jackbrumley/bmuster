@@ -32,6 +32,7 @@
 	import DesktopStart from './desktop-start.svelte';
 	import FloatingControls from './floating-controls.svelte';
 	import FullScreenBar from './full-screen-bar.svelte';
+	import { FullScreen } from './full-screen.svelte.ts';
 	import type { Geometry, TouchMode } from './input.ts';
 	import { attachScreenInput } from './screen-input.ts';
 	import KeyBar from './key-bar.svelte';
@@ -59,7 +60,9 @@
 	let touchMode = $state<TouchMode>('trackpad');
 	/** The block under the bar: picture settings or the Keys menu, never both. */
 	let open = $state<'none' | 'settings' | 'keys'>('none');
-	let fullScreen = $state(false);
+	/** The browser's full screen, or the stage filling the window where there is none. */
+	const screenMode = new FullScreen(() => session?.viewportChanged());
+	const fullScreen = $derived(screenMode.on);
 	/**
 	 * Phones and tablets get the movable controls button in full screen
 	 * instead of the bar (SPEC-DESKTOP-FLOATING 1): a finger, or a window
@@ -198,17 +201,15 @@
 	}
 
 	async function toggleFullScreen(): Promise<void> {
-		if (document.fullscreenElement !== null) {
-			await document.exitFullscreen();
-		} else {
-			await stage?.requestFullscreen();
+		if (stage !== undefined) {
+			await screenMode.toggle(stage);
 		}
 	}
 
 	$effect(() => {
 		// A session that ends in full screen leaves it, so the choices show.
-		if (fullScreen && !running && document.fullscreenElement !== null) {
-			void document.exitFullscreen();
+		if (fullScreen && !running) {
+			void screenMode.leave();
 		}
 	});
 
@@ -231,12 +232,6 @@
 		session = current;
 		void current.resume();
 
-		const onFullScreen = () => {
-			fullScreen = document.fullscreenElement !== null;
-			requestAnimationFrame(() => {
-				current.viewportChanged();
-			});
-		};
 		const detachInput = attachScreenInput(surface, {
 			send: (message) => {
 				current.input(message);
@@ -245,10 +240,10 @@
 			geometry,
 			touchMode: () => touchMode
 		});
-		document.addEventListener('fullscreenchange', onFullScreen);
+		const detachFullScreen = screenMode.attach();
 		return () => {
 			detachInput();
-			document.removeEventListener('fullscreenchange', onFullScreen);
+			detachFullScreen();
 			current.detach();
 		};
 	});
@@ -419,10 +414,15 @@
 		<div
 			class="stage"
 			class:full={fullScreen}
+			class:filling={screenMode.filling}
 			class:hidden={choosing}
 			class:watching={watchOnly}
 			bind:this={stage}
-			style:aspect-ratio={frame !== undefined ? `${frame.width} / ${frame.height}` : '16 / 9'}
+			style:aspect-ratio={fullScreen
+				? undefined
+				: frame !== undefined
+					? `${frame.width} / ${frame.height}`
+					: '16 / 9'}
 			role="application"
 			aria-label="Screen of {machine.name}"
 			aria-busy={connectingTitle !== undefined}
@@ -590,6 +590,29 @@
 	.stage.full {
 		max-height: none;
 		border-radius: 0;
+	}
+
+	/* Over the console's own frame (z-index 10), under the toasts (30). */
+	.stage.filling {
+		position: fixed;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		left: 0;
+		z-index: 20;
+		width: 100%;
+		height: 100dvh;
+	}
+
+	/* The picture keeps clear of the notch and the home bar; the controls do too. */
+	.stage.filling .screen,
+	.stage.filling .cursor {
+		top: var(--safe-top);
+		right: var(--safe-right);
+		bottom: var(--safe-bottom);
+		left: var(--safe-left);
+		width: auto;
+		height: auto;
 	}
 
 	.stage:not(.watching) {

@@ -8,7 +8,7 @@ import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import '#lib/ui/design-tokens.css';
 import DesktopTab from './+page.svelte';
 
-// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6; SPEC-DESKTOP-FLOATING F1, F2, F4, F8.
+// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6; SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10.
 
 const SESSION = '33333333-3333-4333-8333-333333333333';
 
@@ -548,6 +548,51 @@ describe('the desktop tab', () => {
 		if (confirmation.current.kind === 'asking') confirmation.current.answer(true);
 		await expect.poll(() => socket.messages()).toContainEqual({ type: 'end' });
 		if (document.fullscreenElement !== null) await document.exitFullscreen();
+	});
+
+	it('F10: without the browser full screen (iPhone), Full screen fills the window and Leave restores the page', async () => {
+		vi.spyOn(Document.prototype, 'fullscreenEnabled', 'get').mockReturnValue(false);
+		const request = vi.spyOn(HTMLElement.prototype, 'requestFullscreen');
+		await page.viewport(375, 667);
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		const stage = screen.getByRole('application', { name: /Screen of/ }).element();
+
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		const fab = screen.getByRole('button', { name: 'Session controls' });
+		await expect.element(fab).toBeVisible();
+		expect(request).not.toHaveBeenCalled();
+		expect(document.fullscreenElement).toBeNull();
+		expect(getComputedStyle(stage).position).toBe('fixed');
+		const box = stage.getBoundingClientRect();
+		expect([box.left, box.top, box.width, box.height]).toEqual([0, 0, 375, 667]);
+		expect(document.body.style.overflow).toBe('hidden');
+		await expect
+			.element(screen.getByRole('group', { name: 'Full screen controls' }))
+			.not.toBeInTheDocument();
+
+		await fab.click();
+		await screen
+			.getByRole('group', { name: 'Session options' })
+			.getByRole('button', { name: 'Leave full screen' })
+			.click();
+		await expect.element(fab).not.toBeInTheDocument();
+		expect(getComputedStyle(stage).position).toBe('relative');
+		expect(document.body.style.overflow).toBe('');
+		await expect.element(screen.getByRole('button', { name: 'Full screen' })).toBeVisible();
+	});
+
+	it('F10: a browser that refuses full screen fills the window instead', async () => {
+		vi.spyOn(HTMLElement.prototype, 'requestFullscreen').mockRejectedValue(
+			new TypeError('Fullscreen is not supported')
+		);
+		await page.viewport(375, 667);
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		await expect.element(screen.getByRole('button', { name: 'Session controls' })).toBeVisible();
+		const stage = screen.getByRole('application', { name: /Screen of/ }).element();
+		expect(getComputedStyle(stage).position).toBe('fixed');
 	});
 
 	it('does not offer a session whose rules ask the person at the screen first', async () => {
