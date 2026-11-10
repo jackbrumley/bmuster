@@ -25,6 +25,7 @@ export type AuditRecord = {
 	actorUserId: string | null;
 	kind: AuditKind;
 	target: string;
+	machineId: string | null;
 	detail: Record<string, string>;
 };
 
@@ -133,6 +134,26 @@ export function listMachineAudit(
 		.map(toRecord);
 }
 
+/** Every machine's entries of these kinds since a time, oldest first: sessions left open (SPEC-SESSIONS T9). */
+export function listAuditOfKinds(
+	database: Queryable,
+	query: { kinds: readonly AuditKind[]; sinceMs: number; limit: number }
+): AuditRecord[] {
+	return database
+		.select()
+		.from(auditEntries)
+		.where(
+			and(
+				inArray(auditEntries.kind, [...query.kinds]),
+				gte(auditEntries.at, new Date(query.sinceMs))
+			)
+		)
+		.orderBy(auditEntries.at)
+		.limit(query.limit)
+		.all()
+		.map(toRecord);
+}
+
 function toRecord(row: typeof auditEntries.$inferSelect): AuditRecord {
 	if (!isAuditKind(row.kind)) {
 		throw new Error(`audit_entries ${row.id} has an unknown kind '${row.kind}'`);
@@ -143,6 +164,7 @@ function toRecord(row: typeof auditEntries.$inferSelect): AuditRecord {
 		actorUserId: row.actorUserId,
 		kind: row.kind,
 		target: row.target,
+		machineId: row.machineId,
 		detail: parseDetail(row.id, row.detail)
 	};
 }

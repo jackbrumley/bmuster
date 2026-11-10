@@ -1,6 +1,6 @@
 import { endReasonLabel } from '#lib/domain/sessions/session.ts';
 import type { AppDatabase } from '../../database/connection.ts';
-import { recordAudit } from '../audit/audit.ts';
+import { listAuditOfKinds, recordAudit } from '../audit/audit.ts';
 import type { EndedSession, SessionRecord } from './relay.ts';
 
 /**
@@ -98,4 +98,68 @@ export function auditSessionEnded(
 			ended.endedAt
 		);
 	}
+}
+
+/** How far back a session left open is looked for, and how many entries one start reads. */
+const OPEN_SESSION_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+const OPEN_SESSION_SCAN_LIMIT = 20_000;
+
+/**
+ * Sessions live in the server's memory (relay.ts), so a server that stops (an update, a restart,
+ * a crash) takes its open sessions with it and never writes their end. At start, every opened
+ * session with no end is given one, "The server restarted", dated now; the real end time and
+ * byte counts are not known, so the entry says so instead of guessing (SPEC-SESSIONS T9).
+ * A session the relay still holds is running (the dev server reloads its hooks without stopping),
+ * and entries from before 0.4.3 carry no session id; both are skipped. Returns how many were closed.
+ */
+export function closeSessionsCutByRestart(
+	database: AppDatabase,
+	isRunning: (sessionId: string) => boolean,
+	now: number
+): number {
+	const entries = listAuditOfKinds(database, {
+		kinds: ['session-opened', 'session-ended'],
+		sinceMs: now - OPEN_SESSION_LOOKBACK_MS,
+		limit: OPEN_SESSION_SCAN_LIMIT
+	});
+	const ended = new Set(
+		entries
+			.filter((entry) => entry.kind === 'session-ended')
+			.map((entry) => entry.detail['session'])
+	);
+	let closed = 0;
+	for (const opened of entries) {
+		const sessionId = opened.detail['session'];
+		if (
+			opened.kind !== 'session-opened' ||
+			sessionId === undefined ||
+			ended.has(sessionId) ||
+			isRunning(sessionId)
+		) {
+			continue;
+		}
+		const { from, ...kind } = opened.detail;
+		recordAudit(
+			database,
+			{
+				actor:
+					opened.actorUserId === null
+						? { kind: 'system' }
+						: { kind: 'user', userId: opened.actorUserId },
+				kind: 'session-ended',
+				target: opened.target,
+				machineId: opened.machineId,
+				detail: {
+					...kind,
+					...(from === undefined ? {} : { from }),
+					duration: 'unknown',
+					ended: endReasonLabel('server-restarted')
+				}
+			},
+			now
+		);
+		ended.add(sessionId);
+		closed += 1;
+	}
+	return closed;
 }

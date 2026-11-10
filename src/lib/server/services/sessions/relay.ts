@@ -572,6 +572,7 @@ function desktopEndedMessage(reason: SessionEndReason): string {
 		case 'idle':
 		case 'agent-timeout':
 		case 'unused':
+		case 'server-restarted':
 			return `${endReasonLabel(reason)}.`;
 	}
 }

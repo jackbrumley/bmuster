@@ -36,6 +36,8 @@ export const SESSION_END_REASONS = [
 	'agent-lost',
 	'agent-timeout',
 	'unused',
+	// Written at server start for a session the restart cut off (SPEC-SESSIONS T9).
+	'server-restarted',
 	// Desktop sessions (SPEC-DESKTOP 9), as the agent reports them.
 	'declined',
 	'timed-out',
@@ -67,6 +69,8 @@ export function endReasonLabel(reason: SessionEndReason): string {
 			return 'The machine did not answer';
 		case 'unused':
 			return 'Files not used for 5 minutes';
+		case 'server-restarted':
+			return 'The server restarted';
 		case 'declined':
 			return 'The person at the screen declined';
 		case 'timed-out':

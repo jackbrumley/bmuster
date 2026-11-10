@@ -10,6 +10,7 @@ import { listAudit } from '../audit/audit.ts';
 import { toConsoleUser } from '../users/users.ts';
 import { createRelay, RELAY_LIMITS, type RelayPeer } from './relay.ts';
 import { updateSetting } from '../settings/settings.ts';
+import { closeSessionsCutByRestart } from './session-audit.ts';
 import { browserTicketFor, openDesktopSession, openTerminalSession } from './sessions.ts';
 
 const SECRETS_KEY = Buffer.alloc(32, 3);
@@ -248,6 +249,55 @@ describe('audit (T7)', () => {
 		const everything = JSON.stringify(listAudit(database, 100));
 		expect(everything).not.toContain('shadow');
 		expect(everything).not.toContain('secret output');
+	});
+});
+
+describe('sessions cut off by a server restart (T9)', () => {
+	it('are closed at the next start, once; ended and still-running sessions are left alone', async () => {
+		vi.useFakeTimers({ now: NOW });
+		const { database, admin, machineId, relay } = await setUp();
+		connect(machineId);
+		const open = () => {
+			const result = openTerminalSession(
+				database,
+				relay,
+				SECRETS_KEY,
+				admin,
+				machineId,
+				TERMINAL,
+				'192.0.2.1',
+				Date.now()
+			);
+			if (result.kind !== 'opened') throw new Error(result.message);
+			return result.reply.sessionId;
+		};
+		const finished = open();
+		const agent = quietPeer();
+		relay.attachAgent(finished, machineId, agent);
+		relay.agentText(finished, agent, '{"type":"exited","code":0}');
+		const cut = open();
+		const running = open();
+		const isRunning = (sessionId: string) => sessionId === running;
+
+		// The server stops: the relay is gone with the process, and nothing wrote the end.
+		const restartAt = NOW + 3_600_000;
+		expect(closeSessionsCutByRestart(database, isRunning, restartAt)).toBe(1);
+		expect(closeSessionsCutByRestart(database, isRunning, restartAt + 1000)).toBe(0);
+
+		const ends = listAudit(database, 20).filter((entry) => entry.kind === 'session-ended');
+		expect(ends.map((entry) => entry.detail['session'])).toEqual([cut, finished]);
+		expect(ends[0]).toMatchObject({
+			actorUserId: admin.id,
+			target: 'Test machine',
+			at: new Date(restartAt),
+			detail: {
+				type: 'terminal',
+				session: cut,
+				from: '192.0.2.1',
+				duration: 'unknown',
+				ended: 'The server restarted'
+			}
+		});
 	});
 });
 

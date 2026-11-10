@@ -24,6 +24,8 @@ import {
 	serverLogWriter,
 	storeServerLogs
 } from '#lib/server/services/logs/server-log.ts';
+import { closeSessionsCutByRestart } from '#lib/server/services/sessions/session-audit.ts';
+import { sessionRelay } from '#lib/server/services/sessions/relay.ts';
 import { registerSocketRoutes } from '#lib/server/sockets/socket-registry.ts';
 import { SOCKET_ROUTES } from '#lib/server/sockets/socket-route-table.ts';
 import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts';
@@ -36,7 +38,8 @@ import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts
  * I12), then the first admin is created from the environment, or a setup code
  * is printed (SPEC-SIGN-IN S17, S18); the email queue starts working
  * (SPEC-EMAIL E3); machines whose live socket was open when the server
- * stopped get a grace period to reconnect (SPEC-PRESENCE P4). The server's
+ * stopped get a grace period to reconnect (SPEC-PRESENCE P4), and sessions the
+ * stop cut off are recorded as ended (SPEC-SESSIONS T9). The server's
  * own log records are kept from the start, and old agent and server log
  * records are pruned now and hourly (SPEC-AGENT-LOGS 2). The dev
  * server registers Vite's own certificate. A built server also schedules the nightly database snapshot (SPEC-HOSTING
@@ -73,6 +76,19 @@ export const init: ServerInit = async () => {
 	}
 	startEmailWorker(database, env.secretsKey);
 	restorePresence(database, Date.now());
+	const relay = sessionRelay();
+	const closed = closeSessionsCutByRestart(
+		database,
+		(sessionId) => relay.isRunning(sessionId),
+		Date.now()
+	);
+	if (closed > 0) {
+		serverLog(
+			'info',
+			'sessions',
+			`Recorded ${closed === 1 ? 'a session' : `${closed} sessions`} cut off by the restart as ended.`
+		);
+	}
 };
 
 /**
