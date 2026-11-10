@@ -11,7 +11,7 @@ mod support;
 use bmuster_desktop::capture::x11::X11Capturer;
 use bmuster_desktop::capture::x11_session::connect;
 use bmuster_desktop::capture::x11_session::X11Target;
-use bmuster_desktop::capture::{Capturer, Damage, DesktopState, Rect};
+use bmuster_desktop::capture::{Capturer, Damage, DesktopState, Rect, View};
 use bmuster_desktop::encode::tiles::TileEncoder;
 use bmuster_desktop::input::x11::XTestInput;
 use bmuster_desktop::input::{InputBackend, InputController};
@@ -291,6 +291,71 @@ fn x11_input_pointer_moves_and_clicks_arrive() {
         .reply()
         .unwrap();
     assert_eq!((pointer.root_x, pointer.root_y), (400, 300));
+}
+
+/// SPEC-DESKTOP-ALL-SCREENS A3, A5: two RandR monitors of different sizes
+/// on one nested screen.
+#[test]
+fn x11_all_screens_is_the_root_box_with_the_gap_black_and_xtest_spans_it() {
+    let Some(x) = NestedX::start() else { return };
+    for (name, geometry, output) in [
+        ("LEFT", "800/0x800/0+0+0", "default"),
+        ("RIGHT", "480/0x400/0+800+0", "none"),
+    ] {
+        let set = x.run_client("xrandr", &["--setmonitor", name, geometry, output]);
+        assert!(set.status.success(), "xrandr --setmonitor {name}: {set:?}");
+    }
+    let client = Client::new(&x);
+    client.fill_root(Rect::new(0, 0, 800, 800), 0xFF_00_00);
+    client.fill_root(Rect::new(800, 0, 480, 400), 0x00_00_FF);
+    // Root pixels under no monitor: nobody at the machine sees them.
+    client.fill_root(Rect::new(800, 400, 480, 400), 0x00_FF_00);
+
+    let mut capturer = X11Capturer::open(&x.target).unwrap();
+    let rects: Vec<Rect> = capturer.displays().iter().map(|d| d.rect()).collect();
+    assert_eq!(
+        rects,
+        vec![Rect::new(0, 0, 800, 800), Rect::new(800, 0, 480, 400)]
+    );
+    assert!(capturer.can_show_all());
+    capturer.select(View::All).unwrap();
+    capturer.capture(true).unwrap();
+    assert_eq!(
+        (capturer.frame().width, capturer.frame().height),
+        (1280, 800)
+    );
+    assert_eq!(pixel(&capturer, 799, 10), [0xFF, 0, 0]);
+    assert_eq!(pixel(&capturer, 800, 10), [0, 0, 0xFF]);
+    assert_eq!(pixel(&capturer, 900, 500), [0, 0, 0]);
+    // Damage in the gap still comes out black.
+    client.fill_root(Rect::new(1000, 600, 20, 20), 0xFF_FF_FF);
+    capturer.capture(false).unwrap();
+    assert_eq!(pixel(&capturer, 1005, 605), [0, 0, 0]);
+
+    // XTest takes root coordinates: the combined frame's pixels as they are.
+    let mut input = controller(&x);
+    let all = Rect::new(0, 0, 1280, 800);
+    for (at, expected) in [((799.0, 5.0), (799, 5)), ((800.0, 5.0), (800, 5))] {
+        input.pointer(all, at.0, at.1, 0).unwrap();
+        // The fake input comes on another connection: wait for it to land.
+        let until = Instant::now() + Duration::from_secs(2);
+        let landed = loop {
+            let pointer = client
+                .connection
+                .query_pointer(client.root)
+                .unwrap()
+                .reply()
+                .unwrap();
+            let landed = (pointer.root_x, pointer.root_y);
+            if landed == expected || Instant::now() > until {
+                break landed;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert_eq!(landed, expected);
+        let cursor = capturer.cursor().unwrap();
+        assert_eq!((cursor.x, cursor.y), (expected.0.into(), expected.1.into()));
+    }
 }
 
 #[test]

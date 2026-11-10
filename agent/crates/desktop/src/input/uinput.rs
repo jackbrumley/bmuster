@@ -5,9 +5,10 @@
 //! - **"BMuster keyboard"**: `KEY_ESC` to `KEY_MICMUTE` (1–248), which holds
 //!   every key [`super::keymap`] names. Higher codes are left out on purpose:
 //!   the `BTN_*` range would make udev call it a mouse or a joystick.
-//! - **"BMuster pointer"**: `ABS_X`/`ABS_Y` 0–65535 over the bounding box of
-//!   all displays (like a QEMU USB tablet), five buttons, and the wheel with
-//!   its high-resolution twin.
+//! - **"BMuster pointer"**: `ABS_X`/`ABS_Y` 0–65535 over the compositor's
+//!   whole stage (like a QEMU USB tablet), mapped monitor by monitor through
+//!   [`super::absolute::PointerMap`]; five buttons, and the wheel with its
+//!   high-resolution twin.
 //!
 //! A third, "BMuster wake" ([`wake`]), only nudges the pointer to wake the
 //! screen (SPEC-DESKTOP-WAKE).
@@ -16,9 +17,9 @@
 //! (watch sessions never call it), shared by every control session through
 //! [`Shared`], and destroyed when the last one lets go.
 
+use super::absolute::SharedPointerMap;
 use super::keymap::{self, KeyPosition};
 use super::{Axis, Button, InputBackend, InputError, InputResult, WHEEL_NOTCH};
-use crate::capture::kms::capturer::SharedBounds;
 use crate::ioctl;
 use std::fs::File;
 use std::io::{self, Write as _};
@@ -31,7 +32,7 @@ use std::sync::{Arc, Mutex, Weak};
 pub const UINPUT: &str = "/dev/uinput";
 pub const KEYBOARD_NAME: &str = "BMuster keyboard";
 pub const POINTER_NAME: &str = "BMuster pointer";
-/// The pointer's axes run 0..=ABS_MAX across the bounding box.
+/// The pointer's axes run 0..=ABS_MAX across the stage.
 pub const ABS_MAX: i32 = 65535;
 /// What `text` says for a character the US layout has no key for.
 pub const CANNOT_TYPE: &str = "This character cannot be typed on this screen yet";
@@ -410,20 +411,15 @@ impl Opener {
         }
     }
 
-    pub fn backend(&self, bounds: SharedBounds) -> InputResult<Box<dyn InputBackend>> {
+    /// An injector whose pointer goes through `map`, which the capturer
+    /// keeps up to date with the layout.
+    pub fn backend(&self, map: SharedPointerMap) -> InputResult<Box<dyn InputBackend>> {
         Ok(Box::new(UinputBackend {
             sink: (self.open)()?,
-            bounds,
+            map,
             wheel: [0; 2],
         }))
     }
-}
-
-/// `offset` pixels into `size` on the 0..=ABS_MAX axis, clamped.
-pub fn scale(offset: i32, size: u32) -> i32 {
-    let last = i64::from(size.max(2)) - 1;
-    let offset = i64::from(offset).clamp(0, last);
-    (offset * i64::from(ABS_MAX) / last) as i32
 }
 
 /// The key (and whether Shift is needed) that types `character` on a US
@@ -488,7 +484,7 @@ fn button_code(button: Button) -> u16 {
 /// A control session's injector over the shared devices.
 pub struct UinputBackend {
     sink: Arc<dyn Sink>,
-    bounds: SharedBounds,
+    map: SharedPointerMap,
     /// High-resolution units not yet a whole notch, per axis.
     wheel: [i32; 2],
 }
@@ -507,14 +503,12 @@ impl UinputBackend {
 
 impl InputBackend for UinputBackend {
     fn move_pointer(&mut self, x: i32, y: i32) -> InputResult<()> {
-        let bounds = *self.bounds.lock().unwrap_or_else(|p| p.into_inner());
-        self.emit(
-            Device::Pointer,
-            &[
-                (EV_ABS, ABS_X, scale(x - bounds.x, bounds.width)),
-                (EV_ABS, ABS_Y, scale(y - bounds.y, bounds.height)),
-            ],
-        )
+        let (ax, ay) = self
+            .map
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .to_absolute(x, y);
+        self.emit(Device::Pointer, &[(EV_ABS, ABS_X, ax), (EV_ABS, ABS_Y, ay)])
     }
 
     fn button(&mut self, button: Button, down: bool) -> InputResult<()> {

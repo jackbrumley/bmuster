@@ -62,14 +62,20 @@ impl CursorTracker {
             && state.y >= rect.y
             && i64::from(state.x) < i64::from(rect.x) + i64::from(rect.width)
             && i64::from(state.y) < i64::from(rect.y) + i64::from(rect.height);
+        // Desktop units to stream pixels: the stream can be scaled, and the
+        // captured image larger than the display's desktop rectangle.
+        let along = |offset: i32, stream_size: u32, desktop_size: u32| {
+            (f64::from(offset) * f64::from(stream_size) / f64::from(desktop_size.max(1))).round()
+                as i32
+        };
         let sent = CursorSent {
             id: state.id,
-            x: (f64::from(state.x - rect.x) * stream.scale).round() as i32,
-            y: (f64::from(state.y - rect.y) * stream.scale).round() as i32,
+            x: along(state.x - rect.x, stream.width, rect.width),
+            y: along(state.y - rect.y, stream.height, rect.height),
             visible: state.visible && inside,
         };
         let context = CursorContext {
-            display: stream.display as u8,
+            display: stream.wire_display(),
             seq,
             pts,
             width: stream.width as u16,

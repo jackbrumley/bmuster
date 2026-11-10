@@ -30,6 +30,12 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
 
 type SpecialKey = 'ctrl-alt-del' | 'win' | 'alt-tab' | 'print-screen';
 
+/**
+ * The display id for every display in one frame (SPEC-DESKTOP-ALL-SCREENS),
+ * in `select-display` and in the agent's `displays` and `stream` replies.
+ */
+export const ALL_DISPLAYS = 'all';
+
 /** Pointer buttons as a bit mask: the same bits as `PointerEvent.buttons`. */
 export const BUTTON_LEFT = 1;
 export const BUTTON_RIGHT = 2;

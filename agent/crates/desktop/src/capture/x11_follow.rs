@@ -16,6 +16,7 @@
 //! all three.
 
 use super::kms::capturer::SharedSource;
+use super::kms::mutter::{layout_owner, LayoutReader, MutterReader, NoLayout};
 use super::kms::SCREEN_OFF;
 use super::x11_session::{find_xauthority, loginctl, parse_properties, X11Target};
 use super::DesktopState;
@@ -42,6 +43,8 @@ struct Console {
     failure: Option<(String, String, Instant)>,
     /// The logind session the last look put on KMS, `None` while on X11.
     session: Option<String>,
+    /// Whose mutter to ask for the layout, or why nobody's.
+    layout: Result<u32, String>,
 }
 
 /// Development and test override for the display (debug builds only).
@@ -222,6 +225,7 @@ impl LogindWatch {
                 source: None,
                 failure: None,
                 session: None,
+                layout: Err("no session on the screen".into()),
             }),
         }
     }
@@ -253,6 +257,7 @@ impl LogindWatch {
             );
         };
         console.session = Some(session.to_string());
+        console.layout = layout_owner(properties);
         if get("State") == "closing" {
             return unavailable(
                 format!("{session}:closing"),
@@ -434,8 +439,15 @@ impl ScreenWatch for LogindWatch {
     fn open(&mut self) -> Result<Platform, String> {
         if let Some(console) = self.console.as_mut() {
             if let (Some(session), Some(source)) = (&console.session, &console.source) {
-                let opened =
-                    crate::kms_platform(source.clone(), crate::input::uinput::Opener::system());
+                let layout: Box<dyn LayoutReader> = match &console.layout {
+                    Ok(uid) => Box::new(MutterReader { uid: *uid }),
+                    Err(reason) => Box::new(NoLayout(reason.clone())),
+                };
+                let opened = crate::kms_platform(
+                    source.clone(),
+                    crate::input::uinput::Opener::system(),
+                    layout,
+                );
                 if let Err(reason) = &opened {
                     console.failure = Some((session.clone(), reason.clone(), Instant::now()));
                     console.source = None;

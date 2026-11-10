@@ -3,12 +3,20 @@
 //! what changed (KMS has no damage), and refreshes the display list when a
 //! CRTC, mode or size changes. A new framebuffer id alone is not a change:
 //! compositors flip between two or three every frame.
+//!
+//! Displays are laid out by [`layout::arrange`] (SPEC-DESKTOP-ALL-SCREENS):
+//! mutter's arrangement when the screen shows a GNOME desktop, else side by
+//! side. [`View::All`] draws every display into one frame at its place.
 
+use super::layout::{self, Arrangement, LayoutSource};
+use super::mutter::LayoutReader;
 use super::{KmsDisplay, KmsSource, SCREEN_OFF};
+use crate::capture::combined::Combined;
 use crate::capture::{
-    CaptureError, CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState,
-    DisplayInfo, Frame, Rect,
+    keep_view, primary_view, CaptureError, CaptureResult, Capturer, CursorImage, CursorState,
+    Damage, DesktopState, DisplayInfo, Frame, View,
 };
+use crate::input::absolute::{PointerMap, SharedPointerMap};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -18,43 +26,23 @@ pub type SharedSource = Arc<Mutex<Box<dyn KmsSource + Send>>>;
 
 /// How often the display list is read while capturing.
 pub const LAYOUT_EVERY: Duration = Duration::from_millis(500);
-
-/// The bounding box of every display, which the uinput pointer spans.
-pub type SharedBounds = Arc<Mutex<Rect>>;
-
-pub fn bounds_of(displays: &[DisplayInfo]) -> Rect {
-    let Some(first) = displays.first() else {
-        return Rect::new(0, 0, 1, 1);
-    };
-    let (mut left, mut top) = (first.x, first.y);
-    let (mut right, mut bottom) = (
-        i64::from(first.x) + i64::from(first.width),
-        i64::from(first.y) + i64::from(first.height),
-    );
-    for d in displays {
-        left = left.min(d.x);
-        top = top.min(d.y);
-        right = right.max(i64::from(d.x) + i64::from(d.width));
-        bottom = bottom.max(i64::from(d.y) + i64::from(d.height));
-    }
-    Rect::new(
-        left,
-        top,
-        (right - i64::from(left)).max(1) as u32,
-        (bottom - i64::from(top)).max(1) as u32,
-    )
-}
+/// How often mutter is asked again, for a rearrangement KMS cannot see.
+pub const MUTTER_EVERY: Duration = Duration::from_secs(5);
 
 pub struct KmsCapturer {
     source: SharedSource,
-    bounds: SharedBounds,
+    pointer: SharedPointerMap,
+    reader: Box<dyn LayoutReader>,
     kms: Vec<KmsDisplay>,
-    displays: Vec<DisplayInfo>,
-    current: usize,
+    arrangement: Arrangement,
+    view: View,
+    /// Set while the view is [`View::All`].
+    combined: Option<Combined>,
     frame: Frame,
     /// The next capture must return the whole image.
     full: bool,
     next_layout: Instant,
+    next_mutter: Instant,
 }
 
 fn lock(source: &SharedSource) -> std::sync::MutexGuard<'_, Box<dyn KmsSource + Send>> {
@@ -64,59 +52,143 @@ fn lock(source: &SharedSource) -> std::sync::MutexGuard<'_, Box<dyn KmsSource + 
 }
 
 impl KmsCapturer {
-    /// Reads the display list; fails with [`SCREEN_OFF`] when there is none.
-    pub fn new(source: SharedSource, bounds: SharedBounds) -> CaptureResult<KmsCapturer> {
+    /// Reads the display list and lays it out; fails with [`SCREEN_OFF`]
+    /// when there is none. `pointer` is kept up to date for the uinput
+    /// pointer; `reader` says where mutter puts the displays.
+    pub fn new(
+        source: SharedSource,
+        pointer: SharedPointerMap,
+        reader: Box<dyn LayoutReader>,
+    ) -> CaptureResult<KmsCapturer> {
         let kms = lock(&source).displays()?;
         if kms.is_empty() {
             return Err(CaptureError::new(SCREEN_OFF));
         }
+        let now = Instant::now();
         let mut capturer = KmsCapturer {
             source,
-            bounds,
+            pointer,
+            reader,
             kms: Vec::new(),
-            displays: Vec::new(),
-            current: 0,
+            arrangement: layout::side_by_side(&[], String::new()),
+            view: View::Display(0),
+            combined: None,
             frame: Frame::new(0, 0),
             full: true,
-            next_layout: Instant::now() + LAYOUT_EVERY,
+            next_layout: now + LAYOUT_EVERY,
+            next_mutter: now + MUTTER_EVERY,
         };
         capturer.set_layout(kms);
         Ok(capturer)
     }
 
-    fn set_layout(&mut self, kms: Vec<KmsDisplay>) {
-        let current_id = self.kms.get(self.current).map(|d| d.id.clone());
-        self.displays = kms.iter().map(KmsDisplay::info).collect();
-        self.current = current_id
-            .and_then(|id| kms.iter().position(|d| d.id == id))
-            .unwrap_or(0);
+    /// Lays `kms` out; true when the displays or their layout changed.
+    fn set_layout(&mut self, kms: Vec<KmsDisplay>) -> bool {
+        let arrangement = if kms.len() < 2 {
+            // One display maps the same whichever way it is laid out.
+            layout::side_by_side(&kms, "one display".into())
+        } else {
+            let state = self.reader.read();
+            layout::arrange(&kms, state.as_ref().map_err(String::clone))
+        };
+        let changed = arrangement != self.arrangement || kms != self.kms;
+        if !changed {
+            return false;
+        }
+        if arrangement.source != self.arrangement.source
+            || arrangement.displays != self.arrangement.displays
+        {
+            log_arrangement(&arrangement);
+        }
+        *self.pointer.lock().unwrap_or_else(|p| p.into_inner()) = arrangement.pointer.clone();
+        self.view = if self.arrangement.displays.is_empty() {
+            primary_view(&arrangement.displays)
+        } else {
+            keep_view(&self.arrangement.displays, self.view, &arrangement.displays)
+        };
+        self.arrangement = arrangement;
         self.kms = kms;
-        *self.bounds.lock().unwrap_or_else(|p| p.into_inner()) = bounds_of(&self.displays);
+        self.combined = match self.view {
+            View::All => Combined::new(&self.arrangement.displays),
+            View::Display(_) => None,
+        };
+        if let Some(combined) = &self.combined {
+            self.frame = combined.blank();
+        }
         self.full = true;
+        true
     }
 
-    fn current_id(&self) -> CaptureResult<String> {
+    fn kms_of(&self, index: usize) -> CaptureResult<&KmsDisplay> {
         self.kms
-            .get(self.current)
-            .map(|d| d.id.clone())
+            .get(index)
             .ok_or_else(|| CaptureError::new(SCREEN_OFF))
+    }
+
+    /// A cursor on display `index`, in desktop units.
+    fn cursor_on(&self, index: usize) -> CaptureResult<Option<CursorState>> {
+        let kms = self.kms_of(index)?;
+        let Some(display) = self.arrangement.displays.get(index) else {
+            return Ok(None);
+        };
+        let cursor = lock(&self.source).cursor(&kms.id)?;
+        // The cursor plane is in mode pixels; the desktop can be smaller.
+        let along = |value: i32, size: u32, mode: u32| {
+            (i64::from(value) * i64::from(size) / i64::from(mode.max(1))) as i32
+        };
+        Ok(Some(CursorState {
+            id: cursor.shape,
+            x: display.x + along(cursor.x, display.width, kms.width),
+            y: display.y + along(cursor.y, display.height, kms.height),
+            visible: cursor.visible,
+        }))
+    }
+}
+
+/// Which layout is in use, and where every display is (SPEC-DESKTOP-ALL-SCREENS 6).
+fn log_arrangement(arrangement: &Arrangement) {
+    let rects = arrangement
+        .displays
+        .iter()
+        .map(|d| format!("{} {}x{}+{}+{}", d.name, d.width, d.height, d.x, d.y))
+        .collect::<Vec<_>>()
+        .join(", ");
+    match &arrangement.source {
+        LayoutSource::Mutter => log::info!("Display layout from mutter: {rects}"),
+        LayoutSource::SideBySide { reason } => {
+            log::info!("Display layout side by side ({reason}): {rects}")
+        }
     }
 }
 
 impl Capturer for KmsCapturer {
     fn displays(&self) -> &[DisplayInfo] {
-        &self.displays
+        &self.arrangement.displays
     }
 
-    fn current(&self) -> usize {
-        self.current
+    fn view(&self) -> View {
+        self.view
     }
 
-    fn select(&mut self, index: usize) -> CaptureResult<()> {
-        if index >= self.kms.len() {
-            return Err(CaptureError::new(format!("There is no display {index}")));
+    fn can_show_all(&self) -> bool {
+        Combined::possible(&self.arrangement.displays)
+    }
+
+    fn select(&mut self, view: View) -> CaptureResult<()> {
+        match view {
+            View::Display(index) if index >= self.kms.len() => {
+                return Err(CaptureError::new(format!("There is no display {index}")));
+            }
+            View::Display(_) => self.combined = None,
+            View::All => {
+                let combined = Combined::new(&self.arrangement.displays).ok_or_else(|| {
+                    CaptureError::new("These displays cannot be shown all at once")
+                })?;
+                self.frame = combined.blank();
+                self.combined = Some(combined);
+            }
         }
-        self.current = index;
+        self.view = view;
         self.full = true;
         Ok(())
     }
@@ -132,31 +204,59 @@ impl Capturer for KmsCapturer {
             // The session looks again and waits with "The screen is off".
             return Err(CaptureError::new(SCREEN_OFF));
         }
-        if kms == self.kms {
+        let ask_mutter = now >= self.next_mutter;
+        if kms == self.kms && !ask_mutter {
             return Ok(false);
         }
-        log::info!(
-            "The KMS displays changed: {}",
-            kms.iter()
-                .map(|d| format!("{} {}x{}", d.id, d.width, d.height))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        self.set_layout(kms);
-        Ok(true)
+        if kms != self.kms {
+            log::info!(
+                "The KMS displays changed: {}",
+                kms.iter()
+                    .map(|d| format!("{} {}x{}", d.id, d.width, d.height))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        self.next_mutter = now + MUTTER_EVERY;
+        Ok(self.set_layout(kms))
     }
 
     fn capture(&mut self, full: bool) -> CaptureResult<Damage> {
-        let id = self.current_id()?;
         let whole = full || self.full;
-        match lock(&self.source).capture(&id, whole)? {
-            Some(frame) => {
-                self.frame = frame;
-                self.full = false;
-                Ok(Damage::Unknown)
-            }
-            None => Ok(Damage::None),
+        if let View::Display(index) = self.view {
+            let id = self.kms_of(index)?.id.clone();
+            return match lock(&self.source).capture(&id, whole)? {
+                Some(frame) => {
+                    self.frame = frame;
+                    self.full = false;
+                    Ok(Damage::Unknown)
+                }
+                None => Ok(Damage::None),
+            };
         }
+        let Some(combined) = self.combined.as_mut() else {
+            return Err(CaptureError::new(
+                "These displays cannot be shown all at once",
+            ));
+        };
+        let mut changed = Vec::new();
+        for (index, kms) in self.kms.iter().enumerate() {
+            let image = lock(&self.source).capture(&kms.id, whole)?;
+            if let Some(image) = image {
+                combined.draw(&mut self.frame, index, &image);
+                if let Damage::Rects(rects) =
+                    combined.damage(index, (image.width, image.height), &Damage::Unknown)
+                {
+                    changed.extend(rects);
+                }
+            }
+        }
+        self.full = false;
+        Ok(if changed.is_empty() {
+            Damage::None
+        } else {
+            Damage::Rects(changed)
+        })
     }
 
     fn frame(&self) -> &Frame {
@@ -164,15 +264,25 @@ impl Capturer for KmsCapturer {
     }
 
     fn cursor(&mut self) -> CaptureResult<CursorState> {
-        let id = self.current_id()?;
-        let display = self.displays[self.current].clone();
-        let cursor = lock(&self.source).cursor(&id)?;
-        Ok(CursorState {
-            id: cursor.shape,
-            x: display.x + cursor.x,
-            y: display.y + cursor.y,
-            visible: cursor.visible,
-        })
+        match self.view {
+            View::Display(index) => self
+                .cursor_on(index)?
+                .ok_or_else(|| CaptureError::new(SCREEN_OFF)),
+            // The pointer is on one display; its cursor plane is the lit one.
+            View::All => {
+                let mut hidden = None;
+                for index in 0..self.kms.len() {
+                    match self.cursor_on(index)? {
+                        Some(cursor) if cursor.visible => return Ok(cursor),
+                        Some(cursor) => {
+                            hidden.get_or_insert(cursor);
+                        }
+                        None => {}
+                    }
+                }
+                hidden.ok_or_else(|| CaptureError::new(SCREEN_OFF))
+            }
+        }
     }
 
     fn cursor_image(&mut self, id: u32) -> CaptureResult<Option<CursorImage>> {
@@ -188,7 +298,12 @@ impl Capturer for KmsCapturer {
     }
 }
 
-/// A [`KmsSource`] the tests drive: displays and frames they set.
+/// The map a uinput pointer starts with, before a capturer lays out.
+pub fn unset_pointer() -> SharedPointerMap {
+    Arc::new(Mutex::new(PointerMap::identity(&[])))
+}
+
+/// A [`KmsSource`] the tests drive: displays, frames and cursors they set.
 #[cfg(test)]
 pub mod fake {
     use super::super::{KmsCursor, KmsDisplay, KmsSource};
@@ -200,6 +315,8 @@ pub mod fake {
         pub displays: Vec<KmsDisplay>,
         /// Colour per display id; a frame is the display's size in it.
         pub colours: Vec<(String, [u8; 4])>,
+        /// The cursor plane per display id; hidden when not listed.
+        pub cursors: Vec<(String, KmsCursor)>,
         pub broken: Option<String>,
         pub captures: u32,
     }
@@ -252,8 +369,13 @@ pub mod fake {
             );
             Ok(Some(frame))
         }
-        fn cursor(&mut self, _id: &str) -> CaptureResult<KmsCursor> {
-            Ok(KmsCursor::HIDDEN)
+        fn cursor(&mut self, id: &str) -> CaptureResult<KmsCursor> {
+            let screens = self.0.lock().unwrap();
+            Ok(screens
+                .cursors
+                .iter()
+                .find(|(d, _)| d == id)
+                .map_or(KmsCursor::HIDDEN, |(_, c)| *c))
         }
         fn cursor_image(&mut self, _shape: u32) -> CaptureResult<Option<CursorImage>> {
             Ok(None)
@@ -262,31 +384,5 @@ pub mod fake {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::fake::{display, FakeKms};
-    use super::*;
-
-    #[test]
-    fn kms_capturer_keeps_its_display_and_spans_the_bounds() {
-        let fake = FakeKms::default();
-        fake.0.lock().unwrap().displays =
-            vec![display("a", 0, 100, 50), display("b", 100, 200, 80)];
-        let source: SharedSource = Arc::new(Mutex::new(Box::new(fake.clone())));
-        let bounds: SharedBounds = Arc::new(Mutex::new(Rect::new(0, 0, 1, 1)));
-        let mut capturer = KmsCapturer::new(source, bounds.clone()).unwrap();
-        assert_eq!(*bounds.lock().unwrap(), Rect::new(0, 0, 300, 80));
-        capturer.select(1).unwrap();
-        assert_eq!(capturer.capture(false).unwrap(), Damage::Unknown);
-        assert_eq!(capturer.frame().width, 200);
-        // Display a goes away; b stays current, at a new position.
-        fake.0.lock().unwrap().displays = vec![display("b", 0, 200, 80)];
-        capturer.next_layout = Instant::now();
-        assert!(capturer.poll_layout().unwrap());
-        assert_eq!((capturer.current(), capturer.displays()[0].x), (0, 0));
-        assert_eq!(*bounds.lock().unwrap(), Rect::new(0, 0, 200, 80));
-        // Everything off: an error, so the session looks again.
-        fake.0.lock().unwrap().displays.clear();
-        capturer.next_layout = Instant::now();
-        assert_eq!(capturer.poll_layout().unwrap_err().0, SCREEN_OFF);
-    }
-}
+#[path = "capturer_tests.rs"]
+mod tests;

@@ -39,7 +39,10 @@ function nextSeq(seq: number): number {
 export class DesktopSession {
 	mode = $state<DesktopMode | undefined>(undefined);
 	displays = $state<DesktopDisplay[]>([]);
+	/** A display id, or `all` for every display in one picture. */
 	current = $state<string | undefined>(undefined);
+	/** The agent can show every display at once (SPEC-DESKTOP-ALL-SCREENS). */
+	allScreens = $state(false);
 	/** What the screen at the machine shows; the agent says so after hello and on every change. */
 	screen = $state<DesktopScreen | undefined>(undefined);
 	/** The agent paused frames because no acknowledgement came for 10 s (4.3). */
@@ -257,6 +260,7 @@ export class DesktopSession {
 			case 'displays':
 				this.displays = message.list;
 				this.current = message.current;
+				this.allScreens = message.allScreens;
 				return;
 			case 'stream':
 				return;

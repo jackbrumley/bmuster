@@ -49,10 +49,13 @@ impl Capturer for SolidCapturer {
     fn displays(&self) -> &[DisplayInfo] {
         &self.displays
     }
-    fn current(&self) -> usize {
-        0
+    fn view(&self) -> crate::capture::View {
+        crate::capture::View::Display(0)
     }
-    fn select(&mut self, _index: usize) -> CaptureResult<()> {
+    fn can_show_all(&self) -> bool {
+        false
+    }
+    fn select(&mut self, _view: crate::capture::View) -> CaptureResult<()> {
         Ok(())
     }
     fn poll_layout(&mut self) -> CaptureResult<bool> {
@@ -456,7 +459,7 @@ fn follow_no_seat_at_the_start_waits_for_a_screen() {
     assert_eq!(
         messages,
         vec![
-            serde_json::json!({"type": "displays", "list": [], "current": ""}),
+            serde_json::json!({"type": "displays", "list": [], "current": "", "allScreens": false}),
             serde_json::json!({"type": "state", "screen": {"kind": "unavailable", "reason": "Cannot find the screen (seat0)"}}),
         ]
     );
@@ -532,6 +535,7 @@ mod kms {
     use super::*;
     use crate::capture::kms::capturer::fake::{display, FakeKms};
     use crate::capture::kms::capturer::{SharedSource, LAYOUT_EVERY};
+    use crate::capture::kms::mutter::NoLayout;
     use crate::input::uinput::Opener;
 
     struct KmsWatch {
@@ -550,8 +554,66 @@ mod kms {
             crate::kms_platform(
                 self.source.clone(),
                 Opener::with(|| panic!("a watch session builds no injector")),
+                Box::new(NoLayout("the sign-in screen".into())),
             )
         }
+    }
+
+    /// A KMS screen whose key the test changes (unlock, a user switch).
+    struct SwitchingKms {
+        source: SharedSource,
+        key: Arc<Mutex<String>>,
+    }
+
+    impl ScreenWatch for SwitchingKms {
+        fn look(&mut self) -> Look {
+            Look {
+                dark: false,
+                key: self.key.lock().unwrap().clone(),
+                state: DesktopState::Desktop { user: None },
+            }
+        }
+        fn open(&mut self) -> Result<Platform, String> {
+            crate::kms_platform(
+                self.source.clone(),
+                Opener::with(|| panic!("a watch session builds no injector")),
+                Box::new(NoLayout("a test".into())),
+            )
+        }
+    }
+
+    /// SPEC-DESKTOP-ALL-SCREENS A7.
+    #[test]
+    fn follow_all_screens_carries_over_to_the_next_screen() {
+        let _turn = crate::notice::test_turn();
+        let fake = FakeKms::default();
+        fake.0.lock().unwrap().displays = vec![
+            display("card0-eDP-1", 0, 96, 64),
+            display("card0-DP-1", 96, 64, 32),
+        ];
+        let source: SharedSource = Arc::new(Mutex::new(Box::new(fake.clone())));
+        let key = Arc::new(Mutex::new("kms:c1".to_string()));
+        let mut now = Instant::now();
+        let mut session = DesktopSession::following(
+            Mode::Watch,
+            Box::new(SwitchingKms {
+                source,
+                key: key.clone(),
+            }),
+            now,
+        );
+        let out = session.handle_text(HELLO, now);
+        assert_eq!(of_type(&texts(&out), "displays")[0]["allScreens"], true);
+        let out = session.handle_text(r#"{"type":"select-display","display":"all"}"#, now);
+        assert_eq!(of_type(&texts(&out), "displays")[0]["current"], "all");
+        assert_eq!(keyframe_width(&session.tick(now)), Some(160));
+
+        // Another session takes the screen: it opens on all screens too.
+        *key.lock().unwrap() = "kms:c2".to_string();
+        now += LOOK_EVERY;
+        let out = session.tick(now);
+        assert_eq!(of_type(&texts(&out), "displays")[0]["current"], "all");
+        assert_eq!(keyframe_width(&out), Some(160));
     }
 
     /// Real time passes so the capturer reads the display list again.

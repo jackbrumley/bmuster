@@ -9,7 +9,9 @@
 		IconPlugConnectedX,
 		IconPointer
 	} from '@tabler/icons-svelte-runes';
+	import type { DisplayChoice } from '#lib/domain/desktop/displays.ts';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
+	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import ToolButton from './tool-button.svelte';
 
 	/**
@@ -24,6 +26,9 @@
 		surface,
 		mode,
 		canSwitch,
+		displays,
+		display,
+		ondisplay,
 		settingsOpen,
 		settings,
 		keysOpen,
@@ -39,6 +44,10 @@
 		mode: DesktopMode | undefined;
 		/** The person may control, so they may change mode. */
 		canSwitch: boolean;
+		/** The screen picker's choices (All screens among them when offered); shown with more than one. */
+		displays: readonly DisplayChoice[];
+		display: string | null;
+		ondisplay: (id: string) => void;
 		settingsOpen: boolean;
 		/** The picture settings, shown under the bar while open. */
 		settings: Snippet;
@@ -171,6 +180,24 @@
 				</ToolButton>
 			{/if}
 		</div>
+		{#if mode !== undefined && displays.length > 1}
+			<div class="screens">
+				<ChipGroup
+					label="Screen"
+					options={displays}
+					bind:value={
+						() => display,
+						(value: string | null) => {
+							if (value !== null) {
+								act(() => {
+									ondisplay(value);
+								})();
+							}
+						}
+					}
+				/>
+			</div>
+		{/if}
 		{#if settingsOpen && mode !== undefined}
 			<div class="settings">{@render settings()}</div>
 		{/if}
@@ -202,6 +229,14 @@
 		align-items: center;
 		justify-content: center;
 		gap: var(--space-2);
+		max-width: 100%;
+		padding: var(--space-1) var(--space-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-pill);
+		background: var(--surface-overlay);
+	}
+
+	.screens {
 		max-width: 100%;
 		padding: var(--space-1) var(--space-2);
 		border: 1px solid var(--border);

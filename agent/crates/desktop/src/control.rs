@@ -269,7 +269,11 @@ pub enum EndReason {
 pub enum AgentMessage {
     Displays {
         list: Vec<DisplayInfo>,
+        /// A display id, or `all` (SPEC-DESKTOP-ALL-SCREENS).
         current: String,
+        /// Whether `select-display` with `all` works now. Older agents
+        /// leave it out, so the browser never offers it to them.
+        all_screens: bool,
     },
     Stream {
         display: String,
@@ -419,6 +423,15 @@ mod tests {
             r#"{"type":"ended","reason":"disconnected-at-machine"}"#
         );
         assert_eq!(AgentMessage::Stalled.to_json(), r#"{"type":"stalled"}"#);
+        assert_eq!(
+            AgentMessage::Displays {
+                list: Vec::new(),
+                current: "all".into(),
+                all_screens: true
+            }
+            .to_json(),
+            r#"{"type":"displays","list":[],"current":"all","allScreens":true}"#
+        );
         assert_eq!(
             AgentMessage::Error {
                 code: ErrorCode::InputFailed,

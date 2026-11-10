@@ -3,7 +3,7 @@
 //! decides when to capture; this decides what goes out.
 
 use super::{text, Outgoing};
-use crate::capture::{Capturer, Damage, Frame};
+use crate::capture::{view_id, Capturer, Damage, Frame, View};
 use crate::control::{AgentMessage, Codec};
 use crate::encode::{scale, tiles::TileEncoder};
 use crate::frame::{self, FrameInfo};
@@ -12,10 +12,20 @@ use std::time::{Duration, Instant};
 /// The stream parameters a `stream` message announces.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct StreamKey {
-    pub display: usize,
+    pub view: View,
     pub width: u32,
     pub height: u32,
     pub scale: f64,
+}
+
+impl StreamKey {
+    /// The frame header's display byte: the index, or 255 for all screens.
+    pub fn wire_display(&self) -> u8 {
+        match self.view {
+            View::Display(index) => u8::try_from(index).unwrap_or(u8::MAX - 1),
+            View::All => u8::MAX,
+        }
+    }
 }
 
 /// A frame that went out.
@@ -92,12 +102,13 @@ impl Video {
         self.stream = None;
     }
 
-    /// Captures and encodes one frame at `factor` and JPEG `quality`.
-    /// Returns the frame sent, or `None` when nothing changed.
+    /// Captures and encodes one frame at the factor `factor` gives for the
+    /// captured size, and JPEG `quality`. Returns the frame sent, or `None`
+    /// when nothing changed.
     pub fn produce(
         &mut self,
         capturer: &mut dyn Capturer,
-        factor: f64,
+        factor: &dyn Fn(u32, u32) -> f64,
         keyframe: bool,
         quality: u8,
         pts: u64,
@@ -109,6 +120,7 @@ impl Video {
         self.figures.capture_time += captured.elapsed();
         let encoding = Instant::now();
         let source = capturer.frame();
+        let factor = factor(source.width, source.height);
         let (width, height) = scale::scaled_size(source.width, source.height, factor);
         let scaled = (width, height) != (source.width, source.height);
         let damage = if scaled {
@@ -125,7 +137,7 @@ impl Video {
         let frame = if scaled { &self.scaled } else { source };
 
         let key = StreamKey {
-            display: capturer.current(),
+            view: capturer.view(),
             width,
             height,
             scale: if scaled { factor } else { 1.0 },
@@ -144,13 +156,8 @@ impl Video {
             return Ok(None);
         }
         if new_stream {
-            let display = capturer
-                .displays()
-                .get(key.display)
-                .map(|d| d.id.clone())
-                .unwrap_or_default();
             out.push(text(AgentMessage::Stream {
-                display,
+                display: view_id(capturer.displays(), key.view),
                 codec: Codec::Jpeg,
                 width,
                 height,
@@ -164,7 +171,7 @@ impl Video {
             seq => seq,
         };
         let info = FrameInfo {
-            display: key.display as u8,
+            display: key.wire_display(),
             seq: self.seq,
             pts,
             width: width as u16,

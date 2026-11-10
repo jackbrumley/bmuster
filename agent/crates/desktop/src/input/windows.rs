@@ -3,6 +3,7 @@
 //! virtual-desktop coordinates. Written for BMuster from the Win32
 //! documentation.
 
+use super::absolute;
 use super::keymap::KeyPosition;
 use super::{Axis, Button, InputBackend, InputError, InputResult};
 use ::windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -101,11 +102,13 @@ fn scancode_input(scancode: u16, down: bool) -> INPUT {
     keyboard(VIRTUAL_KEY(0), scancode & 0xFF, flags)
 }
 
-/// Maps a virtual-desktop pixel to SendInput's 0..=65535 absolute range.
+/// Maps a virtual-desktop pixel to SendInput's 0..=65535 absolute range:
+/// a quarter of a pixel in, so Windows lands on that pixel whether it
+/// rounds or truncates `value * size / 65536` (SPEC-DESKTOP-ALL-SCREENS).
 pub fn normalise(value: i32, origin: i32, size: i32) -> i32 {
-    let span = (size - 1).max(1);
-    (((value - origin).clamp(0, span) as i64 * 65535 + i64::from(span) / 2) / i64::from(span))
-        as i32
+    let last = i64::from(size.max(1)) - 1;
+    let offset = (i64::from(value) - i64::from(origin)).clamp(0, last);
+    absolute::axis(offset as f64 + 0.25, f64::from(size.max(1)))
 }
 
 impl InputBackend for SendInputBackend {
@@ -228,10 +231,19 @@ pub fn check_send_input() -> Result<String, String> {
 mod tests {
     use super::normalise;
 
+    /// Where Windows puts a value, truncating and rounding.
+    fn landed(value: i32, origin: i32, size: i32) -> (i32, i32) {
+        let exact = f64::from(value) * f64::from(size) / 65536.0;
+        (origin + exact.floor() as i32, origin + exact.round() as i32)
+    }
+
     #[test]
     fn windows_absolute_coordinates_span_the_virtual_desktop() {
-        assert_eq!(normalise(-1920, -1920, 3840), 0);
-        assert_eq!(normalise(1919, -1920, 3840), 65535);
-        assert_eq!(normalise(5000, 0, 1920), 65535);
+        // A monitor left of the primary: the virtual screen starts at -1920.
+        for x in [-1920, -1, 0, 1919] {
+            assert_eq!(landed(normalise(x, -1920, 3840), -1920, 3840), (x, x));
+        }
+        assert_eq!(normalise(-5000, -1920, 3840), normalise(-1920, -1920, 3840));
+        assert_eq!(normalise(5000, 0, 1920), normalise(1919, 0, 1920));
     }
 }

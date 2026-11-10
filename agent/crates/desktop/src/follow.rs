@@ -11,7 +11,7 @@
 
 use crate::capture::{
     CaptureError, CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState,
-    DisplayInfo, Frame,
+    DisplayInfo, Frame, View,
 };
 use crate::Platform;
 
@@ -72,10 +72,13 @@ impl Capturer for NoScreen {
     fn displays(&self) -> &[DisplayInfo] {
         &[]
     }
-    fn current(&self) -> usize {
-        0
+    fn view(&self) -> View {
+        View::Display(0)
     }
-    fn select(&mut self, _index: usize) -> CaptureResult<()> {
+    fn can_show_all(&self) -> bool {
+        false
+    }
+    fn select(&mut self, _view: View) -> CaptureResult<()> {
         Err(CaptureError::new("there is no screen to show"))
     }
     fn poll_layout(&mut self) -> CaptureResult<bool> {

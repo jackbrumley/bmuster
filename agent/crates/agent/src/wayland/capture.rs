@@ -8,7 +8,7 @@ use crate::exec::unit::Manager;
 use anyhow::{bail, Context as _, Result};
 use bmuster_desktop::capture::{
     CaptureError, CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState,
-    DisplayInfo, Frame,
+    DisplayInfo, Frame, View,
 };
 use bmuster_desktop::input::{
     keymap::KeyPosition, Axis, Button, InputBackend, InputError, InputResult,
@@ -332,11 +332,15 @@ impl Capturer for Screen {
     fn displays(&self) -> &[DisplayInfo] {
         &self.displays
     }
-    fn current(&self) -> usize {
-        0
+    fn view(&self) -> View {
+        View::Display(0)
     }
-    fn select(&mut self, index: usize) -> CaptureResult<()> {
-        if index != 0 {
+    /// The portal shares the one monitor the person picked.
+    fn can_show_all(&self) -> bool {
+        false
+    }
+    fn select(&mut self, view: View) -> CaptureResult<()> {
+        if view != View::Display(0) {
             return Err(CaptureError::new(
                 "Choose the monitor in the desktop's sharing dialog",
             ));
