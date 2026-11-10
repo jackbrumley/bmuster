@@ -1,6 +1,12 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.10',
+		changes: [
+			'On Linux machines captured directly from the graphics card, windows the desktop draws on a separate hardware layer (as GNOME does for some apps, such as LocalSend) now show in place, instead of missing or stretched across the screen.'
+		]
+	},
+	{
 		version: '0.4.9',
 		changes: [
 			'The console starts in light mode. Choosing System or Dark is remembered in that browser.',

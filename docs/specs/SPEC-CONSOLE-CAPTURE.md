@@ -1,8 +1,8 @@
 # SPEC-CONSOLE-CAPTURE: The Linux screen as if sitting in front of it (KMS capture and uinput input)
 
-**Status:** `IMPLEMENTED (pending native test)` 2026-11-09: C1–C9 unit-tested, C10 run by hand on this X11 machine, W9 not run (see As built); version bump and changelog left for the release step · approved 2026-11-09 (Jack: "go", then "build everything") · builds on SPEC-DESKTOP (section 6) and replaces the plan in SPEC-WAYLAND-PORTAL for the screen and input.
+**Status:** `IMPLEMENTED (v0.4.1)` 2026-11-09, native on the Fedora laptop since 0.4.5 (desktop, lock screen) · approved 2026-11-09 (Jack: "go", then "build everything") · builds on SPEC-DESKTOP (section 6) and replaces the plan in SPEC-WAYLAND-PORTAL for the screen and input.
 
-**Version 2 (every plane on the CRTC):** `IMPLEMENTED (pending release)` 2026-11-10 · approved 2026-11-10 (Jack's bug report: LocalSend shows only its frame on the Fedora 44 GNOME laptop) · see [Version 2](#version-2-every-plane-on-the-crtc-pending-release).
+**Version 2 (every plane on the CRTC):** `IMPLEMENTED (v0.4.10)` 2026-11-10 · approved 2026-11-10 (Jack's bug report: LocalSend shows only its frame on the Fedora 44 GNOME laptop) · see [Version 2](#version-2-every-plane-on-the-crtc-pending-release).
 
 ## Problem
 
@@ -156,7 +156,7 @@ Report the probe output and anything that differs, plus `journalctl -u bmuster-a
 
 ## Version 2: every plane on the CRTC (pending release)
 
-**Status:** `IMPLEMENTED (pending release)` 2026-11-10 · approved 2026-11-10 (Jack: bug report, fix approved) · security work only in that it reads more of what the kernel scans out; no check changes.
+**Status:** `IMPLEMENTED (v0.4.10)` 2026-11-10 · approved 2026-11-10 (Jack: bug report, fix approved) · security work only in that it reads more of what the kernel scans out; no check changes.
 
 ### Problem
 
