@@ -10,7 +10,12 @@ export const GET: RequestHandler = route.public(({ params }) => {
 	if (!isAgentTarget(params.target)) {
 		error(400, `Unknown target '${params.target}'`);
 	}
-	const release = releaseFile(env.releasesPath, params.version, params.target);
+	const release = releaseFile(
+		env.releasesPath,
+		env.agentTestBuildsPath,
+		params.version,
+		params.target
+	);
 	if (release === undefined) {
 		error(404, 'No such agent build');
 	}

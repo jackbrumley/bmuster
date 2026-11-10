@@ -29,7 +29,8 @@ function machine(id: string, name: string, update: Data['machines'][number]['upd
 		osFamily: 'linux' as const,
 		agentVersion: '0.1.0',
 		status: { kind: 'online' as const },
-		update
+		update,
+		channel: 'full' as const
 	};
 }
 
@@ -37,6 +38,12 @@ const EARLY_GROUP: Data['earlyGroup'] = {
 	id: '00000000-0000-4000-8000-0000000ea51e',
 	name: 'Early updates',
 	machines: 2
+};
+
+const TEST_CHANNEL: Data['testChannel'] = {
+	group: { id: '00000000-0000-4000-8000-000000007e57', name: 'Test', machines: 0 },
+	build: { kind: 'none' },
+	check: { checkedAtIso: null, problem: null }
 };
 
 const MACHINES: Data['machines'] = [
@@ -115,6 +122,7 @@ function renderPage(overrides: Partial<Data>) {
 			policy: 'automatic',
 			rollout: ROLLOUT,
 			earlyGroup: EARLY_GROUP,
+			testChannel: TEST_CHANNEL,
 			builds: [
 				{ version: '0.2.0', target: 'x86_64-unknown-linux-gnu', signed: true },
 				{ version: '0.1.0', target: 'x86_64-unknown-linux-gnu', signed: false }
@@ -377,6 +385,62 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		await expect
 			.element(screen.getByText(/Machines in Early updates get new versions first/))
 			.toBeVisible();
+	});
+
+	it('T8: shows the test build on offer, which machines run it, and each machine’s channel', async () => {
+		const screen = await renderPage({
+			testChannel: {
+				group: { ...TEST_CHANNEL.group, machines: 1 },
+				build: {
+					kind: 'build',
+					version: '0.2.1-test.1',
+					machines: [{ id: '55555555-5555-4555-8555-555555555555', name: 'Fedora laptop' }]
+				},
+				check: { checkedAtIso: '2026-11-07T11:00:00.000Z', problem: null }
+			},
+			machines: [
+				{
+					...machine('55555555-5555-4555-8555-555555555555', 'Fedora laptop', {
+						kind: 'up-to-date'
+					}),
+					agentVersion: '0.2.1-test.1',
+					channel: 'test'
+				},
+				machine('11111111-1111-4111-8111-111111111111', 'Office', { kind: 'up-to-date' })
+			]
+		});
+		const panel = screen.getByRole('region', { name: 'Test channel' });
+		await expect.element(panel.getByText('Test build 0.2.1-test.1')).toBeVisible();
+		await expect.element(panel.getByText('Fedora laptop')).toBeVisible();
+		await expect.element(panel.getByText(/1 machine —/)).toBeVisible();
+		await expect.element(panel.getByText(/^Looked on GitHub /)).toBeVisible();
+		await expect
+			.element(panel.getByRole('link', { name: 'open the Test group' }))
+			.toHaveAttribute('href', '/groups?machineGroup=00000000-0000-4000-8000-000000007e57');
+		await expect
+			.element(screen.getByText(/Version 0\.2\.1-test\.1 · Test channel · online/))
+			.toBeVisible();
+		await expect
+			.element(screen.getByText(/Version 0\.1\.0 · Full releases · online/))
+			.toBeVisible();
+	});
+
+	it('T8: says when there is no test build, and shows why the last look failed', async () => {
+		const screen = await renderPage({
+			testChannel: {
+				...TEST_CHANNEL,
+				check: {
+					checkedAtIso: '2026-11-07T11:58:00.000Z',
+					problem: 'Update check returned HTTP 503.'
+				}
+			}
+		});
+		const panel = screen.getByRole('region', { name: 'Test channel' });
+		await expect.element(panel.getByText(/No test build on offer/)).toBeVisible();
+		await expect.element(panel.getByText(/0 machines —/)).toBeVisible();
+		const alert = panel.getByRole('alert');
+		await expect.element(alert.getByText('The last look for test builds failed')).toBeVisible();
+		await expect.element(alert.getByText(/HTTP 503\. \(2 min ago\)/)).toBeVisible();
 	});
 
 	it("L3: shows the radar alone with the updater's step for screen readers, and lifts it when it rolls back", async () => {

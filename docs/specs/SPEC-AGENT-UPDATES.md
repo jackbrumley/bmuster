@@ -75,3 +75,7 @@ Both, in this order: make an update so safe that nobody has to think about it, *
 ### Moving an agent from before the launcher
 
 An agent installed before this change runs `bmuster-agent run` directly and cannot update itself; the console says so (Update available, and a warning on the Agent panel). Reinstall it once from the machine's Manage tab → Reinstall agent: the new install keeps the machine's entry and history, and from then on it updates itself.
+
+### Test channel
+
+Since SPEC-TEST-CHANNEL: machines in the built-in Test group also get agent test builds (`X.Y.Z-test.N`, GitHub pre-releases) at once, with no stages; every other machine follows full releases with the staged roll-out above.

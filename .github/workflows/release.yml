@@ -1,6 +1,11 @@
 # Builds the BMuster server release archives and, for a tag, publishes them
 # (docs/specs/SPEC-SERVER-INSTALL.md, I13).
 #
+#   Test build tag (vX.Y.Z-test.N, equal to agent/Cargo.toml's version,
+#     SPEC-TEST-CHANNEL): builds and signs the agents exactly as a release does,
+#     then publishes only them as a GitHub pre-release, never "latest". The
+#     server archives, their install and update tests and the image are
+#     skipped: servers and installers take only stable releases.
 #   Tag push (vX.Y.Z, equal to package.json's version): builds the agents and
 #     launchers on each platform, then each target's whole-install bundle
 #     (bmuster-app-<target>.tar.gz) on native runners, signs its manifest
@@ -41,16 +46,25 @@ jobs:
   check:
     name: Check the version
     runs-on: ubuntu-24.04
+    outputs:
+      kind: ${{ steps.kind.outputs.kind }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Tag matches package.json
-        if: github.event_name == 'push'
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      # release (vX.Y.Z, equal to package.json and agent/Cargo.toml) or
+      # prerelease (vX.Y.Z-test.N, equal to agent/Cargo.toml); anything else
+      # fails. A manual run is a dry run of a release.
+      - name: What the tag publishes
+        id: kind
         run: |
-          expected="v$(node -p "require('./package.json').version")"
-          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $expected. Bump package.json, commit, then tag."
-            exit 1
+          if [ "${{ github.event_name }}" = "push" ]; then
+            node scripts/release-kind.ts "$GITHUB_REF_NAME"
+          else
+            echo "kind=release" >> "$GITHUB_OUTPUT"
           fi
 
   binaries:
@@ -150,7 +164,8 @@ jobs:
 
   package:
     name: Archive (${{ matrix.platform }})
-    needs: binaries
+    needs: [check, binaries]
+    if: needs.check.outputs.kind == 'release'
     strategy:
       matrix:
         include:
@@ -292,6 +307,7 @@ jobs:
   update-test-linux:
     name: Scratch update test (Linux)
     needs: check
+    if: needs.check.outputs.kind == 'release'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -347,8 +363,8 @@ jobs:
 
   publish:
     name: Publish the release
-    needs: [install-test-linux, install-test-windows, update-test-linux]
-    if: github.event_name == 'push'
+    needs: [check, install-test-linux, install-test-windows, update-test-linux]
+    if: github.event_name == 'push' && needs.check.outputs.kind == 'release'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -368,6 +384,50 @@ jobs:
             --title "BMuster $GITHUB_REF_NAME" \
             --generate-notes
 
+  # A test build (SPEC-TEST-CHANNEL): the signed agents alone, as a GitHub
+  # pre-release that is never "latest". Servers fetch it only for machines in
+  # their Test group; server self-update, install.sh and install.ps1 take only
+  # the latest stable release, so it never reaches a server.
+  publish-test-build:
+    name: Publish the test build
+    needs: [check, binaries]
+    if: github.event_name == 'push' && needs.check.outputs.kind == 'prerelease'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: binaries-*
+          path: binaries
+          merge-multiple: true
+
+      # The asset names the server looks for: bmuster-agent-<target>[.exe] and .sig.
+      - name: Name the signed agent builds
+        run: |
+          mkdir release
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+            ext=""
+            case "$target" in *windows*) ext=".exe" ;; esac
+            test -s "binaries/$target/bmuster-agent$ext"
+            test -s "binaries/$target/bmuster-agent$ext.sig"
+            cp "binaries/$target/bmuster-agent$ext" "release/bmuster-agent-$target$ext"
+            cp "binaries/$target/bmuster-agent$ext.sig" "release/bmuster-agent-$target$ext.sig"
+          done
+          (cd release && sha256sum bmuster-agent-* > SHA256SUMS && cat SHA256SUMS)
+
+      - name: Create the GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --verify-tag \
+            --title "BMuster $GITHUB_REF_NAME (test build)" \
+            --notes "Agent test build for machines in a server's Test group. Every other machine, and every server, stays on full releases." \
+            --prerelease \
+            --latest=false
+
   # The container image (docs/specs/SPEC-HOSTING.md H4, docs/hosting.md),
   # built from the two Linux archives the install tests just passed, so the
   # image runs exactly what they hold. The Dockerfile runs nothing on the
@@ -376,7 +436,8 @@ jobs:
   # and smoke-tested, never pushed. Self-contained: it changes no other job.
   image:
     name: Container image
-    needs: [install-test-linux, install-test-windows]
+    needs: [check, install-test-linux, install-test-windows]
+    if: needs.check.outputs.kind == 'release'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

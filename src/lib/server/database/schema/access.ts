@@ -29,15 +29,16 @@ export const userGroupMembers = sqliteTable(
 /**
  * A group of machines (A2). `builtIn` marks the groups BMuster makes itself:
  * `all` for All machines (A3), which holds every machine without storing them,
- * and `early` for Early updates (A11), whose chosen machines get new agent
- * versions first. Null for every other group. Unique, so there is only ever
- * one of each.
+ * `early` for Early updates (A11), whose chosen machines get new agent
+ * versions first, and `test` for Test (SPEC-TEST-CHANNEL), whose chosen
+ * machines also get test builds. Null for every other group. Unique, so there
+ * is only ever one of each.
  */
 export const machineGroups = sqliteTable('machine_groups', {
 	id: text().primaryKey(),
 	name: text().notNull().unique(),
 	description: text().notNull().default(''),
-	builtIn: text({ enum: ['all', 'early'] }).unique(),
+	builtIn: text({ enum: ['all', 'early', 'test'] }).unique(),
 	createdAt: integer({ mode: 'timestamp_ms' }).notNull()
 });
 

@@ -73,10 +73,12 @@ describe('machine groups (A2)', () => {
 			description: 'Reception'
 		});
 		done(deleteGroup(database, 'machine', admin.id, id, NOW));
-		expect(listMachineGroups(database).map((group) => group.id)).toEqual([
-			allMachinesId(database),
-			earlyUpdatesId(database)
+		expect(listMachineGroups(database).map((group) => group.builtIn)).toEqual([
+			'all',
+			'early',
+			'test'
 		]);
+		expect(listMachineGroups(database)[1]?.id).toBe(earlyUpdatesId(database));
 	});
 
 	it('A2: adds and removes machines on the group and from a machine’s Manage tab', async () => {
@@ -177,6 +179,7 @@ describe('Early updates (A11)', () => {
 		expect(groups.map((group) => group.name)).toEqual([
 			'All machines',
 			'Early updates',
+			'Test',
 			'Aardvarks'
 		]);
 		expect(groups[1]).toMatchObject({
@@ -250,5 +253,33 @@ describe('Early updates (A11)', () => {
 				NOW
 			).kind
 		).toBe('done');
+	});
+});
+
+describe('Test (SPEC-TEST-CHANNEL T3)', () => {
+	it('T3: is built in, cannot be renamed or deleted, and takes machines like Early updates', async () => {
+		const { database, admin, first } = await setUp();
+		const test = listMachineGroups(database).find((group) => group.builtIn === 'test');
+		if (test === undefined) throw new Error('no Test group');
+		expect(listMachineGroups(database)[2]).toMatchObject({ id: test.id, name: 'Test' });
+		const refusal = deleteGroup(database, 'machine', admin.id, test.id, NOW);
+		expect(refusal.kind === 'refused' ? refusal.message : '').toMatch(/^Test is built in/);
+		expect(
+			updateGroupDetails(
+				database,
+				'machine',
+				admin.id,
+				test.id,
+				{ name: 'Beta', description: '' },
+				NOW
+			)
+		).toMatchObject({ kind: 'refused', status: 409 });
+		expect(
+			createGroup(database, 'machine', admin.id, { name: 'test', description: '' }, NOW)
+		).toMatchObject({ kind: 'refused', status: 409 });
+		done(setGroupMembers(database, 'machine', admin.id, test.id, [first], NOW));
+		expect(machineIdsOf(database, test.id)).toEqual([first]);
+		done(setGroupsOfMember(database, 'machine', admin.id, first, [], NOW));
+		expect(machineIdsOf(database, test.id)).toEqual([]);
 	});
 });

@@ -9,10 +9,12 @@ import { isOlderAgent } from './agent-version.ts';
 export type UpdatePolicy = 'automatic' | 'manual';
 
 /**
- * The built-in Early updates machine group (SPEC-ACCESS A11): its machines get
- * a new version first. Found by its built-in marker, so its name is only shown.
+ * A built-in update group and how many machines it holds: Early updates
+ * (SPEC-ACCESS A11), whose machines get a new version first, or Test
+ * (SPEC-TEST-CHANNEL), whose machines also get test builds. Found by its
+ * built-in marker, so its name is only shown.
  */
-export type EarlyUpdatesGroup = { id: string; name: string; machines: number };
+export type UpdateGroup = { id: string; name: string; machines: number };
 
 /** Each roll-out stage lasts this long without a failure before the next starts. */
 export const STAGE_MS = 60 * 60 * 1000;
@@ -24,6 +26,21 @@ export const UPDATING_MS = 15 * 60 * 1000;
 const TENTH_PERCENT = 10;
 
 export type RolloutStage = 'early' | 'tenth' | 'all';
+
+/**
+ * Which builds a machine follows (SPEC-TEST-CHANNEL): every machine follows
+ * full releases; machines in the built-in Test group also get test builds.
+ */
+export type UpdateChannel = 'full' | 'test';
+
+export function channelLabel(channel: UpdateChannel): string {
+	switch (channel) {
+		case 'full':
+			return 'Full releases';
+		case 'test':
+			return 'Test channel';
+	}
+}
 
 export type RolloutTiming = { stage: RolloutStage; stageStartedAt: number };
 
@@ -194,13 +211,17 @@ export function updateStateText(state: MachineUpdateState): string {
 	}
 }
 
-/** Whether this check-in gets an offer of `latest`. */
+/**
+ * Whether this check-in gets an offer of `latest`. A full build follows its
+ * staged roll-out; a test build (SPEC-TEST-CHANNEL), offered only to the Test
+ * group, has no roll-out and goes at once.
+ */
 export function shouldOffer(input: {
 	agentVersion: string;
 	latest: string;
 	record: UpdateRecord;
 	policy: UpdatePolicy;
-	rollout: { paused: boolean; stage: RolloutStage };
+	rollout: { kind: 'staged'; paused: boolean; stage: RolloutStage } | { kind: 'test' };
 	inEarlyGroup: boolean;
 	bucket: number;
 }): boolean {
@@ -212,7 +233,13 @@ export function shouldOffer(input: {
 	if (record.requested.kind === 'version' && record.requested.version === latest) {
 		return true;
 	}
-	if (policy === 'manual' || rollout.paused || failureFor(record.lastEvent, latest) !== undefined) {
+	if (policy === 'manual' || failureFor(record.lastEvent, latest) !== undefined) {
+		return false;
+	}
+	if (rollout.kind === 'test') {
+		return true;
+	}
+	if (rollout.paused) {
 		return false;
 	}
 	switch (rollout.stage) {

@@ -16,6 +16,11 @@ export function isAgentVersion(text: string): boolean {
 	return VERSION.test(text);
 }
 
+/** A version with a pre-release part (`1.2.3-test.1`): a test or development build. */
+export function isPrereleaseVersion(text: string): boolean {
+	return isAgentVersion(text) && parse(text).pre.length > 0;
+}
+
 type Parsed = { core: [number, number, number]; pre: string[] };
 
 function parse(text: string): Parsed {

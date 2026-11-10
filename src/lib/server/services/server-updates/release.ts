@@ -1,4 +1,4 @@
-import { createPublicKey, verify } from 'node:crypto';
+import { createPublicKey, verify, type KeyObject } from 'node:crypto';
 import { z } from 'zod';
 import { compareAgentVersions } from '#lib/domain/machines/agent-version.ts';
 import {
@@ -10,7 +10,7 @@ import {
 /** Public information, also compiled into the Rust launchers; its equality is tested. */
 export const RELEASE_PUBLIC_KEY = '4fsv0lh4Z/b/FM4RTf65gzD2la6wUJyfYcWto3RIXjs=';
 export const SERVER_SIGNING_DOMAIN = 'BMUSTER-SERVER-UPDATE-1\n';
-const REPOSITORY = 'jackbrumley/bmuster';
+export const REPOSITORY = 'jackbrumley/bmuster';
 const DOWNLOAD_ATTEMPTS = 3;
 const RETRYABLE_STATUSES = new Set([408, 500, 502, 503, 504]);
 export type Download = (url: string, limit: number) => Promise<Uint8Array>;
@@ -27,19 +27,24 @@ const githubReleaseSchema = z.object({
 	assets: z.array(z.object({ name: z.string(), size: z.int().nonnegative() })).max(100)
 });
 
+/** The raw 32-byte Ed25519 release key (standard base64) as a key object. */
+export function releaseKey(publicKey: string): KeyObject {
+	const keyBytes = Buffer.from(publicKey, 'base64');
+	if (keyBytes.length !== 32) throw new Error('Invalid release key or signature.');
+	return createPublicKey({
+		key: Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), keyBytes]),
+		type: 'spki',
+		format: 'der'
+	});
+}
+
 export function verifyManifest(bytes: Uint8Array, publicKey: string): ServerManifest {
 	if (bytes.byteLength > 32 * 1024) throw new Error('The update manifest is too large.');
 	const envelope = envelopeSchema.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));
 	const payload = Buffer.from(envelope.payload, 'base64');
 	const signature = Buffer.from(envelope.signature, 'base64');
-	const keyBytes = Buffer.from(publicKey, 'base64');
-	if (keyBytes.length !== 32 || signature.length !== 64)
-		throw new Error('Invalid release key or signature.');
-	const key = createPublicKey({
-		key: Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), keyBytes]),
-		type: 'spki',
-		format: 'der'
-	});
+	if (signature.length !== 64) throw new Error('Invalid release key or signature.');
+	const key = releaseKey(publicKey);
 	if (!verify(null, Buffer.concat([Buffer.from(SERVER_SIGNING_DOMAIN), payload]), key, signature))
 		throw new Error('The server update signature is not trusted.');
 	const manifest = serverManifestSchema.parse(JSON.parse(payload.toString('utf8')));

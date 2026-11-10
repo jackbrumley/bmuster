@@ -8,5 +8,11 @@ import type { RequestHandler } from './$types';
 
 /** GET /api/diagnostics/machines: every machine, briefly (SPEC-AGENT-LOGS 4). Admins and tokens. */
 export const GET: RequestHandler = route.diagnostics(() =>
-	noStore({ machines: diagnosticsMachines(database, Date.now(), signedReleases(env.releasesPath)) })
+	noStore({
+		machines: diagnosticsMachines(
+			database,
+			Date.now(),
+			signedReleases(env.releasesPath, env.agentTestBuildsPath)
+		)
+	})
 );

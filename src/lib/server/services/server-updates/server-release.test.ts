@@ -82,6 +82,34 @@ describe('SU2 signed stable server releases', () => {
 			'manifest'
 		);
 	});
+	it('T7: never offers the server a pre-release, however new (SPEC-TEST-CHANNEL)', async () => {
+		const asked: string[] = [];
+		const reply = (tag: string, prerelease: boolean) => (url: string) => {
+			asked.push(url);
+			return Promise.resolve(
+				Buffer.from(
+					JSON.stringify({
+						tag_name: tag,
+						draft: false,
+						prerelease,
+						body: '',
+						published_at: '2026-11-11T00:00:00Z',
+						assets: [{ name: `bmuster-app-${manifest.target}.json`, size: 100 }]
+					})
+				)
+			);
+		};
+		await expect(
+			newestRelease('0.3.0', manifest.target, reply('v9.0.0-test.1', true), key)
+		).rejects.toThrow('non-stable');
+		await expect(
+			newestRelease('0.3.0', manifest.target, reply('v9.0.0-test.1', false), key)
+		).rejects.toThrow();
+		// Only the latest stable release is ever asked for; GitHub leaves pre-releases out of it.
+		expect(new Set(asked)).toEqual(
+			new Set(['https://api.github.com/repos/jackbrumley/bmuster/releases/latest'])
+		);
+	});
 	it('retries transient GitHub gateway failures and returns the successful response', async () => {
 		const fetchMock = vi
 			.fn<typeof fetch>()

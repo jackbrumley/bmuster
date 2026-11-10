@@ -2,7 +2,12 @@
 	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { IconCloudDownload } from '@tabler/icons-svelte-runes';
-	import { updateStateText, type MachineUpdateState } from '#lib/domain/machines/agent-updates.ts';
+	import {
+		channelLabel,
+		updateStateText,
+		type MachineUpdateState,
+		type UpdateChannel
+	} from '#lib/domain/machines/agent-updates.ts';
 	import type { MachineStatus, OsFamily } from '#lib/domain/machines/machine.ts';
 	import {
 		updateNowReplySchema,
@@ -25,6 +30,7 @@
 		agentVersion: string;
 		status: MachineStatus;
 		update: MachineUpdateState;
+		channel: UpdateChannel;
 	};
 
 	/**
@@ -156,7 +162,8 @@
 				<UpdateBadge state={machine.update} />
 			</p>
 			<p class="muted">
-				Version {machine.agentVersion} · {machine.status.kind === 'online'
+				Version {machine.agentVersion} · {channelLabel(machine.channel)} · {machine.status.kind ===
+				'online'
 					? 'online'
 					: `went offline ${formatRelative(machine.status.sinceIso, now)}`}
 			</p>

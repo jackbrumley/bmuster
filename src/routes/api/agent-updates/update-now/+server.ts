@@ -26,7 +26,7 @@ export const POST: RequestHandler = route.admin(async ({ request }, { user }) =>
 	const result = requestUpdates(
 		database,
 		ids,
-		signedReleases(env.releasesPath),
+		signedReleases(env.releasesPath, env.agentTestBuildsPath),
 		user.id,
 		Date.now()
 	);

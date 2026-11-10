@@ -12,11 +12,19 @@ describe('environment (S15)', () => {
 			'databasePath',
 			'secretsKey',
 			'releasesPath',
+			'agentTestBuildsPath',
 			'firstAdmin',
 			'localNetworkModeAtFirstRun',
 			'backupSchedule'
 		]);
 		expect(env.firstAdmin).toEqual({ kind: 'none' });
+	});
+
+	it('keeps test agent builds beside the database (SPEC-TEST-CHANNEL)', async () => {
+		vi.stubEnv('DATABASE_PATH', '/var/lib/bmuster-server/bmuster.db');
+		vi.resetModules();
+		const { env } = await import('#lib/server/env.ts');
+		expect(env.agentTestBuildsPath).toBe('/var/lib/bmuster-server/agent-test-builds');
 	});
 
 	it('reads the optional first admin (S18): both or neither of email and password', async () => {

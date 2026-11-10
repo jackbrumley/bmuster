@@ -161,6 +161,7 @@ describe('deleting a group used by rules (A8)', () => {
 		expect(listMachineGroups(database).map((group) => group.name)).toEqual([
 			'All machines',
 			'Early updates',
+			'Test',
 			'Lab'
 		]);
 		expect(listUsers(database).map((user) => user.id)).toEqual([admin.id]);

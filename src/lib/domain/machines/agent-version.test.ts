@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { compareAgentVersions, isAgentVersion, isOlderAgent } from './agent-version.ts';
+import {
+	compareAgentVersions,
+	isAgentVersion,
+	isOlderAgent,
+	isPrereleaseVersion
+} from './agent-version.ts';
 
 describe('agent versions (SPEC-AGENT-UPDATES)', () => {
 	it('orders versions like the agent does, development builds before their release', () => {
@@ -42,6 +47,20 @@ describe('agent versions (SPEC-AGENT-UPDATES)', () => {
 			expect(isAgentVersion(bad), bad).toBe(false);
 		}
 		expect(isAgentVersion('0.1.0-dev.20261107153000')).toBe(true);
+	});
+
+	it('T1: a test build sorts after the release before it and before its own full release', () => {
+		const ordered = ['0.4.13', '0.4.14-test.1', '0.4.14-test.2', '0.4.14-test.10', '0.4.14'];
+		for (let index = 1; index < ordered.length; index += 1) {
+			const older = ordered[index - 1] ?? '';
+			const newer = ordered[index] ?? '';
+			expect(compareAgentVersions(older, newer), `${older} < ${newer}`).toBe(-1);
+			expect(isOlderAgent(older, newer)).toBe(true);
+			expect(isOlderAgent(newer, older)).toBe(false);
+		}
+		expect(isPrereleaseVersion('0.4.14-test.1')).toBe(true);
+		expect(isPrereleaseVersion('0.4.14')).toBe(false);
+		expect(isPrereleaseVersion('../0.4.14-test.1')).toBe(false);
 	});
 
 	it('treats an unreadable reported version as older', () => {

@@ -18,6 +18,12 @@ export const GET: RequestHandler = route.user(({ url }, { user }) => {
 		return invalidRequest(query.error);
 	}
 	return csvResponse(
-		exportMachines(database, user, query.data, Date.now(), signedReleases(env.releasesPath))
+		exportMachines(
+			database,
+			user,
+			query.data,
+			Date.now(),
+			signedReleases(env.releasesPath, env.agentTestBuildsPath)
+		)
 	);
 });

@@ -2,7 +2,8 @@ import { database } from '#lib/server/database/app-database.ts';
 import { env } from '#lib/server/env.ts';
 import { page } from '#lib/server/guards/page.ts';
 import { AGENT_TARGETS } from '#lib/domain/machines/agent-release.ts';
-import { newestVersion, rolloutView } from '#lib/server/services/agents/agent-updates.ts';
+import { rolloutView } from '#lib/server/services/agents/agent-updates.ts';
+import { newestVersion } from '#lib/server/services/agents/update-channels.ts';
 import { signedReleases } from '#lib/server/services/agents/releases.ts';
 import { visibleMachineIds } from '#lib/server/services/access/access.ts';
 import { listMachines } from '#lib/server/services/machines/machine-views.ts';
@@ -17,7 +18,7 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = page.user((_event, { user }) => {
 	const now = Date.now();
 	const visible = visibleMachineIds(database, user);
-	const releases = signedReleases(env.releasesPath);
+	const releases = signedReleases(env.releasesPath, env.agentTestBuildsPath);
 	const machines = listMachines(database, now, releases).filter((machine) =>
 		visible.has(machine.id)
 	);
@@ -26,7 +27,7 @@ export const load: PageServerLoad = page.user((_event, { user }) => {
 	}
 	const rollout =
 		user.role === 'admin'
-			? rolloutView(database, newestVersion(releases, AGENT_TARGETS)?.version, now)
+			? rolloutView(database, newestVersion(releases.full, AGENT_TARGETS)?.version, now)
 			: { kind: 'none' as const };
 	return { now, rollout, view: { kind: 'machines' as const, machines } };
 });

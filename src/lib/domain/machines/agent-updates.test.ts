@@ -7,6 +7,7 @@ import {
 	firstStage,
 	machineUpdateState,
 	shouldOffer,
+	channelLabel,
 	updateBadge,
 	type UpdateRecord
 } from './agent-updates.ts';
@@ -21,7 +22,7 @@ function offer(overrides: Partial<Parameters<typeof shouldOffer>[0]>): boolean {
 		latest: '0.2.0',
 		record: LAUNCHED,
 		policy: 'automatic',
-		rollout: { paused: false, stage: 'all' },
+		rollout: { kind: 'staged', paused: false, stage: 'all' },
 		inEarlyGroup: false,
 		bucket: 50,
 		...overrides
@@ -42,8 +43,8 @@ describe('staged roll-out (SPEC-AGENT-UPDATES)', () => {
 	});
 
 	it('offers each stage to the right machines', () => {
-		const early = { paused: false, stage: 'early' } as const;
-		const tenth = { paused: false, stage: 'tenth' } as const;
+		const early = { kind: 'staged', paused: false, stage: 'early' } as const;
+		const tenth = { kind: 'staged', paused: false, stage: 'tenth' } as const;
 		expect(offer({ rollout: early, inEarlyGroup: true })).toBe(true);
 		expect(offer({ rollout: early, bucket: 3 })).toBe(false);
 		expect(offer({ rollout: tenth, bucket: 9 })).toBe(true);
@@ -53,7 +54,7 @@ describe('staged roll-out (SPEC-AGENT-UPDATES)', () => {
 	});
 
 	it('holds back for a pause, Manual mode, a pin, a failure, no launcher or an up-to-date agent', () => {
-		expect(offer({ rollout: { paused: true, stage: 'all' } })).toBe(false);
+		expect(offer({ rollout: { kind: 'staged', paused: true, stage: 'all' } })).toBe(false);
 		expect(offer({ policy: 'manual' })).toBe(false);
 		expect(offer({ record: { ...LAUNCHED, pinned: true } })).toBe(false);
 		expect(offer({ record: NEW_UPDATE_RECORD })).toBe(false);
@@ -81,9 +82,51 @@ describe('staged roll-out (SPEC-AGENT-UPDATES)', () => {
 			lastEvent: { kind: 'rolled-back', version: '0.2.0', reason: 'x', atIso: '' }
 		};
 		expect(
-			offer({ record: requested, policy: 'manual', rollout: { paused: true, stage: 'early' } })
+			offer({
+				record: requested,
+				policy: 'manual',
+				rollout: { kind: 'staged', paused: true, stage: 'early' }
+			})
 		).toBe(true);
 		expect(offer({ record: { ...requested, pinned: true } })).toBe(false);
+	});
+});
+
+describe('test builds (SPEC-TEST-CHANNEL)', () => {
+	const TEST = { kind: 'test' } as const;
+
+	it('T4: offers a test build at once, whatever the stage, but holds it back for Manual mode, a pin or a failure', () => {
+		expect(offer({ rollout: TEST, latest: '0.2.0-test.1', bucket: 99 })).toBe(true);
+		expect(offer({ rollout: TEST, latest: '0.2.0-test.1', policy: 'manual' })).toBe(false);
+		expect(
+			offer({ rollout: TEST, latest: '0.2.0-test.1', record: { ...LAUNCHED, pinned: true } })
+		).toBe(false);
+		const failed: UpdateRecord = {
+			...LAUNCHED,
+			lastEvent: { kind: 'rolled-back', version: '0.2.0-test.1', reason: 'x', atIso: '' }
+		};
+		expect(offer({ rollout: TEST, latest: '0.2.0-test.1', record: failed })).toBe(false);
+		expect(
+			offer({
+				rollout: TEST,
+				latest: '0.2.0-test.1',
+				policy: 'manual',
+				record: { ...failed, requested: { kind: 'version', version: '0.2.0-test.1' } }
+			})
+		).toBe(true);
+	});
+
+	it('T5: never offers a test build older than or equal to the running version', () => {
+		expect(offer({ rollout: TEST, latest: '0.2.0-test.1', agentVersion: '0.2.0' })).toBe(false);
+		expect(offer({ rollout: TEST, latest: '0.2.0-test.1', agentVersion: '0.2.0-test.1' })).toBe(
+			false
+		);
+		expect(offer({ latest: '0.2.0', agentVersion: '0.2.0-test.1' })).toBe(true);
+	});
+
+	it('names each channel', () => {
+		expect(channelLabel('test')).toBe('Test channel');
+		expect(channelLabel('full')).toBe('Full releases');
 	});
 });
 

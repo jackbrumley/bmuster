@@ -151,4 +151,4 @@ export const SAMPLE_INVENTORY: InventoryWire = {
 };
 
 /** A server with no signed agent builds (SPEC-AGENT-UPDATES): nothing to offer. */
-export const NO_RELEASES: ReleaseLookup = () => undefined;
+export const NO_RELEASES: ReleaseLookup = { full: () => undefined, test: () => undefined };

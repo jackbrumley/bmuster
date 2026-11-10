@@ -5,14 +5,19 @@ import {
 	type AgentDownload,
 	type AgentTarget
 } from '#lib/domain/machines/agent-release.ts';
-import { compareAgentVersions, isAgentVersion } from '#lib/domain/machines/agent-version.ts';
+import {
+	compareAgentVersions,
+	isAgentVersion,
+	isPrereleaseVersion
+} from '#lib/domain/machines/agent-version.ts';
 import { sha256Hex } from './signing.ts';
 
 /**
  * Builds the server serves (SPEC-ENROLMENT 6.1): RELEASES_PATH/<version>/<target>/bmuster-agent[.exe],
  * with `<binary>.sig` beside it when the build is signed for automatic updates
  * (SPEC-AGENT-UPDATES). Versions are releases (`1.2.3`) or development builds
- * (`1.2.3-dev.20261107153000`).
+ * (`1.2.3-dev.20261107153000`). Test builds (SPEC-TEST-CHANNEL, `1.2.3-test.1`)
+ * live in their own folder, laid out the same way, filled from GitHub.
  */
 type ReleaseManifest = {
 	version: string;
@@ -30,10 +35,17 @@ export type SignedRelease = {
 	signature: string;
 };
 
-/** The newest signed build for a target, if any: what check-ins and the console ask. */
-export type ReleaseLookup = (target: string) => SignedRelease | undefined;
+/**
+ * The newest signed builds for a target, if any: what check-ins and the
+ * console ask. `full` is the release channel every machine follows; `test` is
+ * the newest test build, which only the Test group may be offered.
+ */
+export type ReleaseLookup = {
+	full: (target: string) => SignedRelease | undefined;
+	test: (target: string) => SignedRelease | undefined;
+};
 
-function binaryName(target: AgentTarget): string {
+export function binaryName(target: AgentTarget): string {
 	return target.includes('windows') ? 'bmuster-agent.exe' : 'bmuster-agent';
 }
 
@@ -106,7 +118,16 @@ export function latestSignedRelease(
 	releasesPath: string,
 	target: AgentTarget
 ): SignedRelease | undefined {
+	return newestSigned(releasesPath, target, () => true);
+}
+
+function newestSigned(
+	releasesPath: string,
+	target: AgentTarget,
+	accept: (version: string) => boolean
+): SignedRelease | undefined {
 	const version = versionsFor(releasesPath, target)
+		.filter(accept)
 		.filter((candidate) => existsSync(`${binaryPath(releasesPath, candidate, target)}.sig`))
 		.at(-1);
 	if (version === undefined) {
@@ -117,10 +138,18 @@ export function latestSignedRelease(
 	return { version, size, sha256, signature: readFileSync(`${path}.sig`, 'utf8').trim() };
 }
 
-/** The lookup check-ins and the console use: the newest signed build in `releasesPath`. */
-export function signedReleases(releasesPath: string): ReleaseLookup {
-	return (target) =>
-		isAgentTarget(target) ? latestSignedRelease(releasesPath, target) : undefined;
+/**
+ * The lookup check-ins and the console use: the newest signed build in
+ * `releasesPath`, and the newest signed test build in `testBuildsPath` (only
+ * versions with a pre-release part count there).
+ */
+export function signedReleases(releasesPath: string, testBuildsPath: string): ReleaseLookup {
+	return {
+		full: (target) =>
+			isAgentTarget(target) ? latestSignedRelease(releasesPath, target) : undefined,
+		test: (target) =>
+			isAgentTarget(target) ? newestSigned(testBuildsPath, target, isPrereleaseVersion) : undefined
+	};
 }
 
 /** Every build on the server, newest first, and whether it is signed: the Updates page. */
@@ -157,17 +186,24 @@ export function agentDownload(
 			};
 }
 
-/** A release binary (a few MB), or undefined if there is no such build. */
+/**
+ * A release binary (a few MB), or undefined if there is no such build. Test
+ * builds are served from their own folder, so a Test machine can download the
+ * build it was offered.
+ */
 export function releaseFile(
 	releasesPath: string,
+	testBuildsPath: string,
 	version: string,
 	target: AgentTarget
 ): { body: Uint8Array<ArrayBuffer>; size: number; fileName: string } | undefined {
 	if (!isAgentVersion(version)) {
 		return undefined;
 	}
-	const path = binaryPath(releasesPath, version, target);
-	if (!existsSync(path)) {
+	const path = [releasesPath, ...(isPrereleaseVersion(version) ? [testBuildsPath] : [])]
+		.map((folder) => binaryPath(folder, version, target))
+		.find((candidate) => existsSync(candidate));
+	if (path === undefined) {
 		return undefined;
 	}
 	const body = new Uint8Array(readFileSync(path));

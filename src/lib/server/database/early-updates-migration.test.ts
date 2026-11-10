@@ -15,6 +15,8 @@ import * as schema from './schema.ts';
 
 /** The migration that makes Early updates a built-in machine group (SPEC-ACCESS A11). */
 const EARLY_UPDATES_MIGRATION = '0010_early_updates_group';
+/** The migration that makes Test a built-in machine group (SPEC-TEST-CHANNEL T3). */
+const TEST_GROUP_MIGRATION = '0016_test_group';
 
 const journalSchema = z.looseObject({ entries: z.array(z.looseObject({ tag: z.string() })) });
 
@@ -26,14 +28,14 @@ afterEach(() => {
 	}
 });
 
-/** A copy of the migrations folder whose journal stops before the Early updates migration. */
-function migrationsBeforeEarlyUpdates(): string {
+/** A copy of the migrations folder whose journal stops before `migration`. */
+function migrationsBefore(migration: string): string {
 	const folder = mkdtempSync(join(tmpdir(), 'bmuster-early-migration-'));
 	folders.push(folder);
 	cpSync(MIGRATIONS_FOLDER, folder, { recursive: true });
 	const journalPath = join(folder, 'meta', '_journal.json');
 	const journal = journalSchema.parse(JSON.parse(readFileSync(journalPath, 'utf8')));
-	const cut = journal.entries.findIndex((entry) => entry.tag === EARLY_UPDATES_MIGRATION);
+	const cut = journal.entries.findIndex((entry) => entry.tag === migration);
 	expect(cut).toBeGreaterThan(0);
 	writeFileSync(
 		journalPath,
@@ -42,13 +44,17 @@ function migrationsBeforeEarlyUpdates(): string {
 	return folder;
 }
 
-/** An in-memory database migrated up to, but not including, the Early updates migration. */
-function databaseBeforeEarlyUpdates(): AppDatabase {
+/** An in-memory database migrated up to, but not including, `migration`. */
+function databaseBefore(migration: string): AppDatabase {
 	const client = new Database(':memory:');
 	client.pragma('foreign_keys = ON');
 	const database = drizzle(client, { schema, casing: 'snake_case' });
-	migrate(database, { migrationsFolder: migrationsBeforeEarlyUpdates() });
+	migrate(database, { migrationsFolder: migrationsBefore(migration) });
 	return database;
+}
+
+function databaseBeforeEarlyUpdates(): AppDatabase {
+	return databaseBefore(EARLY_UPDATES_MIGRATION);
 }
 
 /**
@@ -122,7 +128,12 @@ describe('Early updates migration (SPEC-ACCESS A11, SPEC-AGENT-UPDATES U8)', () 
 		migrateToLatest(database);
 
 		const groups = listMachineGroups(database);
-		expect(groups.map((group) => group.name)).toEqual(['All machines', 'early Updates', 'Office']);
+		expect(groups.map((group) => group.name)).toEqual([
+			'All machines',
+			'early Updates',
+			'Test',
+			'Office'
+		]);
 		expect(groups.filter((group) => group.builtIn === 'early')).toHaveLength(1);
 		const migrated = groups[1];
 		expect(migrated).toMatchObject({ id: early, description: 'Test PCs', builtIn: 'early' });
@@ -135,5 +146,49 @@ describe('Early updates migration (SPEC-ACCESS A11, SPEC-AGENT-UPDATES U8)', () 
 				.all()
 				.map((rule) => rule.machineGroupId)
 		).toEqual([early]);
+	});
+});
+
+describe('Test group migration (SPEC-TEST-CHANNEL T3)', () => {
+	it('T3: makes a new built-in Test group after Early updates when there is none', () => {
+		const database = databaseBefore(TEST_GROUP_MIGRATION);
+		expect(listMachineGroups(database).map((group) => group.name)).toEqual([
+			'All machines',
+			'Early updates'
+		]);
+		migrateToLatest(database);
+		expect(listMachineGroups(database)[2]).toEqual({
+			id: '00000000-0000-4000-8000-000000007e57',
+			name: 'Test',
+			description:
+				'Test builds reach these machines before a full release. Put the machines a fix is aimed at here.',
+			builtIn: 'test',
+			membership: { kind: 'chosen', machineIds: [] }
+		});
+	});
+
+	it('T3: turns an existing group called test (any case) into the built-in one, keeping its machines', async () => {
+		const database = databaseBefore(TEST_GROUP_MIGRATION);
+		const admin = await addTestUser(database, {
+			email: 'ada@example.com',
+			role: 'admin',
+			password: null
+		});
+		const laptop = insertMachineBeforeEarlyUpdates(database);
+		const testers = done(
+			createGroup(database, 'machine', admin.id, { name: 'TEST', description: 'Laptops' }, NOW)
+		);
+		done(setGroupMembers(database, 'machine', admin.id, testers, [laptop], NOW));
+		migrateToLatest(database);
+		const groups = listMachineGroups(database);
+		expect(groups.filter((group) => group.builtIn === 'test')).toEqual([
+			{
+				id: testers,
+				name: 'TEST',
+				description: 'Laptops',
+				builtIn: 'test',
+				membership: { kind: 'chosen', machineIds: [laptop] }
+			}
+		]);
 	});
 });

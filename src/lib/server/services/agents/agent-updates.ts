@@ -6,25 +6,20 @@ import {
 	firstStage,
 	machineUpdateState,
 	shouldOffer,
-	type EarlyUpdatesGroup,
 	type MachineUpdateState,
 	type RolloutStage,
+	type UpdateChannel,
 	type UpdateEvent,
 	type UpdateRecord
 } from '#lib/domain/machines/agent-updates.ts';
-import { compareAgentVersions, isOlderAgent } from '#lib/domain/machines/agent-version.ts';
+import { isOlderAgent } from '#lib/domain/machines/agent-version.ts';
 import type { UpdateOffer, UpdateReport } from '#lib/schemas/agents/agent-protocol.ts';
-import {
-	agentRollouts,
-	machineGroupMembers,
-	machineGroups,
-	machineUpdates,
-	machines
-} from '../../database/schema.ts';
+import { agentRollouts, machineUpdates, machines } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { getSetting } from '../settings/settings.ts';
-import type { ReleaseLookup, SignedRelease } from './releases.ts';
+import type { ReleaseLookup } from './releases.ts';
+import { builtInGroupMachineIds, releaseFor } from './update-channels.ts';
 
 /**
  * Agent updates on the server (SPEC-AGENT-UPDATES). The server never signs or
@@ -98,14 +93,7 @@ function upsert(
 
 /** The machines in the built-in Early updates group (found by `built_in`, never by name). */
 function earlyMachineIds(database: Queryable): Set<string> {
-	const rows = database
-		.select({ machineId: machineGroupMembers.machineId })
-		.from(machineGroupMembers)
-		.innerJoin(machineGroups, eq(machineGroups.id, machineGroupMembers.machineGroupId))
-		.innerJoin(machines, eq(machines.id, machineGroupMembers.machineId))
-		.where(and(eq(machineGroups.builtIn, 'early'), isNull(machines.removedAt)))
-		.all();
-	return new Set(rows.map((row) => row.machineId));
+	return builtInGroupMachineIds(database, 'early');
 }
 
 /** A stable 0–99 per machine and version: the 10% stage is the same machines every time. */
@@ -189,6 +177,7 @@ function recordEvent(
 	machine: { id: string; name: string },
 	row: UpdateRow | undefined,
 	event: Extract<UpdateReport, { kind: 'launcher' }>['last'],
+	isTestBuild: (version: string) => boolean,
 	now: number
 ): void {
 	if (event.kind === 'none' || row?.lastEventAt?.getTime() === event.atMs) {
@@ -238,6 +227,11 @@ function recordEvent(
 				},
 				now
 			);
+			// A test build has no roll-out to pause (SPEC-TEST-CHANNEL); the
+			// failure still stops it on this machine.
+			if (isTestBuild(event.version)) {
+				return;
+			}
 			pause(
 				database,
 				event.version,
@@ -250,9 +244,27 @@ function recordEvent(
 	}
 }
 
+/** A full build follows its roll-out; a test build has none (SPEC-TEST-CHANNEL). */
+function stagedOrTest(
+	database: Queryable,
+	channel: UpdateChannel,
+	version: string,
+	now: number
+): { kind: 'staged'; paused: boolean; stage: RolloutStage } | { kind: 'test' } {
+	switch (channel) {
+		case 'test':
+			return { kind: 'test' };
+		case 'full': {
+			const rollout = currentRollout(database, version, now);
+			return { kind: 'staged', paused: rollout.pausedAt !== null, stage: rollout.stage };
+		}
+	}
+}
+
 /**
  * The update part of a check-in: records what the agent reported and decides
- * whether this reply offers it the newest signed build for its target.
+ * whether this reply offers it the newest signed build for its target (and,
+ * for a machine in the Test group, the newest test build when that is newer).
  */
 export function checkInUpdate(
 	database: AppDatabase,
@@ -274,7 +286,8 @@ export function checkInUpdate(
 		const before = updateRow(tx, machineId);
 		upsert(tx, machineId, { launcher: report.kind === 'launcher' });
 		if (report.kind === 'launcher') {
-			recordEvent(tx, machine, before, report.last, now);
+			const testBuild = releases.test(machine.target)?.version;
+			recordEvent(tx, machine, before, report.last, (version) => version === testBuild, now);
 		}
 		const row = updateRow(tx, machineId);
 		const record = toRecord(row);
@@ -284,17 +297,21 @@ export function checkInUpdate(
 		) {
 			upsert(tx, machineId, { requestedVersion: null, requestedAt: null });
 		}
-		const latest = releases(machine.target);
-		if (latest === undefined || !record.launcher) {
+		const chosen = releaseFor(
+			releases,
+			machine.target,
+			builtInGroupMachineIds(tx, 'test').has(machineId)
+		);
+		if (chosen === undefined || !record.launcher) {
 			return { kind: 'none' };
 		}
-		const rollout = currentRollout(tx, latest.version, now);
+		const latest = chosen.release;
 		const offer = shouldOffer({
 			agentVersion,
 			latest: latest.version,
 			record,
 			policy: getSetting(tx, 'agentUpdatePolicy'),
-			rollout: { paused: rollout.pausedAt !== null, stage: rollout.stage },
+			rollout: stagedOrTest(tx, chosen.channel, latest.version, now),
 			inEarlyGroup: earlyMachineIds(tx).has(machineId),
 			bucket: bucketOf(machineId, latest.version)
 		});
@@ -328,9 +345,10 @@ export function updateStates(
 			: database.select().from(machineUpdates).where(inArray(machineUpdates.machineId, ids)).all()
 		).map((row) => [row.machineId, row])
 	);
+	const inTest = builtInGroupMachineIds(database, 'test');
 	return new Map(
 		list.map((machine) => {
-			const latest = releases(machine.target);
+			const latest = releaseFor(releases, machine.target, inTest.has(machine.id))?.release;
 			return [
 				machine.id,
 				machineUpdateState({
@@ -343,18 +361,6 @@ export function updateStates(
 			];
 		})
 	);
-}
-
-/** The newest signed version on the server, for any target: what the roll-out is about. */
-export function newestVersion(
-	releases: ReleaseLookup,
-	targets: readonly string[]
-): SignedRelease | undefined {
-	return targets
-		.map((target) => releases(target))
-		.filter((release) => release !== undefined)
-		.sort((a, b) => compareAgentVersions(b.version, a.version))
-		.at(0);
 }
 
 export type RolloutView =
@@ -396,22 +402,6 @@ export function rolloutView(
 						by: rollout.pausedBy === null ? 'system' : 'admin'
 					}
 	};
-}
-
-/**
- * The built-in Early updates group and how many machines are in it, for the
- * Updates page. The migration makes the group, so a database without it is broken.
- */
-export function earlyUpdatesGroup(database: Queryable): EarlyUpdatesGroup {
-	const group = database
-		.select({ id: machineGroups.id, name: machineGroups.name })
-		.from(machineGroups)
-		.where(eq(machineGroups.builtIn, 'early'))
-		.get();
-	if (group === undefined) {
-		throw new Error('The built-in Early updates machine group is missing; run the migrations.');
-	}
-	return { ...group, machines: earlyMachineIds(database).size };
 }
 
 /** Pause by an admin. False if it was already paused. */
@@ -531,13 +521,14 @@ export function requestUpdates(
 ): UpdateNowResult {
 	return database.transaction((tx) => {
 		const result: UpdateNowResult = { requested: [], skipped: [] };
+		const inTest = builtInGroupMachineIds(tx, 'test');
 		for (const machineId of machineIds) {
 			const machine = activeMachine(tx, machineId);
 			if (machine === undefined) {
 				continue;
 			}
 			const record = toRecord(updateRow(tx, machineId));
-			const latest = releases(machine.target);
+			const latest = releaseFor(releases, machine.target, inTest.has(machineId))?.release;
 			const skip = (reason: string): void => {
 				result.skipped.push({ name: machine.name, reason });
 			};

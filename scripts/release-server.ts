@@ -39,6 +39,7 @@ import { parseArgs } from 'node:util';
 import { build } from 'vite';
 import { z } from 'zod';
 import { AGENT_TARGETS, type AgentTarget } from '../src/lib/domain/machines/agent-release.ts';
+import { isPrereleaseVersion } from '../src/lib/domain/machines/agent-version.ts';
 import { AGENT_MANIFEST, agentVersion, binaryName, hostTarget } from './agent-build.ts';
 
 function fail(message: string): never {
@@ -257,6 +258,12 @@ function buildHostBinaries(): string {
  */
 function addBinaries(dir: string, every: boolean): void {
 	const version = agentVersion();
+	// Test builds are agent-only (SPEC-TEST-CHANNEL): a server bundle carries full releases.
+	if (isPrereleaseVersion(version)) {
+		fail(
+			`${AGENT_MANIFEST} has the test version ${version}; a server release carries x.y.z agents`
+		);
+	}
 	for (const agentTarget of AGENT_TARGETS) {
 		const agent = join(dir, agentTarget, binaryName('bmuster-agent', agentTarget));
 		if (!existsSync(agent)) {

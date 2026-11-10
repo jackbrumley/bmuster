@@ -117,9 +117,9 @@ export type UserGroupView = {
 
 /**
  * The machine groups BMuster makes itself, which cannot be renamed or
- * deleted: All machines (A3) and Early updates (A11).
+ * deleted: All machines (A3), Early updates (A11) and Test (SPEC-TEST-CHANNEL).
  */
-export type BuiltInMachineGroup = 'all' | 'early' | 'none';
+export type BuiltInMachineGroup = 'all' | 'early' | 'test' | 'none';
 
 /** One line on what a built-in group does, for its page. */
 export function builtInGroupAbout(builtIn: Exclude<BuiltInMachineGroup, 'none'>): string {
@@ -128,6 +128,8 @@ export function builtInGroupAbout(builtIn: Exclude<BuiltInMachineGroup, 'none'>)
 			return 'Built in: every machine on this server, now and later. Machines cannot be added or taken out.';
 		case 'early':
 			return 'Built in: new agent versions reach these machines first, an hour before the rest. Add one or two test machines.';
+		case 'test':
+			return 'Built in: test builds reach these machines as soon as they are published, before the full release. Everyone else stays on full releases.';
 	}
 }
 

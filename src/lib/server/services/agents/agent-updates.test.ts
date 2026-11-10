@@ -11,7 +11,6 @@ import { listAudit } from '../audit/audit.ts';
 import { updateSetting } from '../settings/settings.ts';
 import {
 	checkInUpdate,
-	earlyUpdatesGroup,
 	pauseRollout,
 	requestUpdates,
 	resumeRollout,
@@ -20,10 +19,13 @@ import {
 	updateStates
 } from './agent-updates.ts';
 import type { ReleaseLookup } from './releases.ts';
+import { updateGroup } from './update-channels.ts';
 
 const RELEASE = { version: '0.2.0', size: 3, sha256: 'a'.repeat(64), signature: 'c2ln' };
-const RELEASES: ReleaseLookup = (target) =>
-	target === 'x86_64-unknown-linux-gnu' ? RELEASE : undefined;
+const RELEASES: ReleaseLookup = {
+	full: (target) => (target === 'x86_64-unknown-linux-gnu' ? RELEASE : undefined),
+	test: () => undefined
+};
 const LAUNCHER: UpdateReport = {
 	kind: 'launcher',
 	last: { kind: 'none' },
@@ -40,7 +42,7 @@ async function setUp(earlyGroup: boolean) {
 	});
 	const agent = enrolFakeAgent(database, NOW);
 	if (earlyGroup) {
-		const early = earlyUpdatesGroup(database);
+		const early = updateGroup(database, 'early');
 		setGroupMembers(database, 'machine', admin.id, early.id, [agent.machineId], NOW);
 	}
 	return { database, admin, machineId: agent.machineId };
@@ -140,15 +142,15 @@ describe('agent updates on the server (SPEC-AGENT-UPDATES)', () => {
 		);
 		if (lookalike.kind !== 'done') throw new Error('no group');
 		setGroupMembers(database, 'machine', admin.id, lookalike.id, [machineId], NOW);
-		expect(earlyUpdatesGroup(database)).toMatchObject({ name: 'Early updates', machines: 0 });
-		const early = earlyUpdatesGroup(database);
+		expect(updateGroup(database, 'early')).toMatchObject({ name: 'Early updates', machines: 0 });
+		const early = updateGroup(database, 'early');
 		database
 			.update(machineGroups)
 			.set({ name: 'Canaries' })
 			.where(eq(machineGroups.id, early.id))
 			.run();
 		setGroupMembers(database, 'machine', admin.id, early.id, [machineId], NOW);
-		expect(earlyUpdatesGroup(database)).toEqual({ id: early.id, name: 'Canaries', machines: 1 });
+		expect(updateGroup(database, 'early')).toEqual({ id: early.id, name: 'Canaries', machines: 1 });
 		expect(checkIn(database, machineId, LAUNCHER, NOW)).toEqual({ kind: 'offer', ...RELEASE });
 		expect(rolloutView(database, '0.2.0', NOW)).toMatchObject({ stage: 'early' });
 	});
@@ -203,5 +205,134 @@ describe('agent updates on the server (SPEC-AGENT-UPDATES)', () => {
 		expect(requestUpdates(database, [machineId], RELEASES, admin.id, NOW + 7).skipped).toEqual([
 			{ name: 'Test machine', reason: 'installed before automatic updates; reinstall it once' }
 		]);
+	});
+});
+
+describe('the Test channel (SPEC-TEST-CHANNEL)', () => {
+	const TEST_BUILD = {
+		version: '0.2.1-test.1',
+		size: 4,
+		sha256: 'b'.repeat(64),
+		signature: 'dGVzdA=='
+	};
+	const WITH_TEST: ReleaseLookup = {
+		full: RELEASES.full,
+		test: (target) => (target === 'x86_64-unknown-linux-gnu' ? TEST_BUILD : undefined)
+	};
+
+	/** Two machines on 0.1.0, the first in Test, the second in Early updates. */
+	async function twoMachines() {
+		const { database, admin, machineId: tester } = await setUp(false);
+		const other = enrolFakeAgent(database, NOW).machineId;
+		setGroupMembers(database, 'machine', admin.id, updateGroup(database, 'test').id, [tester], NOW);
+		setGroupMembers(database, 'machine', admin.id, updateGroup(database, 'early').id, [other], NOW);
+		return { database, admin, tester, other };
+	}
+
+	function checkInWith(
+		database: AppDatabase,
+		machineId: string,
+		version: string,
+		report: UpdateReport,
+		now: number
+	) {
+		return checkInUpdate(database, machineId, version, report, WITH_TEST, now);
+	}
+
+	it('T4: offers a test build only to Test machines, at once; the rest stay on full releases', async () => {
+		const { database, admin, tester, other } = await twoMachines();
+		expect(updateGroup(database, 'test')).toMatchObject({ name: 'Test', machines: 1 });
+		expect(checkInWith(database, tester, '0.1.0', LAUNCHER, NOW)).toEqual({
+			kind: 'offer',
+			...TEST_BUILD
+		});
+		expect(checkInWith(database, other, '0.1.0', LAUNCHER, NOW)).toEqual({
+			kind: 'offer',
+			...RELEASE
+		});
+		// A paused full roll-out does not hold back a test build.
+		pauseRollout(database, '0.2.0', admin.id, NOW + 1);
+		expect(checkInWith(database, tester, '0.1.0', LAUNCHER, NOW + 2)).toMatchObject({
+			version: TEST_BUILD.version
+		});
+		expect(checkInWith(database, other, '0.1.0', LAUNCHER, NOW + 2)).toEqual({ kind: 'none' });
+		// Update now never sends a test build outside Test.
+		const result = requestUpdates(database, [tester, other], WITH_TEST, admin.id, NOW + 3);
+		expect(result.requested).toEqual([tester, other]);
+		const requested = listAudit(database, 50)
+			.filter((entry) => entry.kind === 'agent-update-requested')
+			.map((entry) => entry.detail);
+		expect(requested).toEqual(
+			expect.arrayContaining([
+				{ from: '0.1.0', to: TEST_BUILD.version },
+				{ from: '0.1.0', to: '0.2.0' }
+			])
+		);
+		const states = updateStates(
+			database,
+			[
+				{ id: tester, target: 'x86_64-unknown-linux-gnu', agentVersion: '0.1.0' },
+				{ id: other, target: 'x86_64-unknown-linux-gnu', agentVersion: '0.1.0' }
+			],
+			WITH_TEST,
+			NOW + 4
+		);
+		expect(states.get(tester)).toMatchObject({ version: TEST_BUILD.version });
+		expect(states.get(other)).toMatchObject({ version: '0.2.0' });
+	});
+
+	it('T4: a pin, Manual mode or a failure holds a test build back', async () => {
+		const { database, admin, tester } = await twoMachines();
+		setPinned(database, tester, true, admin.id, NOW);
+		expect(checkInWith(database, tester, '0.1.0', LAUNCHER, NOW + 1)).toEqual({ kind: 'none' });
+		setPinned(database, tester, false, admin.id, NOW + 2);
+		updateSetting(database, admin.id, 'agentUpdatePolicy', 'manual', NOW + 3);
+		expect(checkInWith(database, tester, '0.1.0', LAUNCHER, NOW + 4)).toEqual({ kind: 'none' });
+		updateSetting(database, admin.id, 'agentUpdatePolicy', 'automatic', NOW + 5);
+		const refused: UpdateReport = {
+			kind: 'launcher',
+			last: { kind: 'refused', version: TEST_BUILD.version, reason: 'bad', atMs: NOW + 6 },
+			launcherVersion: '0.1.0'
+		};
+		expect(checkInWith(database, tester, '0.1.0', refused, NOW + 7)).toEqual({ kind: 'none' });
+	});
+
+	it('T5: a Test machine on a test build gets the next full release once that is newer', async () => {
+		const { database, tester } = await twoMachines();
+		expect(checkInWith(database, tester, TEST_BUILD.version, LAUNCHER, NOW)).toEqual({
+			kind: 'none'
+		});
+		const fullRelease = { ...RELEASE, version: '0.2.1' };
+		const later: ReleaseLookup = { full: () => fullRelease, test: WITH_TEST.test };
+		// The full release follows its staged roll-out, like everyone else's.
+		expect(checkInUpdate(database, tester, TEST_BUILD.version, LAUNCHER, later, NOW)).toEqual({
+			kind: 'none'
+		});
+		expect(
+			checkInUpdate(database, tester, TEST_BUILD.version, LAUNCHER, later, NOW + 2 * STAGE_MS)
+		).toEqual({ kind: 'offer', ...fullRelease });
+	});
+
+	it('T9: a test build install is audited as agent-updated; its rollback does not pause the full roll-out', async () => {
+		const { database, tester } = await twoMachines();
+		checkInWith(database, tester, '0.1.0', LAUNCHER, NOW);
+		const updated: UpdateReport = {
+			kind: 'launcher',
+			last: { kind: 'updated', from: '0.1.0', to: TEST_BUILD.version, atMs: NOW + 5 },
+			launcherVersion: '0.1.0'
+		};
+		checkInWith(database, tester, TEST_BUILD.version, updated, NOW + 10);
+		const entry = listAudit(database, 50).find((item) => item.kind === 'agent-updated');
+		expect(entry?.detail).toEqual({ from: '0.1.0', to: TEST_BUILD.version });
+		const rolledBack: UpdateReport = {
+			kind: 'launcher',
+			last: { kind: 'rolled-back', version: TEST_BUILD.version, reason: 'x', atMs: NOW + 20 },
+			launcherVersion: '0.1.0'
+		};
+		checkInWith(database, tester, '0.1.0', rolledBack, NOW + 30);
+		const kinds = listAudit(database, 50).map((item) => item.kind);
+		expect(kinds).toContain('agent-update-rolled-back');
+		expect(kinds).not.toContain('agent-rollout-paused');
+		expect(rolloutView(database, '0.2.0', NOW + 30)).toMatchObject({ paused: { kind: 'running' } });
 	});
 });

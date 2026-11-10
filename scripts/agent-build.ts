@@ -6,6 +6,7 @@
  */
 import { readFileSync } from 'node:fs';
 import type { AgentTarget } from '../src/lib/domain/machines/agent-release.ts';
+import { isAgentVersion } from '../src/lib/domain/machines/agent-version.ts';
 
 export const AGENT_MANIFEST = 'agent/Cargo.toml';
 
@@ -28,16 +29,19 @@ export function hostTarget(): AgentTarget | undefined {
 	}
 }
 
-/** `version = "x.y.z"` from [workspace.package], else from [package]. */
+/**
+ * `version = "x.y.z"` (a release) or `"x.y.z-test.n"` (a test build,
+ * SPEC-TEST-CHANNEL) from [workspace.package], else from [package].
+ */
 export function agentVersion(): string {
 	const text = readFileSync(AGENT_MANIFEST, 'utf8');
 	for (const section of ['workspace.package', 'package']) {
 		const body = text.split(`[${section}]`)[1]?.split(/^\[/m)[0];
 		const version = body === undefined ? undefined : /^version\s*=\s*"([^"]+)"/m.exec(body)?.[1];
 		if (version !== undefined) {
-			if (!/^\d+\.\d+\.\d+$/.test(version)) {
+			if (!isAgentVersion(version)) {
 				throw new Error(
-					`${AGENT_MANIFEST} has version ${version}; the server serves only x.y.z versions`
+					`${AGENT_MANIFEST} has version ${version}; the server serves only x.y.z or x.y.z-test.n versions`
 				);
 			}
 			return version;

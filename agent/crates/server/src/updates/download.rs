@@ -53,6 +53,22 @@ struct GitHubRelease {
     prerelease: bool,
 }
 
+/// The version of GitHub's latest-release reply, refusing drafts and
+/// pre-releases (test builds, SPEC-TEST-CHANNEL): the server installs only
+/// stable releases.
+fn stable_release_version(bytes: &[u8]) -> Result<String> {
+    let release: GitHubRelease =
+        serde_json::from_slice(bytes).context("GitHub's release reply is not understood")?;
+    if release.draft || release.prerelease {
+        bail!("GitHub returned a non-stable release");
+    }
+    let Some(version) = release.tag_name.strip_prefix('v') else {
+        bail!("the latest release tag {} is not vX.Y.Z", release.tag_name);
+    };
+    manifest::version(version)?;
+    Ok(version.to_string())
+}
+
 /// GitHub's latest release, over HTTPS only (the platform's certificate
 /// check), with bounded sizes and times.
 pub struct GitHub;
@@ -81,16 +97,7 @@ impl Source for GitHub {
             .call()
             .context("could not ask GitHub for the latest release")?;
         let bytes = read_limited(response.into_body().into_reader(), MAX_RELEASE_JSON)?;
-        let release: GitHubRelease =
-            serde_json::from_slice(&bytes).context("GitHub's release reply is not understood")?;
-        if release.draft || release.prerelease {
-            bail!("GitHub returned a non-stable release");
-        }
-        let Some(version) = release.tag_name.strip_prefix('v') else {
-            bail!("the latest release tag {} is not vX.Y.Z", release.tag_name);
-        };
-        manifest::version(version)?;
-        Ok(version.to_string())
+        stable_release_version(&bytes)
     }
 
     fn open(&self, version: &str, asset: &str) -> Result<Box<dyn Read>> {
@@ -186,6 +193,22 @@ mod tests {
                 .unwrap()
                 .starts_with("https://github.com/jackbrumley/bmuster/releases/download/v0.3.1/")
         );
+    }
+
+    /// SPEC-TEST-CHANNEL T7: a test build on GitHub never reaches the server,
+    /// whether GitHub flags it or only its version says so.
+    #[test]
+    fn a_prerelease_is_never_the_latest_release() {
+        let reply = |tag: &str, prerelease: bool| {
+            format!(r#"{{"tag_name":"{tag}","draft":false,"prerelease":{prerelease}}}"#)
+        };
+        assert_eq!(
+            super::stable_release_version(reply("v0.4.14", false).as_bytes()).unwrap(),
+            "0.4.14"
+        );
+        assert!(super::stable_release_version(reply("v0.4.14-test.1", true).as_bytes()).is_err());
+        assert!(super::stable_release_version(reply("v0.4.14-test.1", false).as_bytes()).is_err());
+        assert!(super::stable_release_version(reply("v0.4.14", true).as_bytes()).is_err());
     }
 
     #[test]

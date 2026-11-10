@@ -19,7 +19,12 @@ export const load: LayoutServerLoad = page.user(({ params }, { user }) => {
 		error(404, 'No machine with this id');
 	}
 	const now = Date.now();
-	const machine = findMachine(database, params.id, now, signedReleases(env.releasesPath));
+	const machine = findMachine(
+		database,
+		params.id,
+		now,
+		signedReleases(env.releasesPath, env.agentTestBuildsPath)
+	);
 	if (machine === undefined) {
 		error(404, 'No machine with this id');
 	}

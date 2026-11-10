@@ -24,7 +24,7 @@ export const POST: RequestHandler = route.agent((_event, { agent, body }) => {
 		agent.machineId,
 		parsed.data.agentVersion,
 		parsed.data.update,
-		signedReleases(env.releasesPath),
+		signedReleases(env.releasesPath, env.agentTestBuildsPath),
 		now
 	);
 	return Response.json({ ...recorded, update });

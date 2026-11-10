@@ -3,7 +3,7 @@
  * stops the server at start-up (fail hard), never later at first use.
  */
 import { existsSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import type { SnapshotSchedule } from './database/snapshots.ts';
 
 // Variables already set (Docker, the shell) win over .env.
@@ -139,14 +139,21 @@ function launcherConfig(): LauncherConfig {
 	return { kind, dataDir, target, nonce };
 }
 
+const databasePath = required('DATABASE_PATH');
+
 export const env = {
 	launcher: launcherConfig(),
 	/** Path to the SQLite database file, e.g. ./data/bmuster.db */
-	databasePath: required('DATABASE_PATH'),
+	databasePath,
 	/** Encrypts secrets at rest (the server's signing key, provider secrets). */
 	secretsKey: secretsKey(),
 	/** Folder of agent builds: <version>/<target>/bmuster-agent[.exe] */
 	releasesPath: required('RELEASES_PATH'),
+	/**
+	 * Test agent builds fetched from GitHub (SPEC-TEST-CHANNEL), laid out like
+	 * RELEASES_PATH. Beside the database, the one folder every deployment keeps.
+	 */
+	agentTestBuildsPath: join(dirname(databasePath), 'agent-test-builds'),
 	/** Optional: the admin to create on a server with no users (S18). */
 	firstAdmin: firstAdmin(),
 	/** Optional: turn local network mode on for a server with no users (I12). */

@@ -216,6 +216,13 @@ function builtInRefusal(builtIn: Exclude<BuiltInMachineGroup, 'none'>): GroupCha
 				message:
 					'Early updates is built in: the staged roll-out sends new agent versions to its machines first. It cannot be renamed, changed or deleted; add or take out its machines instead.'
 			};
+		case 'test':
+			return {
+				kind: 'refused',
+				status: 409,
+				message:
+					'Test is built in: test builds go only to its machines. It cannot be renamed, changed or deleted; add or take out its machines instead.'
+			};
 	}
 }
 
@@ -240,7 +247,7 @@ export function listUserGroups(database: Queryable): UserGroupView[] {
 		}));
 }
 
-/** All machines first, then Early updates, then by name. Removed machines are left out of the members. */
+/** All machines first, then Early updates, then Test, then by name. Removed machines are left out of the members. */
 export function listMachineGroups(database: Queryable): MachineGroupView[] {
 	const active = activeMachineNames(database);
 	const members = database.select().from(machineGroupMembers).all();
@@ -248,7 +255,9 @@ export function listMachineGroups(database: Queryable): MachineGroupView[] {
 		.select()
 		.from(machineGroups)
 		.orderBy(
-			asc(sql`case ${machineGroups.builtIn} when 'all' then 0 when 'early' then 1 else 2 end`),
+			asc(
+				sql`case ${machineGroups.builtIn} when 'all' then 0 when 'early' then 1 when 'test' then 2 else 3 end`
+			),
 			asc(sql`lower(${machineGroups.name})`)
 		)
 		.all()

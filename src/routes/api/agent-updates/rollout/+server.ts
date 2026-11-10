@@ -4,11 +4,8 @@ import { rolloutRequestSchema } from '#lib/schemas/machines/agent-updates.ts';
 import { database } from '#lib/server/database/app-database.ts';
 import { env } from '#lib/server/env.ts';
 import { route } from '#lib/server/guards/route.ts';
-import {
-	newestVersion,
-	pauseRollout,
-	resumeRollout
-} from '#lib/server/services/agents/agent-updates.ts';
+import { pauseRollout, resumeRollout } from '#lib/server/services/agents/agent-updates.ts';
+import { newestVersion } from '#lib/server/services/agents/update-channels.ts';
 import { signedReleases } from '#lib/server/services/agents/releases.ts';
 import { invalidRequest, readJson } from '../../replies.server.ts';
 import type { RequestHandler } from './$types';
@@ -19,7 +16,10 @@ export const POST: RequestHandler = route.admin(async ({ request }, { user }) =>
 	if (!parsed.success) {
 		return invalidRequest(parsed.error);
 	}
-	const newest = newestVersion(signedReleases(env.releasesPath), AGENT_TARGETS);
+	const newest = newestVersion(
+		signedReleases(env.releasesPath, env.agentTestBuildsPath).full,
+		AGENT_TARGETS
+	);
 	if (newest === undefined) {
 		error(409, 'This server has no signed agent build to roll out.');
 	}

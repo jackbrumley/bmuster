@@ -815,6 +815,23 @@ pub mod tests {
         );
     }
 
+    /// SPEC-TEST-CHANNEL T1: the full release supersedes a test build, and
+    /// a test build never replaces a newer or equal version.
+    #[test]
+    fn a_full_release_supersedes_a_test_build() {
+        let key = test_key();
+        let keys = [key.verifying_key()];
+        let full = signed("0.4.14", b"agent", &key);
+        assert_eq!(check_build(&full, b"agent", "0.4.14-test.1", &keys), Ok(()));
+        let test = signed("0.4.14-test.2", b"agent", &key);
+        assert_eq!(check_build(&test, b"agent", "0.4.14-test.1", &keys), Ok(()));
+        assert_eq!(check_build(&test, b"agent", "0.4.13", &keys), Ok(()));
+        for running in ["0.4.14", "0.4.14-test.2", "0.4.15-test.1"] {
+            let reason = check_build(&test, b"agent", running, &keys).unwrap_err();
+            assert!(reason.contains("is not newer"), "{running}: {reason}");
+        }
+    }
+
     #[test]
     fn a_build_signed_by_another_key_is_refused() {
         let release = signed("99.0.0", b"agent", &SigningKey::from_bytes(&[8; 32]));

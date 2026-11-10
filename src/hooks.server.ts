@@ -3,6 +3,7 @@ import { sequence } from '@sveltejs/kit/hooks';
 import type { HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 // Opening the database applies migrations before the first request.
 import { startUpdateChecks } from '#lib/server/services/server-updates/live.ts';
+import { startTestChannelChecks } from '#lib/server/services/agents/test-builds-live.ts';
 import { database } from '#lib/server/database/app-database.ts';
 import { scheduleSnapshots } from '#lib/server/database/snapshots.ts';
 import { env } from '#lib/server/env.ts';
@@ -73,6 +74,7 @@ export const init: ServerInit = async () => {
 	}
 	if (!dev && !building) {
 		startUpdateChecks(serverLogWriter('updates'));
+		startTestChannelChecks(serverLogWriter('updates'));
 	}
 	startEmailWorker(database, env.secretsKey);
 	restorePresence(database, Date.now());

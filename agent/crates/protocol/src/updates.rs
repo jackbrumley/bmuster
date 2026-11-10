@@ -245,6 +245,13 @@ mod tests {
             "0.2.0-beta.2",
             "0.2.0-beta.11",
             "0.2.0",
+            // A test build (SPEC-TEST-CHANNEL T1): after the release before
+            // it, before its own full release.
+            "0.4.13",
+            "0.4.14-test.1",
+            "0.4.14-test.2",
+            "0.4.14-test.10",
+            "0.4.14",
             "1.0.0",
             "10.0.0",
         ];

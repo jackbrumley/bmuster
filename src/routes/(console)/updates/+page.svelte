@@ -23,6 +23,7 @@
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import { formatRelative } from '#lib/utils/format.ts';
+	import TestChannelPanel from './test-channel-panel.svelte';
 	import UpdateMachines from './update-machines.svelte';
 	import { startServerRestartMonitor, type RestartProgress } from './server-restart-monitor.ts';
 	import { reloadPage } from './reload-page.ts';
@@ -235,6 +236,8 @@
 			<a href={earlyGroupHref}>{data.earlyGroup.machines === 0 ? 'add one' : 'add or take out'}</a>
 		</p>
 	</Panel>
+
+	<TestChannelPanel channel={data.testChannel} now={data.now} />
 
 	<UpdateMachines machines={data.machines} now={data.now} />
 

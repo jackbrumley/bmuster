@@ -12,7 +12,12 @@ import type { RequestHandler } from './$types';
  * report) and status (SPEC-AGENT-LOGS 3, 4). Admins and tokens.
  */
 export const GET: RequestHandler = route.diagnostics(({ params }) => {
-	const report = machineReport(database, params.id, Date.now(), signedReleases(env.releasesPath));
+	const report = machineReport(
+		database,
+		params.id,
+		Date.now(),
+		signedReleases(env.releasesPath, env.agentTestBuildsPath)
+	);
 	if (report === undefined) {
 		error(404, 'No machine with this id');
 	}
