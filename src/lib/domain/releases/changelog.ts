@@ -1,6 +1,14 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.12',
+		changes: [
+			'A machine with two or more screens offers All screens: every monitor in one wide picture at its real position, so you can drag a window from one screen onto the next.',
+			'On GNOME, clicks now land exactly on stacked or scaled screen layouts, using the desktop’s own arrangement.',
+			'The Linux applications menu and startup entries show the BMuster icon.'
+		]
+	},
+	{
 		version: '0.4.11',
 		changes: [
 			'On a phone or tablet in full screen, a round floating button replaces the top bar: drag it to either edge and it stays there, and a tap opens the keys, the phone keyboard, touch or trackpad, screens, picture settings and Disconnect.',

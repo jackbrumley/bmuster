@@ -1,6 +1,6 @@
 # SPEC-DESKTOP-ALL-SCREENS: Every display at once, in one wide picture
 
-**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-10 (Jack: "When someone has multiple displays … show all of them all at once in one big wide panel. … The main thing that you need that for is when you need to drag and drop a window onto a different display. So you need to drag it to the edge of the screen so that you can then continue dragging it on to the next display. We use that for a lot.") · **security work:** this changes where injected pointer input lands on another person's computer. See "As built" at the end.
+**Status:** `IMPLEMENTED (v0.4.12)` · approved 2026-11-10 (Jack: "When someone has multiple displays … show all of them all at once in one big wide panel. … The main thing that you need that for is when you need to drag and drop a window onto a different display. So you need to drag it to the edge of the screen so that you can then continue dragging it on to the next display. We use that for a lot.") · **security work:** this changes where injected pointer input lands on another person's computer. See "As built" at the end.
 
 ## Problem
 
