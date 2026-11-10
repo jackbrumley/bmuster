@@ -2,11 +2,13 @@
 //! `SetThreadExecutionState` on a dedicated thread.
 //!
 //! The execution state belongs to the thread that set it, so each hold is a
-//! thread of its own: it sets `ES_CONTINUOUS | ES_SYSTEM_REQUIRED`, waits
-//! until the hold is dropped, sets `ES_CONTINUOUS` (clearing it) and ends.
-//! `ES_SYSTEM_REQUIRED` only resets the idle timer: Sleep from the Start
-//! menu, the lid and the power button still work, and the display may
-//! still turn off (no `ES_DISPLAY_REQUIRED`).
+//! thread of its own: it sets its flags (`ES_CONTINUOUS | ES_SYSTEM_REQUIRED`
+//! for Stay awake and open sessions), waits until the hold is dropped, sets
+//! `ES_CONTINUOUS` (clearing it) and ends. `ES_SYSTEM_REQUIRED` only resets
+//! the idle timer: Sleep from the Start menu, the lid and the power button
+//! still work. Only a control desktop session's hold adds
+//! `ES_DISPLAY_REQUIRED` ([`DISPLAY_ON`], SPEC-DESKTOP-WAKE), which keeps the
+//! display on as well.
 
 use super::{Inhibit, Reading};
 use bmuster_protocol::power::PowerSource;
@@ -15,6 +17,11 @@ use std::thread::JoinHandle;
 
 pub const ES_CONTINUOUS: u32 = 0x8000_0000;
 pub const ES_SYSTEM_REQUIRED: u32 = 0x0000_0001;
+pub const ES_DISPLAY_REQUIRED: u32 = 0x0000_0002;
+/// No idle sleep.
+pub const SYSTEM_ON: u32 = ES_CONTINUOUS | ES_SYSTEM_REQUIRED;
+/// No idle sleep and the display on: while a control desktop session runs.
+pub const DISPLAY_ON: u32 = ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED;
 /// `BatteryFlag`: no system battery.
 const NO_SYSTEM_BATTERY: u8 = 128;
 /// `ACLineStatus`, `BatteryFlag` and `BatteryLifePercent`: unknown.
@@ -73,18 +80,21 @@ pub fn read() -> Reading {
     )
 }
 
-/// Holds the system awake from a thread of its own.
+/// Holds the system (and with [`DISPLAY_ON`] the display) awake from a
+/// thread of its own.
 pub struct ExecutionInhibitor {
     set: SetState,
+    flags: u32,
 }
 
 impl ExecutionInhibitor {
-    pub fn new(set: SetState) -> Self {
-        Self { set }
+    /// Holds that set `flags` ([`SYSTEM_ON`] or [`DISPLAY_ON`]).
+    pub fn new(set: SetState, flags: u32) -> Self {
+        Self { set, flags }
     }
 }
 
-/// While it lives its thread keeps `ES_SYSTEM_REQUIRED`; dropping it clears
+/// While it lives its thread keeps its flags; dropping it clears
 /// the state on that same thread and waits for the thread to end.
 pub struct ExecutionHold {
     release: Option<Sender<()>>,
@@ -106,13 +116,13 @@ impl Inhibit for ExecutionInhibitor {
     type Lock = ExecutionHold;
 
     fn take(&mut self) -> Result<ExecutionHold, String> {
-        let set = self.set;
+        let (set, flags) = (self.set, self.flags);
         let (release, released) = mpsc::channel::<()>();
         let (ready, is_ready) = mpsc::channel::<bool>();
         let thread = std::thread::Builder::new()
             .name("stay-awake-hold".into())
             .spawn(move || {
-                if set(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) == 0 {
+                if set(flags) == 0 {
                     let _ = ready.send(false);
                     return;
                 }
@@ -129,7 +139,9 @@ impl Inhibit for ExecutionInhibitor {
             }),
             Ok(false) => {
                 let _ = thread.join();
-                Err("SetThreadExecutionState refused ES_CONTINUOUS | ES_SYSTEM_REQUIRED".into())
+                Err(format!(
+                    "SetThreadExecutionState refused the flags {flags:#010x}"
+                ))
             }
             Err(_) => {
                 let _ = thread.join();
@@ -146,6 +158,8 @@ mod tests {
     use std::thread::ThreadId;
 
     static CALLS: Mutex<Vec<(ThreadId, u32)>> = Mutex::new(Vec::new());
+    /// One test at a time records into CALLS.
+    static TURN: Mutex<()> = Mutex::new(());
 
     fn recording(flags: u32) -> u32 {
         CALLS
@@ -163,7 +177,9 @@ mod tests {
     /// Windows code).
     #[test]
     fn execution_state() {
-        let mut inhibitor = ExecutionInhibitor::new(recording);
+        let _turn = TURN.lock().unwrap_or_else(|p| p.into_inner());
+        CALLS.lock().unwrap().clear();
+        let mut inhibitor = ExecutionInhibitor::new(recording, SYSTEM_ON);
         let hold = inhibitor.take().unwrap();
         {
             let calls = CALLS.lock().unwrap();
@@ -181,10 +197,29 @@ mod tests {
         assert_eq!(calls[1], (calls[0].0, ES_CONTINUOUS), "on the same thread");
         drop(calls);
 
-        match ExecutionInhibitor::new(refusing).take() {
+        match ExecutionInhibitor::new(refusing, SYSTEM_ON).take() {
             Err(reason) => assert!(reason.contains("refused"), "{reason}"),
             Ok(_) => panic!("a refused state is not a hold"),
         }
+    }
+
+    /// SPEC-DESKTOP-WAKE W7.
+    #[test]
+    fn display_hold() {
+        let _turn = TURN.lock().unwrap_or_else(|p| p.into_inner());
+        CALLS.lock().unwrap().clear();
+        let hold = ExecutionInhibitor::new(recording, DISPLAY_ON)
+            .take()
+            .unwrap();
+        assert_eq!(
+            CALLS.lock().unwrap()[0].1,
+            ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED
+        );
+        drop(hold);
+        let calls = CALLS.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_ne!(calls[0].0, std::thread::current().id(), "its own thread");
+        assert_eq!(calls[1], (calls[0].0, ES_CONTINUOUS), "cleared on it");
     }
 
     #[test]

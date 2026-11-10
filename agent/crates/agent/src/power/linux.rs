@@ -5,8 +5,9 @@
 //!   Device batteries (`scope` = `Device`: a mouse, a headset) are not the
 //!   machine's.
 //! - **Inhibitor:** `org.freedesktop.login1.Manager.Inhibit` on the system
-//!   bus with a fixed what, who, why and mode. logind keeps the lock while
-//!   the returned descriptor is open; dropping it releases the lock. The
+//!   bus with a fixed what, who and mode, and a why per purpose (Stay awake,
+//!   open sessions). logind keeps the lock while the returned descriptor is
+//!   open; dropping it releases the lock. The
 //!   agent's unit allows this: it is root, `AF_UNIX` is allowed and the bus
 //!   socket under `/run` stays reachable with `ProtectSystem=strict`.
 
@@ -22,7 +23,6 @@ pub const POWER_SUPPLY_DIR: &str = "/sys/class/power_supply";
 /// Automatic (idle) sleep only: never shutdown, lid or keys.
 pub const WHAT: &str = "sleep:idle";
 pub const WHO: &str = "BMuster";
-pub const WHY: &str = "Stay awake on mains power is on for this machine";
 pub const MODE: &str = "block";
 /// The bus call's time limit.
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -106,11 +106,13 @@ pub trait LoginBus {
 /// The logind inhibitor: the lock is the descriptor logind returned.
 pub struct LogindInhibitor<B: LoginBus> {
     bus: B,
+    why: &'static str,
 }
 
 impl<B: LoginBus> LogindInhibitor<B> {
-    pub fn new(bus: B) -> Self {
-        Self { bus }
+    /// Locks that say `why` (from [`super::Purpose::why`]).
+    pub fn new(bus: B, why: &'static str) -> Self {
+        Self { bus, why }
     }
 }
 
@@ -119,7 +121,7 @@ impl<B: LoginBus> Inhibit for LogindInhibitor<B> {
 
     fn take(&mut self) -> Result<OwnedFd, String> {
         self.bus
-            .inhibit(WHAT, WHO, WHY, MODE)
+            .inhibit(WHAT, WHO, self.why, MODE)
             .map_err(|error| format!("logind would not take the inhibitor lock: {error}"))
     }
 }
@@ -316,7 +318,7 @@ mod tests {
     #[test]
     fn inhibitor_call() {
         let bus = FakeBus::default();
-        let mut inhibitor = LogindInhibitor::new(&bus);
+        let mut inhibitor = LogindInhibitor::new(&bus, super::super::Purpose::StayAwake.why());
         let lock = inhibitor.take().unwrap();
         assert_eq!(
             bus.calls.borrow().as_slice(),
@@ -347,7 +349,10 @@ mod tests {
             fail: Some("org.freedesktop.DBus.Error.AccessDenied: Permission denied".into()),
             ..FakeBus::default()
         };
-        let mut keeper = Keeper::new(LogindInhibitor::new(&refusing));
+        let mut keeper = Keeper::new(LogindInhibitor::new(
+            &refusing,
+            super::super::Purpose::StayAwake.why(),
+        ));
         let report = keeper.apply(
             true,
             Reading {
@@ -369,5 +374,27 @@ mod tests {
             }
         );
         assert!(!keeper.is_held());
+    }
+
+    /// SPEC-DESKTOP-WAKE W10.
+    #[test]
+    fn session_inhibitor_call() {
+        let bus = FakeBus::default();
+        let mut inhibitor = LogindInhibitor::new(&bus, super::super::Purpose::Sessions.why());
+        let lock = inhibitor.take().unwrap();
+        assert_eq!(
+            bus.calls.borrow().as_slice(),
+            [[
+                "sleep:idle".to_string(),
+                "BMuster".to_string(),
+                "A BMuster remote session is open".to_string(),
+                "block".to_string()
+            ]],
+            "idle sleep only, never what a person asks for"
+        );
+        let mut peer = bus.peers.borrow_mut().pop().unwrap();
+        drop(lock);
+        let mut byte = [0_u8; 1];
+        assert_eq!(peer.read(&mut byte).unwrap(), 0, "released by dropping it");
     }
 }

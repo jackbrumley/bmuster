@@ -167,6 +167,9 @@ impl Sessions {
                 session_id.chars().take(8).collect::<String>()
             ))
             .spawn(move || {
+                // No idle sleep while this session runs (SPEC-DESKTOP-WAKE);
+                // let go when the thread ends, however it ends.
+                let _awake = crate::power::sessions::hold();
                 let label = purpose_label(&admitted.purpose);
                 log::info!(
                     "Session {} for {} ({label}) started.",

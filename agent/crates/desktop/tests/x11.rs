@@ -581,6 +581,7 @@ fn follow_switch_between_two_x_servers_keeps_the_stream_and_moves_input_and_bar(
     let client_b = Client::new(&b);
     client_b.fill_root(full, 0x99_33_33);
     let desktop = Look {
+        dark: false,
         key: "a".into(),
         state: DesktopState::Desktop {
             user: Some("jack".into()),
@@ -609,6 +610,7 @@ fn follow_switch_between_two_x_servers_keeps_the_stream_and_moves_input_and_bar(
     // The sign-in screen on the other server.
     *seat.lock().unwrap() = (
         Look {
+            dark: false,
             key: "b".into(),
             state: DesktopState::SignIn,
         },

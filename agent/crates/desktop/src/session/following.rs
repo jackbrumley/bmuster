@@ -4,7 +4,10 @@
 //! notice bar, and sends `displays`, `state` and a keyframe. While there is
 //! nothing to show it stays open in [`DesktopState::Unavailable`], and a
 //! capture failure means "look again" rather than the end of the session.
+//! A control session also wakes a dark screen and keeps it awake
+//! ([`super::wake`]).
 
+use super::wake::Wake;
 use super::{text, DesktopSession, Outgoing};
 use crate::capture::DesktopState;
 use crate::control::{AgentMessage, Mode};
@@ -30,13 +33,25 @@ pub(super) struct Follow {
     /// opening waits for the next look, so a broken screen is reopened at
     /// most once a second.
     opened_at: Option<Instant>,
+    /// Wakes the screen and keeps it awake: control sessions only.
+    wake: Option<Wake>,
 }
 
 impl DesktopSession {
     /// A session that follows the screen `watch` looks at: it opens what is
     /// there now and reopens whenever it changes. It never fails to start;
     /// with nothing to show, it waits in [`DesktopState::Unavailable`].
-    pub fn following(mode: Mode, watch: Box<dyn ScreenWatch>, now: Instant) -> Self {
+    pub fn following(mode: Mode, mut watch: Box<dyn ScreenWatch>, now: Instant) -> Self {
+        let wake = match mode {
+            Mode::Control => match watch.waker() {
+                Ok(waker) => Some(Wake::new(waker)),
+                Err(reason) => {
+                    log::warn!("This session cannot wake the screen: {reason}");
+                    None
+                }
+            },
+            Mode::Watch => None,
+        };
         let mut session = DesktopSession::with(mode, Box::new(NoScreen::new()), None, now);
         session.follow = Some(Follow {
             watch,
@@ -47,6 +62,7 @@ impl DesktopSession {
             },
             next_look: now,
             opened_at: None,
+            wake,
         });
         // Nothing goes out before `hello`, which sends displays and state.
         session.look(now, &mut Vec::new());
@@ -103,6 +119,9 @@ impl DesktopSession {
     pub(super) fn screen_lost(&mut self, now: Instant, message: &str) -> Vec<Outgoing> {
         log::warn!("Desktop capture failed; looking for the screen again: {message}");
         let mut out = Vec::new();
+        if let Some(wake) = self.follow.as_mut().and_then(|f| f.wake.as_mut()) {
+            wake.lost(now);
+        }
         let settled = self.follow.as_ref().is_some_and(|follow| {
             follow
                 .opened_at
@@ -128,10 +147,20 @@ impl DesktopSession {
         };
         follow.next_look = now + LOOK_EVERY;
         let look = follow.watch.look();
+        let mut seen = look.state;
+        if let Some(wake) = follow.wake.as_mut() {
+            if look.dark {
+                seen = DesktopState::Unavailable {
+                    reason: wake.dark(now).to_string(),
+                };
+            } else {
+                wake.lit(now);
+            }
+        }
         if follow.open.as_deref() == Some(look.key.as_str()) {
             // Same screen: the bar comes back if its X server restarted.
             notice::keep_on(follow.notice.as_ref());
-            self.set_state(look.state, out);
+            self.set_state(seen, out);
             return;
         }
         if follow.open.is_some() {
@@ -141,10 +170,10 @@ impl DesktopSession {
             );
             self.close_screen();
         }
-        let state = match look.state {
+        let state = match seen {
             DesktopState::Unavailable { .. } | DesktopState::Approval { .. } => {
                 notice::keep_on(None);
-                look.state
+                seen
             }
             state => match self.open_screen(&look.key, now, out) {
                 Ok(()) => state,
@@ -179,6 +208,9 @@ impl DesktopSession {
         follow.notice = Some(platform.notice_target);
         follow.open = Some(key.to_string());
         follow.opened_at = Some(now);
+        if let Some(wake) = follow.wake.as_mut() {
+            wake.opened(now);
+        }
         log::info!("Desktop session opened the screen {key}");
         self.capturer = platform.capturer;
         self.input = input;
@@ -198,9 +230,33 @@ impl DesktopSession {
             follow.open = None;
             follow.notice = None;
             follow.opened_at = None;
+            if let Some(wake) = follow.wake.as_mut() {
+                wake.closed();
+            }
         }
         self.video.restart();
         self.cursor.restart();
+    }
+
+    /// While a control session has the screen open: nudge when it is time.
+    pub(super) fn keep_awake(&mut self, now: Instant) {
+        if let Some(wake) = self.follow.as_mut().and_then(|f| f.wake.as_mut()) {
+            wake.keep_awake(now);
+        }
+    }
+
+    /// The viewer's input reached the screen.
+    pub(super) fn viewer_input(&mut self, now: Instant) {
+        if let Some(wake) = self.follow.as_mut().and_then(|f| f.wake.as_mut()) {
+            wake.viewer_input(now);
+        }
+    }
+
+    /// The session ended: let go of the wake device.
+    pub(super) fn stop_waking(&mut self) {
+        if let Some(follow) = self.follow.as_mut() {
+            follow.wake = None;
+        }
     }
 
     /// Tells the browser when the state changes. With nothing to show, the

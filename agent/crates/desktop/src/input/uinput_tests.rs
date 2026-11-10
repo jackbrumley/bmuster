@@ -211,6 +211,7 @@ struct KmsSeat {
 impl ScreenWatch for KmsSeat {
     fn look(&mut self) -> Look {
         Look {
+            dark: false,
             key: "kms:c1".into(),
             state: crate::capture::DesktopState::SignIn,
         }
@@ -417,4 +418,45 @@ fn uinput_reaches_x11_window() {
     );
     assert!(shift_sent, "the test window could not take the focus");
     assert!(pressed, "Shift reached the test window");
+}
+
+/// SPEC-DESKTOP-WAKE W6.
+#[test]
+fn wake_device_capabilities_and_events() {
+    use crate::follow::Waker;
+    use wake::{UinputWaker, WakeSink, NUDGE, WAKE_AXES, WAKE_BUTTONS, WAKE_EVENT_TYPES};
+
+    // A relative pointer libinput accepts, and nothing that types or jumps.
+    assert_eq!(WAKE_EVENT_TYPES, [EV_KEY, EV_REL]);
+    assert_eq!(WAKE_BUTTONS, [BTN_LEFT]);
+    assert_eq!(WAKE_AXES, [0, 1], "REL_X and REL_Y");
+    assert!(!WAKE_EVENT_TYPES.contains(&EV_ABS));
+
+    #[derive(Default)]
+    struct Frames(Mutex<Vec<Vec<Event>>>);
+    impl WakeSink for Frames {
+        fn emit(&self, events: &[Event]) -> io::Result<()> {
+            self.0.lock().unwrap().push(events.to_vec());
+            Ok(())
+        }
+    }
+    let frames = Arc::new(Frames::default());
+    let mut waker = UinputWaker::new(frames.clone());
+    waker.nudge().unwrap();
+    waker.nudge().unwrap();
+    let written = std::mem::take(&mut *frames.0.lock().unwrap());
+    let one = [vec![(EV_REL, 0, 1)], vec![(EV_REL, 0, -1)]];
+    assert_eq!(written[..2], one[..], "one unit right, then back");
+    assert_eq!(written[2..], one[..]);
+    assert_eq!(
+        NUDGE.iter().map(|e| e.2).sum::<i32>(),
+        0,
+        "ends where it began"
+    );
+    for (kind, code, _) in written.iter().flatten() {
+        assert!(
+            WAKE_EVENT_TYPES.contains(kind) && WAKE_AXES.contains(code),
+            "only the axes it registers"
+        );
+    }
 }

@@ -12,9 +12,13 @@
 //!   changes. The inhibitor is released when the agent stops.
 //! - **Report:** the inventory's `power`, so Manage shows what the agent does.
 //!   A failure to take the inhibitor is logged and reported, never silent.
+//! - **Sessions:** a second inhibitor holds off idle sleep while any remote
+//!   session is open, whatever the policy ([`sessions`], SPEC-DESKTOP-WAKE).
+//!   It is logged, not reported.
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+pub mod sessions;
 // Compiled for tests everywhere: the dedicated thread is plain Rust, only
 // the two Win32 calls are Windows code.
 #[cfg(any(windows, test))]
@@ -207,19 +211,39 @@ impl Inhibit for Unsupported {
     }
 }
 
+/// What an inhibitor is held for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Purpose {
+    /// The per-machine Stay awake on mains power setting.
+    StayAwake,
+    /// A remote session is open (SPEC-DESKTOP-WAKE).
+    Sessions,
+}
+
+#[cfg(target_os = "linux")]
+impl Purpose {
+    /// The why logind shows for the lock.
+    pub fn why(self) -> &'static str {
+        match self {
+            Purpose::StayAwake => "Stay awake on mains power is on for this machine",
+            Purpose::Sessions => "A BMuster remote session is open",
+        }
+    }
+}
+
 /// This operating system's inhibitor.
 #[cfg(target_os = "linux")]
-pub fn platform_inhibitor() -> linux::LogindInhibitor<linux::SystemBus> {
-    linux::LogindInhibitor::new(linux::SystemBus)
+pub fn platform_inhibitor(purpose: Purpose) -> linux::LogindInhibitor<linux::SystemBus> {
+    linux::LogindInhibitor::new(linux::SystemBus, purpose.why())
 }
 
 #[cfg(windows)]
-pub fn platform_inhibitor() -> windows::ExecutionInhibitor {
-    windows::ExecutionInhibitor::new(windows::set_thread_execution_state)
+pub fn platform_inhibitor(_purpose: Purpose) -> windows::ExecutionInhibitor {
+    windows::ExecutionInhibitor::new(windows::set_thread_execution_state, windows::SYSTEM_ON)
 }
 
 #[cfg(not(any(target_os = "linux", windows)))]
-pub fn platform_inhibitor() -> Unsupported {
+pub fn platform_inhibitor(_purpose: Purpose) -> Unsupported {
     Unsupported
 }
 
@@ -227,6 +251,8 @@ pub fn platform_inhibitor() -> Unsupported {
 enum Command {
     /// The policy, and where to say whether it changed once it is applied.
     Policy(bool, Sender<bool>),
+    /// A remote session opened or ended ([`sessions`]).
+    Sessions,
     Stop,
 }
 
@@ -236,23 +262,34 @@ pub struct Power<I: Inhibit> {
     data_dir: PathBuf,
     policy: bool,
     keeper: Keeper<I>,
+    sessions: sessions::SessionKeeper<I>,
     read: fn() -> Reading,
 }
 
 impl<I: Inhibit> Power<I> {
     /// Starts from the saved policy, before the server is reachable.
-    pub fn new(data_dir: PathBuf, inhibit: I, read: fn() -> Reading) -> Self {
+    /// `inhibit` serves the policy, `for_sessions` the open sessions.
+    pub fn new(data_dir: PathBuf, inhibit: I, for_sessions: I, read: fn() -> Reading) -> Self {
         let policy = load_policy(&data_dir);
         Self {
             data_dir,
             policy,
             keeper: Keeper::new(inhibit),
+            sessions: sessions::SessionKeeper::new(for_sessions),
             read,
         }
     }
 
-    pub fn tick(&mut self) -> PowerReport {
+    /// Applies the policy, and the session hold for `open` sessions (so a
+    /// failure to take it is tried again every tick).
+    pub fn tick(&mut self, open: usize) -> PowerReport {
+        self.sessions.apply(open);
         self.keeper.apply(self.policy, (self.read)())
+    }
+
+    /// The number of open sessions changed.
+    pub fn sessions_changed(&mut self, open: usize) {
+        self.sessions.apply(open);
     }
 
     /// The server's policy: saved if it changed, then applied.
@@ -269,11 +306,12 @@ impl<I: Inhibit> Power<I> {
             }
             self.policy = keep_awake_on_ac;
         }
-        self.tick()
+        self.keeper.apply(self.policy, (self.read)())
     }
 
     pub fn stop(&mut self) {
         self.keeper.release();
+        self.sessions.release();
     }
 }
 
@@ -301,6 +339,12 @@ fn send(command: Command) {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .send(command);
     }
+}
+
+/// Tells the stay-awake thread the open sessions changed (a no-op before
+/// [`start`]).
+fn sessions_changed() {
+    send(Command::Sessions);
 }
 
 /// How long the socket waits for a new policy to be applied.
@@ -334,7 +378,12 @@ pub fn start(data_dir: PathBuf) -> Option<std::thread::JoinHandle<()>> {
     let started = std::thread::Builder::new()
         .name("stay-awake".into())
         .spawn(move || {
-            let mut power = Power::new(data_dir, platform_inhibitor(), read_source);
+            let mut power = Power::new(
+                data_dir,
+                platform_inhibitor(Purpose::StayAwake),
+                platform_inhibitor(Purpose::Sessions),
+                read_source,
+            );
             run(&mut power, &commands, CHECK_EVERY);
         });
     match started {
@@ -347,7 +396,7 @@ pub fn start(data_dir: PathBuf) -> Option<std::thread::JoinHandle<()>> {
 }
 
 fn run<I: Inhibit>(power: &mut Power<I>, commands: &Receiver<Command>, every: Duration) {
-    publish(power.tick());
+    publish(power.tick(sessions::open()));
     loop {
         match commands.recv_timeout(every) {
             Ok(Command::Policy(on, changed)) => {
@@ -355,7 +404,8 @@ fn run<I: Inhibit>(power: &mut Power<I>, commands: &Receiver<Command>, every: Du
                 publish(power.set_policy(on));
                 let _ = changed.send(was != on);
             }
-            Err(RecvTimeoutError::Timeout) => publish(power.tick()),
+            Ok(Command::Sessions) => power.sessions_changed(sessions::open()),
+            Err(RecvTimeoutError::Timeout) => publish(power.tick(sessions::open())),
             Ok(Command::Stop) | Err(RecvTimeoutError::Disconnected) => {
                 power.stop();
                 publish(power.keeper.apply(false, (power.read)()));
@@ -518,8 +568,8 @@ pub mod tests {
         assert!(!load_policy(dir.path()), "off without a saved policy");
 
         let fake = FakeInhibitor::default();
-        let mut power = Power::new(dir.path().to_path_buf(), fake.clone(), mains);
-        assert_eq!(parts(&power.tick()).0, KeepAwake::Off);
+        let mut power = Power::new(dir.path().to_path_buf(), fake.clone(), fake.clone(), mains);
+        assert_eq!(parts(&power.tick(0)).0, KeepAwake::Off);
         assert_eq!(
             parts(&power.set_policy(true)),
             (KeepAwake::Active, Inhibitor::Held)
@@ -531,9 +581,9 @@ pub mod tests {
 
         // After a restart, before any server message: applied at once.
         let fake = FakeInhibitor::default();
-        let mut restarted = Power::new(dir.path().to_path_buf(), fake.clone(), mains);
+        let mut restarted = Power::new(dir.path().to_path_buf(), fake.clone(), fake.clone(), mains);
         assert_eq!(
-            parts(&restarted.tick()),
+            parts(&restarted.tick(0)),
             (KeepAwake::Active, Inhibitor::Held)
         );
         assert_eq!(fake.state.borrow().live, 1);
@@ -562,7 +612,7 @@ pub mod tests {
     fn the_thread_applies_commands_and_releases_on_stop() {
         let dir = tempfile::tempdir().unwrap();
         let fake = FakeInhibitor::default();
-        let mut power = Power::new(dir.path().to_path_buf(), fake.clone(), mains);
+        let mut power = Power::new(dir.path().to_path_buf(), fake.clone(), fake.clone(), mains);
         let (sender, commands) = mpsc::channel();
         let (changed, is_changed) = mpsc::channel();
         sender.send(Command::Policy(true, changed.clone())).unwrap();

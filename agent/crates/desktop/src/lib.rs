@@ -31,7 +31,7 @@ pub mod session;
 pub mod winsession;
 
 pub use control::{EndReason, Mode};
-pub use follow::{Look, ScreenWatch};
+pub use follow::{Look, ScreenWatch, Waker};
 pub use session::{run, DesktopSession, Incoming, Outgoing, SessionSlot};
 
 use capture::Capturer;

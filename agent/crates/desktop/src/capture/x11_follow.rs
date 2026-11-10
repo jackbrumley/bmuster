@@ -80,6 +80,7 @@ pub fn look_at(
     let unavailable = |what: &str, reason: &str| {
         (
             Look {
+                dark: false,
                 key: format!("{session}:{what}"),
                 state: DesktopState::Unavailable {
                     reason: reason.to_string(),
@@ -122,6 +123,7 @@ pub fn look_at(
     };
     (
         Look {
+            dark: false,
             key: format!("{session}:{display}"),
             state,
         },
@@ -138,6 +140,7 @@ pub fn look_at(
 /// The look when seat0 has no active session (`show-seat` printed nothing).
 fn no_session() -> Look {
     Look {
+        dark: false,
         key: "no-session".to_string(),
         state: DesktopState::Unavailable {
             reason: "No session is on the screen".to_string(),
@@ -171,7 +174,14 @@ pub fn look_at_screen_file(text: &str) -> (Look, Option<X11Seen>) {
                 reason: "The screen file names no display".to_string(),
             },
         };
-        return (Look { key, state }, None);
+        return (
+            Look {
+                key,
+                state,
+                dark: false,
+            },
+            None,
+        );
     }
     let seen = X11Seen {
         session: None,
@@ -180,7 +190,14 @@ pub fn look_at_screen_file(text: &str) -> (Look, Option<X11Seen>) {
         uid: String::new(),
         xauthority: (!xauthority.is_empty()).then(|| PathBuf::from(xauthority)),
     };
-    (Look { key, state }, Some(seen))
+    (
+        Look {
+            key,
+            state,
+            dark: false,
+        },
+        Some(seen),
+    )
 }
 
 /// Seat0 through logind, or a development override in debug builds.
@@ -227,6 +244,7 @@ impl LogindWatch {
         let unavailable = |key: String, reason: String| Look {
             key,
             state: DesktopState::Unavailable { reason },
+            dark: false,
         };
         let Some(console) = self.console.as_mut() else {
             return unavailable(
@@ -267,10 +285,16 @@ impl LogindWatch {
                 console.failure = Some((session.to_string(), error.0.clone(), Instant::now()));
                 unavailable(format!("kms-failed:{session}"), error.0)
             }
-            Ok(list) if list.is_empty() => {
-                unavailable(format!("kms-off:{session}"), SCREEN_OFF.to_string())
-            }
+            // Blanked on idle: a control session can wake it.
+            Ok(list) if list.is_empty() => Look {
+                key: format!("kms-off:{session}"),
+                state: DesktopState::Unavailable {
+                    reason: SCREEN_OFF.to_string(),
+                },
+                dark: true,
+            },
             Ok(_) => Look {
+                dark: false,
                 key: format!("kms:{session}"),
                 state: console_state(get("Class"), get("LockedHint"), get("Name")),
             },
@@ -292,6 +316,7 @@ impl LogindWatch {
                     Ok(text) => look_at_screen_file(&text),
                     Err(error) => (
                         Look {
+                            dark: false,
                             key: "file:unreadable".to_string(),
                             state: DesktopState::Unavailable {
                                 reason: format!(
@@ -307,6 +332,7 @@ impl LogindWatch {
             if let Ok(display) = std::env::var(DISPLAY_OVERRIDE) {
                 return (
                     Look {
+                        dark: false,
                         key: format!("override:{display}"),
                         state: DesktopState::Desktop { user: None },
                     },
@@ -325,6 +351,7 @@ impl LogindWatch {
             Err(error) => {
                 return (
                     Look {
+                        dark: false,
                         key: "no-seat".to_string(),
                         state: DesktopState::Unavailable {
                             reason: format!("Cannot find the screen (seat0): {error}"),
@@ -353,6 +380,7 @@ impl LogindWatch {
             // The session ended between the two calls: look again next time.
             Err(error) => (
                 Look {
+                    dark: false,
                     key: format!("{session}:gone"),
                     state: DesktopState::Unavailable {
                         reason: format!("The session on the screen went away: {error}"),
@@ -428,6 +456,13 @@ impl ScreenWatch for LogindWatch {
             display: seen.display.clone(),
             xauthority,
         })
+    }
+
+    /// The shared "BMuster wake" uinput device, for X11 and KMS screens
+    /// alike (the X server reads uinput devices too).
+    fn waker(&mut self) -> Result<Box<dyn crate::follow::Waker>, String> {
+        crate::input::uinput::wake::UinputWaker::system()
+            .map(|waker| Box::new(waker) as Box<dyn crate::follow::Waker>)
     }
 }
 

@@ -88,7 +88,9 @@ fn stay_awake_check() -> Check {
 
 #[cfg(any(target_os = "linux", windows))]
 fn stay_awake(_: &Context) -> Outcome {
-    stay_awake_with(&mut crate::power::platform_inhibitor())
+    stay_awake_with(&mut crate::power::platform_inhibitor(
+        crate::power::Purpose::StayAwake,
+    ))
 }
 
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
