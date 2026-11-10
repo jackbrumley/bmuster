@@ -5,9 +5,10 @@ import type { Grant } from '#lib/domain/access/access.ts';
 import { confirmation } from '#lib/ui/confirm-action.svelte.ts';
 import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
+import '#lib/ui/design-tokens.css';
 import DesktopTab from './+page.svelte';
 
-// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6.
+// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6; SPEC-DESKTOP-FLOATING F1, F2, F4, F8.
 
 const SESSION = '33333333-3333-4333-8333-333333333333';
 
@@ -112,6 +113,30 @@ function sentTypes(socket: FakeSocket): string[] {
 				? String(message.type)
 				: '?'
 		);
+}
+
+/**
+ * A phone or tablet: the touch-layout media query matches. In full screen
+ * the test frame grows to the whole headless screen, so a narrow viewport
+ * alone cannot stand in for a phone there.
+ */
+function pretendTouchScreen(): void {
+	const real = window.matchMedia.bind(window);
+	// Any query that always matches stands in for the touch-layout one.
+	vi.stubGlobal('matchMedia', (query: string): MediaQueryList =>
+		real(query.includes('pointer: coarse') ? '(min-width: 0px)' : query)
+	);
+}
+
+/** Connects at phone size and goes full screen, with the touch layout. */
+async function fullScreenOnPhone() {
+	pretendTouchScreen();
+	await page.viewport(375, 667);
+	const opened = await open(CONTROL, 'Connect');
+	opened.socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+	await opened.screen.getByRole('button', { name: 'Full screen' }).click();
+	await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+	return opened;
 }
 
 function canvasPixel(container: HTMLElement, x: number, y: number): number[] {
@@ -431,6 +456,98 @@ describe('the desktop tab', () => {
 		await expect
 			.element(screen.getByRole('group', { name: 'Full screen controls' }))
 			.not.toBeInTheDocument();
+	});
+
+	it('F1: full screen on a phone or tablet shows the controls button instead of the bar', async () => {
+		const { screen } = await fullScreenOnPhone();
+		await expect.element(screen.getByRole('button', { name: 'Session controls' })).toBeVisible();
+		await expect
+			.element(screen.getByRole('group', { name: 'Full screen controls' }))
+			.not.toBeInTheDocument();
+		await document.exitFullscreen();
+		await expect.poll(() => document.fullscreenElement).toBeNull();
+		await expect
+			.element(screen.getByRole('button', { name: 'Session controls' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('F1: full screen on a desktop computer keeps the bar and has no controls button', async () => {
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+		await expect.element(screen.getByRole('group', { name: 'Full screen controls' })).toBeVisible();
+		await expect
+			.element(screen.getByRole('button', { name: 'Session controls' }))
+			.not.toBeInTheDocument();
+		await document.exitFullscreen();
+	});
+
+	it('F2, F4: dragging the button or tapping outside its sheet sends nothing to the machine', async () => {
+		const { screen, socket } = await fullScreenOnPhone();
+		const input = ['pointer', 'wheel', 'key', 'text', 'special'];
+		const inputSent = () => sentTypes(socket).filter((type) => input.includes(type)).length;
+		const before = inputSent();
+
+		const fab = screen.getByRole('button', { name: 'Session controls' }).element();
+		const stage = screen.getByRole('application', { name: /Screen of/ }).element();
+		const at = fab.getBoundingClientRect();
+		const event = (target: Element, type: string, x: number, y: number, kind: string) => {
+			target.dispatchEvent(
+				new PointerEvent(type, {
+					pointerId: 3,
+					pointerType: kind,
+					button: 0,
+					buttons: type === 'pointerup' ? 0 : 1,
+					clientX: x,
+					clientY: y,
+					bubbles: true,
+					cancelable: true
+				})
+			);
+		};
+		// A mouse drag that leaves the button and crosses the screen.
+		event(fab, 'pointerdown', at.left + 24, at.top + 24, 'mouse');
+		event(stage, 'pointermove', 150, 200, 'mouse');
+		event(stage, 'pointermove', 60, 300, 'mouse');
+		event(stage, 'pointerup', 60, 300, 'mouse');
+		await new Promise((done) => setTimeout(done, 50));
+		expect(inputSent()).toBe(before);
+		await expect
+			.poll(() => fab.getBoundingClientRect().left)
+			.toBeLessThan(stage.getBoundingClientRect().width / 2);
+
+		await screen.getByRole('button', { name: 'Session controls' }).click();
+		await screen
+			.getByRole('button', { name: 'Close the controls' })
+			.click({ position: { x: 300, y: 300 } });
+		await expect
+			.element(screen.getByRole('group', { name: 'Session options' }))
+			.not.toBeInTheDocument();
+		await new Promise((done) => setTimeout(done, 50));
+		expect(inputSent()).toBe(before);
+		await document.exitFullscreen();
+	});
+
+	it('F8: Disconnect in the sheet asks first; Leave full screen leaves it', async () => {
+		const { screen, socket } = await fullScreenOnPhone();
+		const fab = screen.getByRole('button', { name: 'Session controls' });
+		const sheet = screen.getByRole('group', { name: 'Session options' });
+
+		await fab.click();
+		await sheet.getByRole('button', { name: 'Leave full screen' }).click();
+		await expect.poll(() => document.fullscreenElement).toBeNull();
+		await expect.element(fab).not.toBeInTheDocument();
+
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+		await fab.click();
+		await sheet.getByRole('button', { name: 'Disconnect' }).click();
+		await expect.poll(() => confirmation.current.kind).toBe('asking');
+		expect(socket.messages()).not.toContainEqual({ type: 'end' });
+		if (confirmation.current.kind === 'asking') confirmation.current.answer(true);
+		await expect.poll(() => socket.messages()).toContainEqual({ type: 'end' });
+		if (document.fullscreenElement !== null) await document.exitFullscreen();
 	});
 
 	it('does not offer a session whose rules ask the person at the screen first', async () => {
