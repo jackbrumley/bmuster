@@ -426,7 +426,6 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 
 	it('shows the newest release notes and folds the earlier versions away', async () => {
 		const [latest, previous] = CHANGELOG;
-		if (latest === undefined || previous === undefined) throw new Error('two releases expected');
 		const screen = await renderPage({});
 		await expect
 			.element(screen.getByRole('heading', { name: `BMuster ${latest.version}`, exact: true }))

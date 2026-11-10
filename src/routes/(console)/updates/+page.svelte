@@ -148,17 +148,13 @@
 	<ServerUpdatePanel view={data.server} onRestarting={onServerRestarting} />
 
 	<Panel heading="Release notes" actions={undefined} tone="normal" padding="normal">
-		{#if latest !== undefined}
-			{@render releaseNotes(latest)}
-		{/if}
-		{#if earlier.length > 0}
-			<details class="earlier">
-				<summary>Earlier versions ({earlier.length})</summary>
-				{#each earlier as release (release.version)}
-					{@render releaseNotes(release)}
-				{/each}
-			</details>
-		{/if}
+		{@render releaseNotes(latest)}
+		<details class="earlier">
+			<summary>Earlier versions ({earlier.length})</summary>
+			{#each earlier as release (release.version)}
+				{@render releaseNotes(release)}
+			{/each}
+		</details>
 	</Panel>
 
 	{#snippet releaseNotes(release: (typeof CHANGELOG)[number])}
