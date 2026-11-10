@@ -7,13 +7,16 @@
 //! looks again at once.
 //!
 //! The display list and the cursor come from user32 for both paths, so a
-//! switch from DXGI to GDI keeps the same display ids.
+//! switch from DXGI to GDI keeps the same display ids. All screens
+//! (SPEC-DESKTOP-ALL-SCREENS) runs one grabber per display and draws each
+//! image at its place on the virtual screen, which `SendInput` spans too.
 
+use super::combined::Combined;
 use super::dxgi::Duplication;
 use super::gdi::GdiGrabber;
 use super::{
-    CaptureError, CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState,
-    DisplayInfo, Frame,
+    keep_view, primary_view, CaptureError, CaptureResult, Capturer, CursorImage, CursorState,
+    Damage, DesktopState, DisplayInfo, Frame, View,
 };
 use crate::winsession::input_desktop;
 use ::windows::core::BOOL;
@@ -33,11 +36,35 @@ enum Grabber {
     Gdi(GdiGrabber),
 }
 
+impl Grabber {
+    fn capture(&mut self, frame: &mut Frame, full: bool) -> CaptureResult<Damage> {
+        match self {
+            Grabber::Dxgi(duplication) => duplication.capture(frame, full),
+            Grabber::Gdi(gdi) => gdi.capture(frame).map(|()| Damage::Unknown),
+        }
+    }
+
+    fn is_dxgi(&self) -> bool {
+        matches!(self, Grabber::Dxgi(_))
+    }
+}
+
+/// What is being grabbed: one display, or every display with its own
+/// grabber and image, drawn into one frame at its place on the virtual
+/// screen (SPEC-DESKTOP-ALL-SCREENS).
+enum Grabbing {
+    One(Grabber),
+    All {
+        combined: Combined,
+        parts: Vec<(Grabber, Frame)>,
+    },
+}
+
 pub struct WindowsCapturer {
     displays: Vec<DisplayInfo>,
-    current: usize,
+    view: View,
     frame: Frame,
-    grabber: Grabber,
+    grabbing: Grabbing,
     /// The next capture must be full (new grabber).
     fresh: bool,
     /// The desktop this capturer opened on (the input desktop then).
@@ -47,17 +74,45 @@ pub struct WindowsCapturer {
 /// Opens capture on the primary display.
 pub fn open() -> CaptureResult<Box<dyn Capturer>> {
     let displays = list_displays()?;
-    let current = displays.iter().position(|d| d.primary).unwrap_or(0);
-    let grabber = start_grabber(&displays[current])?;
-    let rect = displays[current].rect();
+    let view = primary_view(&displays);
+    let (grabbing, frame) = start(&displays, view)?;
     Ok(Box::new(WindowsCapturer {
-        frame: Frame::new(rect.width, rect.height),
+        frame,
         displays,
-        current,
-        grabber,
+        view,
+        grabbing,
         fresh: true,
         desktop: input_desktop::input_desktop_name().unwrap_or_default(),
     }))
+}
+
+/// Grabbers for `view`, and a black frame of its size.
+fn start(displays: &[DisplayInfo], view: View) -> CaptureResult<(Grabbing, Frame)> {
+    match view {
+        View::Display(index) => {
+            let display = displays
+                .get(index)
+                .ok_or_else(|| CaptureError::new("no such display"))?;
+            let rect = display.rect();
+            Ok((
+                Grabbing::One(start_grabber(display)?),
+                Frame::new(rect.width, rect.height),
+            ))
+        }
+        View::All => {
+            let combined = Combined::new(displays)
+                .ok_or_else(|| CaptureError::new("These displays cannot be shown all at once"))?;
+            let parts = displays
+                .iter()
+                .map(|display| {
+                    let rect = display.rect();
+                    Ok((start_grabber(display)?, Frame::new(rect.width, rect.height)))
+                })
+                .collect::<CaptureResult<Vec<_>>>()?;
+            let frame = combined.blank();
+            Ok((Grabbing::All { combined, parts }, frame))
+        }
+    }
 }
 
 fn start_grabber(display: &DisplayInfo) -> CaptureResult<Grabber> {
@@ -143,12 +198,44 @@ pub fn wide_to_string(wide: &[u16]) -> String {
 
 impl WindowsCapturer {
     fn restart(&mut self) -> CaptureResult<()> {
-        let display = &self.displays[self.current];
-        let rect = display.rect();
-        self.frame = Frame::new(rect.width, rect.height);
-        self.grabber = start_grabber(display)?;
+        let (grabbing, frame) = start(&self.displays, self.view)?;
+        self.grabbing = grabbing;
+        self.frame = frame;
         self.fresh = true;
         Ok(())
+    }
+
+    fn grab(&mut self, full: bool) -> CaptureResult<Damage> {
+        match &mut self.grabbing {
+            Grabbing::One(grabber) => grabber.capture(&mut self.frame, full),
+            Grabbing::All { combined, parts } => {
+                let mut changed = Vec::new();
+                for (index, (grabber, image)) in parts.iter_mut().enumerate() {
+                    let damage = grabber.capture(image, full)?;
+                    if damage == Damage::None {
+                        continue;
+                    }
+                    combined.draw(&mut self.frame, index, image);
+                    if let Damage::Rects(rects) =
+                        combined.damage(index, (image.width, image.height), &damage)
+                    {
+                        changed.extend(rects);
+                    }
+                }
+                Ok(if changed.is_empty() {
+                    Damage::None
+                } else {
+                    Damage::Rects(changed)
+                })
+            }
+        }
+    }
+
+    fn uses_dxgi(&self) -> bool {
+        match &self.grabbing {
+            Grabbing::One(grabber) => grabber.is_dxgi(),
+            Grabbing::All { parts, .. } => parts.iter().any(|(grabber, _)| grabber.is_dxgi()),
+        }
     }
 }
 
@@ -157,15 +244,29 @@ impl Capturer for WindowsCapturer {
         &self.displays
     }
 
-    fn current(&self) -> usize {
-        self.current
+    fn view(&self) -> View {
+        self.view
     }
 
-    fn select(&mut self, index: usize) -> CaptureResult<()> {
-        if index >= self.displays.len() {
-            return Err(CaptureError::new("no such display"));
+    /// Monitor rectangles are on the virtual screen, which `SendInput`
+    /// spans too.
+    fn can_show_all(&self) -> bool {
+        Combined::possible(&self.displays)
+    }
+
+    fn select(&mut self, view: View) -> CaptureResult<()> {
+        match view {
+            View::Display(index) if index >= self.displays.len() => {
+                return Err(CaptureError::new("no such display"));
+            }
+            View::All if !self.can_show_all() => {
+                return Err(CaptureError::new(
+                    "These displays cannot be shown all at once",
+                ));
+            }
+            _ => {}
         }
-        self.current = index;
+        self.view = view;
         self.restart()
     }
 
@@ -187,12 +288,7 @@ impl Capturer for WindowsCapturer {
         if displays == self.displays {
             return Ok(false);
         }
-        let id = self.displays[self.current].id.clone();
-        self.current = displays
-            .iter()
-            .position(|d| d.id == id)
-            .or_else(|| displays.iter().position(|d| d.primary))
-            .unwrap_or(0);
+        self.view = keep_view(&self.displays, self.view, &displays);
         self.displays = displays;
         self.restart()?;
         Ok(true)
@@ -200,13 +296,9 @@ impl Capturer for WindowsCapturer {
 
     fn capture(&mut self, full: bool) -> CaptureResult<Damage> {
         let full = full || std::mem::take(&mut self.fresh);
-        let result = match &mut self.grabber {
-            Grabber::Dxgi(duplication) => duplication.capture(&mut self.frame, full),
-            Grabber::Gdi(gdi) => gdi.capture(&mut self.frame).map(|()| Damage::Unknown),
-        };
-        match result {
+        match self.grab(full) {
             Ok(damage) => Ok(damage),
-            Err(error) if matches!(self.grabber, Grabber::Dxgi(_)) => {
+            Err(error) if self.uses_dxgi() => {
                 // Access lost (mode change, desktop switch, full-screen app):
                 // start again, on GDI if DXGI no longer starts.
                 log::info!("DXGI capture stopped ({error}); restarting");
@@ -257,9 +349,10 @@ impl Capturer for WindowsCapturer {
     }
 
     fn backend(&self) -> &'static str {
-        match self.grabber {
-            Grabber::Dxgi(_) => "dxgi",
-            Grabber::Gdi(_) => "gdi",
+        if self.uses_dxgi() {
+            "dxgi"
+        } else {
+            "gdi"
         }
     }
 }

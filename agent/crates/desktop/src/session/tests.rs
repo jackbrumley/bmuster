@@ -17,7 +17,7 @@ struct Screen {
 
 struct FakeCapturer {
     displays: Vec<DisplayInfo>,
-    current: usize,
+    view: View,
     frame: Frame,
     screen: Arc<Mutex<Screen>>,
     full_captures: Arc<Mutex<u32>>,
@@ -40,13 +40,16 @@ impl Capturer for FakeCapturer {
     fn displays(&self) -> &[DisplayInfo] {
         &self.displays
     }
-    fn current(&self) -> usize {
-        self.current
+    fn view(&self) -> View {
+        self.view
     }
-    fn select(&mut self, index: usize) -> CaptureResult<()> {
-        self.current = index;
-        let d = &self.displays[index];
-        self.frame = Frame::new(d.width, d.height);
+    fn can_show_all(&self) -> bool {
+        crate::capture::combined::Combined::possible(&self.displays)
+    }
+    fn select(&mut self, view: View) -> CaptureResult<()> {
+        self.view = view;
+        let rect = crate::capture::shown_rect(&self.displays, view).unwrap();
+        self.frame = Frame::new(rect.width, rect.height);
         Ok(())
     }
     fn poll_layout(&mut self) -> CaptureResult<bool> {
@@ -116,12 +119,20 @@ const HELLO: &str =
     r#"{"type":"hello","codecs":["jpeg"],"viewport":{"width":4000,"height":4000,"pixelRatio":1}}"#;
 
 fn harness(mode: Mode) -> Harness {
+    harness_with(
+        mode,
+        vec![display("A", 0, 128, 64), display("B", 128, 64, 64)],
+    )
+}
+
+fn harness_with(mode: Mode, displays: Vec<DisplayInfo>) -> Harness {
     let screen = Arc::new(Mutex::new(Screen::default()));
     let full_captures = Arc::new(Mutex::new(0));
+    let first = displays[0].rect();
     let capturer = FakeCapturer {
-        displays: vec![display("A", 0, 128, 64), display("B", 128, 64, 64)],
-        current: 0,
-        frame: Frame::new(128, 64),
+        displays,
+        view: View::Display(0),
+        frame: Frame::new(first.width, first.height),
         screen: screen.clone(),
         full_captures: full_captures.clone(),
     };
@@ -505,4 +516,80 @@ fn session_run_loop_stops_when_the_agent_stops() {
     );
     assert_eq!(reason, EndReason::AgentLost);
     assert_eq!(types(&sent), ["ended"]);
+}
+
+/// SPEC-DESKTOP-ALL-SCREENS A2, A6.
+#[test]
+fn session_all_screens_shows_every_display_in_one_frame() {
+    let mut h = harness(Mode::Control);
+    let out = h.send(HELLO);
+    assert_eq!(texts(&out)[0]["allScreens"], true);
+    h.send(r#"{"type":"key","code":"ShiftLeft","key":"Shift","down":true,"altGr":false}"#);
+    h.recorder.take();
+
+    // Choosing all screens lets go of held keys, then lists the displays.
+    let out = h.send(r#"{"type":"select-display","display":"all"}"#);
+    let displays = &texts(&out)[0];
+    assert_eq!(
+        (displays["type"].as_str(), displays["current"].as_str()),
+        (Some("displays"), Some("all"))
+    );
+    assert_eq!(h.recorder.take(), vec![Call::Key("ShiftLeft", false)]);
+
+    // Pointer positions are in the combined frame: the edge pixels on either
+    // side of the seam go to their own display, and the far corner clamps.
+    for (x, expected) in [(127, 127), (128, 128), (5000, 128 + 63)] {
+        h.send(&format!(
+            r#"{{"type":"pointer","x":{x},"y":3,"buttons":0}}"#
+        ));
+        assert_eq!(h.recorder.take(), vec![Call::Move(expected, 3)]);
+    }
+
+    h.screen.lock().unwrap().cursor = Some(CursorState {
+        id: 3,
+        x: 150,
+        y: 20,
+        visible: true,
+    });
+    let out = h.tick();
+    let stream = &texts(&out)[0];
+    assert_eq!(
+        (stream["display"].as_str(), stream["width"].as_u64()),
+        (Some("all"), Some(192))
+    );
+    assert_eq!(
+        frames(&out)[0][1],
+        255,
+        "header display byte for all screens"
+    );
+    // The cursor on B, at its place in the combined frame.
+    let Some(Outgoing::Binary(position)) = out.last() else {
+        unreachable!()
+    };
+    assert_eq!(
+        &position[HEADER_LEN + 4..HEADER_LEN + 8],
+        &150i32.to_le_bytes()
+    );
+
+    // And back to one display.
+    let out = h.send(r#"{"type":"select-display","display":"B"}"#);
+    assert_eq!(texts(&out)[0]["current"], "B");
+    h.send(r#"{"type":"pointer","x":0,"y":0,"buttons":0}"#);
+    assert_eq!(h.recorder.take(), vec![Call::Move(128, 0)]);
+}
+
+/// SPEC-DESKTOP-ALL-SCREENS A2: one display has nothing to combine.
+#[test]
+fn session_all_screens_needs_two_displays() {
+    let mut h = harness_with(Mode::Watch, vec![display("A", 0, 128, 64)]);
+    let out = h.send(HELLO);
+    assert_eq!(texts(&out)[0]["allScreens"], false);
+    let out = h.send(r#"{"type":"select-display","display":"all"}"#);
+    let error = &texts(&out)[0];
+    assert_eq!(
+        (error["type"].as_str(), error["code"].as_str()),
+        (Some("error"), Some("bad-message"))
+    );
+    let out = h.tick();
+    assert_eq!(texts(&out)[0]["display"], "A");
 }

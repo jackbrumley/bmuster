@@ -1,15 +1,19 @@
 //! X11 capture on x11rb (SPEC-DESKTOP 6.1): XShm `GetImage` of the selected
 //! monitor's rectangle (plain `GetImage` when MIT-SHM 1.2 is missing, as on
 //! a remote display), XDamage to find what changed, RandR 1.5 monitors for
-//! the display list, XFixes for the cursor.
+//! the display list, XFixes for the cursor. All screens
+//! (SPEC-DESKTOP-ALL-SCREENS) is the root window's box around every
+//! monitor: RandR already places them in root coordinates, which XTest
+//! and the cursor use too.
 //!
 //! Written for BMuster on x11rb; the approach (one SHM segment per display,
 //! damage on the root window) is the usual one for X11 screen sharing.
 
+use super::combined::Combined;
 use super::x11_session::{connect, X11Target};
 use super::{
-    CaptureError, CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState,
-    DisplayInfo, Frame, Rect,
+    keep_view, primary_view, shown_rect, CaptureError, CaptureResult, Capturer, CursorImage,
+    CursorState, Damage, DesktopState, DisplayInfo, Frame, Rect, View,
 };
 use std::os::fd::AsRawFd;
 use std::ptr::NonNull;
@@ -95,7 +99,10 @@ pub struct X11Capturer {
     connection: RustConnection,
     root: Window,
     displays: Vec<DisplayInfo>,
-    current: usize,
+    view: View,
+    /// Set while the view is [`View::All`]: the root window's bounding box
+    /// of every monitor, with what lies between them blacked out.
+    combined: Option<Combined>,
     frame: Frame,
     shm_available: bool,
     shm: Option<ShmBuffer>,
@@ -213,7 +220,8 @@ impl X11Capturer {
             connection,
             root,
             displays: Vec::new(),
-            current: 0,
+            view: View::Display(0),
+            combined: None,
             frame: Frame::new(0, 0),
             shm_available,
             shm: None,
@@ -224,11 +232,7 @@ impl X11Capturer {
             cursor_serial,
         };
         capturer.displays = capturer.read_displays()?;
-        capturer.current = capturer
-            .displays
-            .iter()
-            .position(|d| d.primary)
-            .unwrap_or(0);
+        capturer.view = primary_view(&capturer.displays);
         capturer.resize_buffers()?;
         Ok(capturer)
     }
@@ -290,11 +294,19 @@ impl X11Capturer {
         }])
     }
 
+    /// What the view covers on the root window.
     fn current_rect(&self) -> Rect {
-        self.displays[self.current].rect()
+        match (&self.combined, self.view) {
+            (Some(combined), View::All) => combined.bounds(),
+            _ => shown_rect(&self.displays, self.view).unwrap_or(Rect::new(0, 0, 1, 1)),
+        }
     }
 
     fn resize_buffers(&mut self) -> CaptureResult<()> {
+        self.combined = match self.view {
+            View::All => Combined::new(&self.displays),
+            View::Display(_) => None,
+        };
         let rect = self.current_rect();
         self.frame = Frame::new(rect.width, rect.height);
         if let Some(old) = self.shm.take() {
@@ -397,6 +409,11 @@ impl X11Capturer {
                 .map_err(failed("GetImage"))?;
             copy_rows(&reply.data, row_bytes, &mut self.frame, area);
         }
+        // The root window between monitors of different sizes can hold
+        // anything (a window dragged off screen): nobody sees it, so black.
+        if let Some(combined) = &self.combined {
+            combined.blank_gaps(&mut self.frame, area);
+        }
         Ok(())
     }
 }
@@ -434,15 +451,28 @@ impl Capturer for X11Capturer {
         &self.displays
     }
 
-    fn current(&self) -> usize {
-        self.current
+    fn view(&self) -> View {
+        self.view
     }
 
-    fn select(&mut self, index: usize) -> CaptureResult<()> {
-        if index >= self.displays.len() {
-            return Err(CaptureError::new("no such display"));
+    /// The root window already spans every RandR monitor at its place.
+    fn can_show_all(&self) -> bool {
+        Combined::possible(&self.displays)
+    }
+
+    fn select(&mut self, view: View) -> CaptureResult<()> {
+        match view {
+            View::Display(index) if index >= self.displays.len() => {
+                return Err(CaptureError::new("no such display"));
+            }
+            View::All if !self.can_show_all() => {
+                return Err(CaptureError::new(
+                    "These displays cannot be shown all at once",
+                ));
+            }
+            _ => {}
         }
-        self.current = index;
+        self.view = view;
         self.resize_buffers()
     }
 
@@ -455,12 +485,7 @@ impl Capturer for X11Capturer {
         if displays == self.displays {
             return Ok(false);
         }
-        let current_id = self.displays[self.current].id.clone();
-        self.current = displays
-            .iter()
-            .position(|d| d.id == current_id)
-            .or_else(|| displays.iter().position(|d| d.primary))
-            .unwrap_or(0);
+        self.view = keep_view(&self.displays, self.view, &displays);
         self.displays = displays;
         self.resize_buffers()?;
         Ok(true)

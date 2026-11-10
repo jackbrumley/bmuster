@@ -43,7 +43,14 @@ const screenSchema = z.discriminatedUnion('kind', [
 ]) satisfies z.ZodType<DesktopScreen>;
 
 export const agentDesktopMessageSchema = z.discriminatedUnion('type', [
-	z.object({ type: z.literal('displays'), list: z.array(displaySchema), current: z.string() }),
+	z.object({
+		type: z.literal('displays'),
+		list: z.array(displaySchema),
+		/** A display id, or `all` (SPEC-DESKTOP-ALL-SCREENS). */
+		current: z.string(),
+		/** The agent can show every display at once; older agents leave it out. */
+		allScreens: z.boolean().default(false)
+	}),
 	z.object({
 		type: z.literal('stream'),
 		display: z.string(),

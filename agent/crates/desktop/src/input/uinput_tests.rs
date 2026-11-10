@@ -8,6 +8,7 @@ use crate::capture::kms::capturer::SharedSource;
 use crate::capture::Rect;
 use crate::control::Mode;
 use crate::follow::{Look, ScreenWatch};
+use crate::input::absolute::{axis, PointerMap};
 use crate::input::InputController;
 use crate::session::DesktopSession;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -31,11 +32,11 @@ impl Sink for Recording {
     }
 }
 
-fn backend(bounds: Rect) -> (Arc<Recording>, InputController) {
+fn backend(map: PointerMap) -> (Arc<Recording>, InputController) {
     let recording = Arc::new(Recording::default());
     let sink = recording.clone();
     let opener = Opener::with(move || Ok(sink.clone() as Arc<dyn Sink>));
-    let backend = opener.backend(Arc::new(Mutex::new(bounds))).unwrap();
+    let backend = opener.backend(Arc::new(Mutex::new(map))).unwrap();
     (recording, InputController::new(backend))
 }
 
@@ -64,7 +65,7 @@ fn keymap_and_characters() {
             key.evdev
         );
     }
-    let (recording, mut input) = backend(Rect::new(0, 0, 100, 100));
+    let (recording, mut input) = backend(PointerMap::identity(&[Rect::new(0, 0, 100, 100)]));
     input.key("KeyQ", "q", true, false).unwrap();
     input.key("KeyQ", "q", false, false).unwrap();
     input.key("AltRight", "AltGraph", true, true).unwrap();
@@ -118,27 +119,30 @@ fn keymap_and_characters() {
 
 #[test]
 fn pointer_mapping_and_release() {
-    assert_eq!(scale(0, 1920), 0);
-    assert_eq!(scale(1919, 1920), ABS_MAX);
-    assert_eq!(scale(-5, 1920), 0);
-    assert_eq!(scale(5000, 1920), ABS_MAX);
-    assert_eq!(scale(0, 1), 0);
     // Two displays side by side: 1920 + 1280 wide, the taller 1200 high.
-    let (recording, mut input) = backend(Rect::new(0, 0, 3200, 1200));
     let second = Rect::new(1920, 0, 1280, 800);
+    let (recording, mut input) =
+        backend(PointerMap::identity(&[Rect::new(0, 0, 1920, 1200), second]));
     input.pointer(second, 0.0, 0.0, 0).unwrap();
     input.pointer(second, 1279.0, 799.0, 1 | 4).unwrap();
     let frames = recording.take();
+    // The middle of each pixel, over the whole stage.
     assert_eq!(
         frames[0],
         (
             Device::Pointer,
-            vec![(EV_ABS, ABS_X, scale(1920, 3200)), (EV_ABS, ABS_Y, 0)]
+            vec![
+                (EV_ABS, ABS_X, axis(1920.5, 3200.0)),
+                (EV_ABS, ABS_Y, axis(0.5, 1200.0))
+            ]
         )
     );
     assert_eq!(
         frames[1].1,
-        vec![(EV_ABS, ABS_X, ABS_MAX), (EV_ABS, ABS_Y, scale(799, 1200))]
+        vec![
+            (EV_ABS, ABS_X, axis(3199.5, 3200.0)),
+            (EV_ABS, ABS_Y, axis(799.5, 1200.0))
+        ]
     );
     assert_eq!(frames[2].1, vec![(EV_KEY, BTN_LEFT, 1)]);
     assert_eq!(frames[3].1, vec![(EV_KEY, BTN_MIDDLE, 1)]);
@@ -217,7 +221,11 @@ impl ScreenWatch for KmsSeat {
         }
     }
     fn open(&mut self) -> Result<crate::Platform, String> {
-        crate::kms_platform(self.source.clone(), self.opener.clone())
+        crate::kms_platform(
+            self.source.clone(),
+            self.opener.clone(),
+            Box::new(crate::capture::kms::mutter::NoLayout("a test".into())),
+        )
     }
 }
 
@@ -363,16 +371,16 @@ fn uinput_reaches_x11_window() {
     let devices = Arc::new(Devices::create(Path::new(UINPUT)).expect("uinput devices"));
     // Give the X server time to add the new devices (udev, then libinput).
     std::thread::sleep(Duration::from_secs(2));
-    let bounds = Arc::new(Mutex::new(Rect::new(
+    let map = Arc::new(Mutex::new(PointerMap::identity(&[Rect::new(
         0,
         0,
         u32::from(root_width),
         u32::from(root_height),
-    )));
+    )])));
     let sink = devices.clone();
     let mut input = InputController::new(
         Opener::with(move || Ok(sink.clone() as Arc<dyn Sink>))
-            .backend(bounds)
+            .backend(map)
             .unwrap(),
     );
     let centre = Rect::new(0, 0, u32::from(root_width), u32::from(root_height));

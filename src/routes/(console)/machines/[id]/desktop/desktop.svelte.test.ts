@@ -8,7 +8,8 @@ import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import '#lib/ui/design-tokens.css';
 import DesktopTab from './+page.svelte';
 
-// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6; SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10.
+// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6; SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10;
+// SPEC-DESKTOP-ALL-SCREENS A8, A9, A10.
 
 const SESSION = '33333333-3333-4333-8333-333333333333';
 
@@ -43,14 +44,15 @@ afterEach(() => {
 function batch(
 	seq: number,
 	flags: number,
-	tiles: { x: number; y: number; rgb: [number, number, number] }[]
+	tiles: { x: number; y: number; rgb: [number, number, number] }[],
+	size: { width: number; height: number } = { width: 128, height: 64 }
 ): Uint8Array {
 	const bytes = new Uint8Array(22 + tiles.length * 17);
 	const view = new DataView(bytes.buffer);
 	bytes.set([2, 0, flags, 1]);
 	view.setUint32(4, seq, true);
-	view.setUint16(16, 128, true);
-	view.setUint16(18, 64, true);
+	view.setUint16(16, size.width, true);
+	view.setUint16(18, size.height, true);
 	view.setUint16(20, tiles.length, true);
 	tiles.forEach((tile, index) => {
 		const at = 22 + index * 17;
@@ -71,6 +73,17 @@ const DISPLAYS = {
 		{ id: 'Xvfb-0', name: 'Screen', x: 0, y: 0, width: 256, height: 128, scale: 1, primary: true }
 	],
 	current: 'Xvfb-0'
+};
+
+/** Two displays side by side, 256x128 and 128x64, from an agent that can show both at once. */
+const TWO_DISPLAYS = {
+	type: 'displays',
+	list: [
+		{ id: 'L', name: 'Left', x: 0, y: 0, width: 256, height: 128, scale: 1, primary: true },
+		{ id: 'R', name: 'Right', x: 256, y: 0, width: 128, height: 64, scale: 1, primary: false }
+	],
+	current: 'L',
+	allScreens: true
 };
 
 function renderTab(grants: Grant[], machine = TEST_MACHINE) {
@@ -593,6 +606,79 @@ describe('the desktop tab', () => {
 		await expect.element(screen.getByRole('button', { name: 'Session controls' })).toBeVisible();
 		const stage = screen.getByRole('application', { name: /Screen of/ }).element();
 		expect(getComputedStyle(stage).position).toBe('fixed');
+	});
+
+	it('A8: offers All screens only with two or more displays and an agent that can', async () => {
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		// One display: no picker at all.
+		await expect.element(screen.getByRole('group', { name: 'Display' })).not.toBeInTheDocument();
+		// Two displays from an agent that says nothing about all screens.
+		socket.receive(JSON.stringify({ ...TWO_DISPLAYS, allScreens: undefined }));
+		const picker = screen.getByRole('group', { name: 'Display' });
+		await expect.element(picker.getByRole('button', { name: 'Left' })).toBeVisible();
+		await expect
+			.element(picker.getByRole('button', { name: 'All screens' }))
+			.not.toBeInTheDocument();
+		// The same agent, newer: it can.
+		socket.receive(JSON.stringify(TWO_DISPLAYS));
+		await expect.element(picker.getByRole('button', { name: 'All screens' })).toBeVisible();
+	});
+
+	it('A9, A10: All screens sends select-display all, and pointer positions span the combined picture', async () => {
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		socket.receive(JSON.stringify(TWO_DISPLAYS));
+		await screen
+			.getByRole('group', { name: 'Display' })
+			.getByRole('button', { name: 'All screens' })
+			.click();
+		await expect
+			.poll(() => socket.messages())
+			.toContainEqual({ type: 'select-display', display: 'all' });
+		socket.receive(JSON.stringify({ ...TWO_DISPLAYS, current: 'all' }));
+		await expect
+			.element(screen.getByRole('button', { name: 'All screens' }))
+			.toHaveAttribute('aria-pressed', 'true');
+		// The agent's combined frame: 384x128, the box around both displays.
+		socket.receive(
+			batch(1, 1 | 4, [{ x: 320, y: 0, rgb: [9, 9, 9] }], { width: 384, height: 128 })
+		);
+		await expect.poll(() => socket.messages()).toContainEqual({ type: 'ack', seq: 1 });
+		const stage = screen.getByRole('application', { name: /Screen of/ });
+		const box = stage.element().getBoundingClientRect();
+		// The stage keeps the picture's shape, so a click at 90% across is
+		// 90% across the combined desktop: on the right-hand display.
+		await stage.click({ position: { x: box.width * 0.9, y: box.height * 0.25 } });
+		const pointer = socket
+			.messages()
+			.find(
+				(message): message is { type: 'pointer'; x: number; y: number } =>
+					typeof message === 'object' &&
+					message !== null &&
+					'type' in message &&
+					message.type === 'pointer'
+			);
+		expect(pointer?.x).toBeGreaterThan(340);
+		expect(pointer?.x).toBeLessThan(352);
+		expect(pointer?.y).toBe(32);
+	});
+
+	it('A8: the full-screen bar has the screen picker with All screens', async () => {
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		socket.receive(JSON.stringify(TWO_DISPLAYS));
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+		const picker = screen.getByRole('group', { name: 'Screen' });
+		await picker.getByRole('button', { name: 'All screens' }).click();
+		await expect
+			.poll(() => socket.messages())
+			.toContainEqual({ type: 'select-display', display: 'all' });
+		await expect.element(screen.getByRole('application', { name: /Screen of/ })).toHaveFocus();
+		await screen
+			.getByRole('group', { name: 'Full screen controls' })
+			.getByRole('button', { name: 'Leave full screen' })
+			.click();
+		await expect.poll(() => document.fullscreenElement).toBeNull();
 	});
 
 	it('does not offer a session whose rules ask the person at the screen first', async () => {

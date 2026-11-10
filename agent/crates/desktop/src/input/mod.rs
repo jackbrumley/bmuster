@@ -5,6 +5,7 @@
 //! (and dropping the controller) leaves nothing stuck on the machine. The
 //! platform side is an [`InputBackend`]: XTest on X11, `SendInput` on Windows.
 
+pub mod absolute;
 pub mod keymap;
 #[cfg(target_os = "linux")]
 pub mod uinput;

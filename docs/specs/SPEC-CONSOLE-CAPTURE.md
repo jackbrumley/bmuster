@@ -44,7 +44,7 @@ X11 stays as it is: it already covers greeters, has damage tracking and needs no
 1. The agent opens `/dev/uinput` only for a session whose ticket carries control, and creates two devices: **"BMuster keyboard"** (all `KEY_*` codes) and **"BMuster pointer"** (`ABS_X`/`ABS_Y` 0–65535, `BTN_LEFT`/`RIGHT`/`MIDDLE`, `REL_WHEEL`/`REL_HWHEEL` with hi-res variants). Watch sessions never open uinput. The devices are destroyed when the last control session ends.
 2. **Keyboard by position:** the browser's `code` maps to the evdev key code; the machine's own layout decides the character, as for a USB keyboard.
 3. **Keyboard by character** (phones): characters on the US layout are typed with their key and Shift. Other characters are not typed and the session reports "This character cannot be typed on this screen yet". Non-printing keys go by position.
-4. **Pointer:** absolute coordinates over the bounding box of all displays. With one display this is exact. With several, displays are assumed side by side in connector order; the open question below covers matching the compositor's arrangement.
+4. **Pointer:** absolute coordinates over the bounding box of all displays. With one display this is exact. With several, displays are assumed side by side in connector order; on a GNOME desktop the layout comes from mutter instead, and the pointer maps monitor by monitor (SPEC-DESKTOP-ALL-SCREENS).
 5. **Special keys:** Ctrl+Alt+Del and Ctrl+Alt+F1–F12 are sent as real key chords, so switching consoles works.
 6. **Release-all** on blur, end of session and every screen switch, as now.
 
@@ -80,7 +80,7 @@ This is security work: KMS and uinput bypass every compositor privacy check by d
 
 ## Open questions
 
-1. Multi-monitor pointer arrangement on Wayland: read the compositor's saved layout (GNOME `monitors.xml`, KDE `kwinoutputconfig.json`), or switch to a relative pointer with warping?
+1. ~~Multi-monitor pointer arrangement on Wayland~~: answered by SPEC-DESKTOP-ALL-SCREENS, which reads mutter's live layout (`GetCurrentState`) on a GNOME desktop and maps the pointer monitor by monitor; other compositors keep the side-by-side layout.
 2. Delete the portal helper right after W9 passes, or keep it one release as a fallback for machines where KMS import fails (some NVIDIA setups)?
 
 ## As built (2026-11-09)

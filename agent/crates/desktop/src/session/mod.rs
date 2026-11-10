@@ -14,7 +14,7 @@ mod following;
 mod video;
 mod wake;
 
-use crate::capture::Capturer;
+use crate::capture::{shown_rect, view_id, Capturer, Rect, View, ALL_DISPLAYS};
 use crate::control::{
     self, AgentMessage, ClientMessage, Codec, EndReason, ErrorCode, Mode, Parsed, Scale, Viewport,
 };
@@ -98,6 +98,9 @@ pub struct DesktopSession {
     ended: Option<EndReason>,
     /// Set when the session follows the screen instead of holding one.
     follow: Option<following::Follow>,
+    /// The viewer chose all screens: a screen the session follows to
+    /// opens that way too, when it can.
+    wants_all: bool,
 }
 
 impl DesktopSession {
@@ -138,6 +141,7 @@ impl DesktopSession {
             scale: Scale::Fit,
             ended: None,
             follow: None,
+            wants_all: false,
         }
     }
 
@@ -254,20 +258,30 @@ impl DesktopSession {
                 self.pacer.ack(seq, now);
             }
             ClientMessage::SelectDisplay { display } => {
-                let Some(index) = self
-                    .capturer
-                    .displays()
-                    .iter()
-                    .position(|d| d.id == display)
-                else {
-                    self.bad_message(&format!("no display {display:?}"), out);
-                    return;
+                let view = if display == ALL_DISPLAYS {
+                    if !self.capturer.can_show_all() {
+                        self.bad_message("this screen cannot show every display at once", out);
+                        return;
+                    }
+                    View::All
+                } else {
+                    let Some(index) = self
+                        .capturer
+                        .displays()
+                        .iter()
+                        .position(|d| d.id == display)
+                    else {
+                        self.bad_message(&format!("no display {display:?}"), out);
+                        return;
+                    };
+                    View::Display(index)
                 };
                 self.release_all();
-                if let Err(err) = self.capturer.select(index) {
+                if let Err(err) = self.capturer.select(view) {
                     out.push(error(ErrorCode::CaptureFailed, &err.0));
                     return;
                 }
+                self.wants_all = view == View::All;
                 self.video.refresh();
                 self.pacer.force_keyframe();
                 self.cursor.forget_position();
@@ -332,39 +346,19 @@ impl DesktopSession {
         }
     }
 
-    fn current_rect(&self) -> crate::capture::Rect {
-        self.capturer
-            .displays()
-            .get(self.capturer.current())
-            .map(|d| d.rect())
-            .unwrap_or(crate::capture::Rect::new(0, 0, 1, 1))
+    /// What the view covers on the desktop: the input backend's coordinates.
+    fn current_rect(&self) -> Rect {
+        shown_rect(self.capturer.displays(), self.capturer.view()).unwrap_or(Rect::new(0, 0, 1, 1))
     }
 
     fn displays_message(&self) -> Outgoing {
         let list = self.capturer.displays().to_vec();
-        let current = list
-            .get(self.capturer.current())
-            .map(|d| d.id.clone())
-            .unwrap_or_default();
-        text(AgentMessage::Displays { list, current })
-    }
-
-    fn scale_factor(&self) -> f64 {
-        let rect = self.current_rect();
-        match (self.scale, self.viewport) {
-            (Scale::Factor(factor), _) => factor,
-            (Scale::Fit, Some(v)) if v.width > 0.0 && v.height > 0.0 => {
-                let ratio = if v.pixel_ratio > 0.0 {
-                    v.pixel_ratio
-                } else {
-                    1.0
-                };
-                (v.width * ratio / f64::from(rect.width))
-                    .min(v.height * ratio / f64::from(rect.height))
-                    .min(1.0)
-            }
-            (Scale::Fit, _) => 1.0,
-        }
+        let current = view_id(&list, self.capturer.view());
+        text(AgentMessage::Displays {
+            list,
+            current,
+            all_screens: self.capturer.can_show_all(),
+        })
     }
 
     /// One capture tick: maybe a frame, then the cursor.
@@ -406,12 +400,13 @@ impl DesktopSession {
             }
             TickDecision::WindowFull => self.video.dropped(),
             TickDecision::Capture { keyframe } => {
-                let factor = self.scale_factor();
+                let (scale, viewport) = (self.scale, self.viewport);
+                let factor = move |width, height| scale_factor(scale, viewport, width, height);
                 let quality = self.pacer.jpeg_quality();
                 let pts = self.pts(now);
                 match self.video.produce(
                     &mut *self.capturer,
-                    factor,
+                    &factor,
                     keyframe,
                     quality,
                     pts,
@@ -447,6 +442,25 @@ impl DesktopSession {
 
     fn pts(&self, now: Instant) -> u64 {
         now.saturating_duration_since(self.started).as_micros() as u64
+    }
+}
+
+/// The encode factor for a captured image of `width × height`: the `scale`
+/// setting, or for `fit` what fits the viewer's viewport (never above 1).
+fn scale_factor(scale: Scale, viewport: Option<Viewport>, width: u32, height: u32) -> f64 {
+    match (scale, viewport) {
+        (Scale::Factor(factor), _) => factor,
+        (Scale::Fit, Some(v)) if v.width > 0.0 && v.height > 0.0 && width > 0 && height > 0 => {
+            let ratio = if v.pixel_ratio > 0.0 {
+                v.pixel_ratio
+            } else {
+                1.0
+            };
+            (v.width * ratio / f64::from(width))
+                .min(v.height * ratio / f64::from(height))
+                .min(1.0)
+        }
+        (Scale::Fit, _) => 1.0,
     }
 }
 

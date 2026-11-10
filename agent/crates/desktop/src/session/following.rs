@@ -9,7 +9,7 @@
 
 use super::wake::Wake;
 use super::{text, DesktopSession, Outgoing};
-use crate::capture::DesktopState;
+use crate::capture::{DesktopState, View};
 use crate::control::{AgentMessage, Mode};
 use crate::follow::{NoScreen, ScreenWatch};
 use crate::input::InputController;
@@ -213,6 +213,13 @@ impl DesktopSession {
         }
         log::info!("Desktop session opened the screen {key}");
         self.capturer = platform.capturer;
+        // All screens carries over to the next screen (lock, sign-in, a
+        // user switch) when that one has them too.
+        if self.wants_all && self.capturer.can_show_all() {
+            if let Err(err) = self.capturer.select(View::All) {
+                log::warn!("Cannot show all screens on {key}: {err}");
+            }
+        }
         self.input = input;
         self.video.restart();
         self.cursor.restart();

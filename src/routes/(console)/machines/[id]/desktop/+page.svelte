@@ -16,6 +16,7 @@
 		DesktopSettings as PictureSettings,
 		InputMessage
 	} from '#lib/domain/desktop/messages.ts';
+	import { displayChoices, shownSize } from '#lib/domain/desktop/displays.ts';
 	import { screenLabel } from '#lib/domain/desktop/screen.ts';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 	import { signedInUserOf } from '#lib/domain/machines/machine.ts';
@@ -89,13 +90,11 @@
 	const frame = $derived(session?.frameSize);
 	/** What the machine's screen shows (sign-in screen, someone's desktop, nothing to show). */
 	const screenState = $derived(running ? session?.screen : undefined);
-	const display = $derived(session?.displays.find((item) => item.id === session?.current));
+	/** What the picture covers on the machine: one display, or the box around them all. */
+	const display = $derived(shownSize(session?.displays ?? [], session?.current));
+	/** The screen picker: each display, and All screens when the agent can (SPEC-DESKTOP-ALL-SCREENS). */
 	const displayOptions = $derived(
-		(session?.displays ?? []).map((item) => ({
-			value: item.id,
-			label: item.name,
-			count: undefined
-		}))
+		displayChoices(session?.displays ?? [], session?.allScreens ?? false)
 	);
 
 	/** True when the person's rules for this mode ask the person at the screen first. */
@@ -153,7 +152,7 @@
 		return {
 			box: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
 			picture: frame,
-			display: { width: display.width, height: display.height }
+			display
 		};
 	}
 
@@ -477,6 +476,9 @@
 					surface={stage}
 					mode={running ? session?.mode : undefined}
 					canSwitch={canControl}
+					displays={displayOptions}
+					display={session?.current ?? null}
+					ondisplay={(id: string) => session?.selectDisplay(id)}
 					settingsOpen={open === 'settings'}
 					{keysOpen}
 					onexit={() => void toggleFullScreen()}

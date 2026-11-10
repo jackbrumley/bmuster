@@ -349,7 +349,8 @@ pub(super) mod tests {
     use super::super::testing::{socket_pair, Server};
     use super::*;
     use bmuster_desktop::capture::{
-        CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState, DisplayInfo, Frame,
+        CaptureResult, Capturer, CursorImage, CursorState, Damage, DesktopState, DisplayInfo,
+        Frame, View,
     };
     use bmuster_desktop::input::{InputBackend, InputResult};
     use bmuster_desktop::{Look, ScreenWatch};
@@ -383,10 +384,13 @@ pub(super) mod tests {
         fn displays(&self) -> &[DisplayInfo] {
             &self.displays
         }
-        fn current(&self) -> usize {
-            0
+        fn view(&self) -> View {
+            View::Display(0)
         }
-        fn select(&mut self, _index: usize) -> CaptureResult<()> {
+        fn can_show_all(&self) -> bool {
+            false
+        }
+        fn select(&mut self, _view: View) -> CaptureResult<()> {
             Ok(())
         }
         fn poll_layout(&mut self) -> CaptureResult<bool> {
@@ -543,7 +547,7 @@ pub(super) mod tests {
         );
         assert_eq!(
             server.wait_for_text(),
-            r#"{"type":"displays","list":[],"current":""}"#
+            r#"{"type":"displays","list":[],"current":"","allScreens":false}"#
         );
         assert_eq!(
             server.wait_for_text(),

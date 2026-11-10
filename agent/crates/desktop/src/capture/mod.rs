@@ -4,6 +4,7 @@
 //! ignored), top row first. That is what X11 ZPixmap at depth 24/32, DXGI and
 //! GDI DIB sections all give, so no platform converts pixels.
 
+pub mod combined;
 #[cfg(target_os = "linux")]
 pub mod kms;
 #[cfg(target_os = "linux")]
@@ -46,11 +47,11 @@ impl Rect {
         }
     }
 
-    fn right(&self) -> i64 {
+    pub fn right(&self) -> i64 {
         i64::from(self.x) + i64::from(self.width)
     }
 
-    fn bottom(&self) -> i64 {
+    pub fn bottom(&self) -> i64 {
         i64::from(self.y) + i64::from(self.height)
     }
 
@@ -141,7 +142,10 @@ pub struct DisplayInfo {
     /// Stable name: the RandR monitor or the Windows device name.
     pub id: String,
     pub name: String,
-    /// Position on the virtual desktop.
+    /// Place on the virtual desktop, in the coordinates the input backend
+    /// takes. The captured image can be larger than this (a high-DPI KMS
+    /// display laid out in mutter's logical pixels); the pointer and the
+    /// cursor map between the two.
     pub x: i32,
     pub y: i32,
     pub width: u32,
@@ -154,6 +158,79 @@ pub struct DisplayInfo {
 impl DisplayInfo {
     pub fn rect(&self) -> Rect {
         Rect::new(self.x, self.y, self.width, self.height)
+    }
+}
+
+/// The display id that means "every display in one frame"
+/// (SPEC-DESKTOP-ALL-SCREENS).
+pub const ALL_DISPLAYS: &str = "all";
+
+/// What a capturer shows: one display, or every display in one frame laid
+/// out at their places on the desktop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum View {
+    Display(usize),
+    All,
+}
+
+/// The smallest rectangle around every display, on the desktop.
+pub fn bounds_of(displays: &[DisplayInfo]) -> Rect {
+    let Some(first) = displays.first() else {
+        return Rect::new(0, 0, 1, 1);
+    };
+    let (mut left, mut top) = (first.x, first.y);
+    let (mut right, mut bottom) = (first.rect().right(), first.rect().bottom());
+    for d in displays {
+        left = left.min(d.x);
+        top = top.min(d.y);
+        right = right.max(d.rect().right());
+        bottom = bottom.max(d.rect().bottom());
+    }
+    Rect::new(
+        left,
+        top,
+        (right - i64::from(left)).max(1) as u32,
+        (bottom - i64::from(top)).max(1) as u32,
+    )
+}
+
+/// What `view` covers on the desktop: one display's rectangle, or the
+/// bounding box of them all. `None` for a display that is not there.
+pub fn shown_rect(displays: &[DisplayInfo], view: View) -> Option<Rect> {
+    match view {
+        View::Display(index) => displays.get(index).map(DisplayInfo::rect),
+        View::All if displays.is_empty() => None,
+        View::All => Some(bounds_of(displays)),
+    }
+}
+
+/// The primary display (the first when none says so).
+pub fn primary_view(displays: &[DisplayInfo]) -> View {
+    View::Display(displays.iter().position(|d| d.primary).unwrap_or(0))
+}
+
+/// The view to keep when the display list changes from `old` to `new`: the
+/// same display (by id), all of them while that is still possible, else
+/// the primary.
+pub fn keep_view(old: &[DisplayInfo], view: View, new: &[DisplayInfo]) -> View {
+    match view {
+        View::All if combined::Combined::possible(new) => View::All,
+        View::All => primary_view(new),
+        View::Display(index) => old
+            .get(index)
+            .and_then(|shown| new.iter().position(|d| d.id == shown.id))
+            .map_or_else(|| primary_view(new), View::Display),
+    }
+}
+
+/// The id the `displays` and `stream` messages give `view`.
+pub fn view_id(displays: &[DisplayInfo], view: View) -> String {
+    match view {
+        View::Display(index) => displays
+            .get(index)
+            .map(|d| d.id.clone())
+            .unwrap_or_default(),
+        View::All => ALL_DISPLAYS.to_string(),
     }
 }
 
@@ -245,11 +322,17 @@ pub trait Capturer: Send {
     /// The displays, in the order the `displays` message lists them.
     fn displays(&self) -> &[DisplayInfo];
 
-    /// Index of the display being captured.
-    fn current(&self) -> usize;
+    /// What is being captured: one display, or all of them.
+    fn view(&self) -> View;
 
-    /// Switches to another display. The next capture is a full one.
-    fn select(&mut self, index: usize) -> CaptureResult<()>;
+    /// Whether [`View::All`] can be shown now: two or more displays, laid
+    /// out within [`combined::MAX_SIDE`] and [`combined::MAX_PIXELS`] by a
+    /// platform that can compose them.
+    fn can_show_all(&self) -> bool;
+
+    /// Switches to another display, or to all of them. The next capture is
+    /// a full one.
+    fn select(&mut self, view: View) -> CaptureResult<()>;
 
     /// Reads platform events. Returns true when the display list or the
     /// current display's size changed; the caller then sends `displays` and
@@ -261,7 +344,7 @@ pub trait Capturer: Send {
     /// calls, so a skipped tick loses nothing.
     fn capture(&mut self, full: bool) -> CaptureResult<Damage>;
 
-    /// The last captured image of the current display.
+    /// The last captured image of the current view.
     fn frame(&self) -> &Frame;
 
     /// The pointer's position and shape id.

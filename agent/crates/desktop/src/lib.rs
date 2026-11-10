@@ -91,20 +91,22 @@ pub fn x11_platform(target: capture::x11_session::X11Target) -> Result<Platform,
     })
 }
 
-/// Capture through KMS (from `source`, the root helper's pipe) and input
+/// Capture through KMS (from `source`, the root helper's pipe) laid out by
+/// `layout` (mutter, when the screen shows a GNOME desktop), and input
 /// through uinput, built by `uinput` only for a control session (Linux:
 /// Wayland, the text console, anything that is not X11).
 #[cfg(target_os = "linux")]
 pub fn kms_platform(
     source: capture::kms::capturer::SharedSource,
     uinput: input::uinput::Opener,
+    layout: Box<dyn capture::kms::mutter::LayoutReader>,
 ) -> Result<Platform, String> {
-    let bounds = std::sync::Arc::new(std::sync::Mutex::new(capture::Rect::new(0, 0, 1, 1)));
-    let capturer =
-        capture::kms::capturer::KmsCapturer::new(source, bounds.clone()).map_err(|e| e.0)?;
+    let pointer = capture::kms::capturer::unset_pointer();
+    let capturer = capture::kms::capturer::KmsCapturer::new(source, pointer.clone(), layout)
+        .map_err(|e| e.0)?;
     Ok(Platform {
         capturer: Box::new(capturer),
-        make_input: Box::new(move || uinput.backend(bounds)),
+        make_input: Box::new(move || uinput.backend(pointer)),
         notice_target: notice::Target::Console,
     })
 }
