@@ -128,6 +128,10 @@ pub fn run(
         notice,
         slot,
     } = ready;
+    // Windows: the display stays on while a control session runs
+    // (SPEC-DESKTOP-WAKE); cleared on its own thread when this returns.
+    #[cfg(windows)]
+    let _display = display_on(session.mode());
     let (output, outgoing) = mpsc::sync_channel::<ToServer>(OUTPUT_QUEUE);
     let (to_session, incoming) = mpsc::channel::<Incoming>();
     let shown = notice.map(|target| notice::show(target.as_ref(), viewer, to_session.clone()));
@@ -209,6 +213,23 @@ pub fn run(
         Err(_) => log::error!("The desktop thread for {viewer} panicked"),
     }
     ended
+}
+
+/// Holds the display on for a control session; nothing for a watch one.
+#[cfg(windows)]
+fn display_on(mode: bmuster_desktop::Mode) -> Option<crate::power::windows::ExecutionHold> {
+    use crate::power::windows::{set_thread_execution_state, ExecutionInhibitor, DISPLAY_ON};
+    use crate::power::Inhibit as _;
+    if mode != bmuster_desktop::Mode::Control {
+        return None;
+    }
+    match ExecutionInhibitor::new(set_thread_execution_state, DISPLAY_ON).take() {
+        Ok(hold) => Some(hold),
+        Err(reason) => {
+            log::warn!("Could not keep the display on for the desktop session: {reason}");
+            None
+        }
+    }
 }
 
 /// What the session's outgoing messages have shown so far, for its timeline.
@@ -413,6 +434,7 @@ pub(super) mod tests {
     impl ScreenWatch for TextConsole {
         fn look(&mut self) -> Look {
             Look {
+                dark: false,
                 key: "1:tty".into(),
                 state: DesktopState::Unavailable {
                     reason: "Text console".into(),

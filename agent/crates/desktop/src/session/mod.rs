@@ -12,6 +12,7 @@
 mod cursor;
 mod following;
 mod video;
+mod wake;
 
 use crate::capture::Capturer;
 use crate::control::{
@@ -175,6 +176,7 @@ impl DesktopSession {
         self.ended = Some(reason);
         // Dropping the controller releases everything it holds.
         self.input = None;
+        self.stop_waking();
         vec![text(AgentMessage::Ended { reason })]
     }
 
@@ -286,12 +288,15 @@ impl DesktopSession {
             ClientMessage::ClipboardPush { .. } | ClientMessage::ClipboardPull => {
                 self.log_once("clipboard", "message (clipboard comes in phase 6)");
             }
-            message => self.inject(message, out),
+            message => self.inject(message, now, out),
         }
     }
 
-    fn inject(&mut self, message: ClientMessage, out: &mut Vec<Outgoing>) {
+    fn inject(&mut self, message: ClientMessage, now: Instant, out: &mut Vec<Outgoing>) {
         let display = self.current_rect();
+        if self.input.is_some() {
+            self.viewer_input(now);
+        }
         let Some(input) = self.input.as_mut() else {
             return;
         };
@@ -371,6 +376,7 @@ impl DesktopSession {
         if !self.follow_screen(now, &mut out) {
             return out;
         }
+        self.keep_awake(now);
         match self.capturer.poll_layout() {
             Ok(true) => {
                 self.release_all();

@@ -10,6 +10,8 @@ use crate::follow::Look;
 use crate::frame::FLAG_KEYFRAME;
 use crate::input::recording::{Call, Recorder};
 use crate::input::{Button, InputBackend, InputResult};
+use crate::session::wake::tests::CountingWaker;
+use crate::session::wake::{STAYS_OFF, WAKING};
 use crate::session::DesktopSession;
 use crate::Platform;
 use std::collections::HashMap;
@@ -92,6 +94,8 @@ struct Seat {
     opened: Vec<String>,
     refuse: Option<String>,
     built_injectors: u32,
+    waker: CountingWaker,
+    built_wakers: u32,
 }
 
 #[derive(Clone)]
@@ -142,6 +146,12 @@ impl ScreenWatch for FakeWatch {
             }),
             notice_target: notice_target(),
         })
+    }
+
+    fn waker(&mut self) -> Result<Box<dyn crate::follow::Waker>, String> {
+        let mut seat = self.0.lock().unwrap();
+        seat.built_wakers += 1;
+        Ok(Box::new(seat.waker.clone()))
     }
 }
 
@@ -195,6 +205,8 @@ fn harness(mode: Mode, first: Look) -> Harness {
         opened: Vec::new(),
         refuse: None,
         built_injectors: 0,
+        waker: CountingWaker::default(),
+        built_wakers: 0,
     }));
     let now = Instant::now();
     let session = DesktopSession::following(mode, Box::new(FakeWatch(seat.clone())), now);
@@ -210,6 +222,7 @@ fn harness(mode: Mode, first: Look) -> Harness {
 
 fn on_a() -> Look {
     Look {
+        dark: false,
         key: "a".into(),
         state: desktop("jack"),
     }
@@ -217,6 +230,7 @@ fn on_a() -> Look {
 
 fn on_b() -> Look {
     Look {
+        dark: false,
         key: "b".into(),
         state: DesktopState::SignIn,
     }
@@ -257,6 +271,11 @@ impl Harness {
             }
         }
         out
+    }
+
+    /// Nudges since the last call.
+    fn nudges(&self) -> u32 {
+        self.seat.lock().unwrap().waker.take()
     }
 
     fn opened(&self) -> Vec<String> {
@@ -358,6 +377,7 @@ fn follow_lock_and_unlock_only_change_the_state() {
     h.send(HELLO);
     h.second();
     let out = h.switch(Look {
+        dark: false,
         key: "a".into(),
         state: DesktopState::Locked {
             user: Some("jack".into()),
@@ -387,6 +407,7 @@ fn follow_wayland_and_text_console_wait_open_with_a_reason() {
     h.send(HELLO);
     h.second();
     let out = h.switch(Look {
+        dark: false,
         key: "c2:wayland".into(),
         state: unavailable("Wayland sign-in screen not supported yet"),
     });
@@ -406,6 +427,7 @@ fn follow_wayland_and_text_console_wait_open_with_a_reason() {
         assert!(out.is_empty(), "no frames and no news: {out:?}");
     }
     let out = h.switch(Look {
+        dark: false,
         key: "5:tty".into(),
         state: unavailable("Text console"),
     });
@@ -425,6 +447,7 @@ fn follow_no_seat_at_the_start_waits_for_a_screen() {
     let mut h = harness(
         Mode::Watch,
         Look {
+            dark: false,
             key: "no-seat".into(),
             state: unavailable("Cannot find the screen (seat0)"),
         },
@@ -518,6 +541,7 @@ mod kms {
     impl ScreenWatch for KmsWatch {
         fn look(&mut self) -> Look {
             Look {
+                dark: false,
                 key: "kms:c1".into(),
                 state: DesktopState::SignIn,
             }
@@ -617,4 +641,110 @@ mod kms {
         );
         assert!(session.ended().is_none());
     }
+}
+
+/// The KMS look while the display is blanked on idle.
+fn dark() -> Look {
+    Look {
+        key: "kms-off:c1".into(),
+        state: unavailable("The screen is off"),
+        dark: true,
+    }
+}
+
+/// SPEC-DESKTOP-WAKE W1.
+#[test]
+fn wake_nudges_a_dark_screen_in_control() {
+    let mut h = harness(Mode::Control, dark());
+    assert_eq!(h.nudges(), 1, "the first look nudges at once");
+    let messages = texts(&h.send(HELLO));
+    assert_eq!(
+        of_type(&messages, "state")[0]["screen"],
+        serde_json::json!({"kind": "unavailable", "reason": WAKING})
+    );
+    h.second();
+    h.second();
+    assert_eq!(h.nudges(), 0, "at most one every 3 s");
+    assert!(h.second().is_empty(), "the same reason is not sent again");
+    assert_eq!(h.nudges(), 1);
+
+    // The compositor turns the screen on: opened as usual.
+    let out = h.switch(on_a());
+    assert_eq!(
+        of_type(&texts(&out), "state")[0]["screen"],
+        serde_json::json!({"kind": "desktop", "user": "jack"})
+    );
+    assert_eq!(h.opened(), vec!["a"]);
+    assert_eq!(h.nudges(), 0);
+
+    // Dark again for good: after 10 s the viewer reads about the lid.
+    h.switch(dark());
+    let mut reasons = Vec::new();
+    for _ in 0..11 {
+        for message in texts(&h.second()) {
+            if message["type"] == "state" {
+                reasons.push(message["screen"]["reason"].clone());
+            }
+        }
+    }
+    assert_eq!(reasons, vec![serde_json::json!(STAYS_OFF)]);
+    assert_eq!(h.nudges(), 4, "every 3 s, counting from the last nudge");
+    assert_eq!(h.seat.lock().unwrap().built_wakers, 1, "one device, kept");
+}
+
+/// SPEC-DESKTOP-WAKE W2.
+#[test]
+fn wake_never_touches_a_watch_session() {
+    let mut h = harness(Mode::Watch, dark());
+    let messages = texts(&h.send(HELLO));
+    assert_eq!(
+        of_type(&messages, "state")[0]["screen"]["reason"],
+        "The screen is off"
+    );
+    for _ in 0..15 {
+        h.second();
+    }
+    h.switch(on_a());
+    for _ in 0..90 {
+        h.second();
+    }
+    assert_eq!(h.nudges(), 0);
+    assert_eq!(
+        h.seat.lock().unwrap().built_wakers,
+        0,
+        "never asked for one"
+    );
+}
+
+/// SPEC-DESKTOP-WAKE W5.
+#[test]
+fn keep_awake_while_the_screen_is_open() {
+    let mut h = harness(Mode::Control, on_a());
+    h.send(HELLO);
+    assert_eq!(h.nudges(), 0);
+    h.second();
+    h.second();
+    assert_eq!(h.nudges(), 1, "2 s after opening");
+
+    // The viewer is busy: no nudge while input keeps arriving.
+    for _ in 0..12 {
+        for _ in 0..5 {
+            h.second();
+        }
+        pointer(&mut h, 5);
+    }
+    assert_eq!(h.nudges(), 0);
+
+    // Idle for 30 s: one nudge.
+    for _ in 0..30 {
+        h.second();
+    }
+    assert_eq!(h.nudges(), 1);
+
+    // Ended: nothing more.
+    h.send(r#"{"type":"disconnect"}"#);
+    for _ in 0..90 {
+        h.second();
+    }
+    assert_eq!(h.nudges(), 0);
 }

@@ -9,6 +9,9 @@
 //!   all displays (like a QEMU USB tablet), five buttons, and the wheel with
 //!   its high-resolution twin.
 //!
+//! A third, "BMuster wake" ([`wake`]), only nudges the pointer to wake the
+//! screen (SPEC-DESKTOP-WAKE).
+//!
 //! The devices are made only when a control session builds its injector
 //! (watch sessions never call it), shared by every control session through
 //! [`Shared`], and destroyed when the last one lets go.
@@ -570,6 +573,9 @@ impl InputBackend for UinputBackend {
         Ok(())
     }
 }
+
+#[path = "uinput_wake.rs"]
+pub mod wake;
 
 #[cfg(test)]
 #[path = "uinput_tests.rs"]

@@ -31,10 +31,12 @@ impl ScreenWatch for InputDesktopWatch {
     fn look(&mut self) -> Look {
         match input_desktop::follow_input_desktop() {
             Ok((desktop, _)) => Look {
+                dark: false,
                 state: state_for(&desktop),
                 key: desktop,
             },
             Err(error) => Look {
+                dark: false,
                 key: String::new(),
                 state: DesktopState::Unavailable {
                     reason: format!("The agent cannot reach the screen: {error}"),
@@ -45,5 +47,9 @@ impl ScreenWatch for InputDesktopWatch {
 
     fn open(&mut self) -> Result<Platform, String> {
         crate::open_platform()
+    }
+
+    fn waker(&mut self) -> Result<Box<dyn crate::follow::Waker>, String> {
+        Ok(Box::new(crate::input::windows::SendInputWaker))
     }
 }

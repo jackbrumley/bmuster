@@ -162,6 +162,7 @@ impl ScreenWatch for Watch {
             Err(error) => {
                 self.bridge = None;
                 return Look {
+                    dark: false,
                     key: "wayland-query-failed".into(),
                     state: DesktopState::Unavailable {
                         reason: format!("{error:#}"),
@@ -183,6 +184,7 @@ impl ScreenWatch for Watch {
         if user.locked {
             self.bridge = None;
             return Look {
+                dark: false,
                 key: format!("wayland-{}-locked", user.id),
                 state: DesktopState::Unavailable {
                     reason:
@@ -216,6 +218,7 @@ impl ScreenWatch for Watch {
                 self.failure = Some(error.clone());
             } else if state.ready && state.frame.is_some() {
                 return Look {
+                    dark: false,
                     key: format!("wayland-{}-ready", user.id),
                     state: DesktopState::Desktop {
                         user: Some(user.name.clone()),
@@ -232,6 +235,7 @@ impl ScreenWatch for Watch {
             self.bridge = None;
         }
         Look {
+            dark: false,
             key: format!("wayland-{}-{phase:?}", user.id),
             state: DesktopState::Approval { phase, message },
         }
@@ -259,6 +263,11 @@ impl ScreenWatch for Watch {
             }),
             notice_target: bmuster_desktop::notice::Target::Portal,
         })
+    }
+    /// The seat's wake device, whichever path shows the screen
+    /// (SPEC-DESKTOP-WAKE).
+    fn waker(&mut self) -> Result<Box<dyn bmuster_desktop::Waker>, String> {
+        self.x11.waker()
     }
 }
 

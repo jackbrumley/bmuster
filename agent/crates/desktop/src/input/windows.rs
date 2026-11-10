@@ -200,6 +200,17 @@ impl InputBackend for SendInputBackend {
     }
 }
 
+/// Wakes the display and resets the idle timers (SPEC-DESKTOP-WAKE): a
+/// relative mouse move of 0, 0 counts as input without moving the pointer.
+#[derive(Debug, Default)]
+pub struct SendInputWaker;
+
+impl crate::follow::Waker for SendInputWaker {
+    fn nudge(&mut self) -> Result<(), String> {
+        send(&[mouse(0, 0, 0, MOUSEEVENTF_MOVE)]).map_err(|e| e.0)
+    }
+}
+
 /// The desktop helper's input check (SPEC-DIAGNOSTICS 1): `SendInput` with
 /// no events at all, which reaches the call without moving or typing.
 pub fn check_send_input() -> Result<String, String> {

@@ -24,6 +24,15 @@ pub struct Look {
     /// What it shows. A change with the same key (lock, unlock) is only
     /// reported to the browser.
     pub state: DesktopState,
+    /// The screen is there but its display is off (blanked on idle): a
+    /// control session sends a wake nudge (SPEC-DESKTOP-WAKE).
+    pub dark: bool,
+}
+
+/// Sends harmless input that wakes the screen and resets the machine's idle
+/// timers (SPEC-DESKTOP-WAKE): only ever made for a control session.
+pub trait Waker: Send {
+    fn nudge(&mut self) -> Result<(), String>;
 }
 
 /// What a following session asks of the platform.
@@ -38,6 +47,11 @@ pub trait ScreenWatch: Send {
     /// last [`ScreenWatch::look`] saw. Never called while that look was
     /// [`DesktopState::Unavailable`].
     fn open(&mut self) -> Result<Platform, String>;
+
+    /// The wake device, asked for once when a control session starts.
+    fn waker(&mut self) -> Result<Box<dyn Waker>, String> {
+        Err("This screen cannot be woken".into())
+    }
 }
 
 /// The capturer a following session holds while there is no screen. The
