@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import {
 		IconAdjustmentsHorizontal,
 		IconArrowsMaximize,
 		IconArrowsMinimize,
-		IconDeviceDesktop,
 		IconEye,
 		IconHandFinger,
 		IconKeyboard,
@@ -24,14 +24,16 @@
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import EmptyState from '#lib/ui/empty-state.svelte';
 	import Notice from '#lib/ui/notice.svelte';
-	import Panel from '#lib/ui/panel.svelte';
 	import LoadingVeil from '#lib/ui/loading-veil.svelte';
 	import NoPermission from '../no-permission.svelte';
 	import { DesktopCanvas } from './desktop-canvas.ts';
 	import { DesktopSession } from './desktop-session.svelte.ts';
 	import DesktopSettings from './desktop-settings.svelte';
+	import DesktopStart from './desktop-start.svelte';
+	import FloatingControls from './floating-controls.svelte';
 	import FullScreenBar from './full-screen-bar.svelte';
-	import type { Geometry } from './input.ts';
+	import { FullScreen } from './full-screen.svelte.ts';
+	import type { Geometry, TouchMode } from './input.ts';
 	import { attachScreenInput } from './screen-input.ts';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
@@ -55,10 +57,18 @@
 	let screenCanvas = $state<HTMLCanvasElement>();
 	let cursorCanvas = $state<HTMLCanvasElement>();
 	let session = $state<DesktopSession>();
-	let touchMode = $state<'trackpad' | 'touch'>('trackpad');
+	let touchMode = $state<TouchMode>('trackpad');
 	/** The block under the bar: picture settings or the Keys menu, never both. */
 	let open = $state<'none' | 'settings' | 'keys'>('none');
-	let fullScreen = $state(false);
+	/** The browser's full screen, or the stage filling the window where there is none. */
+	const screenMode = new FullScreen(() => session?.viewportChanged());
+	const fullScreen = $derived(screenMode.on);
+	/**
+	 * Phones and tablets get the movable controls button in full screen
+	 * instead of the bar (SPEC-DESKTOP-FLOATING 1): a finger, or a window
+	 * narrower than the sidebar breakpoint.
+	 */
+	const touchLayout = new MediaQuery('(pointer: coarse), (max-width: 899px)');
 
 	const connection = $derived(session?.connection ?? { kind: 'idle' as const });
 	const running = $derived(
@@ -191,17 +201,15 @@
 	}
 
 	async function toggleFullScreen(): Promise<void> {
-		if (document.fullscreenElement !== null) {
-			await document.exitFullscreen();
-		} else {
-			await stage?.requestFullscreen();
+		if (stage !== undefined) {
+			await screenMode.toggle(stage);
 		}
 	}
 
 	$effect(() => {
 		// A session that ends in full screen leaves it, so the choices show.
-		if (fullScreen && !running && document.fullscreenElement !== null) {
-			void document.exitFullscreen();
+		if (fullScreen && !running) {
+			void screenMode.leave();
 		}
 	});
 
@@ -224,12 +232,6 @@
 		session = current;
 		void current.resume();
 
-		const onFullScreen = () => {
-			fullScreen = document.fullscreenElement !== null;
-			requestAnimationFrame(() => {
-				current.viewportChanged();
-			});
-		};
 		const detachInput = attachScreenInput(surface, {
 			send: (message) => {
 				current.input(message);
@@ -238,10 +240,10 @@
 			geometry,
 			touchMode: () => touchMode
 		});
-		document.addEventListener('fullscreenchange', onFullScreen);
+		const detachFullScreen = screenMode.attach();
 		return () => {
 			detachInput();
-			document.removeEventListener('fullscreenchange', onFullScreen);
+			detachFullScreen();
 			current.detach();
 		};
 	});
@@ -390,43 +392,12 @@
 		{/if}
 
 		{#if choosing}
-			<Panel heading={undefined} actions={undefined} tone="normal" padding="normal">
-				<div class="start">
-					<IconDeviceDesktop size={40} stroke={1.25} />
-					<p>
-						{user.kind === 'user'
-							? `${user.name} sees a notice while you are connected, and can disconnect you.`
-							: 'Nobody is signed in. You see the sign-in screen.'}
-					</p>
-					{#if asksFirst(canControl ? 'control' : 'watch')}
-						<p class="hint">
-							Your access to this machine asks the person at the screen first. BMuster cannot ask
-							yet, so ask an admin to make the rule connect without asking.
-						</p>
-					{:else}
-						<div class="actions">
-							{#if canControl}
-								<Button
-									variant="primary"
-									size="compact"
-									type="button"
-									onclick={() => {
-										start('control');
-									}}>Connect</Button
-								>
-							{/if}
-							<Button
-								variant={canControl ? 'secondary' : 'primary'}
-								size="compact"
-								type="button"
-								onclick={() => {
-									start('watch');
-								}}>Watch only</Button
-							>
-						</div>
-					{/if}
-				</div>
-			</Panel>
+			<DesktopStart
+				{user}
+				{canControl}
+				asksFirst={asksFirst(canControl ? 'control' : 'watch')}
+				onstart={start}
+			/>
 		{/if}
 
 		{#if open === 'settings' && session !== undefined && running && !fullScreen}
@@ -443,10 +414,15 @@
 		<div
 			class="stage"
 			class:full={fullScreen}
+			class:filling={screenMode.filling}
 			class:hidden={choosing}
 			class:watching={watchOnly}
 			bind:this={stage}
-			style:aspect-ratio={frame !== undefined ? `${frame.width} / ${frame.height}` : '16 / 9'}
+			style:aspect-ratio={fullScreen
+				? undefined
+				: frame !== undefined
+					? `${frame.width} / ${frame.height}`
+					: '16 / 9'}
 			role="application"
 			aria-label="Screen of {machine.name}"
 			aria-busy={connectingTitle !== undefined}
@@ -478,7 +454,25 @@
 					/>
 				</div>
 			{/if}
-			{#if fullScreen && stage !== undefined}
+			{#if fullScreen && touchLayout.current && session !== undefined}
+				<FloatingControls
+					osFamily={machine.osFamily}
+					mode={running ? session.mode : undefined}
+					canSwitch={canControl}
+					{touchMode}
+					displays={displayOptions}
+					display={session.current ?? null}
+					settings={session.settings}
+					send={sendInput}
+					{backToScreen}
+					ontouchmode={(next: TouchMode) => (touchMode = next)}
+					ondisplay={(id: string) => session?.selectDisplay(id)}
+					onsettings={(next: PictureSettings) => session?.changeSettings(next)}
+					onswitch={switchMode}
+					onexit={() => void toggleFullScreen()}
+					ondisconnect={() => void endSession()}
+				/>
+			{:else if fullScreen && stage !== undefined}
 				<FullScreenBar
 					surface={stage}
 					mode={running ? session?.mode : undefined}
@@ -512,7 +506,7 @@
 
 		{#if running && !watchOnly}
 			<div class="phone-keys">
-				<KeyBar osFamily={machine.osFamily} send={sendInput} />
+				<KeyBar osFamily={machine.osFamily} send={sendInput} onkeyboard={undefined} />
 			</div>
 			<p class="mode">
 				{touchMode === 'trackpad'
@@ -579,25 +573,6 @@
 		margin-top: var(--space-2);
 	}
 
-	.start {
-		display: grid;
-		justify-items: center;
-		gap: var(--space-2);
-		padding: var(--space-4) 0;
-		color: var(--text-soft);
-		text-align: center;
-		font-size: var(--text-sm);
-	}
-
-	.start p {
-		margin: 0;
-		max-width: 46ch;
-	}
-
-	.hint {
-		color: var(--muted);
-	}
-
 	.stage {
 		position: relative;
 		width: 100%;
@@ -615,6 +590,29 @@
 	.stage.full {
 		max-height: none;
 		border-radius: 0;
+	}
+
+	/* Over the console's own frame (z-index 10), under the toasts (30). */
+	.stage.filling {
+		position: fixed;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		left: 0;
+		z-index: 20;
+		width: 100%;
+		height: 100dvh;
+	}
+
+	/* The picture keeps clear of the notch and the home bar; the controls do too. */
+	.stage.filling .screen,
+	.stage.filling .cursor {
+		top: var(--safe-top);
+		right: var(--safe-right);
+		bottom: var(--safe-bottom);
+		left: var(--safe-left);
+		width: auto;
+		height: auto;
 	}
 
 	.stage:not(.watching) {

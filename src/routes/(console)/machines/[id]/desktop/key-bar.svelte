@@ -16,9 +16,19 @@
 	 * own keyboard, whose characters go as `text`. Ctrl and Alt stay pressed
 	 * for the next key. Pressing a key never takes focus from the typing
 	 * area, so the phone's keyboard stays open. Ctrl+Alt+Del and other
-	 * combinations are on the Keys menu (SPEC-DESKTOP-KEYS).
+	 * combinations are on the Keys menu (SPEC-DESKTOP-KEYS). `onkeyboard`
+	 * hears when the phone's keyboard opens and closes, so the full-screen
+	 * sheet can fold around it (SPEC-DESKTOP-FLOATING).
 	 */
-	let { osFamily, send }: { osFamily: OsFamily; send: (message: InputMessage) => void } = $props();
+	let {
+		osFamily,
+		send,
+		onkeyboard
+	}: {
+		osFamily: OsFamily;
+		send: (message: InputMessage) => void;
+		onkeyboard: ((open: boolean) => void) | undefined;
+	} = $props();
 
 	const keys = $derived(keyBarFor(osFamily));
 
@@ -144,8 +154,14 @@
 		autocapitalize="off"
 		spellcheck="false"
 		onbeforeinput={onBeforeInput}
-		onfocus={() => (open = true)}
-		onblur={() => (open = false)}
+		onfocus={() => {
+			open = true;
+			onkeyboard?.(true);
+		}}
+		onblur={() => {
+			open = false;
+			onkeyboard?.(false);
+		}}
 	></div>
 </div>
 
