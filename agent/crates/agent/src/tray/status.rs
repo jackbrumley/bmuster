@@ -1,10 +1,13 @@
 //! Public tray status: deliberately separate from private agent state.
+//! `status.json` says whether the agent is connected; `viewers.json` says
+//! who is connected to the screen (SPEC-DESKTOP 8.2).
 
+use super::viewers::{Published, FILE as VIEWERS_FILE};
 use anyhow::{bail, Context as _, Result};
 use serde::{Deserialize, Serialize};
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const MAX_AGE_MS: u64 = 20_000;
 const MAX_BYTES: u64 = 4096;
@@ -103,11 +106,17 @@ pub fn directory() -> Result<PathBuf> {
     }
 }
 
+/// `status.json`, which tray helpers of every version read.
+pub const STATUS_FILE: &str = "status.json";
+
+/// Opens `file` in the status folder, refusing anything root does not own
+/// or others can write.
 #[cfg(target_os = "linux")]
-fn open_status(dir: &Path) -> Result<std::fs::File> {
+fn open_public(dir: &Path, file: &str) -> Result<std::fs::File> {
     use std::os::fd::AsRawFd as _;
     use std::os::fd::FromRawFd as _;
     use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
+    let name = std::ffi::CString::new(file)?;
     let directory = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
@@ -120,7 +129,7 @@ fn open_status(dir: &Path) -> Result<std::fs::File> {
     let fd = unsafe {
         libc::openat(
             directory.as_raw_fd(),
-            c"status.json".as_ptr(),
+            name.as_ptr(),
             libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK,
         )
     };
@@ -140,24 +149,29 @@ fn open_status(dir: &Path) -> Result<std::fs::File> {
 }
 
 #[cfg(windows)]
-fn open_status(dir: &Path) -> Result<std::fs::File> {
-    super::windows::open_status(dir)
+fn open_public(dir: &Path, file: &str) -> Result<std::fs::File> {
+    super::windows::open_public(dir, file)
 }
 
 #[cfg(not(any(target_os = "linux", windows)))]
-fn open_status(_dir: &Path) -> Result<std::fs::File> {
+fn open_public(_dir: &Path, _file: &str) -> Result<std::fs::File> {
     bail!("Tray status is not implemented on this platform")
 }
 
-pub fn read_from(dir: &Path) -> Result<Snapshot> {
+/// The bytes of `file` in the status folder, at most [`MAX_BYTES`].
+fn read_public(dir: &Path, file: &str) -> Result<Vec<u8>> {
     let mut text = Vec::new();
-    open_status(dir)?
+    open_public(dir, file)?
         .take(MAX_BYTES + 1)
         .read_to_end(&mut text)?;
     if text.len() as u64 > MAX_BYTES {
         bail!("Tray status is too large");
     }
-    let snapshot: Snapshot = serde_json::from_slice(&text)?;
+    Ok(text)
+}
+
+pub fn read_from(dir: &Path) -> Result<Snapshot> {
+    let snapshot: Snapshot = serde_json::from_slice(&read_public(dir, STATUS_FILE)?)?;
     snapshot.validate(now_ms())?;
     Ok(snapshot)
 }
@@ -166,52 +180,140 @@ pub fn read() -> Result<Snapshot> {
     read_from(&directory()?)
 }
 
+/// The names in `viewers.json` in `dir`, when it is protected and fresh.
+pub fn read_viewers_from(dir: &Path) -> Result<Vec<String>> {
+    let published: Published = serde_json::from_slice(&read_public(dir, VIEWERS_FILE)?)?;
+    published.validate(now_ms())?;
+    Ok(published.names)
+}
+
+/// Who is connected to the screen; nobody when the list cannot be read
+/// (the agent is not running, or is older than the list).
+pub fn read_viewers() -> Vec<String> {
+    directory()
+        .and_then(|dir| read_viewers_from(&dir))
+        .unwrap_or_default()
+}
+
+/// How often the publisher looks at the viewers.
+const TICK: Duration = Duration::from_secs(1);
+/// Each file is written at least this often, so the tray can tell the
+/// agent is alive.
+const REFRESH: Duration = Duration::from_secs(5);
+
+/// Which files are due: `status.json` every [`REFRESH`], `viewers.json`
+/// at once when the names change and every [`REFRESH`] otherwise.
+#[derive(Debug, Default)]
+pub struct Cadence {
+    status_at: Option<Instant>,
+    viewers_at: Option<Instant>,
+    names: Option<Vec<String>>,
+}
+
+/// What [`Cadence::due`] says to write.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Due {
+    pub status: bool,
+    pub viewers: bool,
+}
+
+impl Cadence {
+    pub fn due(&mut self, now: Instant, names: &[String]) -> Due {
+        let stale = |at: Option<Instant>| at.is_none_or(|at| now.duration_since(at) >= REFRESH);
+        let status = stale(self.status_at);
+        let viewers = stale(self.viewers_at) || self.names.as_deref() != Some(names);
+        if status {
+            self.status_at = Some(now);
+        }
+        if viewers {
+            self.viewers_at = Some(now);
+            self.names = Some(names.to_vec());
+        }
+        Due { status, viewers }
+    }
+}
+
+/// Writes `file` in `dir` whole: a new file, then a rename over the old.
 #[cfg(target_os = "linux")]
-pub fn publish(board: std::sync::Arc<crate::status::StatusBoard>, port: u16) -> Result<()> {
-    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-    let dir = directory()?;
-    let metadata = std::fs::symlink_metadata(&dir).context("Tray status runtime directory is absent; rerun the administrator installer to enable the tray")?;
+fn write_public(dir: &Path, file: &str, bytes: &[u8]) -> Result<()> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+    let stem = file.strip_suffix(".json").unwrap_or(file);
+    let next = dir.join(format!("{stem}-{}.new", std::process::id()));
+    let mut handle = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o644)
+        .open(&next)?;
+    let written = (|| -> Result<()> {
+        handle.write_all(bytes)?;
+        handle.set_permissions(std::fs::Permissions::from_mode(0o644))?;
+        handle.sync_all()?;
+        std::fs::rename(&next, dir.join(file))?;
+        Ok(())
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&next);
+    }
+    written
+}
+
+#[cfg(windows)]
+fn write_public(dir: &Path, file: &str, bytes: &[u8]) -> Result<()> {
+    super::windows::write_public(dir, file, bytes)
+}
+
+/// The status folder must be root's and not writable by anyone else.
+#[cfg(target_os = "linux")]
+fn check_publish_directory(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::MetadataExt as _;
+    let metadata = std::fs::symlink_metadata(dir).context("Tray status runtime directory is absent; rerun the administrator installer to enable the tray")?;
     if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
         bail!("Insecure tray runtime directory");
     }
-    std::thread::Builder::new()
-        .name("tray status".into())
-        .spawn(move || loop {
-            let result = (|| -> Result<()> {
-                use std::io::Write as _;
-                use std::os::unix::fs::OpenOptionsExt as _;
-                let next = dir.join(format!("status-{}.new", std::process::id()));
-                let mut file = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o644)
-                    .open(&next)?;
-                let written = (|| -> Result<()> {
-                    file.write_all(&serde_json::to_vec(&Snapshot::new(
-                        &board.snapshot(),
-                        port,
-                    ))?)?;
-                    file.set_permissions(std::fs::Permissions::from_mode(0o644))?;
-                    file.sync_all()?;
-                    std::fs::rename(&next, dir.join("status.json"))?;
-                    Ok(())
-                })();
-                if written.is_err() {
-                    let _ = std::fs::remove_file(&next);
-                }
-                written
-            })();
-            if let Err(error) = result {
-                log::warn!("Cannot publish tray status: {error:#}");
-            }
-            std::thread::sleep(std::time::Duration::from_secs(5));
-        })?;
     Ok(())
 }
 
 #[cfg(windows)]
+fn check_publish_directory(dir: &Path) -> Result<()> {
+    super::windows::check_publish_directory(dir)
+}
+
+/// Writes `status.json` and `viewers.json` on a thread of its own, as
+/// [`Cadence`] says.
+#[cfg(any(target_os = "linux", windows))]
 pub fn publish(board: std::sync::Arc<crate::status::StatusBoard>, port: u16) -> Result<()> {
-    super::windows::publish(board, port)
+    let dir = directory()?;
+    check_publish_directory(&dir)?;
+    std::thread::Builder::new()
+        .name("tray status".into())
+        .spawn(move || {
+            let mut cadence = Cadence::default();
+            loop {
+                let names = super::viewers::names();
+                let due = cadence.due(Instant::now(), &names);
+                if due.status {
+                    let snapshot = Snapshot::new(&board.snapshot(), port);
+                    let result = serde_json::to_vec(&snapshot)
+                        .map_err(anyhow::Error::from)
+                        .and_then(|bytes| write_public(&dir, STATUS_FILE, &bytes));
+                    if let Err(error) = result {
+                        log::warn!("Cannot publish tray status: {error:#}");
+                    }
+                }
+                if due.viewers {
+                    let published = Published::new(&names, now_ms());
+                    let result = serde_json::to_vec(&published)
+                        .map_err(anyhow::Error::from)
+                        .and_then(|bytes| write_public(&dir, VIEWERS_FILE, &bytes));
+                    if let Err(error) = result {
+                        log::warn!("Cannot publish the viewer list: {error:#}");
+                    }
+                }
+                std::thread::sleep(TICK);
+            }
+        })?;
+    Ok(())
 }
 
 #[cfg(not(any(target_os = "linux", windows)))]
@@ -302,5 +404,51 @@ mod tests {
         assert!(read_from(&link).is_err());
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
         assert!(read_from(dir.path()).is_err());
+    }
+
+    /// The viewer list is read with the status file's protections.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn tray_viewers_reader_rejects_an_unprotected_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        write_public(
+            dir.path(),
+            VIEWERS_FILE,
+            &serde_json::to_vec(&Published::new(&["Kim".into()], now_ms())).unwrap(),
+        )
+        .unwrap();
+        assert!(dir.path().join(VIEWERS_FILE).is_file(), "written whole");
+        assert!(
+            read_viewers_from(dir.path()).is_err(),
+            "an unprivileged folder cannot claim to be the agent's"
+        );
+    }
+
+    #[test]
+    fn tray_viewers_are_published_at_once_when_they_change() {
+        let start = Instant::now();
+        let mut cadence = Cadence::default();
+        let kim = vec!["Kim".to_string()];
+        let due = |status, viewers| Due { status, viewers };
+        assert_eq!(cadence.due(start, &[]), due(true, true), "both at start");
+        let second = start + TICK;
+        assert_eq!(cadence.due(second, &[]), due(false, false));
+        assert_eq!(cadence.due(second, &kim), due(false, true), "Kim joined");
+        assert_eq!(cadence.due(second + TICK, &kim), due(false, false));
+        assert_eq!(
+            cadence.due(start + REFRESH, &kim),
+            due(true, false),
+            "status every five seconds"
+        );
+        assert_eq!(
+            cadence.due(second + REFRESH, &kim),
+            due(false, true),
+            "the list too, so it never goes stale"
+        );
+        assert_eq!(
+            cadence.due(second + REFRESH, &[]),
+            due(false, true),
+            "Kim left"
+        );
     }
 }

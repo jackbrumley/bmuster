@@ -11,7 +11,13 @@
 //! on the user's desktop only). A session that follows the screen moves the
 //! bar with [`keep_on`] when the screen changes, and puts it back if its X
 //! server went away.
+//!
+//! Notice version 2: the bar opens full size when it comes up and when a
+//! viewer joins, then folds to a small pill at the same edge ([`state`]);
+//! hovering or pressing it opens it again. The tray helper shows the same
+//! viewers on every desktop, including those with no bar (Wayland).
 
+pub mod state;
 #[cfg(windows)]
 pub mod windows;
 #[cfg(target_os = "linux")]

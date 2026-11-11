@@ -2,7 +2,9 @@
 //! the screen, drawn with the server's built-in `fixed` font, on its own
 //! thread and its own connection. X11 cannot keep a window out of a screen
 //! capture, so viewers see the bar too (SPEC-DESKTOP open question 3).
+//! It folds to a pill and opens again on hover as [`Fold`] says.
 
+use super::state::{pill_text, Fold, Size};
 use super::{bar_text, BarCommand, BAR_TITLE, DISCONNECT_LABEL};
 use crate::capture::x11_session::{connect, X11Target};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -21,6 +23,8 @@ const POLL: Duration = Duration::from_millis(50);
 const RAISE_EVERY: Duration = Duration::from_secs(1);
 const PADDING: i16 = 10;
 const BUTTON_GAP: i16 = 16;
+/// The pill's padding around its text, and the gap after its marker.
+const PILL_PADDING: i16 = 6;
 const BACKGROUND: u32 = 0x1F_2937;
 const TEXT: u32 = 0xF9_FAFB;
 const BUTTON: u32 = 0xB9_1C1C;
@@ -62,11 +66,27 @@ fn latin1(text: &str) -> Vec<u8> {
         .collect()
 }
 
+const EMPTY: Rectangle = Rectangle {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+};
+
+/// The full bar: the names, then the Disconnect button.
 struct Layout {
     width: u16,
     height: u16,
     text_y: i16,
     button: Rectangle,
+}
+
+/// The folded bar: a red marker, then "BMuster · 1 connected".
+struct PillLayout {
+    width: u16,
+    height: u16,
+    text_y: i16,
+    marker: Rectangle,
 }
 
 struct Bar {
@@ -80,6 +100,11 @@ struct Bar {
     descent: i16,
     text: Vec<u8>,
     layout: Layout,
+    pill_text: Vec<u8>,
+    pill: PillLayout,
+    fold: Fold,
+    /// The size the window has now.
+    size: Size,
 }
 
 impl Bar {
@@ -113,17 +138,21 @@ impl Bar {
                 width: 1,
                 height: 1,
                 text_y: 0,
-                button: Rectangle {
-                    x: 0,
-                    y: 0,
-                    width: 0,
-                    height: 0,
-                },
+                button: EMPTY,
             },
+            pill_text: Vec::new(),
+            pill: PillLayout {
+                width: 1,
+                height: 1,
+                text_y: 0,
+                marker: EMPTY,
+            },
+            fold: Fold::new(names, Instant::now()),
+            size: Size::Full,
             connection,
         };
         bar.set_names(names);
-        let layout = &bar.layout;
+        let (width, height) = bar.dimensions();
         bar.connection
             .create_window(
                 x11rb::COPY_DEPTH_FROM_PARENT,
@@ -131,8 +160,8 @@ impl Bar {
                 root,
                 bar.x(),
                 0,
-                layout.width,
-                layout.height,
+                width,
+                height,
                 0,
                 WindowClass::INPUT_OUTPUT,
                 x11rb::COPY_FROM_PARENT,
@@ -142,6 +171,8 @@ impl Bar {
                     .event_mask(
                         EventMask::EXPOSURE
                             | EventMask::BUTTON_PRESS
+                            | EventMask::ENTER_WINDOW
+                            | EventMask::LEAVE_WINDOW
                             | EventMask::VISIBILITY_CHANGE,
                     ),
             )
@@ -167,8 +198,17 @@ impl Bar {
         Ok(bar)
     }
 
+    /// The window's width and height at its current size.
+    fn dimensions(&self) -> (u16, u16) {
+        match self.size {
+            Size::Full => (self.layout.width, self.layout.height),
+            Size::Pill => (self.pill.width, self.pill.height),
+        }
+    }
+
     fn x(&self) -> i16 {
-        ((i32::from(self.screen_width) - i32::from(self.layout.width)) / 2).max(0) as i16
+        let (width, _) = self.dimensions();
+        ((i32::from(self.screen_width) - i32::from(width)) / 2).max(0) as i16
     }
 
     fn set_names(&mut self, names: &[String]) {
@@ -190,6 +230,47 @@ impl Bar {
             text_y: (height + self.ascent - self.descent) / 2,
             button,
         };
+        self.pill_text = latin1(&pill_text(names.len()));
+        let pill_height = line + 4;
+        let side = (self.ascent - 2).max(4);
+        let marker = Rectangle {
+            x: PILL_PADDING,
+            y: (pill_height - side) / 2,
+            width: side as u16,
+            height: side as u16,
+        };
+        let pill_width = PILL_PADDING * 3 + side + self.pill_text.len() as i16 * self.char_width;
+        self.pill = PillLayout {
+            width: pill_width.max(1) as u16,
+            height: pill_height as u16,
+            text_y: (pill_height + self.ascent - self.descent) / 2,
+            marker,
+        };
+    }
+
+    /// Moves and sizes the window for its current size, then draws it.
+    fn place(&self) -> Result<(), String> {
+        let (width, height) = self.dimensions();
+        self.connection
+            .configure_window(
+                self.window,
+                &ConfigureWindowAux::new()
+                    .x(i32::from(self.x()))
+                    .width(u32::from(width))
+                    .height(u32::from(height)),
+            )
+            .map_err(failed("resize"))?;
+        self.draw()
+    }
+
+    /// Folds or opens the window when [`Fold`] says its size changed.
+    fn refold(&mut self, now: Instant) -> Result<(), String> {
+        let size = self.fold.size(now);
+        if size == self.size {
+            return Ok(());
+        }
+        self.size = size;
+        self.place()
     }
 
     fn raise(&self) -> Result<(), String> {
@@ -202,9 +283,9 @@ impl Bar {
         Ok(())
     }
 
-    fn draw(&self) -> Result<(), String> {
+    /// Fills the window with the background colour.
+    fn clear(&self, width: u16, height: u16) -> Result<(), String> {
         let c = &self.connection;
-        let layout = &self.layout;
         c.change_gc(self.gc, &ChangeGCAux::new().foreground(BACKGROUND))
             .map_err(failed("draw"))?;
         c.poly_fill_rectangle(
@@ -213,11 +294,25 @@ impl Bar {
             &[Rectangle {
                 x: 0,
                 y: 0,
-                width: layout.width,
-                height: layout.height,
+                width,
+                height,
             }],
         )
         .map_err(failed("draw"))?;
+        Ok(())
+    }
+
+    fn draw(&self) -> Result<(), String> {
+        match self.size {
+            Size::Full => self.draw_full(),
+            Size::Pill => self.draw_pill(),
+        }
+    }
+
+    fn draw_full(&self) -> Result<(), String> {
+        let c = &self.connection;
+        let layout = &self.layout;
+        self.clear(layout.width, layout.height)?;
         c.change_gc(
             self.gc,
             &ChangeGCAux::new().foreground(TEXT).background(BACKGROUND),
@@ -246,6 +341,31 @@ impl Bar {
         Ok(())
     }
 
+    fn draw_pill(&self) -> Result<(), String> {
+        let c = &self.connection;
+        let pill = &self.pill;
+        self.clear(pill.width, pill.height)?;
+        c.change_gc(self.gc, &ChangeGCAux::new().foreground(BUTTON))
+            .map_err(failed("draw"))?;
+        c.poly_fill_rectangle(self.window, self.gc, &[pill.marker])
+            .map_err(failed("draw"))?;
+        c.change_gc(
+            self.gc,
+            &ChangeGCAux::new().foreground(TEXT).background(BACKGROUND),
+        )
+        .map_err(failed("draw"))?;
+        c.image_text8(
+            self.window,
+            self.gc,
+            pill.marker.x + pill.marker.width as i16 + PILL_PADDING,
+            pill.text_y,
+            &self.pill_text,
+        )
+        .map_err(failed("draw"))?;
+        c.flush().map_err(failed("flush"))?;
+        Ok(())
+    }
+
     fn on_button(&self, x: i16, y: i16) -> bool {
         let b = self.layout.button;
         x >= b.x && x < b.x + b.width as i16 && y >= b.y && y < b.y + b.height as i16
@@ -259,28 +379,28 @@ impl Bar {
                 .poll_for_event()
                 .map_err(failed("X connection lost"))?
             {
+                let now = Instant::now();
                 match event {
                     Event::Expose(e) if e.count == 0 => self.draw()?,
+                    // A press on the pill only opens it, so Disconnect is
+                    // never pressed on a bar the person could not read.
+                    Event::ButtonPress(_) if self.size == Size::Pill => self.fold.pressed(now),
                     Event::ButtonPress(e) if self.on_button(e.event_x, e.event_y) => {
                         super::disconnect_all();
                     }
+                    Event::EnterNotify(_) => self.fold.pointer(true, now),
+                    Event::LeaveNotify(_) => self.fold.pointer(false, now),
                     Event::VisibilityNotify(_) => self.raise()?,
                     _ => {}
                 }
             }
             match inbox.recv_timeout(POLL) {
                 Ok(BarCommand::Names(names)) => {
+                    let now = Instant::now();
+                    self.fold.names(&names, now);
+                    self.size = self.fold.size(now);
                     self.set_names(&names);
-                    self.connection
-                        .configure_window(
-                            self.window,
-                            &ConfigureWindowAux::new()
-                                .x(i32::from(self.x()))
-                                .width(u32::from(self.layout.width))
-                                .height(u32::from(self.layout.height)),
-                        )
-                        .map_err(failed("resize"))?;
-                    self.draw()?;
+                    self.place()?;
                 }
                 Ok(BarCommand::Close) | Err(RecvTimeoutError::Disconnected) => {
                     let _ = self.connection.destroy_window(self.window);
@@ -292,6 +412,7 @@ impl Bar {
                 }
                 Ok(BarCommand::Check) | Err(RecvTimeoutError::Timeout) => {}
             }
+            self.refold(Instant::now())?;
             if raised.elapsed() >= RAISE_EVERY {
                 raised = Instant::now();
                 self.raise()?;

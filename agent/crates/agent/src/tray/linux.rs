@@ -1,16 +1,31 @@
 //! StatusNotifierItem in the user's bus; no GTK or privileged process.
+//!
+//! While someone is connected to the screen (SPEC-DESKTOP 8.2) the item
+//! asks for attention with the mark and a red dot, its title is the notice
+//! bar's words, a notification announces each new viewer, and the menu
+//! offers Disconnect. On a Wayland desktop this is the whole notice: the
+//! root agent cannot draw a bar there.
+use super::connected::{self, Arrivals};
+use super::notify::Notifier;
 use super::status;
 use crate::move_to_opt::{Runner, Step, SystemdRunner, INSTALL};
 use anyhow::{Context as _, Result};
 use ksni::blocking::TrayMethods as _;
 use ksni::menu::StandardItem;
-use ksni::{Icon, MenuItem, Tray};
+use ksni::{Icon, MenuItem, Status, ToolTip, Tray};
 use std::path::{Path, PathBuf};
+
+/// How often the tray reads the agent's status and viewers.
+const POLL: std::time::Duration = std::time::Duration::from_secs(1);
 
 struct AgentTray {
     state: String,
     enabled: bool,
     clipboard: Option<arboard::Clipboard>,
+    /// Who is connected to the screen now.
+    names: Vec<String>,
+    arrivals: Arrivals,
+    notifier: Notifier,
 }
 
 impl AgentTray {
@@ -24,6 +39,11 @@ impl AgentTray {
                 self.state = format!("Agent not running: {error:#}");
                 self.enabled = false;
             }
+        }
+        self.names = status::read_viewers();
+        let joined = self.arrivals.update(&self.names);
+        if let Some(text) = connected::notification_text(&joined) {
+            self.notifier.show(text);
         }
     }
     fn action(&mut self, copy: bool) {
@@ -40,6 +60,30 @@ impl AgentTray {
             log::warn!("{}", self.state);
         }
     }
+    fn connected(&self) -> bool {
+        !self.names.is_empty()
+    }
+    /// The mark at each size; with a red dot while someone is connected.
+    fn icons(&self) -> Vec<Icon> {
+        super::ICONS
+            .iter()
+            .map(|(edge, pixels)| Icon {
+                width: *edge,
+                height: *edge,
+                data: if self.connected() {
+                    connected::connected_icon(*edge, pixels)
+                } else {
+                    pixels.to_vec()
+                },
+            })
+            .collect()
+    }
+    fn disconnect(&mut self) {
+        if let Err(error) = disconnect_everyone() {
+            self.state = format!("Cannot disconnect: {error:#}");
+            log::warn!("{}", self.state);
+        }
+    }
 }
 
 impl Tray for AgentTray {
@@ -47,28 +91,64 @@ impl Tray for AgentTray {
         "org.bmuster.Agent".into()
     }
     fn title(&self) -> String {
-        format!("BMuster: {}", self.state)
+        connected::title(&self.state, &self.names)
+    }
+    fn tool_tip(&self) -> ToolTip {
+        ToolTip {
+            title: self.title(),
+            ..Default::default()
+        }
+    }
+    /// Someone connected: panels that hide quiet items show this one.
+    fn status(&self) -> Status {
+        if self.connected() {
+            Status::NeedsAttention
+        } else {
+            Status::Active
+        }
     }
     /// Panels look the name up in the icon theme first; the pixels below are
-    /// for a panel that cannot (StatusNotifierItem carries both).
+    /// for a panel that cannot (StatusNotifierItem carries both). While
+    /// someone is connected there is no name, so every panel draws the
+    /// pixels with the red dot.
     fn icon_name(&self) -> String {
-        TRAY_ICON_NAME.into()
+        if self.connected() {
+            String::new()
+        } else {
+            TRAY_ICON_NAME.into()
+        }
     }
     fn icon_pixmap(&self) -> Vec<Icon> {
-        super::ICONS
-            .iter()
-            .map(|(edge, pixels)| Icon {
-                width: *edge,
-                height: *edge,
-                data: pixels.to_vec(),
-            })
-            .collect()
+        self.icons()
+    }
+    fn attention_icon_pixmap(&self) -> Vec<Icon> {
+        self.icons()
     }
     fn activate(&mut self, _: i32, _: i32) {
         self.action(false);
     }
     fn menu(&self) -> Vec<MenuItem<Self>> {
-        vec![
+        let mut items: Vec<MenuItem<Self>> = Vec::new();
+        if let Some(label) = connected::disconnect_label(&self.names) {
+            items.push(
+                StandardItem {
+                    label: connected::title(&self.state, &self.names),
+                    enabled: false,
+                    ..Default::default()
+                }
+                .into(),
+            );
+            items.push(
+                StandardItem {
+                    label,
+                    activate: Box::new(|tray: &mut Self| tray.disconnect()),
+                    ..Default::default()
+                }
+                .into(),
+            );
+            items.push(MenuItem::Separator);
+        }
+        items.extend([
             StandardItem {
                 label: format!("BMuster: {}", self.state),
                 enabled: false,
@@ -89,11 +169,27 @@ impl Tray for AgentTray {
                 ..Default::default()
             }
             .into(),
-        ]
+        ]);
+        items
     }
     fn watcher_offline(&self, reason: ksni::OfflineReason) -> bool {
         log::warn!("No tray host ({reason:?}); use BMuster in the applications menu to open local management");
         true
+    }
+}
+
+/// Disconnect from the tray or its notification: the agent ends every
+/// desktop session, as the notice bar's button does.
+fn disconnect_everyone() -> Result<()> {
+    let ended = super::disconnect::request(&status::directory()?)?;
+    log::info!("Disconnect from the tray ended {ended} desktop session(s)");
+    Ok(())
+}
+
+/// For the notification's Disconnect, which has no tray to report on.
+fn disconnect_from_notification() {
+    if let Err(error) = disconnect_everyone() {
+        log::warn!("Cannot disconnect: {error:#}");
     }
 }
 
@@ -102,11 +198,14 @@ pub fn run() -> Result<()> {
         state: String::new(),
         enabled: false,
         clipboard: None,
+        names: Vec::new(),
+        arrivals: Arrivals::default(),
+        notifier: Notifier::start(disconnect_from_notification),
     };
     tray.refresh();
     let handle = tray.assume_sni_available(true).spawn()?;
     while !handle.is_closed() {
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(POLL);
         handle.update(AgentTray::refresh);
     }
     Ok(())
