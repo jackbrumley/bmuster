@@ -18,11 +18,11 @@
 	<span class="sweep"></span>
 	<span class="ring outer"></span>
 	<span class="ring inner"></span>
-	<!-- Where the icon's contacts sit, clockwise from the top in degrees. -->
-	<span class="contact newest" style:--at="65"></span>
-	<span class="contact second" style:--at="12"></span>
-	<span class="contact faint" style:--at="315"></span>
-	<span class="contact old" style:--at="210"></span>
+	<!-- The icon's contacts, clockwise from the top: 65, 12, 315 and 210 degrees. -->
+	<span class="contact newest"></span>
+	<span class="contact second"></span>
+	<span class="contact faint"></span>
+	<span class="contact old"></span>
 	<span class="core"></span>
 </span>
 
@@ -36,7 +36,8 @@
 		vertical-align: middle;
 		border-radius: var(--radius-round);
 		background: var(--radar-face);
-		box-shadow: inset 0 0 0 1px var(--radar-rim);
+		box-sizing: border-box;
+		border: 1px solid var(--radar-rim);
 	}
 
 	.tiny {
@@ -109,7 +110,7 @@
 		left: 50%;
 		width: 3px;
 		height: 50%;
-		margin-left: -1.5px;
+		transform: translateX(-50%);
 		border-radius: var(--radius-round);
 		background: var(--radar-beam);
 		content: '';
@@ -117,13 +118,11 @@
 
 	.medium .sweep::after {
 		width: 2px;
-		margin-left: -1px;
 	}
 
 	.tiny .sweep::after,
 	.small .sweep::after {
 		width: 1.5px;
-		margin-left: -0.75px;
 	}
 
 	.core {
@@ -139,7 +138,8 @@
 
 	/*
 	 * Each contact sits where it does on the icon and flares as the beam
-	 * reaches it: the delay starts its fade that far into the turn.
+	 * reaches it: a contact at A degrees from the top is delayed by
+	 * -2.4s * (1 - A / 360), so its flare starts as the beam arrives.
 	 */
 	.contact {
 		width: 8%;
@@ -150,7 +150,6 @@
 		opacity: 0.2;
 		transform: translate(-50%, -50%);
 		animation: radar-contact 2.4s linear infinite;
-		animation-delay: calc(-2.4s * (1 - var(--at) / 360));
 	}
 
 	.newest {
@@ -158,11 +157,13 @@
 		left: 79.9%;
 		width: 9.5%;
 		height: 9.5%;
+		animation-delay: -1.967s;
 	}
 
 	.second {
 		top: 27.5%;
 		left: 54.8%;
+		animation-delay: -2.32s;
 	}
 
 	.faint {
@@ -170,6 +171,7 @@
 		left: 23.5%;
 		width: 7%;
 		height: 7%;
+		animation-delay: -0.3s;
 	}
 
 	.old {
@@ -177,6 +179,7 @@
 		left: 35%;
 		width: 6%;
 		height: 6%;
+		animation-delay: -1s;
 	}
 
 	@keyframes radar-sweep {

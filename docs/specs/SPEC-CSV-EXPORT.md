@@ -1,6 +1,6 @@
 # SPEC-CSV-EXPORT: CSV export on every list
 
-**Status:** `IMPLEMENTED` (pending release: X1–X8 built, X9–X12 full machine detail built 2026-11-11; X13–X14 newly shown inventory built 2026-11-11; version bump and changelog left for the release step) · asked for 2026-11-07 · **Date:** 2026-11-07, full machine detail 2026-11-11
+**Status:** `IMPLEMENTED (v0.4.15)` (X1–X8 built earlier; X9–X12 full machine detail and X13–X14 newly shown inventory added in 0.4.15) · asked for 2026-11-07 · **Date:** 2026-11-07, full machine detail 2026-11-11
 
 ## 1. Problem
 

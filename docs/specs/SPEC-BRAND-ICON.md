@@ -46,7 +46,7 @@ None: the icon and theme are presentation only. The tray change swaps embedded p
 
 - **Linux menu icon (added for 0.4.12).** `npm run icons:generate` also writes `agent/crates/agent/assets/bmuster.svg` (the full mark). The agent installs it as `/usr/share/icons/hicolor/scalable/apps/bmuster.svg` with the autostart and applications-menu entries (rewritten on every start when different, removed at uninstall), and both entries say `Icon=bmuster` instead of the stock `network-workgroup`.
 
-## Version 2: the night radar, with no tile (IMPLEMENTED (pending release))
+## Version 2: the night radar, with no tile (IMPLEMENTED (v0.4.15))
 
 Approved 2026-11-11. Jack: the other apps' icons are "the naked shape of the icon"; BMuster's should be "just the circular element", with no square behind it. From the options page he chose D, the night disc, and accepted the recommendations: the mark on its own on bmuster.com, a brighter rim at small sizes, and the Linux tray drawing the SVG by name.
 

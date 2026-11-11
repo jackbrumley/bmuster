@@ -1,6 +1,17 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.15',
+		changes: [
+			'New icon: a round night radar with no tile, the same drawing at every size; the Linux tray draws it sharp at any panel size',
+			'One loading spinner everywhere: the icon come alive, with the beam turning and the contacts lighting up',
+			'The machines CSV export carries every detail the machine page shows: graphics cards, disks, network adapters, display, hardware and OS details',
+			'The machine Overview shows network adapters with MAC addresses, graphics vendor and driver, uptime and power',
+			'The join page talks about enrolling a computer with an enrolment code, and the sign-in page links to it',
+			'Fixed: installing on Windows 10 stopped with Access is denied while setting the service’s restart rules'
+		]
+	},
+	{
 		version: '0.4.14',
 		changes: [
 			'Add a Test channel: a built-in Test machine group gets agent test builds (tags like v0.4.15-test.1) straight away, while every other machine stays on full releases. The Updates page shows the channel of each machine.'

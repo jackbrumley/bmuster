@@ -1,6 +1,6 @@
 # SPEC-MACHINE-DETAILS: Name, description and notes
 
-**Status:** `IMPLEMENTED` (pending release: D1–D9 built; D10–D14 inventory on Overview built 2026-11-11; version bump and changelog left for the release step) · approved 2026-11-07, D10–D14 approved 2026-11-11 · **Date:** 2026-11-07
+**Status:** `IMPLEMENTED (v0.4.15)` (D1–D9 built earlier; D10–D14 inventory on Overview added in 0.4.15) · approved 2026-11-07, D10–D14 approved 2026-11-11 · **Date:** 2026-11-07
 
 ## 1. Problem
 
