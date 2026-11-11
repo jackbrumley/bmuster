@@ -134,3 +134,16 @@ export const machineChecks = sqliteTable('machine_checks', {
 	results: text().notNull(),
 	checkedAt: integer({ mode: 'timestamp_ms' }).notNull()
 });
+
+/**
+ * Each scanned drive's size, free space and scan freshness from the latest check-in
+ * (SPEC-STORAGE 6), replaced as a set. `drives` is JSON `DriveSummary[]`; no row means the agent
+ * has never reported storage (an agent before 0.4.17). Folder names never come here.
+ */
+export const machineStorage = sqliteTable('machine_storage', {
+	machineId: text()
+		.primaryKey()
+		.references(() => machines.id),
+	drives: text().notNull(),
+	reportedAt: integer({ mode: 'timestamp_ms' }).notNull()
+});

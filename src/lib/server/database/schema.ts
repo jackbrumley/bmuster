@@ -20,6 +20,7 @@ export {
 	machineLocalPages,
 	machineNotes,
 	machineStatus,
+	machineStorage,
 	machines
 } from './schema/machines.ts';
 export { notificationEvents, notificationRules } from './schema/notifications.ts';

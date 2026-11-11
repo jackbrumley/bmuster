@@ -28,7 +28,8 @@ function checkIn(signedInUser: { kind: 'none' } | { kind: 'user'; name: string }
 		load: { cpuPercent: 5, memoryUsedBytes: 1024 },
 		inventory: { kind: 'full' as const, hash: HASH, data: SAMPLE_INVENTORY },
 		localUsers: { kind: 'unsupported' as const },
-		checks: { kind: 'unreported' as const }
+		checks: { kind: 'unreported' as const },
+		storage: { kind: 'unreported' as const }
 	};
 }
 

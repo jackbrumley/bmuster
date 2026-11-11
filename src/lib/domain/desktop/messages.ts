@@ -7,7 +7,7 @@
 
 import { compareAgentVersions } from '../machines/agent-version.ts';
 
-export const DESKTOP_QUALITIES = ['auto', 'low', 'medium', 'high', 'extra-high'] as const;
+const DESKTOP_QUALITIES = ['auto', 'low', 'medium', 'high', 'extra-high'] as const;
 export type DesktopQuality = (typeof DESKTOP_QUALITIES)[number];
 
 /** The first agent that knows `extra-high`; older ones refuse a setting they do not know. */

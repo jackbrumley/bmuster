@@ -1,10 +1,10 @@
 # SPEC-STORAGE: Where the disk space went
 
-**Status:** `APPROVED, building phase 1` · draft 2026-11-11, approved by Jack the same day ("go", then "build that into this release too") · **Security work** (AGENTS.md: the agent channel, and folder names are sensitive). Phase 1 is detailed below; phases 2 and 3 are sketched and **not in this phase**.
+**Status:** `IMPLEMENTED (pending release)`: phase 1 (S1–S11); phases 2 and 3 not built · draft 2026-11-11, approved by Jack the same day ("go", then "build that into this release too"); version bump and changelog left for the release step · **Security work** (AGENTS.md: the agent channel, and folder names are sensitive). Phase 1 is detailed below; phases 2 and 3 are sketched and **not in this phase**.
 
 ## 0. Open questions (decided)
 
-All decided 2026-11-11, Jack approved the draft. Each was the recommendation in the draft.
+Decided (2026-11-11, Jack approved the draft). Each answer was the draft's recommendation.
 
 | #   | Question                                                                              | Decided                                                                                                                                                                                                                                                                                                                                |
 | :-- | :------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -53,7 +53,7 @@ The commonest helpdesk call is a full disk: a person filled it, or a service did
 
 ### 3.4 Full disks and crash-safe writes
 
-- A drive's scan is written to `<drive key>.scan.tmp` (owner-only), flushed to disk, then renamed over `<drive key>.scan`. A half-written scan never replaces the last complete one; a stray `.tmp` is deleted at the next pass.
+- A drive's scan is written to `<key>.tmp` (owner-only), flushed to disk, then renamed over `<drive key>.scan`. A half-written scan never replaces the last complete one; a stray `.tmp` is deleted at the next pass.
 - When saving fails (the data folder's disk is full), the last complete scan stays, the failure is recorded in `<data>/storage/state.json` and shown on the tab ("The last scan could not be saved: …"). On Linux the scanner runs as root and so can use the file system's reserved blocks.
 - Reading never needs free space, so a completely full disk can still be browsed from the last scan.
 
@@ -155,3 +155,32 @@ One additive table, `machine_storage` (section 6), generated with `npm run db:ge
 ## 13. Not in this version
 
 Change-tracking rescans (NTFS change journal, fanotify); resuming a cut-off pass; network drives; macOS; per-user (non-admin) views.
+
+## 14. As built (2026-11-11)
+
+| #   | Where                                                                                                                                                                                                                               | Tests                                                                         |
+| :-- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------- |
+| S1  | Agent `storage/walk.rs`: an explicit stack (no recursion), `symlink_metadata` entries, Linux blocks × 512 and `(dev, inode)` once for hard links, Windows length with cloud placeholders at 0 and reparse points not walked.        | `storage::walk::tests::s1_*`                                                  |
+| S2  | `walk.rs`: a folder on another device is not queued; `/proc`, `/sys`, `/dev`, `/run` never are. Drives from `files/roots.rs` `scan_targets` (Linux: local mounts without network file systems or `/media`; Windows: `DRIVE_FIXED`). | `storage::walk::tests::s2_*`, `files::roots::tests::the_storage_scan_walks_*` |
+| S3  | `walk.rs` `Folder::adopt` and `refold`, threshold 1 MiB × 4 above 100,000 kept folders; a min-heap of the 1,000 largest files.                                                                                                      | `storage::walk::tests::s3_*`                                                  |
+| S4  | Agent `storage/store.rs` (magic `BMSTOR\0\1`, SHA-256 trailer, depth and count limits), saved with `identity::write_private` (owner-only `<key>.tmp`, `fsync`, rename).                                                             | `storage::store::tests::s4_*`                                                 |
+| S5  | Agent `storage/query.rs`, answered by the files session's request code (`sessions/files.rs`; on Linux in the files helper, which now takes `--data-dir`). Protocol: `FilesOp::Storage*`, `protocol/src/storage.rs`.                 | `storage::query::tests::s5_*`, protocol `files` and `storage` tests           |
+| S6  | Agent `storage/schedule.rs` `due`: 10 minutes after start, a drive older than 24 h, or `rescan`; a pass that did not finish waits an hour before the next try.                                                                      | `storage::schedule::tests::s6_*`                                              |
+| S7  | Agent `storage/pace.rs`: `setpriority` 19 and `ioprio_set` idle (Linux), `PROCESS_MODE_BACKGROUND_BEGIN` (Windows); 50 ms slices; battery and CPU above 70 % checked every 30 s.                                                    | `storage::pace::tests::s7_*`                                                  |
+| S8  | Check-in `storage` (agent `worker.rs`, `storage::report`); server `checkInRequestSchema.storage`, table `machine_storage` (migration 0017), `services/machines/machine-storage.ts`.                                                 | `check-in.test.ts` (S8 block), protocol `storage` tests                       |
+| S9  | `services/sessions/storage.ts` on `withChannel` (Files' per-request check and ticket); routes `api/machines/[id]/storage/{summary,folder,largest,rescan}`; audit kind `storage-rescan-requested`.                                   | `storage.test.ts`                                                             |
+| S10 | `(console)/machines/[id]/storage/`: `storage-browser.svelte`, `drive-list.svelte`, `folder-list.svelte`, `largest-list.svelte`, Files' `BreadcrumbBar`; `+page.server.ts` gives the last report (only with `files`).                | `storage-tab.svelte.test.ts`, `domain/storage/storage.test.ts`                |
+| S11 | `exec/unit.rs` `Kind::Storage`: `bmuster-storage-scan.service` with `PrivateNetwork=yes`, `UMask=0077`, `Nice=19`, `IOSchedulingClass=idle`; the sweep includes `bmuster-storage-*`.                                                | `exec::unit::tests::s11_*`                                                    |
+
+**Different from the spec or decided while building**
+
+- **A killed pass** leaves `state.json` saying it runs; the agent reads a pass as running only while it holds `scan.lock` (`storage::pass_running`), so the tab never shows a scan stuck at some percent.
+- **Retry:** a pass that ended without finishing every drive (killed, or a drive that could not be saved) is tried again an hour after it started, not every minute.
+- **Open in Files** is on the folder's summary panel (one link per folder), not on each row: a row is already a button. It sets the Files tab's remembered folder, so Files opens there.
+- **The temporary file** is `<key>.tmp` (`write_private` swaps the extension).
+- **Hard links on Linux** are remembered by `(device, inode)` for the whole pass; a disk of hard-link backups (rsnapshot, Timeshift) costs about 16 bytes per linked file in memory while it is scanned.
+- **Dead code:** `DESKTOP_QUALITIES` (from main, used only inside its module) lost its `export` so `knip` passes.
+
+**Checked by hand:** `bmuster-agent storage-scan --data-dir <scratch> --asked` as the developer: it took the lock, wrote progress to `state.json` every 10 s (61 GB counted in 25 s at the asked pace, warm cache) and was stopped by a timeout.
+
+**Not tested here:** any Windows code at run time or compile time (this machine cannot build the Windows target: `ring` needs MinGW): `scan_targets` (`GetDriveTypeW`), `walk.rs` `sized`/`is_reparse_point` (attributes), `pace.rs` `lower_priority` (`SetPriorityClass`) and `power_source`. Also not run: an installed Linux agent starting the scan unit as root, a full pass to the end on a real disk, and the tab in a real browser session against a live agent (the tab is covered by browser tests at 390 px with mocked replies).

@@ -90,6 +90,58 @@ pub fn roots() -> FilesResult {
     FilesResult::Roots { roots: found }
 }
 
+/// The fixed local drives the storage scan walks (SPEC-STORAGE Q5).
+#[cfg(windows)]
+pub fn scan_targets() -> Vec<String> {
+    use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+    const DRIVE_FIXED: u32 = 3;
+    // SAFETY: no arguments; returns a bit mask of drive letters.
+    let mask = unsafe { GetLogicalDrives() };
+    let mut found = Vec::new();
+    for (index, letter) in ('A'..='Z').enumerate() {
+        if mask & (1 << index) == 0 {
+            continue;
+        }
+        let path = format!("{letter}:\\");
+        // SAFETY: a NUL-terminated wide string.
+        if unsafe { GetDriveTypeW(wide(Path::new(&path)).as_ptr()) } == DRIVE_FIXED {
+            found.push(path);
+        }
+    }
+    found
+}
+
+/// File systems on another machine, which the storage scan leaves alone.
+#[cfg(target_os = "linux")]
+const NETWORK_FILE_SYSTEMS: [&str; 6] = ["nfs", "nfs4", "cifs", "smb3", "fuse.sshfs", "9p"];
+
+/// `/` and the real local mounts, without network file systems and
+/// removable media (SPEC-STORAGE Q5), from `/proc/self/mounts` text.
+#[cfg(target_os = "linux")]
+fn local_mounts(mounts: &str) -> Vec<String> {
+    mount_points(mounts)
+        .into_iter()
+        .filter(|(point, fs_type)| {
+            !NETWORK_FILE_SYSTEMS.contains(&fs_type.as_str())
+                && !point.starts_with("/media/")
+                && !point.starts_with("/run/media/")
+        })
+        .map(|(point, _)| point)
+        .collect()
+}
+
+/// The mounts the storage scan walks (SPEC-STORAGE Q5).
+#[cfg(target_os = "linux")]
+pub fn scan_targets() -> Vec<String> {
+    let mounts = std::fs::read_to_string("/proc/self/mounts").unwrap_or_default();
+    local_mounts(&mounts)
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+pub fn scan_targets() -> Vec<String> {
+    vec!["/".into()]
+}
+
 /// File system types that are real storage people browse.
 #[cfg(target_os = "linux")]
 fn is_storage(device: &str, fs_type: &str) -> bool {
@@ -212,6 +264,20 @@ nas:/share /mnt/nas nfs4 rw 0 0
                 ("/mnt/nas".to_string(), "nfs4".to_string()),
             ]
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_storage_scan_walks_local_mounts_only() {
+        let mounts = "\
+/dev/nvme0n1p2 / ext4 rw 0 0
+/dev/nvme0n1p3 /home ext4 rw 0 0
+/dev/sdb1 /media/kim/My\\040Disk exfat rw 0 0
+/dev/sdc1 /run/media/kim/USB vfat rw 0 0
+nas:/share /mnt/nas nfs4 rw 0 0
+//nas/share /mnt/smb cifs rw 0 0
+";
+        assert_eq!(local_mounts(mounts), vec!["/", "/home"]);
     }
 
     #[cfg(unix)]

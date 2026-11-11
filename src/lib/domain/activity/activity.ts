@@ -98,6 +98,7 @@ const AUDIT_KINDS = [
 	'files-deleted',
 	'file-renamed',
 	'folder-created',
+	'storage-rescan-requested',
 	// SPEC-PRESENCE
 	'machine-offline',
 	'machine-online',
@@ -306,6 +307,8 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Renamed a file';
 		case 'folder-created':
 			return 'Made a folder';
+		case 'storage-rescan-requested':
+			return 'Asked for a storage scan';
 		case 'machine-offline':
 			return 'A machine went offline';
 		case 'machine-online':

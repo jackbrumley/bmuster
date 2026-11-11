@@ -17,6 +17,7 @@ pub mod files;
 pub mod logs;
 pub mod power;
 pub mod session;
+pub mod storage;
 mod updates;
 pub use display::{
     ConsoleSession, DisplayReport, DrmCard, DrmConnector, DxgiOutput, LauncherVersion,
@@ -308,6 +309,10 @@ pub struct CheckInRequest {
     /// The latest self-check results (SPEC-DIAGNOSTICS 1); older agents send none.
     #[serde(default)]
     pub checks: checks::ChecksReport,
+    /// Each scanned drive's size, free space and scan freshness
+    /// (SPEC-STORAGE 6); older agents send none.
+    #[serde(default)]
+    pub storage: storage::StorageReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

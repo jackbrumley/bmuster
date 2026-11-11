@@ -15,6 +15,7 @@ import { MAX_CHECKS } from '#lib/domain/logs/checks.ts';
 import { displayReportSchema } from '#lib/schemas/agents/display-report.ts';
 import { powerReportSchema } from '#lib/schemas/agents/power-report.ts';
 import { checkResultSchema, checksReportSchema } from '#lib/schemas/logs/checks.ts';
+import { storageReportSchema } from '#lib/schemas/storage/storage.ts';
 
 const osFamilySchema = z.enum(['windows', 'linux', 'macos']);
 
@@ -161,7 +162,9 @@ export const checkInRequestSchema = z.object({
 	localUsers: localUsersHeldSchema.default({ kind: 'unsupported' }),
 	update: updateReportSchema,
 	/** The latest self-check results (SPEC-DIAGNOSTICS 1); agents before 0.4.3 send none. */
-	checks: checksReportSchema.default({ kind: 'unreported' })
+	checks: checksReportSchema.default({ kind: 'unreported' }),
+	/** Each scanned drive's size, free space and scan freshness (SPEC-STORAGE 6); older agents send none. */
+	storage: storageReportSchema.default({ kind: 'unreported' })
 });
 
 export type CheckInRequest = z.infer<typeof checkInRequestSchema>;
