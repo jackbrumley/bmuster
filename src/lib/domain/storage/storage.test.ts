@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { scanLine, shareOf, splitFilePath, storageCrumbs, type DriveSummary } from './storage.ts';
+import {
+	lowDiskAlerts,
+	lowDiskDrives,
+	lowDiskText,
+	scanLine,
+	shareOf,
+	splitFilePath,
+	storageCrumbs,
+	type DriveSummary
+} from './storage.ts';
 
 const NOW = Date.parse('2026-11-11T12:00:00Z');
 
@@ -60,5 +69,50 @@ describe('storage (SPEC-STORAGE S10)', () => {
 	it('gives a share of the whole', () => {
 		expect(shareOf(25, 100)).toBe(25);
 		expect(shareOf(5, 0)).toBe(0);
+	});
+});
+
+describe('nearly full drives (SPEC-STORAGE S21)', () => {
+	const space = (mount: string, usedPercent: number) => ({
+		mount,
+		sizeBytes: 1000,
+		freeBytes: 1000 - usedPercent * 10
+	});
+
+	it('are the drives at 90 % used or more, fullest first', () => {
+		const low = lowDiskDrives([space('/', 89.9), space('/home', 94.5), space('/srv', 90)]);
+		expect(low).toEqual([
+			{ mount: '/home', percent: 94, freeBytes: 55 },
+			{ mount: '/srv', percent: 90, freeBytes: 100 }
+		]);
+		expect(lowDiskText(low)).toBe('/home 94 %, /srv 90 %');
+		expect(lowDiskDrives([{ mount: '/', sizeBytes: 0, freeBytes: 0 }])).toEqual([]);
+	});
+});
+
+describe('Disk nearly full alerts (SPEC-STORAGE S23)', () => {
+	const space = (usedPercent: number) => [
+		{ mount: 'C:\\', sizeBytes: 1000, freeBytes: 1000 - usedPercent * 10 }
+	];
+
+	it('raise once on reaching 90 %, and again only after dropping below 85 %', () => {
+		let alerted: string[] = [];
+		const step = (usedPercent: number): number => {
+			const next = lowDiskAlerts(space(usedPercent), alerted);
+			alerted = next.alerted;
+			return next.raise.length;
+		};
+		expect(step(80)).toBe(0);
+		expect(step(91)).toBe(1);
+		expect(step(95)).toBe(0);
+		expect(step(87)).toBe(0);
+		expect(step(92)).toBe(0);
+		expect(step(84)).toBe(0);
+		expect(alerted).toEqual([]);
+		expect(step(90)).toBe(1);
+	});
+
+	it('forgets a drive that is gone', () => {
+		expect(lowDiskAlerts([], ['D:\\']).alerted).toEqual([]);
 	});
 });

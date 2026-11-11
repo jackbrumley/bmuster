@@ -211,6 +211,9 @@
 				return IconFolderPlus;
 			case 'storage-rescan-requested':
 				return IconChartDonut;
+			case 'storage-cleanup-started':
+			case 'storage-cleanup':
+				return IconTrash;
 			case 'machine-offline':
 				return IconWifiOff;
 			case 'machine-online':

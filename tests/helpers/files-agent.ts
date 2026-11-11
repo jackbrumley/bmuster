@@ -81,6 +81,12 @@ export function fakeAgent(relay: Relay, machineId: string) {
 	const parts = new Map<string, Uint8Array>();
 	let sessionId = '';
 	let chunkFor: Request | undefined;
+	// Storage clean-up (SPEC-STORAGE 11) and Rescan now; an old agent answers rescan with `{}`.
+	const state: { cleanupRun: unknown; cleanupBusy: boolean; rescanReply: unknown } = {
+		cleanupRun: { kind: 'none' },
+		cleanupBusy: false,
+		rescanReply: {}
+	};
 
 	const done = (id: number, result: unknown): void => {
 		relay.agentText(sessionId, peer, JSON.stringify({ type: 'done', id, result }));
@@ -180,7 +186,35 @@ export function fakeAgent(relay: Relay, machineId: string) {
 				done(id, { files: [{ path: '/srv/data.bin', bytes: 100, modifiedMs: 1000 }] });
 				return;
 			case 'storage-rescan':
+				done(id, state.rescanReply);
+				return;
+			case 'storage-cleanup-sizes':
+				done(id, {
+					items: [
+						{ id: 'old-var-tmp', size: { kind: 'bytes', bytes: 2048, files: 3 } },
+						{ id: 'unused-flatpaks', size: { kind: 'unknown' } }
+					]
+				});
+				return;
+			case 'storage-cleanup-start':
+				if (state.cleanupBusy) {
+					refuse(id, 'busy', 'A clean-up is already running on this machine.');
+					return;
+				}
+				state.cleanupBusy = true;
+				state.cleanupRun = {
+					kind: 'running',
+					runId: request['runId'],
+					startedAtMs: 1,
+					items: (request['items'] as string[]).map((item) => ({
+						id: item,
+						state: { kind: 'waiting' }
+					}))
+				};
 				done(id, {});
+				return;
+			case 'storage-cleanup-status':
+				done(id, { run: state.cleanupRun });
 				return;
 			default:
 				return;
@@ -235,7 +269,7 @@ export function fakeAgent(relay: Relay, machineId: string) {
 	};
 	agentConnected(machineId, livePeer);
 	connected.push({ machineId, peer: livePeer });
-	return { live, requests, files, parts, sessionId: () => sessionId };
+	return { live, requests, files, parts, state, sessionId: () => sessionId };
 }
 
 /** A database with an admin and a member, an enrolled machine, a relay and its files sessions. */

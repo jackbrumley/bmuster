@@ -60,6 +60,7 @@ function machine(overrides: Partial<Machine> & Pick<Machine, 'id' | 'name'>): Ma
 		enrolledIso: '2026-11-01T00:00:00.000Z',
 		lastSeenIso: '2026-11-07T12:00:00.000Z',
 		inUse: [],
+		lowDisk: [],
 		...overrides
 	};
 }
@@ -188,6 +189,26 @@ describe('Machines views: cards and table', () => {
 		await expect.element(tableOf(screen)).toBeVisible();
 		await screen.getByRole('button', { name: 'Cards' }).click();
 		await expect.element(screen.getByRole('heading', { name: 'Machine 001' })).toBeVisible();
+	});
+
+	it('SPEC-STORAGE S21: a nearly full drive is tagged on cards and rows, and filtered as Low disk', async () => {
+		const full = machine({
+			id: '33333333-3333-4333-8333-333333333333',
+			name: 'File server',
+			lowDisk: [{ mount: 'D:\\', percent: 94, freeBytes: 6 * 1024 ** 3 }]
+		});
+		const screen = await renderPage([...MACHINES, full]);
+		const tag = screen.getByText('Low disk: D:\\ 94 %');
+		await expect.element(tag).toBeVisible();
+		await expect.element(tag).toHaveAttribute('title', 'D:\\ is 94 % full, 6.0 GB free');
+		await screen.getByRole('button', { name: /^Low disk/ }).click();
+		await expect.element(screen.getByText('Reception PC')).not.toBeInTheDocument();
+		await expect.element(screen.getByText('File server')).toBeVisible();
+		await screen.getByRole('button', { name: /^Needs attention/ }).click();
+		await expect.element(screen.getByText('File server')).toBeVisible();
+		await screen.getByRole('button', { name: 'Table' }).click();
+		const table = screen.getByRole('table', { name: 'Machines' });
+		await expect.element(table.getByText('Low disk: D:\\ 94 %').first()).toBeVisible();
 	});
 
 	it('the table shares the search and the filter chips', async () => {

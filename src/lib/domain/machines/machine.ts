@@ -4,6 +4,7 @@ import type { SessionInUse, TerminalShell } from '../sessions/session.ts';
 import type { MachineUpdateState } from './agent-updates.ts';
 import type { DisplayReport } from './display-report.ts';
 import type { PowerReport } from './power.ts';
+import type { LowDisk } from '../storage/storage.ts';
 
 export type OsFamily = 'windows' | 'linux' | 'macos';
 
@@ -100,6 +101,8 @@ export type Machine = {
 	lastSeenIso: string;
 	/** Sessions open on it right now (SPEC-SESSIONS T8). */
 	inUse: SessionInUse[];
+	/** Drives at 90 % used or more (SPEC-STORAGE 12), fullest first; empty when none. */
+	lowDisk: LowDisk[];
 };
 
 export type ShellChoice = { id: TerminalShell; label: string };

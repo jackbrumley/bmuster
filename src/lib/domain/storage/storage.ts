@@ -127,3 +127,50 @@ export function splitFilePath(path: string): { folder: string; name: string } {
 	const atRoot = folder.length === 0 || folder.endsWith(':');
 	return { folder: atRoot ? path.slice(0, cut + 1) : folder, name: path.slice(cut + 1) };
 }
+
+/** A drive this full or fuller is nearly full (SPEC-STORAGE 12). */
+const LOW_DISK_PERCENT = 90;
+/** A nearly full drive's alert is raised again only after it drops below this. */
+const LOW_DISK_CLEAR_PERCENT = 85;
+
+/** A nearly full drive: its mount, whole percent used (rounded down) and free bytes. */
+export type LowDisk = { mount: string; percent: number; freeBytes: number };
+
+type DriveSpace = { mount: string; sizeBytes: number; freeBytes: number };
+
+function usedShare(drive: DriveSpace): number {
+	return drive.sizeBytes <= 0 ? 0 : ((drive.sizeBytes - drive.freeBytes) / drive.sizeBytes) * 100;
+}
+
+/** The drives at 90 % used or more, fullest first. */
+export function lowDiskDrives(drives: readonly DriveSpace[]): LowDisk[] {
+	return drives
+		.filter((drive) => usedShare(drive) >= LOW_DISK_PERCENT)
+		.map((drive) => ({
+			mount: drive.mount,
+			percent: Math.floor(usedShare(drive)),
+			freeBytes: drive.freeBytes
+		}))
+		.sort((a, b) => b.percent - a.percent);
+}
+
+/** "C:\ 94 %, D:\ 91 %": the Machines list's tag. */
+export function lowDiskText(drives: readonly LowDisk[]): string {
+	return drives.map((drive) => `${drive.mount} ${drive.percent} %`).join(', ');
+}
+
+/**
+ * The Disk nearly full notifications to raise now (SPEC-STORAGE 12): once when a drive reaches
+ * 90 %, again only after it dropped below 85 % and reached 90 % again. `alerted` are the mounts
+ * alerted and not yet cleared; a drive that is gone is forgotten.
+ */
+export function lowDiskAlerts(
+	drives: readonly DriveSpace[],
+	alerted: readonly string[]
+): { alerted: string[]; raise: LowDisk[] } {
+	const raise = lowDiskDrives(drives).filter((drive) => !alerted.includes(drive.mount));
+	const still = drives
+		.filter((drive) => alerted.includes(drive.mount) && usedShare(drive) >= LOW_DISK_CLEAR_PERCENT)
+		.map((drive) => drive.mount);
+	return { alerted: [...still, ...raise.map((drive) => drive.mount)].sort(), raise };
+}

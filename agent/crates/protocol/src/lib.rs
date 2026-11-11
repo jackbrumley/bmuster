@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use std::fmt;
 
 pub mod checks;
+pub mod cleanup;
 mod display;
 pub mod files;
 pub mod logs;

@@ -90,7 +90,8 @@
 		all: rows.length,
 		online: rows.filter((row) => matchesFilter(row, 'online')).length,
 		offline: rows.filter((row) => matchesFilter(row, 'offline')).length,
-		attention: rows.filter((row) => matchesFilter(row, 'attention')).length
+		attention: rows.filter((row) => matchesFilter(row, 'attention')).length,
+		'low-disk': rows.filter((row) => matchesFilter(row, 'low-disk')).length
 	});
 
 	const filters = $derived(
@@ -99,7 +100,8 @@
 				{ value: 'all', label: 'All' },
 				{ value: 'online', label: 'Online' },
 				{ value: 'offline', label: 'Offline' },
-				{ value: 'attention', label: 'Needs attention' }
+				{ value: 'attention', label: 'Needs attention' },
+				{ value: 'low-disk', label: 'Low disk' }
 			] as const
 		).map((option) => ({ ...option, count: counts[option.value] }))
 	);

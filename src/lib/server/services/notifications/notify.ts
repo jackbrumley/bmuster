@@ -180,6 +180,24 @@ function renderEvent(
 				ruleDescription: rule
 			});
 		}
+		case 'disk-nearly-full': {
+			const detail = EVENT_DETAIL_SCHEMAS[kind].parse(raw);
+			return notificationEmail({
+				subject: `Disk nearly full: ${detail.machineName} ${detail.drive}`,
+				heading: 'A drive is nearly full',
+				summary: `${detail.drive} on ${detail.machineName} is ${detail.used} full, with ${detail.free} free.`,
+				facts: [
+					{ label: 'Machine', value: detail.machineName },
+					{ label: 'Host name', value: detail.hostname },
+					{ label: 'Drive', value: detail.drive },
+					{ label: 'Used', value: detail.used },
+					{ label: 'Free', value: detail.free },
+					{ label: 'When', value: event.at.toISOString() }
+				],
+				url: `${consoleUrl}/machines/${event.machineId}/storage`,
+				ruleDescription: rule
+			});
+		}
 	}
 }
 

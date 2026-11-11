@@ -8,7 +8,14 @@ import type {
 	OsFamily,
 	SignedInUser
 } from '#lib/domain/machines/machine.ts';
-import { machineInventory, machineStatus, machines } from '../../database/schema.ts';
+import { lowDiskDrives, type LowDisk } from '#lib/domain/storage/storage.ts';
+import { storedDrivesSchema } from '#lib/schemas/storage/storage.ts';
+import {
+	machineInventory,
+	machineStatus,
+	machineStorage,
+	machines
+} from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { raiseNotification } from '../notifications/events.ts';
@@ -21,6 +28,7 @@ import type { ReleaseLookup } from '../agents/releases.ts';
 type MachineRow = typeof machines.$inferSelect;
 type StatusRow = typeof machineStatus.$inferSelect;
 type InventoryRow = typeof machineInventory.$inferSelect;
+type StorageRow = typeof machineStorage.$inferSelect;
 
 /** Every machine that has not been removed, for the console, newest name first. */
 export function listMachines(
@@ -33,6 +41,7 @@ export function listMachines(
 		.from(machines)
 		.leftJoin(machineStatus, eq(machineStatus.machineId, machines.id))
 		.leftJoin(machineInventory, eq(machineInventory.machineId, machines.id))
+		.leftJoin(machineStorage, eq(machineStorage.machineId, machines.id))
 		.where(isNull(machines.removedAt))
 		.orderBy(machines.name)
 		.all();
@@ -43,7 +52,14 @@ export function listMachines(
 		now
 	);
 	return rows.map((row) =>
-		toMachine(row.machines, row.machine_status, row.machine_inventory, updates, now)
+		toMachine(
+			row.machines,
+			row.machine_status,
+			row.machine_inventory,
+			row.machine_storage,
+			updates,
+			now
+		)
 	);
 }
 
@@ -94,6 +110,7 @@ export function findMachine(
 		.from(machines)
 		.leftJoin(machineStatus, eq(machineStatus.machineId, machines.id))
 		.leftJoin(machineInventory, eq(machineInventory.machineId, machines.id))
+		.leftJoin(machineStorage, eq(machineStorage.machineId, machines.id))
 		.where(eq(machines.id, id))
 		.get();
 	if (row === undefined) {
@@ -103,7 +120,14 @@ export function findMachine(
 		return undefined;
 	}
 	const updates = updateStates(database, [row.machines], releases, now);
-	return toMachine(row.machines, row.machine_status, row.machine_inventory, updates, now);
+	return toMachine(
+		row.machines,
+		row.machine_status,
+		row.machine_inventory,
+		row.machine_storage,
+		updates,
+		now
+	);
 }
 
 /**
@@ -163,9 +187,11 @@ function toMachine(
 	machine: MachineRow,
 	status: StatusRow | null,
 	inventory: InventoryRow | null,
+	storage: StorageRow | null,
 	updates: ReadonlyMap<string, MachineUpdateState>,
 	now: number
 ): Machine {
+	const known = toInventory(inventory);
 	return {
 		id: machine.id,
 		name: machine.name,
@@ -185,11 +211,32 @@ function toMachine(
 				: { kind: 'none' },
 		status: presenceOf(machine, now),
 		live: toLive(machine.id, status, now),
-		inventory: toInventory(inventory),
+		inventory: known,
 		enrolledIso: machine.enrolledAt.toISOString(),
 		lastSeenIso: machine.lastSeenAt.toISOString(),
-		inUse: sessionRelay().inUse(machine.id)
+		inUse: sessionRelay().inUse(machine.id),
+		lowDisk: toLowDisk(storage, known)
 	};
+}
+
+/**
+ * Nearly full drives (SPEC-STORAGE 12): from the latest check-in's per-drive summary, or from the
+ * inventory's disks for an agent before 0.4.17 that reports none.
+ */
+function toLowDisk(storage: StorageRow | null, inventory: MachineInventory): LowDisk[] {
+	if (storage !== null) {
+		return lowDiskDrives(storedDrivesSchema.parse(JSON.parse(storage.drives)));
+	}
+	if (inventory.kind === 'known') {
+		return lowDiskDrives(
+			inventory.disks.map((disk) => ({
+				mount: disk.mount,
+				sizeBytes: disk.sizeBytes,
+				freeBytes: disk.sizeBytes - disk.usedBytes
+			}))
+		);
+	}
+	return [];
 }
 
 function toLive(machineId: string, status: StatusRow | null, now: number): LiveFigures {

@@ -145,5 +145,33 @@ export const machineStorage = sqliteTable('machine_storage', {
 		.primaryKey()
 		.references(() => machines.id),
 	drives: text().notNull(),
-	reportedAt: integer({ mode: 'timestamp_ms' }).notNull()
+	reportedAt: integer({ mode: 'timestamp_ms' }).notNull(),
+	/**
+	 * JSON list of the mounts a Disk nearly full notification was raised for (SPEC-STORAGE 12):
+	 * raised once at 90 %, and again only after the drive dropped below 85 %.
+	 */
+	lowDiskAlerted: text().notNull().default('[]')
 });
+
+/**
+ * Each storage clean-up asked for (SPEC-STORAGE 11.5). `items` is JSON item ids; `finishedAt` and
+ * `outcome` (JSON `CleanupItemProgress[]` and how it ended) stay null until the result is recorded,
+ * once, from the Storage tab or the next check-in.
+ */
+export const storageCleanups = sqliteTable(
+	'storage_cleanups',
+	{
+		id: text().primaryKey(),
+		machineId: text()
+			.notNull()
+			.references(() => machines.id),
+		userId: text()
+			.notNull()
+			.references(() => users.id),
+		items: text().notNull(),
+		requestedAt: integer({ mode: 'timestamp_ms' }).notNull(),
+		finishedAt: integer({ mode: 'timestamp_ms' }),
+		outcome: text()
+	},
+	(table) => [index('storage_cleanups_machine_idx').on(table.machineId)]
+);

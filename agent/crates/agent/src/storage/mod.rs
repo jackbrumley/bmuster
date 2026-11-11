@@ -12,6 +12,7 @@
 //! `state.json` (the pass running now, each drive's last scan and the last
 //! problem; written only by the scanner) and `rescan` (a pass is wanted now).
 
+pub mod cleanup;
 pub mod pace;
 pub mod query;
 pub mod scan;
@@ -164,6 +165,7 @@ pub fn drives(data_dir: &Path) -> Vec<DriveSummary> {
 pub fn report(data_dir: &Path) -> StorageReport {
     StorageReport::Reported {
         drives: drives(data_dir),
+        cleanup: cleanup::status(data_dir),
     }
 }
 

@@ -13,7 +13,7 @@ export type MachineRow = {
 	machine: Machine;
 	disk: DiskSummary | undefined;
 	updates: number;
-	/** Pending updates, or a disk at 90% or more. */
+	/** Pending updates, or a nearly full drive (SPEC-STORAGE 12). */
 	attention: boolean;
 	/** Live CPU use while online; null when offline or not reported yet. */
 	cpuPercent: number | null;
@@ -21,7 +21,7 @@ export type MachineRow = {
 	memoryPercent: number | null;
 };
 
-export const MACHINE_FILTERS = ['all', 'online', 'offline', 'attention'] as const;
+export const MACHINE_FILTERS = ['all', 'online', 'offline', 'attention', 'low-disk'] as const;
 
 export type MachineFilter = (typeof MACHINE_FILTERS)[number];
 
@@ -104,7 +104,7 @@ export function toMachineRow(machine: Machine): MachineRow {
 		machine,
 		disk,
 		updates,
-		attention: updates > 0 || (disk !== undefined && disk.percent >= 90),
+		attention: updates > 0 || machine.lowDisk.length > 0,
 		cpuPercent: live === undefined ? null : Math.round(live.cpuPercent),
 		memoryPercent:
 			live === undefined || machine.inventory.kind !== 'known'
@@ -123,6 +123,8 @@ export function matchesFilter(row: MachineRow, filter: MachineFilter): boolean {
 			return row.machine.status.kind === 'offline';
 		case 'attention':
 			return row.attention;
+		case 'low-disk':
+			return row.machine.lowDisk.length > 0;
 	}
 }
 

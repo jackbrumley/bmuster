@@ -31,6 +31,13 @@ export const EVENT_DETAIL_SCHEMAS = {
 		machineName: z.string(),
 		hostname: z.string(),
 		offlineSince: z.string()
+	}),
+	'disk-nearly-full': z.object({
+		machineName: z.string(),
+		hostname: z.string(),
+		drive: z.string(),
+		used: z.string(),
+		free: z.string()
 	})
 } satisfies Record<NotificationEventKind, z.ZodType<Record<string, string>>>;
 

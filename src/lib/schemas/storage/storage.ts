@@ -11,6 +11,7 @@ import type {
 	StorageSummary
 } from '#lib/domain/storage/storage.ts';
 import { filePathSchema } from '../files/files.ts';
+import { cleanupRunSchema } from './cleanup.ts';
 
 const bytes = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
 const ms = z.int();
@@ -86,8 +87,19 @@ export const largestReplySchema = z.object({ files: z.array(largeFileSchema).max
 /** The check-in's `storage`; older agents send none. */
 export const storageReportSchema = z.discriminatedUnion('kind', [
 	z.object({ kind: z.literal('unreported') }),
-	z.object({ kind: z.literal('reported'), drives: z.array(driveSummarySchema).max(64) })
+	z.object({
+		kind: z.literal('reported'),
+		drives: z.array(driveSummarySchema).max(64),
+		// The last clean-up (SPEC-STORAGE 11.4); agents before it send none.
+		cleanup: cleanupRunSchema.default({ kind: 'none' })
+	})
 ]);
+
+/**
+ * `POST /api/machines/[id]/storage/rescan`: whether a pass was already running (S26). An agent
+ * before 0.4.18 answers `{}`, which means it was asked.
+ */
+export const rescanReplySchema = z.object({ alreadyScanning: z.boolean().default(false) });
 
 export type StorageReport = z.infer<typeof storageReportSchema>;
 

@@ -219,6 +219,14 @@ enum Command {
         #[arg(long)]
         asked: bool,
     },
+    /// Run the clean-up a person asked for (started by the agent;
+    /// SPEC-STORAGE 11; not for use by hand)
+    #[command(hide = true)]
+    StorageClean {
+        /// Data folder; the request and its progress are in its storage folder
+        #[arg(long)]
+        data_dir: PathBuf,
+    },
     /// Run desktop sessions in this console session for the service (started
     /// by the Windows service as SYSTEM; not for use by hand)
     #[cfg(windows)]
@@ -472,6 +480,10 @@ fn dispatch(command: Command) -> Result<ExitCode> {
                 storage::pace::Speed::Background
             };
             storage::scan::run(&data_dir, speed)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::StorageClean { data_dir } => {
+            storage::cleanup::run(&data_dir)?;
             Ok(ExitCode::SUCCESS)
         }
         #[cfg(target_os = "linux")]

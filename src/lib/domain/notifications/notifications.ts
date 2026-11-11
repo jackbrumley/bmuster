@@ -10,7 +10,8 @@ export const NOTIFICATION_EVENT_KINDS = [
 	'machine-enrolled',
 	'machine-removed',
 	'machine-offline',
-	'machine-online'
+	'machine-online',
+	'disk-nearly-full'
 ] as const;
 
 /** The events a rule can pick. The test notification is sent from a rule itself. */
@@ -44,6 +45,12 @@ export const NOTIFICATION_CATALOGUE: Record<NotificationEventKind | 'test', Cata
 		label: 'Machine came back online',
 		description: 'A machine that had gone offline connects again.',
 		carries: ['Machine name', 'Host name', 'When it went offline']
+	},
+	'disk-nearly-full': {
+		label: 'Disk nearly full',
+		description:
+			"A machine's drive reaches 90 % used. Sent once; again only after the drive drops below 85 % and fills up again.",
+		carries: ['Machine name', 'Host name', 'Drive', 'Percent used', 'Free space']
 	},
 	test: {
 		label: 'Test notification',

@@ -113,6 +113,17 @@ pub enum FilesOp {
     },
     /// Start a scan pass now.
     StorageRescan,
+    /// What each clean-up item offered on this machine would free
+    /// (SPEC-STORAGE 11.4). Read only.
+    StorageCleanupSizes,
+    /// Start a clean-up of these items. Ids only: the agent decides every
+    /// folder, rule and command from them.
+    StorageCleanupStart {
+        run_id: String,
+        items: Vec<crate::cleanup::CleanupItem>,
+    },
+    /// The last clean-up and its progress or results.
+    StorageCleanupStatus,
 }
 
 /// The agent's answer to one request.
@@ -191,6 +202,17 @@ pub enum FilesResult {
     StorageFolder(crate::storage::FolderView),
     StorageLargest {
         files: Vec<crate::storage::LargeFile>,
+    },
+    /// Rescan now: whether a pass was already running (nothing asked then).
+    #[serde(rename_all = "camelCase")]
+    StorageRescan {
+        already_scanning: bool,
+    },
+    StorageCleanupSizes {
+        items: Vec<crate::cleanup::ItemSize>,
+    },
+    StorageCleanup {
+        run: crate::cleanup::CleanupRun,
     },
     Nothing {},
 }
@@ -313,6 +335,20 @@ mod tests {
         let summary: FilesRequest =
             serde_json::from_value(json!({ "id": 6, "op": "storage-summary" })).unwrap();
         assert_eq!(summary.op, FilesOp::StorageSummary);
+        let clean: FilesRequest = serde_json::from_value(json!({
+            "id": 8, "op": "storage-cleanup-start", "runId": "r", "items": ["journal", "old-var-tmp"]
+        }))
+        .unwrap();
+        assert_eq!(
+            clean.op,
+            FilesOp::StorageCleanupStart {
+                run_id: "r".into(),
+                items: vec![
+                    crate::cleanup::CleanupItem::Journal,
+                    crate::cleanup::CleanupItem::OldVarTmp
+                ]
+            }
+        );
         let cancel: FilesRequest =
             serde_json::from_value(json!({ "id": 3, "op": "cancel" })).unwrap();
         assert_eq!(cancel.op, FilesOp::Cancel);
@@ -346,6 +382,13 @@ mod tests {
             json!({})
         );
         assert_eq!(
+            serde_json::to_value(FilesResult::StorageRescan {
+                already_scanning: true
+            })
+            .unwrap(),
+            json!({ "alreadyScanning": true })
+        );
+        assert_eq!(
             serde_json::to_value(Entry {
                 name: "a".into(),
                 kind: EntryKind::Link,
@@ -357,6 +400,24 @@ mod tests {
             .unwrap(),
             json!({ "name": "a", "kind": "link", "size": 0, "modifiedMs": null, "hidden": false, "linkTarget": "/etc" })
         );
+    }
+
+    #[test]
+    fn s17_a_clean_up_names_items_never_paths() {
+        for items in [
+            json!(["/var/tmp"]),
+            json!(["journal", "/etc"]),
+            json!("journal"),
+        ] {
+            assert!(serde_json::from_value::<FilesRequest>(json!({
+                "id": 1, "op": "storage-cleanup-start", "runId": "r", "items": items
+            }))
+            .is_err());
+        }
+        assert!(serde_json::from_value::<FilesRequest>(json!({
+            "id": 1, "op": "storage-cleanup-start", "runId": "r"
+        }))
+        .is_err());
     }
 
     #[test]

@@ -9,6 +9,7 @@
 	import { formatRelative } from '#lib/utils/format.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import { machineSortValue, type MachineRow } from '#lib/domain/machines/machine-row.ts';
+	import LowDiskTag from './low-disk-tag.svelte';
 
 	/**
 	 * The Table view of the Machines page: sortable columns, one line per
@@ -120,6 +121,9 @@
 	</span>
 	{#if machine.inUse.length > 0}
 		<span class="in-use">In use: {inUseLabel(machine.inUse)}</span>
+	{/if}
+	{#if machine.lowDisk.length > 0}
+		<LowDiskTag drives={machine.lowDisk} />
 	{/if}
 {/snippet}
 

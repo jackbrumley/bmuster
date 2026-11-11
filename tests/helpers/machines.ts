@@ -16,5 +16,6 @@ export const TEST_MACHINE: Machine = {
 	inventory: { kind: 'pending' },
 	enrolledIso: '2026-11-01T00:00:00.000Z',
 	lastSeenIso: '2026-11-07T12:00:00.000Z',
-	inUse: []
+	inUse: [],
+	lowDisk: []
 };

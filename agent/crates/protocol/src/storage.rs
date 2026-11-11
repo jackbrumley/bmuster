@@ -72,6 +72,10 @@ pub enum StorageReport {
     Unreported,
     Reported {
         drives: Vec<DriveSummary>,
+        /// The last clean-up (SPEC-STORAGE 11.4), so its result reaches the
+        /// server even when nobody watches; none from agents before it.
+        #[serde(default)]
+        cleanup: crate::cleanup::CleanupRun,
     },
 }
 
@@ -154,7 +158,8 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_value(StorageReport::Reported {
-                drives: vec![drive]
+                drives: vec![drive],
+                cleanup: crate::cleanup::CleanupRun::None
             })
             .unwrap(),
             json!({
@@ -168,7 +173,8 @@ mod tests {
                         "usedBytes": 60, "files": 3, "folders": 4, "denied": 0
                     },
                     "scanning": { "kind": "running", "startedAtMs": 5, "percent": 42 }
-                }]
+                }],
+                "cleanup": { "kind": "none" }
             })
         );
         assert_eq!(

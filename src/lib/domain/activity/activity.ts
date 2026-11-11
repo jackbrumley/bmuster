@@ -99,6 +99,8 @@ const AUDIT_KINDS = [
 	'file-renamed',
 	'folder-created',
 	'storage-rescan-requested',
+	'storage-cleanup-started',
+	'storage-cleanup',
 	// SPEC-PRESENCE
 	'machine-offline',
 	'machine-online',
@@ -309,6 +311,10 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Made a folder';
 		case 'storage-rescan-requested':
 			return 'Asked for a storage scan';
+		case 'storage-cleanup-started':
+			return 'Started a disk clean-up';
+		case 'storage-cleanup':
+			return 'Cleaned up disk space';
 		case 'machine-offline':
 			return 'A machine went offline';
 		case 'machine-online':

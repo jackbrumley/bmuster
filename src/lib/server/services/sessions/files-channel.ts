@@ -1,3 +1,4 @@
+import type { CleanupItemId } from '#lib/domain/storage/cleanup.ts';
 import type { FileErrorCode } from '#lib/domain/files/files.ts';
 import { agentFilesReplySchema } from '#lib/schemas/files/files.ts';
 import { sessionRelay, type EndedSession, type LocalEnd, type Relay } from './relay.ts';
@@ -28,7 +29,11 @@ export type FilesOp =
 	| { op: 'storage-summary' }
 	| { op: 'storage-folder'; mount: string; path: string; offset: number }
 	| { op: 'storage-largest'; mount: string; path: string }
-	| { op: 'storage-rescan' };
+	| { op: 'storage-rescan' }
+	// Clean-up (SPEC-STORAGE 11): item ids only, never a path.
+	| { op: 'storage-cleanup-sizes' }
+	| { op: 'storage-cleanup-start'; runId: string; items: CleanupItemId[] }
+	| { op: 'storage-cleanup-status' };
 
 /** A read the caller is streaming: acknowledge what was passed on, or give up. */
 export type ReadHandle = {
