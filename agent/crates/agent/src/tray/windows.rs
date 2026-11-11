@@ -1,5 +1,5 @@
 //! Windows notification area and read-only, ACL-checked status.
-use super::status::{self, Snapshot};
+use super::status;
 use anyhow::{bail, Context as _, Result};
 use std::fs::{File, OpenOptions};
 use std::os::windows::fs::{MetadataExt as _, OpenOptionsExt as _};
@@ -93,7 +93,9 @@ fn verify_acl(file: &File) -> Result<()> {
     checked
 }
 
-pub fn open_status(dir: &Path) -> Result<File> {
+/// Opens `file` in the status folder, refusing anything an ordinary user
+/// could have written.
+pub fn open_public(dir: &Path, file: &str) -> Result<File> {
     let directory = OpenOptions::new()
         .read(true)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0 | FILE_FLAG_OPEN_REPARSE_POINT.0)
@@ -105,7 +107,7 @@ pub fn open_status(dir: &Path) -> Result<File> {
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0)
-        .open(dir.join("status.json"))?;
+        .open(dir.join(file))?;
     if !file.metadata()?.is_file() || file.metadata()?.file_attributes() & 0x400 != 0 {
         bail!("Status file is not a regular file");
     }
@@ -113,38 +115,29 @@ pub fn open_status(dir: &Path) -> Result<File> {
     Ok(file)
 }
 
-pub fn publish(board: std::sync::Arc<crate::status::StatusBoard>, port: u16) -> Result<()> {
-    let dir = status::directory()?;
+/// The status folder must give ordinary users read access only.
+pub fn check_publish_directory(dir: &Path) -> Result<()> {
     let directory = OpenOptions::new()
         .read(true)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0 | FILE_FLAG_OPEN_REPARSE_POINT.0)
-        .open(&dir)?;
-    verify_acl(&directory)?;
-    std::thread::Builder::new()
-        .name("tray status".into())
-        .spawn(move || loop {
-            let result = (|| -> Result<()> {
-                let next = dir.join(format!("status-{}.new", std::process::id()));
-                std::fs::write(
-                    &next,
-                    serde_json::to_vec(&Snapshot::new(&board.snapshot(), port))?,
-                )?;
-                let source = wide(next.as_os_str());
-                let destination = wide(dir.join("status.json").as_os_str());
-                unsafe {
-                    MoveFileExW(
-                        PCWSTR(source.as_ptr()),
-                        PCWSTR(destination.as_ptr()),
-                        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-                    )?;
-                }
-                Ok(())
-            })();
-            if let Err(error) = result {
-                log::warn!("Cannot publish tray status: {error:#}");
-            }
-            std::thread::sleep(std::time::Duration::from_secs(5));
-        })?;
+        .open(dir)?;
+    verify_acl(&directory)
+}
+
+/// Writes `file` in `dir` whole: a new file, then a move over the old.
+pub fn write_public(dir: &Path, file: &str, bytes: &[u8]) -> Result<()> {
+    let stem = file.strip_suffix(".json").unwrap_or(file);
+    let next = dir.join(format!("{stem}-{}.new", std::process::id()));
+    std::fs::write(&next, bytes)?;
+    let source = wide(next.as_os_str());
+    let destination = wide(dir.join(file).as_os_str());
+    unsafe {
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(destination.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )?;
+    }
     Ok(())
 }
 
@@ -157,11 +150,20 @@ fn icon_data(window: HWND) -> NOTIFYICONDATAW {
         uCallbackMessage: CALLBACK,
         ..Default::default()
     };
-    data.hIcon = unsafe { LoadIconW(None, IDI_INFORMATION) }.unwrap_or_default();
-    let label = match status::read() {
-        Ok(s) => format!("BMuster: {}", s.state.label()),
-        Err(_) => "BMuster: Agent not running".into(),
+    // Someone connected to the screen: the warning icon and their names
+    // (SPEC-DESKTOP 8.2); the notice bar has the Disconnect button.
+    let names = status::read_viewers();
+    let icon = if names.is_empty() {
+        IDI_INFORMATION
+    } else {
+        IDI_WARNING
     };
+    data.hIcon = unsafe { LoadIconW(None, icon) }.unwrap_or_default();
+    let state = match status::read() {
+        Ok(s) => s.state.label(),
+        Err(_) => "Agent not running",
+    };
+    let label = super::connected::title(state, &names);
     for (to, from) in data.szTip.iter_mut().take(127).zip(label.encode_utf16()) {
         *to = from;
     }
@@ -215,6 +217,14 @@ unsafe fn menu(window: HWND) -> Result<()> {
         .map(|s| s.state.label())
         .unwrap_or("Agent not running");
     let label = wide(std::ffi::OsStr::new(label));
+    let names = status::read_viewers();
+    let viewers = if names.is_empty() {
+        Vec::new()
+    } else {
+        wide(std::ffi::OsStr::new(&bmuster_desktop::notice::bar_text(
+            &names,
+        )))
+    };
     let flags = if snapshot.is_ok() {
         MF_STRING
     } else {
@@ -223,6 +233,9 @@ unsafe fn menu(window: HWND) -> Result<()> {
     let result = (|| -> Result<()> {
         unsafe {
             AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(label.as_ptr()))?;
+            if !viewers.is_empty() {
+                AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(viewers.as_ptr()))?;
+            }
             AppendMenuW(menu, flags, OPEN, w!("Open local management"))?;
             AppendMenuW(menu, flags, COPY, w!("Copy local URL"))?;
             let mut point = POINT::default();
@@ -283,7 +296,8 @@ pub fn run() -> Result<()> {
             let _ = DestroyWindow(window);
             bail!("Could not add the notification icon");
         }
-        if SetTimer(Some(window), 1, 5000, None) == 0 {
+        // Every second, so a new viewer shows in the icon at once.
+        if SetTimer(Some(window), 1, 1000, None) == 0 {
             let _ = DestroyWindow(window);
             bail!("Could not start the tray timer");
         }

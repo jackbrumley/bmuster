@@ -233,6 +233,14 @@ struct TicketText {
 
 /// Opens the session's socket and runs the session on it.
 fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<Ended> {
+    // The tray shows who is connected while a desktop session with the
+    // notice runs, on every platform (SPEC-DESKTOP 8.2).
+    let _viewer = match ticket.purpose {
+        SessionPurpose::Desktop { notice: true, .. } => {
+            Some(crate::tray::viewers::add(&ticket.user.name))
+        }
+        _ => None,
+    };
     // Windows: session 0 has no screen; the helper in the console session
     // opens the socket and runs the session (SPEC-DESKTOP 6.2).
     #[cfg(windows)]

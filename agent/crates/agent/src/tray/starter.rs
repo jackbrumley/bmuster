@@ -50,7 +50,7 @@ pub struct TrayUser {
 }
 
 /// `KEY=VALUE` lines, as logind writes them.
-fn fields(text: &str) -> HashMap<&str, &str> {
+pub(crate) fn fields(text: &str) -> HashMap<&str, &str> {
     text.lines()
         .filter_map(|line| line.split_once('='))
         .collect()

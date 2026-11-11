@@ -589,6 +589,88 @@ fn notice_bar_disconnect_through_xtest_ends_the_session() {
     }
 }
 
+/// The bar's width and height on the nested server.
+fn notice_size(client: &Client, window: Window) -> (u16, u16) {
+    let geometry = client
+        .connection
+        .get_geometry(window)
+        .unwrap()
+        .reply()
+        .unwrap();
+    (geometry.width, geometry.height)
+}
+
+/// Waits up to `limit` for the bar's size to satisfy `wanted`.
+fn wait_for_size(
+    client: &Client,
+    window: Window,
+    limit: Duration,
+    wanted: impl Fn((u16, u16)) -> bool,
+) -> (u16, u16) {
+    let until = Instant::now() + limit;
+    loop {
+        let size = notice_size(client, window);
+        if wanted(size) || Instant::now() >= until {
+            return size;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn notice_bar_folds_to_a_pill_and_opens_on_hover() {
+    use notice::state::{LINGER, OPEN_FOR};
+    let Some(x) = NestedX::start() else { return };
+    let client = Client::new(&x);
+    let mut input = controller(&x);
+    let display = Rect::new(0, 0, 1280, 800);
+    // The pointer starts well away from the top edge.
+    input.pointer(display, 640.0, 700.0, 0).unwrap();
+    let (end, _inbox) = std::sync::mpsc::channel();
+    let shown = notice::show(Some(&x.target.clone().into()), "Kim", end);
+    client.sync();
+    let window = notice_window(&client).expect("the bar is mapped");
+    let full = notice_size(&client, window);
+
+    let folded = wait_for_size(&client, window, OPEN_FOR + Duration::from_secs(2), |s| {
+        s != full
+    });
+    assert!(
+        folded.0 < full.0 && folded.1 < full.1,
+        "folds to a smaller pill: {full:?} -> {folded:?}"
+    );
+    let geometry = client
+        .connection
+        .get_geometry(window)
+        .unwrap()
+        .reply()
+        .unwrap();
+    assert_eq!(geometry.y, 0, "the pill stays at the top edge");
+    // An odd width leaves one pixel over.
+    let centre_offset = i32::from(geometry.x) * 2 + i32::from(geometry.width) - 1280;
+    assert!(
+        (-1..=0).contains(&centre_offset),
+        "centred: {centre_offset}"
+    );
+
+    // Hovering the pill opens the full bar again, and it stays open.
+    input
+        .pointer(display, 640.0, f64::from(folded.1) / 2.0, 0)
+        .unwrap();
+    let opened = wait_for_size(&client, window, Duration::from_secs(1), |s| s == full);
+    assert_eq!(opened, full, "opens on hover");
+
+    // Leaving folds it again after the linger.
+    input.pointer(display, 640.0, 700.0, 0).unwrap();
+    let left = Instant::now();
+    let again = wait_for_size(&client, window, LINGER + Duration::from_secs(2), |s| {
+        s == folded
+    });
+    assert_eq!(again, folded, "folds after the pointer leaves");
+    assert!(left.elapsed() >= LINGER - Duration::from_millis(200));
+    drop(shown);
+}
+
 /// The screen the test says the seat shows: one of two nested servers.
 struct TestSeat(Arc<Mutex<(Look, X11Target)>>);
 

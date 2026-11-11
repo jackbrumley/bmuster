@@ -1,9 +1,16 @@
-//! User-session shortcuts to authenticated local management.
+//! User-session shortcuts to authenticated local management, and who is
+//! connected to the screen (SPEC-DESKTOP 8.2).
+mod connected;
+#[cfg(target_os = "linux")]
+mod disconnect;
 #[cfg(target_os = "linux")]
 pub mod linux;
 #[cfg(target_os = "linux")]
+mod notify;
+#[cfg(target_os = "linux")]
 pub mod starter;
 mod status;
+pub mod viewers;
 #[cfg(windows)]
 pub mod windows;
 
@@ -11,10 +18,23 @@ use anyhow::{bail, Result};
 use std::sync::Arc;
 
 pub fn publish(board: Arc<crate::status::StatusBoard>, port: u16) {
-    if let Err(error) = status::publish(board, port) {
-        log::warn!("Tray unavailable: {error:#}");
+    match status::publish(board, port) {
+        Ok(()) => serve_disconnect(),
+        Err(error) => log::warn!("Tray unavailable: {error:#}"),
     }
 }
+
+/// Linux: the tray's Disconnect reaches the agent through a socket.
+#[cfg(target_os = "linux")]
+fn serve_disconnect() {
+    if let Err(error) = status::directory().and_then(|dir| disconnect::serve(&dir)) {
+        log::warn!("Disconnect from the tray unavailable: {error:#}");
+    }
+}
+
+/// Elsewhere the notice bar has the only Disconnect.
+#[cfg(not(target_os = "linux"))]
+fn serve_disconnect() {}
 
 /// This command never starts/stops the agent or reads private enrolment files.
 pub fn run(open_only: bool) -> Result<()> {

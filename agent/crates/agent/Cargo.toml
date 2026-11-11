@@ -50,6 +50,8 @@ png = "=0.18.1"
 ksni = { version = "=0.3.7", features = ["blocking"] }
 # logind's inhibitor lock for Stay awake (SPEC-STAY-AWAKE); already in the build through ashpd and ksni.
 zbus = { version = "=5.19.0", default-features = false, features = ["tokio"] }
+# The tray's notification Disconnect waits on a D-Bus signal stream; already in the build through ashpd and ksni.
+futures-util = { version = "=0.3.34", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
