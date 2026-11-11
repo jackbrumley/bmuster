@@ -6,7 +6,7 @@
 export const SOURCE = 'docs/logo.svg';
 
 /** Wedges of the sweep the small version keeps (the ones nearest the beam), and how much it darkens them. */
-const SMALL_SWEEP_WEDGES = 20;
+const SMALL_SWEEP_WEDGES = 17;
 const SMALL_SWEEP_GAIN = 1.6;
 
 type Attributes = Readonly<Record<string, string>>;
@@ -67,13 +67,14 @@ function shortSweep(svg: string): string {
 
 export function small(full: string): string {
 	let svg = full;
-	for (const id of ['ring-inner', 'blip-halo', 'blip-faint']) svg = drop(svg, id);
+	for (const id of ['ring-inner', 'blip-halo', 'blip-faint', 'blip-old']) svg = drop(svg, id);
 	// A brighter, wider rim so the dark disc's edge still shows on a black panel.
 	svg = change(svg, 'face', { r: '97', 'stroke-width': '6', 'stroke-opacity': '0.6' });
 	svg = change(svg, 'ring-outer', { 'stroke-width': '14', 'stroke-opacity': '0.7' });
 	svg = change(svg, 'beam', { 'stroke-width': '20' });
 	svg = change(svg, 'centre', { r: '20' });
 	svg = change(svg, 'blip', { r: '18' });
+	svg = change(svg, 'blip-second', { r: '14', 'fill-opacity': '1' });
 	return shortSweep(svg);
 }
 
