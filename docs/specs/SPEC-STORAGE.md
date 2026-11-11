@@ -1,6 +1,6 @@
 # SPEC-STORAGE: Where the disk space went
 
-**Status:** phase 1 (S1–S11) `IMPLEMENTED (v0.4.17)`; phases 2 and 3 (S12–S24) `IMPLEMENTED (pending release)` · draft 2026-11-11, approved by Jack the same day ("go", then "build that into this release too"; phases 2 and 3: "Do all storage phases"); version bump and changelog left for the release step · **Security work** (AGENTS.md: the agent channel, folder names are sensitive, and phase 2 **deletes files on other people's computers**).
+**Status:** phase 1 (S1–S11) `IMPLEMENTED (v0.4.17)`; phases 2 and 3 (S12–S24) `IMPLEMENTED (v0.4.18)` · draft 2026-11-11, approved by Jack the same day ("go", then "build that into this release too"; phases 2 and 3: "Do all storage phases"); version bump and changelog left for the release step · **Security work** (AGENTS.md: the agent channel, folder names are sensitive, and phase 2 **deletes files on other people's computers**).
 
 ## 0. Open questions (decided)
 

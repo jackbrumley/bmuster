@@ -1,6 +1,17 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.18',
+		changes: [
+			'Storage clean-up: a fixed list of known-safe items for each system (temp folders, update caches, crash dumps, Recycle Bins, package caches, old journal entries and more), each sized first, ticked, confirmed and recorded in Activity with the space freed',
+			'Low disk alerts: a drive at 90% or more shows on the Machines list (with a Low disk filter) and on the machine, and can send an email',
+			'Rescan now answers at once: the Storage tab shows the machine being asked, or that it is already scanning',
+			'On KDE Plasma desktops, All screens and click placement follow the real monitor layout',
+			'The machines CSV export leaves out CPU and memory use, which change second by second; Linux disks are listed once per file system, and Windows graphics cards are found even when WMI is damaged',
+			'The text on the update screen is no longer squeezed onto several lines'
+		]
+	},
+	{
 		version: '0.4.17',
 		changes: [
 			'A new Storage tab shows where disk space goes on each machine, from a slow, low-priority background scan that is ready before you need it, even on a full disk',

@@ -39,7 +39,7 @@ On Wayland the agent reads the screens through KMS (SPEC-CONSOLE-CAPTURE), which
 
 ### KDE Plasma
 
-**Status:** `IMPLEMENTED (pending release)` · asked 2026-11-11 (Jack's Fedora laptop runs Plasma 6 on Wayland, not GNOME) · **security work:** a second compositor whose reply moves injected pointer input.
+**Status:** `IMPLEMENTED (v0.4.18)` · asked 2026-11-11 (Jack's Fedora laptop runs Plasma 6 on Wayland, not GNOME) · **security work:** a second compositor whose reply moves injected pointer input.
 
 Before this, a Plasma desktop had no mutter to ask, so its monitors were laid out side by side: wrong whenever they are stacked, offset or scaled, for All screens and for the uinput pointer.
 

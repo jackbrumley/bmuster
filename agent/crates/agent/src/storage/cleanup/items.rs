@@ -383,6 +383,26 @@ fn free_space(path: &Path) -> Option<u64> {
     crate::files::roots::space(path).map(|(_, free)| free)
 }
 
+/// `ETXTBSY`: the program file is open for writing somewhere.
+const TEXT_FILE_BUSY: i32 = 26;
+
+/// Starts `command`, trying again briefly while the program is "text file
+/// busy". A file just written can stay open for writing for a moment in a
+/// child another thread forked before it execs; the tests write their stand-in
+/// tools that way, and a package upgrade can briefly do the same to a real one.
+fn spawn_retrying_busy(command: &mut Command) -> std::io::Result<std::process::Child> {
+    let mut tries = 0;
+    loop {
+        match command.spawn() {
+            Err(e) if cfg!(unix) && e.raw_os_error() == Some(TEXT_FILE_BUSY) && tries < 20 => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            other => return other,
+        }
+    }
+}
+
 /// Runs one tool to the end or its limit. `Err` says why, in plain words.
 pub fn run_tool(tool: &Tool) -> Result<(), String> {
     let name = tool.program.file_name().map_or_else(
@@ -401,9 +421,8 @@ pub fn run_tool(tool: &Tool) -> Result<(), String> {
         .env_clear()
         .env("PATH", crate::exec::spawn::UNIX_PATH)
         .env("LANG", "C.UTF-8");
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Could not start {name}: {e}"))?;
+    let mut child =
+        spawn_retrying_busy(&mut command).map_err(|e| format!("Could not start {name}: {e}"))?;
     let stderr = child.stderr.take();
     let reader = std::thread::spawn(move || {
         let mut text = String::new();
