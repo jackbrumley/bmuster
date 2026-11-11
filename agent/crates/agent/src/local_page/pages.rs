@@ -62,6 +62,10 @@ pre.log { margin: 0; max-height: 26rem; overflow: auto; white-space: pre-wrap; o
   background: var(--tint); border-radius: 8px; padding: 12px; }
 .bar { height: 8px; border-radius: 999px; background: var(--tint); overflow: hidden; }
 .bar span { display: block; height: 100%; background: var(--brand); }
+ul.plain { margin: 0 0 8px; padding-left: 20px; }
+/* No scripts under the CSP, so no Copy button: one click selects it all. */
+code.command { display: block; padding: 12px; border-radius: 8px; background: var(--tint);
+  user-select: all; -webkit-user-select: all; cursor: text; }
 "#;
 
 /// The BMuster logo's small version (SPEC-BRAND-ICON), inline so the page
@@ -98,12 +102,12 @@ pub fn layout(title: &str, signed_in: bool, body: &str) -> String {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>{title} - BMuster agent</title>
+<title>{title} - BMuster Agent</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <main>
-<header><div class="brand">{LOGO}<div><h1>BMuster agent</h1><p class="muted">Version {version}</p></div></div>{sign_out}</header>
+<header><div class="brand">{LOGO}<div><h1>BMuster Agent</h1><p class="muted">Version {version}</p></div></div>{sign_out}</header>
 {body}
 </main>
 </body>
@@ -114,27 +118,22 @@ pub fn layout(title: &str, signed_in: bool, body: &str) -> String {
     )
 }
 
-pub fn sign_in(hostname: &str, problem: Option<&str>) -> String {
-    let problem = problem
-        .map(|text| {
-            format!(
-                r#"<section class="card problem"><p>{}</p></section>"#,
-                esc(text)
-            )
-        })
+/// The sign-in card; a wrong code's problem sits right above the form.
+pub fn sign_in_card(hostname: &str, problem_text: Option<&str>) -> String {
+    let problem = problem_text
+        .map(|text| format!(r#"<p class="bad">{}</p>"#, esc(text)))
         .unwrap_or_default();
-    let body = format!(
-        r#"{problem}<section class="card">
-<h2>Sign in on {host}</h2>
-<p>Enter your 6-digit code from the BMuster console: open this machine, go to the <strong>Manage</strong> tab and choose <strong>Show local page code</strong>. Each person has their own code, and the server's Activity records whose code signed in. The code changes every 30 seconds and works even while this machine is offline.</p>
-<form method="post" action="/sign-in" class="fields">
-<label>Code <input class="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{{6,7}}" maxlength="7" required autofocus></label>
+    format!(
+        r#"<section class="card">
+<h2>Sign in on {host} to make changes</h2>
+<p>To move this computer to another server, turn on detailed logs or uninstall from this page, enter your 6-digit code from the BMuster console: open this machine, go to the <strong>Manage</strong> tab and choose <strong>Show local page code</strong>. Each person has their own code, and the server's Activity records whose code signed in. The code changes every 30 seconds and works even while this machine is offline.</p>
+{problem}<form method="post" action="/sign-in" class="fields">
+<label>Code <input class="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{{6,7}}" maxlength="7" required></label>
 <div><button class="primary" type="submit">Sign in</button></div>
 </form>
 </section>"#,
         host = esc(hostname),
-    );
-    layout("Sign in", false, &body)
+    )
 }
 
 /// "12 s ago", "4 min ago", "3 h ago", "2 days ago".
@@ -356,9 +355,9 @@ mod tests {
             esc(r#"<script>alert("x") & 'y'</script>"#),
             "&lt;script&gt;alert(&quot;x&quot;) &amp; &#39;y&#39;&lt;/script&gt;"
         );
-        let page = sign_in("<host>", Some("<b>bad</b>"));
-        assert!(!page.contains("<host>"));
-        assert!(!page.contains("<b>bad</b>"));
+        let card = sign_in_card("<host>", Some("<b>bad</b>"));
+        assert!(!card.contains("<host>"));
+        assert!(!card.contains("<b>bad</b>"));
     }
 
     #[test]

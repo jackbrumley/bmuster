@@ -76,7 +76,7 @@ export function logText(
 	now: number
 ): string {
 	return [
-		`BMuster agent log · ${machineName} · copied ${new Date(now).toISOString()} · ${records.length} records, newest first`,
+		`BMuster Agent log · ${machineName} · copied ${new Date(now).toISOString()} · ${records.length} records, newest first`,
 		...records.map(agentRecordLine)
 	].join('\n');
 }

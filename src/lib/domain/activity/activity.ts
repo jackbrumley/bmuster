@@ -26,6 +26,8 @@ const AUDIT_KINDS = [
 	'machine-reinstalled',
 	'machine-moved',
 	'machine-uninstalled',
+	// SPEC-LOCAL-PAGE-TRANSPARENCY
+	'machine-removed-at-machine',
 	'local-code-viewed',
 	'local-signed-in',
 	'local-signed-out',
@@ -176,6 +178,8 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Recorded that a machine moved to another server';
 		case 'machine-uninstalled':
 			return "Recorded that a machine's agent was uninstalled";
+		case 'machine-removed-at-machine':
+			return 'BMuster was removed at a machine by a local administrator';
 		case 'local-code-viewed':
 			return "Viewed a machine's local page code";
 		case 'local-signed-in':

@@ -80,14 +80,22 @@ describe('Activity wording for the local page (SPEC-AGENT-LOCAL 7, E3)', () => {
 
 	it('words a machine going offline and coming back by its name (SPEC-PRESENCE P6)', () => {
 		expect(activitySentence(entry('machine-offline', {}))).toEqual({
-			kind: 'presence',
+			kind: 'machine',
 			text: 'mint went offline',
 			warning: true
 		});
 		expect(activitySentence(entry('machine-online', {}))).toEqual({
-			kind: 'presence',
+			kind: 'machine',
 			text: 'mint came back online',
 			warning: false
+		});
+	});
+
+	it('words BMuster removed at the machine by a local administrator (SPEC-LOCAL-PAGE-TRANSPARENCY T7)', () => {
+		expect(activitySentence(entry('machine-removed-at-machine', {}))).toEqual({
+			kind: 'machine',
+			text: 'BMuster was removed from mint at the machine by a local administrator',
+			warning: true
 		});
 	});
 

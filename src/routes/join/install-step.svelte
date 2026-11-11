@@ -58,7 +58,7 @@
 </script>
 
 <div class="step">
-	<h1>Install the BMuster agent</h1>
+	<h1>Install the BMuster Agent</h1>
 
 	{#if detected === 'phone'}
 		<Notice tone="info" title="Use the computer you are enrolling">

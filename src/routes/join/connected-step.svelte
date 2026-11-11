@@ -24,11 +24,11 @@
 		<h2 id="remove-heading">To remove it later</h2>
 		<div class="remove-body">
 			<p>On Windows, in <strong>Windows PowerShell (Admin)</strong>:</p>
-			<CopyField value={windows.uninstall} label="Windows uninstall command" />
+			<CopyField value={windows.purge} label="Windows uninstall command" />
 			<p>On Linux, in <strong>Terminal</strong>:</p>
-			<CopyField value={linux.uninstall} label="Linux uninstall command" />
+			<CopyField value={linux.purge} label="Linux uninstall command" />
 			<p>
-				Or open <strong>{LOCAL_PAGE_ADDRESS}</strong> on this computer: the BMuster agent’s own page can
+				Or open <strong>{LOCAL_PAGE_ADDRESS}</strong> on this computer: the BMuster Agent’s own page can
 				remove it too.
 			</p>
 		</div>

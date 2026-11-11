@@ -464,6 +464,9 @@ pub enum LeaveReason {
     Moved,
     /// It is being uninstalled from the local page.
     Uninstalled,
+    /// `bmuster-agent uninstall --purge`, run by an administrator at the
+    /// machine (SPEC-LOCAL-PAGE-TRANSPARENCY).
+    RemovedAtMachine,
 }
 
 /// `POST /agent/v1/leave`, signed. The server refuses the machine from then on.
@@ -765,6 +768,13 @@ mod tests {
             })
             .unwrap(),
             json!({ "reason": "uninstalled" })
+        );
+        assert_eq!(
+            serde_json::to_value(LeaveRequest {
+                reason: LeaveReason::RemovedAtMachine
+            })
+            .unwrap(),
+            json!({ "reason": "removed-at-machine" })
         );
         assert_eq!(
             serde_json::to_value(LocalPageReport {

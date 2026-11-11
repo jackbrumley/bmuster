@@ -187,8 +187,14 @@ export type CheckInReply = {
 	update: UpdateOffer;
 };
 
-/** `POST /agent/v1/leave` (SPEC-AGENT-LOCAL): the agent moved to another server, or is being uninstalled. */
-export const leaveRequestSchema = z.object({ reason: z.enum(['moved', 'uninstalled']) });
+/**
+ * `POST /agent/v1/leave` (SPEC-AGENT-LOCAL): the agent moved to another server, is being
+ * uninstalled from its local page, or an administrator at the machine ran `uninstall --purge`
+ * (`removed-at-machine`, SPEC-LOCAL-PAGE-TRANSPARENCY).
+ */
+export const leaveRequestSchema = z.object({
+	reason: z.enum(['moved', 'uninstalled', 'removed-at-machine'])
+});
 
 export type LeaveReason = z.infer<typeof leaveRequestSchema>['reason'];
 

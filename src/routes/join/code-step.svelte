@@ -35,7 +35,7 @@
 <form class="step" onsubmit={send}>
 	<h1>Add this computer to {organisation}</h1>
 	<p class="intro">
-		{organisation} manages its computers with BMuster. Enrolling installs the BMuster agent, so this computer
+		{organisation} manages its computers with BMuster. Enrolling installs the BMuster Agent, so this computer
 		is registered with {organisation} and managed by it.
 	</p>
 	<label class="field">

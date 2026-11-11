@@ -383,7 +383,7 @@ function activityAction(entry: ActivityEntry): string {
 	const sentence = activitySentence(entry);
 	switch (sentence.kind) {
 		case 'local':
-		case 'presence':
+		case 'machine':
 			return sentence.text;
 		case 'standard':
 			return activityLabel(entry.kind);

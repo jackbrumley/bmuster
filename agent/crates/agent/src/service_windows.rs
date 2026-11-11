@@ -55,7 +55,7 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
         || paths::default_data_dir()?.exists()
     {
         log::info!(
-            "Found an earlier BMuster agent on this machine; removing it before installing."
+            "Found an earlier BMuster Agent on this machine; removing it before installing."
         );
         uninstall(true)?;
     }

@@ -9,6 +9,7 @@ use crate::local_page::journal::Journal;
 use crate::local_page::people::People;
 use crate::local_page::{self, Reporter};
 use crate::log_spool::{Shipper, Spool, SPOOL_DIR};
+use crate::sessions::live::Live;
 use crate::sessions::Sessions;
 use crate::socket;
 use crate::status::{RunMode, StatusBoard};
@@ -135,7 +136,7 @@ pub fn run(
     let session = Arc::new(open_session(&options.data_dir, options.insecure_dev_tls)?);
     let server = &session.transport.server;
     log::info!(
-        "BMuster agent {} started: machine {}, server {}",
+        "BMuster Agent {} started: machine {}, server {}",
         env!("BMUSTER_VERSION"),
         identity.machine_id,
         server.base()
@@ -144,6 +145,7 @@ pub fn run(
     let board = Arc::new(StatusBoard::new(identity.check_in_seconds));
     let people = Arc::new(People::load(&options.data_dir));
     let journal = Arc::new(Journal::open(&options.data_dir));
+    let live = Arc::new(Live::default());
     let mut reporter = local_page::start(local_page::Setup {
         data_dir: options.data_dir.clone(),
         session: Arc::clone(&session),
@@ -155,6 +157,7 @@ pub fn run(
         people: Arc::clone(&people),
         journal: Arc::clone(&journal),
         launched: options.launched,
+        live: Arc::clone(&live),
     });
 
     // Desktop sessions run in a helper in the console session (SPEC-DESKTOP 6.2).
@@ -185,6 +188,7 @@ pub fn run(
         Arc::clone(&stop),
         options.sessions,
         options.data_dir.clone(),
+        live,
     );
     // Installs from before SPEC-SESSION-UNITS Version 3 move to /opt.
     #[cfg(target_os = "linux")]

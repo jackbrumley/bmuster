@@ -16,7 +16,7 @@ function checkedOrigin(origin: string): string {
 
 export function linuxInstallScript(origin: string): string {
 	return `#!/bin/sh
-# BMuster agent installer for Linux (systemd).
+# BMuster Agent installer for Linux (systemd).
 # Usage: curl -fsSL ${checkedOrigin(origin)}/install.sh | sudo sh -s -- --code XXX-XXX-XXX [--name NAME] [--pin-cert sha256:...]
 set -eu
 
@@ -87,7 +87,7 @@ fi
 }
 
 export function windowsInstallScript(origin: string): string {
-	return `# BMuster agent installer for Windows. Run in PowerShell as Administrator:
+	return `# BMuster Agent installer for Windows. Run in PowerShell as Administrator:
 # & ([scriptblock]::Create((irm ${checkedOrigin(origin)}/install.ps1))) -Code XXX-XXX-XXX [-Name NAME] [-PinCert sha256:...]
 param(
 	[Parameter(Mandatory = $true)][string]$Code,
