@@ -13,6 +13,7 @@ mod files;
 #[cfg(target_os = "linux")]
 pub mod files_helper;
 mod pump;
+mod readiness;
 mod terminal;
 #[cfg(test)]
 mod testing;

@@ -216,20 +216,47 @@ impl crate::follow::Waker for SendInputWaker {
 
 /// The desktop helper's input check (SPEC-DIAGNOSTICS 1): `SendInput` with
 /// no events at all, which reaches the call without moving or typing.
+/// Windows answers an empty list with "The parameter is incorrect"
+/// (E_INVALIDARG): the call got through and only the empty list was refused,
+/// so that is a pass. Blocked input (another desktop, UIPI) is a different
+/// error, such as Access is denied, and fails.
 pub fn check_send_input() -> Result<String, String> {
     // SAFETY: an empty slice; no INPUT is read.
     let sent = unsafe { SendInput(&[], std::mem::size_of::<INPUT>() as i32) };
     let error = ::windows::core::Error::from_thread();
-    if sent == 0 && error.code().is_err() {
-        Err(format!("SendInput refused: {error}"))
-    } else {
+    send_input_verdict(sent, error.code(), &error.to_string())
+}
+
+fn send_input_verdict(
+    sent: u32,
+    code: ::windows::core::HRESULT,
+    message: &str,
+) -> Result<String, String> {
+    if sent != 0 || code.is_ok() {
         Ok("SendInput accepted an empty list in this session.".to_string())
+    } else if code == ::windows::Win32::Foundation::E_INVALIDARG {
+        Ok("SendInput reached this session (it refuses an empty list, as expected).".to_string())
+    } else {
+        Err(format!("SendInput refused: {message}"))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::normalise;
+    use super::{normalise, send_input_verdict};
+    use ::windows::Win32::Foundation::{E_ACCESSDENIED, E_INVALIDARG, S_OK};
+
+    /// Windows 10 answers the check's empty list with E_INVALIDARG; that
+    /// was reported as a failure on a machine whose input worked.
+    #[test]
+    fn send_input_check_passes_the_empty_list_refusal_and_fails_access_denied() {
+        assert!(send_input_verdict(0, E_INVALIDARG, "The parameter is incorrect.").is_ok());
+        assert!(send_input_verdict(0, S_OK, "").is_ok());
+        assert_eq!(
+            send_input_verdict(0, E_ACCESSDENIED, "Access is denied."),
+            Err("SendInput refused: Access is denied.".to_string())
+        );
+    }
 
     /// Where Windows puts a value, truncating and rounding.
     fn landed(value: i32, origin: i32, size: i32) -> (i32, i32) {

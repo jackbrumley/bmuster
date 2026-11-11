@@ -153,7 +153,6 @@
 	active={waiting !== undefined}
 	title={waiting ?? ''}
 	detail={following > 0 ? `${machineName} sends the results within a minute.` : undefined}
-	caption="shown"
 >
 	<ListCard
 		heading={summary === undefined ? 'Checks' : `Checks · ${summary}`}

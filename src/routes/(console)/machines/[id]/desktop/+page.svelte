@@ -448,7 +448,6 @@
 						active={true}
 						title={connectingTitle}
 						detail={undefined}
-						caption="shown"
 						children={undefined}
 					/>
 				</div>

@@ -62,7 +62,7 @@ wmi = { version = "=0.18.4", default-features = false }
 # Video memory over 4 GB, which Win32_VideoController's 32-bit AdapterRAM cannot hold.
 windows-registry = "=0.6.1"
 # Terminal sessions: ConPTY, pipes, processes and Job Objects; Files: drives and free space (already in the build through other crates).
-windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Power", "Win32_System_Threading"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Networking_WinSock", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Power", "Win32_System_Threading"] }
 
 [build-dependencies]
 base64.workspace = true

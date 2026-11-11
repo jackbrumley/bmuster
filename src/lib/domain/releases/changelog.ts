@@ -1,6 +1,15 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.16',
+		changes: [
+			'Fixed: the Windows remote desktop dropped a moment after the first picture, so the screen froze and could not be controlled',
+			'While the server updates, the Updates page says what is happening, counts down the usual minute and says the page reloads by itself',
+			'The BMuster is available notice no longer shows during an update or on the Updates page',
+			'The Windows SendInput self-check no longer reports a false failure'
+		]
+	},
+	{
 		version: '0.4.15',
 		changes: [
 			'New icon: a round night radar with no tile, the same drawing at every size; the Linux tray draws it sharp at any panel size',

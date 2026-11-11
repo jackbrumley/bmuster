@@ -1,7 +1,13 @@
 //! Moving one session's bytes over its own socket, on one thread.
 //!
-//! The socket is blocking with a short timeout, so one loop can both send
-//! what the session produced and read what the browser sent. Backpressure:
+//! The socket is non-blocking, and the loop waits up to `READ_WAIT` for it
+//! to be readable (or writable, with output waiting), so one loop can both
+//! send what the session produced and read what the browser sent. It is
+//! never a blocking socket with send and receive timeouts: on Windows a send
+//! that times out leaves the socket "indeterminate" (part of the data may
+//! have gone without being counted), TLS then sends those bytes again, and
+//! the server sees a corrupt record ("BadRecordMac") as soon as a desktop
+//! frame is larger than the socket can take at once. Backpressure:
 //! output is taken from a bounded channel only when the socket has flushed
 //! everything before it, so a slow browser (the server pauses reading from
 //! this socket) fills the channel, which blocks the session's reader thread,
@@ -76,8 +82,9 @@ pub fn pump(
     mut incoming: impl FnMut(Incoming) -> Result<()>,
 ) -> Result<Ended> {
     let tcp = tcp_of(socket)?;
-    tcp.set_read_timeout(Some(READ_WAIT))?;
-    tcp.set_write_timeout(Some(READ_WAIT))?;
+    tcp.set_read_timeout(None)?;
+    tcp.set_write_timeout(None)?;
+    tcp.set_nonblocking(true)?;
     tcp.set_nodelay(true)?;
 
     let mut unflushed = false;
@@ -142,7 +149,10 @@ pub fn pump(
         }
         let message = match socket.read() {
             Ok(message) => message,
-            Err(e) if would_block(&e) => continue,
+            Err(e) if would_block(&e) => {
+                super::readiness::wait(tcp_of(socket)?, unflushed, READ_WAIT)?;
+                continue;
+            }
             Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => {
                 return Ok(Ended::ServerClosed)
             }
@@ -170,6 +180,9 @@ fn close(socket: &mut Socket) {
             Ok(_) => {}
             Err(e) if would_block(&e) => {
                 let _ = socket.flush();
+                if let Ok(tcp) = tcp_of(socket) {
+                    let _ = super::readiness::wait(tcp, true, READ_WAIT);
+                }
             }
             Err(_) => return,
         }

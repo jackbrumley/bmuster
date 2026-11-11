@@ -27,6 +27,7 @@
 	import UpdateMachines from './update-machines.svelte';
 	import { startServerRestartMonitor, type RestartProgress } from './server-restart-monitor.ts';
 	import { reloadPage } from './reload-page.ts';
+	import { updateWaitLine } from '#lib/domain/releases/update-wait.ts';
 	import type { PageProps } from './$types';
 
 	/**
@@ -34,10 +35,14 @@
 	 * roll-out has got, every machine's version and update state, Pause and Update now.
 	 */
 	let { data }: PageProps = $props();
-	/** After Update now: the version being installed and the updater's latest step (SPEC-LOADING). */
-	let restart = $state<{ kind: 'none' } | { kind: 'restarting'; version: string; detail: string }>({
+	/** After Update now: the version being installed, the updater's latest step and when it began (SPEC-LOADING). */
+	let restart = $state<
+		{ kind: 'none' } | { kind: 'restarting'; version: string; detail: string; startedMs: number }
+	>({
 		kind: 'none'
 	});
+	/** Ticks once a second while the server updates, for the countdown (SU14). */
+	let nowMs = $state(Date.now());
 	let restartMonitor: ReturnType<typeof startServerRestartMonitor> | undefined;
 	onMount(() => {
 		const timer = setInterval(() => {
@@ -45,12 +50,16 @@
 				void refreshAll();
 			}
 		}, 3000);
+		const clock = setInterval(() => {
+			if (restart.kind === 'restarting') nowMs = Date.now();
+		}, 1000);
 		const checkAfterTabReturns = (): void => {
 			if (document.visibilityState === 'visible') restartMonitor?.checkNow();
 		};
 		document.addEventListener('visibilitychange', checkAfterTabReturns);
 		return () => {
 			clearInterval(timer);
+			clearInterval(clock);
 			document.removeEventListener('visibilitychange', checkAfterTabReturns);
 			restartMonitor?.stop();
 		};
@@ -66,7 +75,8 @@
 	}
 
 	function onServerRestarting(version: string, requestedAtIso: string): void {
-		restart = { kind: 'restarting', version, detail: 'Starting the update' };
+		nowMs = Date.now();
+		restart = { kind: 'restarting', version, detail: 'Starting the update', startedMs: nowMs };
 		restartMonitor?.stop();
 		restartMonitor = startServerRestartMonitor({
 			expectedVersion: version,
@@ -137,12 +147,11 @@
 />
 
 {#if restart.kind === 'restarting'}
-	<!-- The radar alone while the server updates; the reload follows when it is back (SPEC-LOADING). -->
+	<!-- What is happening, what to do and about how long, while the server updates (SU14). -->
 	<LoadingVeil
 		active={true}
-		title={`Updating BMuster to ${restart.version}`}
-		detail={restart.detail}
-		caption="hidden"
+		title={`BMuster is updating to ${restart.version}. Please wait.`}
+		detail={`${updateWaitLine(nowMs - restart.startedMs)}. This page reloads by itself when BMuster is back. ${restart.detail}.`}
 		children={undefined}
 	/>
 {:else}

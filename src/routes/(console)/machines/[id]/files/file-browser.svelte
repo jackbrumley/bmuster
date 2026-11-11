@@ -350,7 +350,6 @@
 				active={true}
 				title="Reading the drives"
 				detail={undefined}
-				caption="shown"
 				children={undefined}
 			/>
 		{:else if roots.kind === 'failed'}
@@ -405,7 +404,6 @@
 				active={true}
 				title="Opening the folder"
 				detail={undefined}
-				caption="shown"
 				children={undefined}
 			/>
 		{:else if listing.kind === 'failed'}

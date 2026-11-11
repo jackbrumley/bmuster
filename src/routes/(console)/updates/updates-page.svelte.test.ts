@@ -298,14 +298,18 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		const dialog = screen.getByRole('dialog', { name: 'Update BMuster to 0.3.2?' });
 		await dialog.getByRole('button', { name: 'Update now' }).click();
 
-		// The radar alone: the words are the status a screen reader hears, not shown.
+		// SU14: what is happening, a countdown, that the page reloads itself, and the step.
 		await expect.element(screen.getByRole('status')).toBeVisible();
 		await expect
-			.element(screen.getByRole('status').getByText('Updating BMuster to 0.3.2'))
-			.toBeInTheDocument();
-		await expect
-			.element(screen.getByRole('status').getByText('Waiting for the server to come back'))
-			.toBeInTheDocument();
+			.element(screen.getByRole('status').getByText('BMuster is updating to 0.3.2. Please wait.'))
+			.toBeVisible();
+		const detail = screen.getByRole('status').getByText(/seconds left/);
+		await expect.element(detail).toBeVisible();
+		await vi.waitFor(() => {
+			const text = detail.element().textContent;
+			expect(text).toContain('This page reloads by itself when BMuster is back');
+			expect(text).toContain('Waiting for the server to come back');
+		});
 		await expect
 			.element(screen.getByRole('heading', { name: 'Server', exact: true }))
 			.not.toBeInTheDocument();
@@ -443,7 +447,7 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		await expect.element(alert.getByText(/HTTP 503\. \(2 min ago\)/)).toBeVisible();
 	});
 
-	it("L3: shows the radar alone with the updater's step for screen readers, and lifts it when it rolls back", async () => {
+	it("L3: shows the update wait with the updater's step, and lifts it when it rolls back", async () => {
 		serveUpdate([
 			step('downloading', 'Downloading and checking BMuster 0.3.2'),
 			step('rolled-back', 'BMuster 0.3.2 did not start; 0.3.1 is back')
@@ -452,10 +456,10 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		const screen = await renderPage({ server: SERVER_RELEASE });
 		await startUpdate(screen);
 		const veil = screen.getByRole('status');
-		await expect.element(veil.getByText('Updating BMuster to 0.3.2')).toBeInTheDocument();
 		await expect
-			.element(veil.getByText('Downloading and checking BMuster 0.3.2'))
-			.toBeInTheDocument();
+			.element(veil.getByText('BMuster is updating to 0.3.2. Please wait.'))
+			.toBeVisible();
+		await expect.element(veil.getByText(/Downloading and checking BMuster 0\.3\.2/)).toBeVisible();
 		// Nothing else shows while it updates: no server panel, release notes or roll-out.
 		await expect
 			.element(screen.getByRole('heading', { name: 'Server', exact: true }))
@@ -466,7 +470,9 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		await vi.waitFor(() => {
 			expect(refreshAll).toHaveBeenCalled();
 		}, 5000);
-		await expect.element(screen.getByText('Updating BMuster to 0.3.2')).not.toBeInTheDocument();
+		await expect
+			.element(screen.getByText('BMuster is updating to 0.3.2. Please wait.'))
+			.not.toBeInTheDocument();
 		await expect.element(screen.getByRole('heading', { name: 'Roll-out' })).toBeVisible();
 		expect(reloadPage).not.toHaveBeenCalled();
 	});
@@ -480,12 +486,14 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		const screen = await renderPage({ server: SERVER_RELEASE });
 		await startUpdate(screen);
 		await expect
-			.element(screen.getByRole('status').getByText('Starting BMuster 0.3.2'))
+			.element(screen.getByRole('status').getByText(/Starting BMuster 0\.3\.2/))
 			.toBeInTheDocument();
 		await vi.waitFor(() => {
 			expect(reloadPage).toHaveBeenCalledOnce();
 		}, 5000);
-		await expect.element(screen.getByText('Updating BMuster to 0.3.2')).not.toBeInTheDocument();
+		await expect
+			.element(screen.getByText('BMuster is updating to 0.3.2. Please wait.'))
+			.not.toBeInTheDocument();
 	});
 
 	it('shows the newest release notes and folds the earlier versions away', async () => {
