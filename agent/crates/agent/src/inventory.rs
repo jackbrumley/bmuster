@@ -130,13 +130,39 @@ fn disks() -> Vec<DiskInfo> {
             continue;
         }
         let used = size.saturating_sub(disk.available_space());
-        by_mount.entry(mount.clone()).or_insert(DiskInfo {
-            mount,
-            size_bytes: size,
-            used_bytes: rounded_used(size, used),
-        });
+        let device = disk.name().to_string_lossy().to_string();
+        by_mount.entry(mount.clone()).or_insert((
+            device,
+            DiskInfo {
+                mount,
+                size_bytes: size,
+                used_bytes: rounded_used(size, used),
+            },
+        ));
     }
-    by_mount.into_values().collect()
+    one_per_file_system(by_mount.into_values().collect())
+}
+
+/// Each file system once, at its shortest mount point. On Linux one btrfs
+/// volume is mounted at `/`, `/home` and more, and the agent's own sandbox
+/// adds bind mounts (`/opt/bmuster`, `/var/lib/bmuster`, `/var/tmp`) of the
+/// same device: listed once, as `/`. Elsewhere every mount is its own drive.
+fn one_per_file_system(mut disks: Vec<(String, DiskInfo)>) -> Vec<DiskInfo> {
+    if cfg!(target_os = "linux") {
+        disks.sort_by(|a, b| (a.1.mount.len(), &a.1.mount).cmp(&(b.1.mount.len(), &b.1.mount)));
+        let mut seen: Vec<(String, u64)> = Vec::new();
+        disks.retain(|(device, disk)| {
+            let key = (device.clone(), disk.size_bytes);
+            if device.is_empty() || !seen.contains(&key) {
+                seen.push(key);
+                true
+            } else {
+                false
+            }
+        });
+        disks.sort_by(|a, b| a.1.mount.cmp(&b.1.mount));
+    }
+    disks.into_iter().map(|(_, disk)| disk).collect()
 }
 
 fn network() -> Vec<NetworkInterface> {
@@ -227,6 +253,35 @@ fn linux_seat_user(sessions: &std::path::Path) -> SignedInUser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    fn disk(device: &str, mount: &str, size: u64) -> (String, DiskInfo) {
+        (
+            device.to_string(),
+            DiskInfo {
+                mount: mount.to_string(),
+                size_bytes: size,
+                used_bytes: size / 3,
+            },
+        )
+    }
+
+    /// Fedora, 0.4.17: one btrfs volume showed as seven disks.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn each_file_system_is_listed_once_at_its_shortest_mount() {
+        let listed = one_per_file_system(vec![
+            disk("/dev/nvme0n1p3", "/home", 474),
+            disk("/dev/nvme0n1p2", "/boot", 2),
+            disk("/dev/nvme0n1p3", "/", 474),
+            disk("/dev/nvme0n1p1", "/boot/efi", 1),
+            disk("/dev/nvme0n1p3", "/var/lib/bmuster", 474),
+            disk("/dev/nvme0n1p3", "/opt/bmuster", 474),
+            disk("/dev/sdb1", "/data", 474),
+        ]);
+        let mounts: Vec<&str> = listed.iter().map(|d| d.mount.as_str()).collect();
+        assert_eq!(mounts, ["/", "/boot", "/boot/efi", "/data"]);
+    }
 
     #[test]
     fn used_space_is_rounded_to_one_percent() {

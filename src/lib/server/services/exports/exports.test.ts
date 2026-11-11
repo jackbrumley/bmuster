@@ -122,7 +122,6 @@ const DETAIL_COLUMNS = [
 	'Signed in',
 	'In use',
 	'Last user seen',
-	'Memory used',
 	'Pending updates',
 	'OS build',
 	'Processor',
@@ -164,8 +163,6 @@ describe('Machines export (X5, X6)', () => {
 			'Status',
 			'OS',
 			'OS version',
-			'CPU %',
-			'Memory %',
 			'Disk % (fullest)',
 			'Last user',
 			'Last seen',
@@ -192,8 +189,6 @@ describe('Machines export (X5, X6)', () => {
 			null,
 			null,
 			null,
-			null,
-			null,
 			new Date(NOW).toISOString(),
 			'Front desk machines',
 			'0.1.0',
@@ -201,7 +196,6 @@ describe('Machines export (X5, X6)', () => {
 			// X11: no inventory yet, so every inventory cell is empty.
 			null,
 			new Date(NOW).toISOString(),
-			null,
 			null,
 			null,
 			null,
@@ -270,14 +264,12 @@ describe('Machines export (X5, X6)', () => {
 	it('X9: header order: the first columns stay put, then every Overview fact', async () => {
 		const { database, admin, pat } = await setUp();
 		const all = exportMachines(database, admin, machinesQuery({}), NOW, NO_RELEASES);
-		expect(all.header.slice(0, 13)).toEqual([
+		expect(all.header.slice(0, 11)).toEqual([
 			'Name',
 			'Host',
 			'Status',
 			'OS',
 			'OS version',
-			'CPU %',
-			'Memory %',
 			'Disk % (fullest)',
 			'Last user',
 			'Last seen',
@@ -285,12 +277,12 @@ describe('Machines export (X5, X6)', () => {
 			'Agent version',
 			'Description'
 		]);
-		expect(all.header.slice(13)).toEqual(DETAIL_COLUMNS);
+		expect(all.header.slice(11)).toEqual(DETAIL_COLUMNS);
 		// X12: a member gets the same detail columns (they see the same Overview), only no Groups.
 		const mine = exportMachines(database, pat, machinesQuery({}), NOW, NO_RELEASES);
 		expect(mine.header).toEqual(all.header.filter((name) => name !== 'Groups'));
-		expect(all.rows.map((row) => row.length)).toEqual([32, 32, 32]);
-		expect(mine.rows.map((row) => row.length)).toEqual([31, 31]);
+		expect(all.rows.map((row) => row.length)).toEqual([29, 29, 29]);
+		expect(mine.rows.map((row) => row.length)).toEqual([28, 28]);
 	});
 
 	it('X10: a fully inventoried machine: two graphics cards, several disks and adapters', async () => {
@@ -316,7 +308,6 @@ describe('Machines export (X5, X6)', () => {
 			'Signed in': 'sarah.k',
 			'In use': null,
 			'Last user seen': new Date(NOW + 1000).toISOString(),
-			'Memory used': '1.0 KB',
 			'Pending updates': 3,
 			'OS build': '6.8.0',
 			Processor: 'Test CPU',
@@ -350,7 +341,7 @@ describe('Machines export (X5, X6)', () => {
 		}
 		const offline = detailOf('Office laptop');
 		expect(offline['Status']).toBe('Offline');
-		expect(offline['Memory used']).toBeNull();
+		expect(offline['Uptime']).toBeNull();
 		expect(offline['Processor']).toBe('Test CPU');
 	});
 

@@ -509,14 +509,22 @@ mod windows {
     const ADAPTER_RAM_CAPPED: u32 = 0xFFF0_0000;
 
     pub fn gpus() -> Vec<GpuInfo> {
-        let controllers: Vec<VideoController> =
-            match wmi::WMIConnection::new().and_then(|connection| connection.query()) {
-                Ok(list) => list,
-                Err(error) => {
-                    log::warn!("could not list graphics cards through WMI: {error}");
-                    return Vec::new();
-                }
-            };
+        let controllers: Vec<VideoController> = match wmi::WMIConnection::new()
+            .and_then(|connection| connection.query())
+        {
+            Ok(list) => list,
+            Err(error) => {
+                // A damaged WMI repository answers "invalid class"
+                // (0x80041010) for Win32_VideoController, as on a Windows
+                // 10 machine in 0.4.17: the registry still knows the cards.
+                let found = registry_gpus();
+                log::warn!(
+                        "could not list graphics cards through WMI ({error}); found {} in the registry instead",
+                        found.len()
+                    );
+                return found;
+            }
+        };
         let mut found: Vec<(String, GpuInfo)> = controllers
             .into_iter()
             .filter_map(|controller| {
@@ -557,6 +565,93 @@ mod windows {
             .collect();
         found.sort_by(|a, b| a.0.cmp(&b.0));
         found.into_iter().map(|(_, gpu)| gpu).collect()
+    }
+
+    /// The display adapters class (`GUID_DEVCLASS_DISPLAY`).
+    const DISPLAY_CLASS: &str = "{4d36e968-e325-11ce-bfc1-08002be10318}";
+
+    /// Graphics cards from the registry, for when WMI cannot answer: each PCI
+    /// device of the display class, named by its `DeviceDesc`, with the driver
+    /// and memory from its driver key. PCI only, so software adapters (remote
+    /// display, virtual screens) are left out, as with WMI.
+    fn registry_gpus() -> Vec<GpuInfo> {
+        let machine = windows_registry::LOCAL_MACHINE;
+        let Ok(pci) = machine.open("SYSTEM\\CurrentControlSet\\Enum\\PCI") else {
+            return Vec::new();
+        };
+        let Ok(devices) = pci.keys() else {
+            return Vec::new();
+        };
+        let mut found: Vec<(String, GpuInfo)> = Vec::new();
+        for device in devices {
+            let Ok(device_key) = pci.open(&device) else {
+                continue;
+            };
+            let Ok(instances) = device_key.keys() else {
+                continue;
+            };
+            for instance in instances {
+                let Ok(key) = device_key.open(&instance) else {
+                    continue;
+                };
+                let is_display = key
+                    .get_string("ClassGUID")
+                    .is_ok_and(|class| class.eq_ignore_ascii_case(DISPLAY_CLASS));
+                if !is_display {
+                    continue;
+                }
+                let Some(name) = key.get_string("DeviceDesc").ok().map(|d| inf_text(&d)) else {
+                    continue;
+                };
+                let device_id = format!("PCI\\{device}\\{instance}");
+                let driver_key = key.get_string("Driver").ok().and_then(|driver| {
+                    machine
+                        .open(format!(
+                            "SYSTEM\\CurrentControlSet\\Control\\Class\\{driver}"
+                        ))
+                        .ok()
+                });
+                let vendor = key
+                    .get_string("Mfg")
+                    .ok()
+                    .map(|m| inf_text(&m))
+                    .or_else(|| {
+                        driver_key
+                            .as_ref()
+                            .and_then(|k| k.get_string("ProviderName").ok())
+                    })
+                    .unwrap_or_default();
+                let driver = driver_key
+                    .as_ref()
+                    .and_then(|k| k.get_string("DriverVersion").ok())
+                    .unwrap_or_default();
+                let memory_bytes = match registry_memory(&device_id) {
+                    Some(bytes) if bytes > 0 => GpuMemory::Known { bytes },
+                    _ => GpuMemory::Unknown,
+                };
+                found.push((
+                    device_id,
+                    GpuInfo {
+                        name,
+                        vendor: vendor.trim().to_string(),
+                        memory_bytes,
+                        driver: driver.trim().to_string(),
+                    },
+                ));
+            }
+        }
+        found.sort_by(|a, b| a.0.cmp(&b.0));
+        found.into_iter().map(|(_, gpu)| gpu).collect()
+    }
+
+    /// Registry text from a driver package is often `@oem3.inf,%id%;Intel(R)
+    /// HD Graphics`: the readable part follows the last `;`.
+    fn inf_text(value: &str) -> String {
+        value
+            .rsplit_once(';')
+            .map_or(value, |(_, text)| text)
+            .trim()
+            .to_string()
     }
 
     /// The video memory Windows itself shows (dxdiag, Task Manager): the

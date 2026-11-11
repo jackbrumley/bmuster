@@ -125,8 +125,6 @@ export function exportMachines(
 		'Status',
 		'OS',
 		'OS version',
-		'CPU %',
-		'Memory %',
 		'Disk % (fullest)',
 		'Last user',
 		'Last seen',
@@ -135,14 +133,14 @@ export function exportMachines(
 		'Description',
 		...MACHINE_DETAIL_COLUMNS.map((column) => column.header)
 	];
-	const lines = shown.map(({ machine, cpuPercent, memoryPercent, disk }): CsvCell[] => [
+	// No CPU or memory use: they change second by second, so a file of them
+	// says nothing (Jack, 2026-11-11). Installed memory and disks stay.
+	const lines = shown.map(({ machine, disk }): CsvCell[] => [
 		machine.name,
 		machine.hostname,
 		machine.status.kind === 'online' ? 'Online' : 'Offline',
 		osName(machine),
 		machine.inventory.kind === 'known' ? machine.inventory.osVersion : null,
-		cpuPercent,
-		memoryPercent,
 		disk === undefined ? null : disk.percent,
 		machine.lastUser.kind === 'user' ? machine.lastUser.name : null,
 		machine.lastSeenIso,
@@ -204,12 +202,6 @@ const MACHINE_DETAIL_COLUMNS: { header: string; cell: (machine: Machine) => CsvC
 	{
 		header: 'Last user seen',
 		cell: ({ lastUser }) => (lastUser.kind === 'user' ? lastUser.seenIso : null)
-	},
-	{
-		// Live figures show only while the machine is online, as on the Overview.
-		header: 'Memory used',
-		cell: ({ status, live }) =>
-			status.kind === 'online' && live.kind === 'known' ? formatBytes(live.memoryUsedBytes) : null
 	},
 	{
 		header: 'Pending updates',

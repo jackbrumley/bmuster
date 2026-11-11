@@ -87,3 +87,8 @@ Built as specified unless listed here. Tested end to end against a scratch dev s
 
 - Version bump and changelog (there is no `src/lib/changelog.ts` yet); left for the release step, as with SPEC-SIGN-IN.
 - The Windows GPU code has not run on Windows.
+
+**Fixes from Jack's first full export (2026-11-11, for 0.4.18).**
+
+- **Disks on Linux** list each file system once, at its shortest mount point. One btrfs volume mounted at `/`, `/home` and the agent sandbox's bind mounts (`/opt/bmuster`, `/var/lib/bmuster`, `/var/tmp`) showed as five identical disks. Same device and size counts as one. Test: `inventory::tests::each_file_system_is_listed_once_at_its_shortest_mount`.
+- **Graphics cards on Windows** fall back to the registry (PCI devices of the display class, their driver key's version and memory) when WMI cannot answer. A Windows 10 machine's WMI said "invalid class" (0x80041010) for `Win32_VideoController`, a sign of a damaged WMI repository, and showed no graphics card. Windows-only; linted with the Windows target, not run.
