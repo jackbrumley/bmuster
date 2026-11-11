@@ -150,7 +150,9 @@
 		display: grid;
 		justify-items: center;
 		gap: var(--space-3);
-		max-width: 36ch;
+		/* Wide enough that a two-sentence status (the update countdown) sits on
+		   one or two lines; the block's own width still narrows it on a phone. */
+		max-width: min(60ch, 100%);
 		text-align: center;
 	}
 
