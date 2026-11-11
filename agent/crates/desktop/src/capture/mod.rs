@@ -144,7 +144,7 @@ pub struct DisplayInfo {
     pub name: String,
     /// Place on the virtual desktop, in the coordinates the input backend
     /// takes. The captured image can be larger than this (a high-DPI KMS
-    /// display laid out in mutter's logical pixels); the pointer and the
+    /// display laid out in the compositor's logical pixels); the pointer and the
     /// cursor map between the two.
     pub x: i32,
     pub y: i32,

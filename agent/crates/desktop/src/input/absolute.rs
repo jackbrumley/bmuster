@@ -3,10 +3,11 @@
 //! reports, so a click lands on the pixel the viewer pointed at, on the
 //! right monitor, right up to the edge between two of them.
 //!
-//! - **uinput under mutter** ([`PointerMap`]): libinput scales an absolute
-//!   pointer to the whole stage, `value * stage / 65536` in mutter's
-//!   logical pixels, and mutter picks the logical monitor that holds the
-//!   result. The stage is mutter's layout, which BMuster's desktop scales
+//! - **uinput under mutter or KWin** ([`PointerMap`]): libinput scales an
+//!   absolute pointer to the whole stage, `value * stage / 65536` in the
+//!   compositor's logical pixels, and the compositor picks the monitor that
+//!   holds the result (KWin's stage starts at 0,0, which the layout
+//!   checks). The stage is the compositor's layout, which BMuster's desktop scales
 //!   by the smallest monitor scale (`capture::kms::layout`), so each point
 //!   is mapped through its own monitor's rectangle on both sides.
 //! - **Windows** (`SendInput` with `MOUSEEVENTF_VIRTUALDESK`) spans the
@@ -122,7 +123,8 @@ fn distance(rect: &Rect, x: i32, y: i32) -> i64 {
     dx * dx + dy * dy
 }
 
-fn bounding(rects: impl Iterator<Item = Rect>) -> Rect {
+/// The box around `rects` (1x1 at 0,0 for none).
+pub fn bounding(rects: impl Iterator<Item = Rect>) -> Rect {
     let mut found: Option<(i64, i64, i64, i64)> = None;
     for r in rects {
         let (left, top, right, bottom) = (i64::from(r.x), i64::from(r.y), r.right(), r.bottom());

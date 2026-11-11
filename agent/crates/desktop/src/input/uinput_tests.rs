@@ -224,7 +224,7 @@ impl ScreenWatch for KmsSeat {
         crate::kms_platform(
             self.source.clone(),
             self.opener.clone(),
-            Box::new(crate::capture::kms::mutter::NoLayout("a test".into())),
+            Box::new(crate::capture::kms::compositor::NoLayout("a test".into())),
         )
     }
 }

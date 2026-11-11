@@ -16,7 +16,7 @@
 //! all three.
 
 use super::kms::capturer::SharedSource;
-use super::kms::mutter::{layout_owner, LayoutReader, MutterReader, NoLayout};
+use super::kms::compositor::{layout_owner, CompositorReader, LayoutOwner, LayoutReader, NoLayout};
 use super::kms::SCREEN_OFF;
 use super::x11_session::{find_xauthority, loginctl, parse_properties, X11Target};
 use super::DesktopState;
@@ -43,8 +43,8 @@ struct Console {
     failure: Option<(String, String, Instant)>,
     /// The logind session the last look put on KMS, `None` while on X11.
     session: Option<String>,
-    /// Whose mutter to ask for the layout, or why nobody's.
-    layout: Result<u32, String>,
+    /// Whose compositor to ask for the layout, or why nobody's.
+    layout: Result<LayoutOwner, String>,
 }
 
 /// Development and test override for the display (debug builds only).
@@ -403,7 +403,8 @@ pub fn active_session() -> Result<String, String> {
 }
 
 /// The properties of logind session `session` that the follower reads:
-/// `Type`, `Class`, `Display`, `Name`, `User`, `State` and `LockedHint`.
+/// `Type`, `Class`, `Display`, `Name`, `User`, `State`, `LockedHint` and
+/// `Desktop` (which compositor draws a Wayland desktop).
 pub fn session_properties(session: &str) -> Result<HashMap<String, String>, String> {
     loginctl(&[
         "show-session",
@@ -415,6 +416,7 @@ pub fn session_properties(session: &str) -> Result<HashMap<String, String>, Stri
         "--property=User",
         "--property=State",
         "--property=LockedHint",
+        "--property=Desktop",
     ])
     .map(|text| parse_properties(&text))
 }
@@ -440,7 +442,7 @@ impl ScreenWatch for LogindWatch {
         if let Some(console) = self.console.as_mut() {
             if let (Some(session), Some(source)) = (&console.session, &console.source) {
                 let layout: Box<dyn LayoutReader> = match &console.layout {
-                    Ok(uid) => Box::new(MutterReader { uid: *uid }),
+                    Ok(owner) => Box::new(CompositorReader::new(*owner)),
                     Err(reason) => Box::new(NoLayout(reason.clone())),
                 };
                 let opened = crate::kms_platform(

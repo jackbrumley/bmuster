@@ -11,7 +11,8 @@
 //!   tiled and compressed buffers, through EGL and GLES loaded at run time.
 //! - [`capturer::KmsCapturer`]: the session's [`super::Capturer`] over any
 //!   [`KmsSource`] (the helper's pipe in the agent, a fake in tests), laid
-//!   out by [`layout`] from mutter's arrangement ([`mutter`]) when there is
+//!   out by [`layout`] from the compositor's arrangement ([`compositor`]:
+//!   [`mutter`] on GNOME, [`kwin`] on KDE Plasma) when there is
 //!   one (SPEC-DESKTOP-ALL-SCREENS).
 //!
 //! [`displays_from_resources`] is the pure part of discovery: what the
@@ -20,10 +21,12 @@
 pub mod capturer;
 pub mod card;
 pub mod compose;
+pub mod compositor;
 pub mod convert;
 pub mod device;
 pub mod egl;
 mod egl_api;
+pub mod kwin;
 pub mod layout;
 pub mod mutter;
 mod uapi;
@@ -231,7 +234,7 @@ pub trait KmsSource {
 /// The displays to show: every CRTC with a mode and a framebuffer, named
 /// after its connector, ordered by card then connector, and laid out side
 /// by side (KMS knows nothing of the compositor's arrangement; the capturer
-/// asks mutter for it, [`layout`]). Empty when
+/// asks the compositor for it, [`layout`]). Empty when
 /// every screen is off (a closed lid with nothing else plugged in).
 pub fn displays_from_resources(cards: &[CardResources]) -> Vec<KmsDisplay> {
     let mut found: Vec<(String, u32, KmsDisplay)> = Vec::new();

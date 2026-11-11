@@ -5,11 +5,11 @@
 //! compositors flip between two or three every frame.
 //!
 //! Displays are laid out by [`layout::arrange`] (SPEC-DESKTOP-ALL-SCREENS):
-//! mutter's arrangement when the screen shows a GNOME desktop, else side by
+//! the compositor's arrangement on a GNOME or KDE Plasma desktop, else side by
 //! side. [`View::All`] draws every display into one frame at its place.
 
+use super::compositor::LayoutReader;
 use super::layout::{self, Arrangement, LayoutSource};
-use super::mutter::LayoutReader;
 use super::{KmsDisplay, KmsSource, SCREEN_OFF};
 use crate::capture::combined::Combined;
 use crate::capture::{
@@ -26,8 +26,9 @@ pub type SharedSource = Arc<Mutex<Box<dyn KmsSource + Send>>>;
 
 /// How often the display list is read while capturing.
 pub const LAYOUT_EVERY: Duration = Duration::from_millis(500);
-/// How often mutter is asked again, for a rearrangement KMS cannot see.
-pub const MUTTER_EVERY: Duration = Duration::from_secs(5);
+/// How often the compositor is asked again, for a rearrangement KMS cannot
+/// see.
+pub const COMPOSITOR_EVERY: Duration = Duration::from_secs(5);
 
 pub struct KmsCapturer {
     source: SharedSource,
@@ -42,7 +43,7 @@ pub struct KmsCapturer {
     /// The next capture must return the whole image.
     full: bool,
     next_layout: Instant,
-    next_mutter: Instant,
+    next_compositor: Instant,
 }
 
 fn lock(source: &SharedSource) -> std::sync::MutexGuard<'_, Box<dyn KmsSource + Send>> {
@@ -54,7 +55,7 @@ fn lock(source: &SharedSource) -> std::sync::MutexGuard<'_, Box<dyn KmsSource + 
 impl KmsCapturer {
     /// Reads the display list and lays it out; fails with [`SCREEN_OFF`]
     /// when there is none. `pointer` is kept up to date for the uinput
-    /// pointer; `reader` says where mutter puts the displays.
+    /// pointer; `reader` says where the compositor puts the displays.
     pub fn new(
         source: SharedSource,
         pointer: SharedPointerMap,
@@ -76,7 +77,7 @@ impl KmsCapturer {
             frame: Frame::new(0, 0),
             full: true,
             next_layout: now + LAYOUT_EVERY,
-            next_mutter: now + MUTTER_EVERY,
+            next_compositor: now + COMPOSITOR_EVERY,
         };
         capturer.set_layout(kms);
         Ok(capturer)
@@ -154,7 +155,9 @@ fn log_arrangement(arrangement: &Arrangement) {
         .collect::<Vec<_>>()
         .join(", ");
     match &arrangement.source {
-        LayoutSource::Mutter => log::info!("Display layout from mutter: {rects}"),
+        LayoutSource::Compositor(compositor) => {
+            log::info!("Display layout from {}: {rects}", compositor.name())
+        }
         LayoutSource::SideBySide { reason } => {
             log::info!("Display layout side by side ({reason}): {rects}")
         }
@@ -204,8 +207,8 @@ impl Capturer for KmsCapturer {
             // The session looks again and waits with "The screen is off".
             return Err(CaptureError::new(SCREEN_OFF));
         }
-        let ask_mutter = now >= self.next_mutter;
-        if kms == self.kms && !ask_mutter {
+        let ask_compositor = now >= self.next_compositor;
+        if kms == self.kms && !ask_compositor {
             return Ok(false);
         }
         if kms != self.kms {
@@ -217,7 +220,7 @@ impl Capturer for KmsCapturer {
                     .join(", ")
             );
         }
-        self.next_mutter = now + MUTTER_EVERY;
+        self.next_compositor = now + COMPOSITOR_EVERY;
         Ok(self.set_layout(kms))
     }
 

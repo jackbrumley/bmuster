@@ -1,20 +1,20 @@
-use super::super::layout::{LayoutMode, LogicalMonitor, MutterMonitor, MutterState};
-use super::super::mutter::NoLayout;
+use super::super::compositor::NoLayout;
+use super::super::layout::{Compositor, CompositorLayout, LayoutMode, MonitorSize, PlacedMonitor};
 use super::super::KmsCursor;
 use super::fake::{display, FakeKms};
 use super::*;
 use crate::capture::Rect;
 use crate::input::absolute::Mapped;
 
-/// Mutter as the tests set it, counting the calls.
+/// The compositor as the tests set it, counting the calls.
 #[derive(Clone)]
 struct FakeMutter {
-    state: Arc<Mutex<Result<MutterState, String>>>,
+    state: Arc<Mutex<Result<CompositorLayout, String>>>,
     calls: Arc<Mutex<u32>>,
 }
 
 impl FakeMutter {
-    fn new(state: Result<MutterState, String>) -> Self {
+    fn new(state: Result<CompositorLayout, String>) -> Self {
         FakeMutter {
             state: Arc::new(Mutex::new(state)),
             calls: Arc::new(Mutex::new(0)),
@@ -23,45 +23,83 @@ impl FakeMutter {
 }
 
 impl LayoutReader for FakeMutter {
-    fn read(&mut self) -> Result<MutterState, String> {
+    fn read(&mut self) -> Result<CompositorLayout, String> {
         *self.calls.lock().unwrap() += 1;
         self.state.lock().unwrap().clone()
     }
 }
 
+fn placed(connector: &str, x: i32, y: i32, primary: bool, size: MonitorSize) -> PlacedMonitor {
+    PlacedMonitor {
+        connector: connector.into(),
+        x,
+        y,
+        scale: 1.0,
+        transform: 0,
+        primary,
+        size,
+    }
+}
+
 /// `a` (100x50) on top, `b` (200x80) below it and 50 to the right.
-fn stacked() -> MutterState {
-    MutterState {
+fn stacked() -> CompositorLayout {
+    CompositorLayout {
+        compositor: Compositor::Mutter,
         mode: LayoutMode::Logical,
         monitors: vec![
-            MutterMonitor {
-                connector: "a".into(),
-                mode: Some((100, 50)),
-            },
-            MutterMonitor {
-                connector: "b".into(),
-                mode: Some((200, 80)),
-            },
-        ],
-        logical: vec![
-            LogicalMonitor {
-                x: 0,
-                y: 0,
-                scale: 1.0,
-                transform: 0,
-                primary: false,
-                connectors: vec!["a".into()],
-            },
-            LogicalMonitor {
-                x: 50,
-                y: 50,
-                scale: 1.0,
-                transform: 0,
-                primary: true,
-                connectors: vec!["b".into()],
-            },
+            placed("a", 0, 0, false, MonitorSize::Mode(Some((100, 50)))),
+            placed("b", 50, 50, true, MonitorSize::Mode(Some((200, 80)))),
         ],
     }
+}
+
+/// The same, as KWin says it on a KDE Plasma desktop.
+fn stacked_by_kwin() -> CompositorLayout {
+    CompositorLayout {
+        compositor: Compositor::KWin,
+        mode: LayoutMode::Logical,
+        monitors: vec![
+            placed("a", 0, 0, false, MonitorSize::Stage(100, 50)),
+            placed("b", 50, 50, false, MonitorSize::Stage(200, 80)),
+        ],
+    }
+}
+
+/// SPEC-DESKTOP-ALL-SCREENS K5: a KDE desktop is laid out by KWin, not
+/// side by side, for the frame and the pointer.
+#[test]
+fn kms_kde_desktop_uses_kwins_layout_not_side_by_side() {
+    let fake = two_side_by_side();
+    let kwin = FakeMutter::new(Ok(stacked_by_kwin()));
+    let (mut capturer, pointer) = capturer(&fake, Box::new(kwin));
+    assert_eq!(
+        capturer.arrangement.source,
+        LayoutSource::Compositor(Compositor::KWin)
+    );
+    let rects: Vec<Rect> = capturer.displays().iter().map(DisplayInfo::rect).collect();
+    assert_eq!(
+        rects,
+        vec![Rect::new(0, 0, 100, 50), Rect::new(50, 50, 200, 80)]
+    );
+    assert_eq!(
+        *pointer.lock().unwrap(),
+        PointerMap::new(vec![
+            Mapped {
+                desktop: Rect::new(0, 0, 100, 50),
+                stage: Rect::new(0, 0, 100, 50)
+            },
+            Mapped {
+                desktop: Rect::new(50, 50, 200, 80),
+                stage: Rect::new(50, 50, 200, 80)
+            },
+        ])
+    );
+    capturer.select(View::All).unwrap();
+    capturer.capture(true).unwrap();
+    assert_eq!(
+        (capturer.frame().width, capturer.frame().height),
+        (250, 130)
+    );
 }
 
 fn capturer(fake: &FakeKms, reader: Box<dyn LayoutReader>) -> (KmsCapturer, SharedPointerMap) {
@@ -191,11 +229,11 @@ fn kms_all_screens_uses_mutters_layout_for_frame_cursor_and_pointer() {
     assert!(!capturer.poll_layout().unwrap());
     assert_eq!(*mutter.calls.lock().unwrap(), calls);
     capturer.next_layout = Instant::now();
-    capturer.next_mutter = Instant::now();
+    capturer.next_compositor = Instant::now();
     // Someone dragged b to the right of a in Settings.
     let mut moved = stacked();
-    moved.logical[1].x = 100;
-    moved.logical[1].y = 0;
+    moved.monitors[1].x = 100;
+    moved.monitors[1].y = 0;
     *mutter.state.lock().unwrap() = Ok(moved);
     assert!(capturer.poll_layout().unwrap());
     assert_eq!(*mutter.calls.lock().unwrap(), calls + 1);
@@ -217,12 +255,12 @@ fn kms_falls_back_side_by_side_when_the_bus_call_fails() {
     assert_eq!(*pointer.lock().unwrap(), PointerMap::identity(&rects));
     // The same failure again changes nothing (and logs nothing).
     capturer.next_layout = Instant::now();
-    capturer.next_mutter = Instant::now();
+    capturer.next_compositor = Instant::now();
     assert!(!capturer.poll_layout().unwrap());
     // Mutter answers later: the real layout from then on.
     *mutter.state.lock().unwrap() = Ok(stacked());
     capturer.next_layout = Instant::now();
-    capturer.next_mutter = Instant::now();
+    capturer.next_compositor = Instant::now();
     assert!(capturer.poll_layout().unwrap());
     assert_eq!(capturer.displays()[1].rect(), Rect::new(50, 50, 200, 80));
 }
