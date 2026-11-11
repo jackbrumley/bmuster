@@ -15,6 +15,25 @@ export type PowerReport =
 			inhibitor: { kind: 'held' } | { kind: 'none' } | { kind: 'failed'; reason: string };
 	  };
 
+/**
+ * The power source and battery level, as Overview's System card shows them (SPEC-MACHINE-DETAILS
+ * D13). Shared by the page and the Machines export.
+ */
+export function powerSourceLabel(report: PowerReport): string {
+	if (report.kind === 'unreported') {
+		return 'Not reported by this agent';
+	}
+	const percent = report.batteryPercent;
+	switch (report.source) {
+		case 'mains':
+			return percent === null ? 'Mains' : `Mains, battery ${percent}%`;
+		case 'battery':
+			return percent === null ? 'Battery' : `Battery, ${percent}%`;
+		case 'unknown':
+			return 'Unknown';
+	}
+}
+
 export type PowerLine = { text: string; tone: 'normal' | 'warning' | 'danger' };
 
 function battery(percent: number | null, onBattery: boolean): string {

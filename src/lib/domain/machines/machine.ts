@@ -39,6 +39,12 @@ export function gpuLabel(gpu: Gpu): string {
 	return `${gpu.name} (${gigabytes >= 1 ? `${Math.round(gigabytes)} GB` : formatBytes(bytes)})`;
 }
 
+/**
+ * One network adapter with addresses (SPEC-MACHINE-DETAILS D10). `mac` is '' or all zeros when the
+ * system gives none (a tunnel, for one).
+ */
+export type NetworkAdapter = { name: string; mac: string; addresses: string[] };
+
 /** The last person seen signed in at the machine (D7), kept after they sign out. */
 type LastUser = { kind: 'none' } | { kind: 'user'; name: string; seenIso: string };
 
@@ -66,8 +72,7 @@ export type MachineInventory =
 			cpuCores: number;
 			memoryTotalBytes: number;
 			disks: Disk[];
-			displayCount: number;
-			addresses: string[];
+			network: NetworkAdapter[];
 			gpus: Gpu[];
 			/** What a remote desktop depends on (SPEC-AGENT-LOGS 3). */
 			display: DisplayReport;

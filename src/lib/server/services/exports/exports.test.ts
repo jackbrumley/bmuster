@@ -65,14 +65,24 @@ async function setUp() {
 	return { database, admin, pat, reception, build, laptop };
 }
 
-/** A check-in from the machine with this inventory, with sarah.k signed in. */
+/** A check-in from the machine with this inventory, with sarah.k signed in, up for a minute. */
 function checkInWith(database: AppDatabase, machineId: string, data: InventoryWire, at: number) {
+	checkInUpFor(database, machineId, data, at, 60);
+}
+
+function checkInUpFor(
+	database: AppDatabase,
+	machineId: string,
+	data: InventoryWire,
+	at: number,
+	uptimeSeconds: number
+) {
 	recordCheckIn(
 		database,
 		{ machineId, checkInSeconds: 60 },
 		{
 			agentVersion: '0.1.0',
-			uptimeSeconds: 60,
+			uptimeSeconds,
 			update: { kind: 'no-launcher' },
 			signedInUser: { kind: 'user', name: 'sarah.k' },
 			load: { cpuPercent: 5, memoryUsedBytes: 1024 },
@@ -95,7 +105,14 @@ const FULL_INVENTORY: InventoryWire = {
 	network: [
 		{ name: 'eth0', mac: '00:11:22:33:44:55', addresses: ['10.0.0.5', 'fe80::1'] },
 		{ name: 'wlan0', mac: '66:77:88:99:aa:bb', addresses: ['192.168.1.20'] }
-	]
+	],
+	power: {
+		kind: 'reported',
+		source: 'mains',
+		batteryPercent: 80,
+		keepAwake: 'active',
+		inhibitor: { kind: 'held' }
+	}
 };
 
 const DETAIL_COLUMNS = [
@@ -113,7 +130,11 @@ const DETAIL_COLUMNS = [
 	'Graphics',
 	'Disks',
 	'Addresses',
-	'Display'
+	'Display',
+	'Uptime',
+	'Power',
+	'Graphics details',
+	'Network adapters'
 ];
 
 function machinesQuery(params: Record<string, string>) {
@@ -191,6 +212,11 @@ describe('Machines export (X5, X6)', () => {
 			null,
 			null,
 			null,
+			null,
+			// X14: no inventory and no check-in: Uptime, Power, Graphics details, Network adapters.
+			null,
+			null,
+			null,
 			null
 		]);
 
@@ -262,8 +288,8 @@ describe('Machines export (X5, X6)', () => {
 		// X12: a member gets the same detail columns (they see the same Overview), only no Groups.
 		const mine = exportMachines(database, pat, machinesQuery({}), NOW, NO_RELEASES);
 		expect(mine.header).toEqual(all.header.filter((name) => name !== 'Groups'));
-		expect(all.rows.map((row) => row.length)).toEqual([28, 28, 28]);
-		expect(mine.rows.map((row) => row.length)).toEqual([27, 27]);
+		expect(all.rows.map((row) => row.length)).toEqual([32, 32, 32]);
+		expect(mine.rows.map((row) => row.length)).toEqual([31, 31]);
 	});
 
 	it('X10: a fully inventoried machine: two graphics cards, several disks and adapters', async () => {
@@ -325,6 +351,54 @@ describe('Machines export (X5, X6)', () => {
 		expect(offline['Status']).toBe('Offline');
 		expect(offline['Memory used']).toBeNull();
 		expect(offline['Processor']).toBe('Test CPU');
+	});
+
+	it('X13: uptime, power, graphics vendor and driver, and each adapter, as on the Overview', async () => {
+		const { database, admin, reception } = await setUp();
+		// Up 3 days 4 h 59 min at the check-in; exported 90 s later, still online: 3 days 5 h.
+		checkInUpFor(database, reception, FULL_INVENTORY, NOW + 1000, 3 * 86_400 + 4 * 3600 + 59 * 60);
+		const result = exportMachines(
+			database,
+			admin,
+			machinesQuery({ search: 'reception' }),
+			NOW + 1000 + 90_000,
+			NO_RELEASES
+		);
+		const [row] = result.rows;
+		if (row === undefined) throw new Error('no row');
+		const detail = Object.fromEntries(result.header.map((name, index) => [name, row[index]]));
+		expect(detail).toMatchObject({
+			Status: 'Online',
+			Uptime: '3 days 5 h',
+			Power: 'Mains, battery 80%',
+			'Graphics details':
+				'NVIDIA GeForce RTX 4070 (12 GB): NVIDIA Corporation · driver nvidia 550.54; ' +
+				'Intel UHD Graphics 770: Intel Corporation · driver i915',
+			'Network adapters':
+				'eth0: MAC 00:11:22:33:44:55 · 10.0.0.5, fe80::1; wlan0: MAC 66:77:88:99:aa:bb · 192.168.1.20'
+		});
+		// The keep-awake state is Manage's (admins only); it never reaches the file.
+		expect(csvLine(row)).not.toMatch(/awake|held/i);
+	});
+
+	it('X14: uptime is empty while offline; inventory facts stay as last reported', async () => {
+		const { database, admin, laptop } = await setUp();
+		checkInWith(database, laptop, FULL_INVENTORY, NOW - DAY);
+		const result = exportMachines(
+			database,
+			admin,
+			machinesQuery({ search: 'laptop' }),
+			NOW,
+			NO_RELEASES
+		);
+		const [row] = result.rows;
+		if (row === undefined) throw new Error('no row');
+		const detail = Object.fromEntries(result.header.map((name, index) => [name, row[index]]));
+		expect(detail).toMatchObject({
+			Status: 'Offline',
+			Uptime: null,
+			Power: 'Mains, battery 80%'
+		});
 	});
 
 	it('X12: hardware names with commas and quotes are quoted in the file', async () => {

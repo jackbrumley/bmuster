@@ -36,3 +36,23 @@ export function formatRelative(iso: string, now: number): string {
 	}
 	return `${Math.round(hours / 24)} days ago`;
 }
+
+/** How long something has been running: "under a minute", "12 min", "5 h 12 min", "3 days 4 h". */
+export function formatDuration(totalSeconds: number): string {
+	const minutes = Math.floor(totalSeconds / 60);
+	if (minutes < 1) {
+		return 'under a minute';
+	}
+	if (minutes < 60) {
+		return `${minutes} min`;
+	}
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) {
+		const rest = minutes % 60;
+		return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+	}
+	const days = Math.floor(hours / 24);
+	const rest = hours % 24;
+	const dayWords = `${days} ${days === 1 ? 'day' : 'days'}`;
+	return rest === 0 ? dayWords : `${dayWords} ${rest} h`;
+}
