@@ -51,6 +51,7 @@
 		displays,
 		display,
 		settings,
+		agentVersion,
 		send,
 		backToScreen,
 		ontouchmode,
@@ -70,6 +71,7 @@
 		displays: readonly { value: string; label: string; count: undefined }[];
 		display: string | null;
 		settings: PictureSettings;
+		agentVersion: string;
 		send: (message: InputMessage) => void;
 		/** Gives the keyboard back to the screen after an action. */
 		backToScreen: () => void;
@@ -369,7 +371,7 @@
 					<KeysMenu {osFamily} {send} afterSend={backToScreen} />
 				{/if}
 				{#if settingsOpen && mode !== undefined && !typing}
-					<DesktopSettings {settings} onchange={onsettings} />
+					<DesktopSettings {settings} {agentVersion} onchange={onsettings} />
 				{/if}
 			</div>
 		{/if}

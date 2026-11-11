@@ -5,8 +5,20 @@
  * contracts in src/lib/schemas/desktop/.
  */
 
-export const DESKTOP_QUALITIES = ['auto', 'low', 'medium', 'high'] as const;
+import { compareAgentVersions } from '../machines/agent-version.ts';
+
+export const DESKTOP_QUALITIES = ['auto', 'low', 'medium', 'high', 'extra-high'] as const;
 export type DesktopQuality = (typeof DESKTOP_QUALITIES)[number];
+
+/** The first agent that knows `extra-high`; older ones refuse a setting they do not know. */
+const EXTRA_HIGH_FROM = '0.4.17';
+
+/** The qualities an agent of `agentVersion` accepts (SPEC-DESKTOP R10, version 2). */
+export function desktopQualitiesFor(agentVersion: string): readonly DesktopQuality[] {
+	return compareAgentVersions(agentVersion, EXTRA_HIGH_FROM) >= 0
+		? DESKTOP_QUALITIES
+		: DESKTOP_QUALITIES.filter((quality) => quality !== 'extra-high');
+}
 
 /** `fit` scales to the viewer's screen; a number is a fixed factor. */
 export const DESKTOP_SCALES = ['fit', 1, 0.75, 0.5, 0.25] as const;

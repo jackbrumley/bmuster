@@ -402,6 +402,7 @@
 		{#if open === 'settings' && session !== undefined && running && !fullScreen}
 			<DesktopSettings
 				settings={session.settings}
+				agentVersion={machine.agentVersion}
 				onchange={(next: PictureSettings) => session?.changeSettings(next)}
 			/>
 		{/if}
@@ -461,6 +462,7 @@
 					displays={displayOptions}
 					display={session.current ?? null}
 					settings={session.settings}
+					agentVersion={machine.agentVersion}
 					send={sendInput}
 					{backToScreen}
 					ontouchmode={(next: TouchMode) => (touchMode = next)}
@@ -494,6 +496,7 @@
 						{#if session !== undefined}
 							<DesktopSettings
 								settings={session.settings}
+								agentVersion={machine.agentVersion}
 								onchange={(next: PictureSettings) => session?.changeSettings(next)}
 							/>
 						{/if}

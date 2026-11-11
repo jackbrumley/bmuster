@@ -1,8 +1,8 @@
 <script lang="ts">
 	import {
 		DESKTOP_FRAME_RATES,
-		DESKTOP_QUALITIES,
 		DESKTOP_SCALES,
+		desktopQualitiesFor,
 		type DesktopQuality,
 		type DesktopSettings
 	} from '#lib/domain/desktop/messages.ts';
@@ -16,12 +16,26 @@
 	 */
 	let {
 		settings,
+		agentVersion,
 		onchange
-	}: { settings: DesktopSettings; onchange: (settings: DesktopSettings) => void } = $props();
+	}: {
+		settings: DesktopSettings;
+		/** Which qualities the machine's agent accepts. */
+		agentVersion: string;
+		onchange: (settings: DesktopSettings) => void;
+	} = $props();
 
-	const QUALITY_LABELS = { auto: 'Auto', low: 'Low', medium: 'Medium', high: 'High' } as const;
+	const QUALITY_LABELS = {
+		auto: 'Auto',
+		low: 'Low',
+		medium: 'Medium',
+		high: 'High',
+		'extra-high': 'Extra high'
+	} as const;
 
-	const qualities = DESKTOP_QUALITIES.map((value) => ({ value, label: QUALITY_LABELS[value] }));
+	const qualities = $derived(
+		desktopQualitiesFor(agentVersion).map((value) => ({ value, label: QUALITY_LABELS[value] }))
+	);
 	const scales = DESKTOP_SCALES.map((value) => ({
 		value: String(value),
 		label: value === 'fit' ? 'Fit' : `${value * 100}%`

@@ -402,3 +402,17 @@ Install the agent built from this branch with the usual install command (as Admi
 Report the step and the last lines of both logs for anything that ends the session, shows a black picture, or does nothing.
 
 **Risks and not tested here:** none of this has run on Windows yet. In particular: whether `SendSAS` accepts a call from the worker (a SYSTEM child of the service, not the process registered with the service manager; if not, the call has to move into the launcher's service process), DXGI on the Winlogon desktop (GDI is the fallback), the GDI picture of the UAC secure desktop, `CreateProcessAsUserW` without explicitly enabled privileges (as RustDesk does it), the input-desktop switch timing, the pipe ACL under a real SYSTEM token, and RDP-attached or multi-monitor consoles.
+
+## Picture quality, version 2 (IMPLEMENTED (pending release))
+
+Approved 2026-11-11. Jack: "even high quality feels a bit grainy ... maybe have an extra high that gets you close to native".
+
+- **Cause.** Every JPEG tile kept colour at half size each way (4:2:0), which smears coloured text, icons and thin lines whatever the quality number, so Low, Medium and High looked much alike.
+- **Full colour detail** (4:4:4) from JPEG quality 85 up: High, Extra high and Auto's top step. Below 85, colour stays 4:2:0 to save bandwidth.
+- **High** is JPEG 90 (was 85). **Extra high** (`extra-high`) is new: JPEG 95 with full colour, close to native for text and UI, at about 2.5–3 times High's old bandwidth.
+- **Older agents** refuse a quality they do not know, so the console offers Extra high only to agents 0.4.17 and later.
+
+| #      | Criterion                                          | Test                                                                |
+| :----- | :------------------------------------------------- | :------------------------------------------------------------------ |
+| R10.v2 | Quality 85 and up encodes 4:4:4; below, 4:2:0.     | Rust `encode::tiles::tests::high_qualities_keep_full_colour_detail` |
+| R10.v2 | Extra high is offered only to agents that know it. | `messages.test.ts` "R10"                                            |

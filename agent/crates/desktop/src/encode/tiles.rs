@@ -146,6 +146,20 @@ fn solid_colour(frame: &Frame, rect: Rect) -> Option<[u8; 4]> {
     Some(colour)
 }
 
+/// From this quality up, colour keeps full detail (4:4:4).
+pub const FULL_COLOUR_FROM: u8 = 85;
+
+/// Colour detail for a JPEG quality: below [`FULL_COLOUR_FROM`] colour is
+/// kept at half size each way (4:2:0), which smears coloured text and thin
+/// lines on a desktop whatever the quality number; from it, full detail.
+fn sampling_for(quality: u8) -> jpeg_encoder::SamplingFactor {
+    if quality >= FULL_COLOUR_FROM {
+        jpeg_encoder::SamplingFactor::R_4_4_4
+    } else {
+        jpeg_encoder::SamplingFactor::R_4_2_0
+    }
+}
+
 fn encode_jpeg(
     frame: &Frame,
     rect: Rect,
@@ -158,7 +172,9 @@ fn encode_jpeg(
         scratch.extend_from_slice(&frame.row(y)[range.clone()]);
     }
     let mut out = Vec::with_capacity(4096);
-    jpeg_encoder::Encoder::new(&mut out, quality)
+    let mut encoder = jpeg_encoder::Encoder::new(&mut out, quality);
+    encoder.set_sampling_factor(sampling_for(quality));
+    encoder
         .encode(
             scratch,
             rect.width as u16,
@@ -172,6 +188,13 @@ fn encode_jpeg(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn high_qualities_keep_full_colour_detail() {
+        assert!(matches!(sampling_for(84), jpeg_encoder::SamplingFactor::R_4_2_0));
+        assert!(matches!(sampling_for(85), jpeg_encoder::SamplingFactor::R_4_4_4));
+        assert!(matches!(sampling_for(95), jpeg_encoder::SamplingFactor::R_4_4_4));
+    }
 
     const RED: [u8; 4] = [0, 0, 255, 0];
     const GREEN: [u8; 4] = [0, 255, 0, 0];

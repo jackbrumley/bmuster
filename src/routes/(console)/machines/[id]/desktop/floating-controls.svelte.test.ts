@@ -34,6 +34,7 @@ async function setup(mode: DesktopMode | undefined) {
 		displays: [],
 		display: null,
 		settings: { quality: 'auto', scale: 'fit', maxFps: 15 },
+		agentVersion: '0.4.17',
 		send: (message: InputMessage) => {
 			sent.push(message);
 		},

@@ -38,6 +38,8 @@ pub enum Quality {
     Low,
     Medium,
     High,
+    /// Close to native for text and UI (SPEC-DESKTOP R10, version 2).
+    ExtraHigh,
 }
 
 impl Quality {
@@ -46,7 +48,8 @@ impl Quality {
             Quality::Auto => None,
             Quality::Low => Some(40),
             Quality::Medium => Some(65),
-            Quality::High => Some(85),
+            Quality::High => Some(90),
+            Quality::ExtraHigh => Some(95),
         }
     }
 }
