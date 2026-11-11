@@ -45,3 +45,19 @@ None: the icon and theme are presentation only. The tray change swaps embedded p
 - **Linux `.desktop` launchers** still name the stock `network-workgroup` icon; installing an icon file is installer work for a follow-up.
 
 - **Linux menu icon (added for 0.4.12).** `npm run icons:generate` also writes `agent/crates/agent/assets/bmuster.svg` (the full mark). The agent installs it as `/usr/share/icons/hicolor/scalable/apps/bmuster.svg` with the autostart and applications-menu entries (rewritten on every start when different, removed at uninstall), and both entries say `Icon=bmuster` instead of the stock `network-workgroup`.
+
+## Version 2: the night radar, with no tile (IMPLEMENTED (pending release))
+
+Approved 2026-11-11. Jack: the other apps' icons are "the naked shape of the icon"; BMuster's should be "just the circular element", with no square behind it. From the options page he chose D, the night disc, and accepted the recommendations: the mark on its own on bmuster.com, a brighter rim at small sizes, and the Linux tray drawing the SVG by name.
+
+1. **The drawing.** `docs/logo.svg` is a round dark radar screen (`face`, `#13200f`, a faint lime rim) with no tile. The rings are `#7f9a72`; the beam, sweep and centre are lime (`#a3e635`); the blips are pale lime (`#d9f99d`). The view box is cropped to the disc (`26 26 204 204`), so the mark fills its icon edge to edge.
+2. **Small version.** The same drops and thickening as before, plus a wider, brighter rim (`stroke-opacity` 0.6) so the disc's edge shows on a black panel.
+3. **iPhone icon.** iOS wants an opaque square, so `apple-touch-icon.png` fills the square with the disc's colour and iOS rounds it.
+4. **Linux tray by name.** The tray sends `IconName=bmuster-tray` as well as the pixels. The agent installs the small mark as `/usr/share/icons/hicolor/scalable/apps/bmuster-tray.svg` beside `bmuster.svg` (rewritten when different, removed at uninstall). A panel that finds it draws it sharp at any size; one that does not uses the 22, 32 and 48px pixels.
+5. **bmuster.com.** The hero shows the mark on its own at 92px with a soft green shadow, no tile.
+
+| #   | Criterion                                                                                                  | Named test                                                             |
+| :-- | :--------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------- |
+| I1  | (Replaces the light-look check.) The drawing is the night radar: a dark `face` disc, no `tile`, lime beam. | `tests/unit/icons.test.ts` "I1"                                        |
+| I5  | (Replaces "opaque tile".) Each tray icon is ARGB of its size with an opaque centre and clear corners.      | `icons.test.ts` "I5", Rust `each_tray_icon_is_square_argb_of_its_size` |
+| I6  | The tray names `bmuster-tray`, and the agent installs `bmuster-tray.svg` with the other shortcuts.         | `icons.test.ts` "I1" (generated file), Rust `shortcuts` tests          |

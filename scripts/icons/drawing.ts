@@ -67,25 +67,23 @@ function shortSweep(svg: string): string {
 
 export function small(full: string): string {
 	let svg = full;
-	for (const id of ['glow', 'ring-inner', 'blip-halo', 'blip-faint']) svg = drop(svg, id);
-	svg = change(svg, 'tile', { 'stroke-width': '8' });
-	svg = change(svg, 'ring-outer', { 'stroke-width': '14', 'stroke-opacity': '0.6' });
+	for (const id of ['ring-inner', 'blip-halo', 'blip-faint']) svg = drop(svg, id);
+	// A brighter, wider rim so the dark disc's edge still shows on a black panel.
+	svg = change(svg, 'face', { r: '97', 'stroke-width': '6', 'stroke-opacity': '0.6' });
+	svg = change(svg, 'ring-outer', { 'stroke-width': '14', 'stroke-opacity': '0.7' });
 	svg = change(svg, 'beam', { 'stroke-width': '20' });
 	svg = change(svg, 'centre', { r: '20' });
 	svg = change(svg, 'blip', { r: '18' });
 	return shortSweep(svg);
 }
 
-/** iOS rounds the corners itself, so its icon is the tile filling the square. */
+/** iOS wants an opaque square and rounds its corners itself, so its icon is the disc's colour filling the square. */
 export function fullBleed(svg: string): string {
-	return change(svg, 'tile', {
-		x: '0',
-		y: '0',
-		width: '256',
-		height: '256',
-		rx: '0',
-		'stroke-width': '0'
-	});
+	const face = find(svg, 'face');
+	const fill = /fill="([^"]+)"/.exec(face);
+	if (fill === null) throw new Error(`${SOURCE}: the face has no fill`);
+	const backdrop = `<rect id="backdrop" x="26" y="26" width="204" height="204" fill="${fill[1] ?? ''}"/>`;
+	return svg.replace(face, `${backdrop}\n\t${setAttributes(face, { 'stroke-width': '0' })}`);
 }
 
 function sized(svg: string, size: number): string {
@@ -130,7 +128,9 @@ export function svgFiles(sourceText: string): readonly (readonly [string, string
 		['docs/favicon.svg', sized(smallSvg, 32)],
 		['agent/crates/agent/assets/logo-small.svg', decorative(smallSvg, 32)],
 		// The Linux applications-menu and autostart icon (hicolor scalable).
-		['agent/crates/agent/assets/bmuster.svg', source]
+		['agent/crates/agent/assets/bmuster.svg', source],
+		// The Linux tray icon by name (hicolor scalable), drawn sharp at any panel size.
+		['agent/crates/agent/assets/bmuster-tray.svg', sized(smallSvg, 22)]
 	];
 }
 

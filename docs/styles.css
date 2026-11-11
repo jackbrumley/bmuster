@@ -929,7 +929,7 @@ h3 {
   .button:hover, .app-tile:hover, .screenshot-card:hover img { transform: none; }
 }
 
-/* BMuster's mark is its own dark tile, so it fills the hero tile edge to edge
-   instead of sitting on the gradient tile the other app pages use. */
-.hero-tile-solid { background: none; box-shadow: var(--tile-glow); overflow: hidden; }
-.hero-tile-solid img { width: 92px; height: 92px; filter: none; }
+/* BMuster's mark is a round radar with no tile of its own, so it stands on
+   the hero by itself instead of on the gradient tile the other app pages use. */
+.hero-tile-solid { background: none; box-shadow: none; border-radius: 50%; }
+.hero-tile-solid img { width: 92px; height: 92px; filter: drop-shadow(0 8px 18px rgba(77, 124, 15, 0.3)); }

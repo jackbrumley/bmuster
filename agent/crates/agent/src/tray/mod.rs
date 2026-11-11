@@ -80,9 +80,11 @@ mod tests {
         assert_eq!(sizes, [22, 32, 48]);
         for (edge, pixels) in super::ICONS {
             assert_eq!(pixels.len(), (edge * edge * 4) as usize, "{edge}px icon");
-            // The tile's centre is opaque: ARGB starts with alpha.
+            // The disc's centre is opaque and the corners outside it are clear:
+            // ARGB starts with alpha.
             let centre = ((edge / 2 * edge + edge / 2) * 4) as usize;
             assert_eq!(pixels[centre], 255, "{edge}px icon centre alpha");
+            assert_eq!(pixels[0], 0, "{edge}px icon corner alpha");
         }
     }
 }

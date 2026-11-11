@@ -49,6 +49,11 @@ impl Tray for AgentTray {
     fn title(&self) -> String {
         format!("BMuster: {}", self.state)
     }
+    /// Panels look the name up in the icon theme first; the pixels below are
+    /// for a panel that cannot (StatusNotifierItem carries both).
+    fn icon_name(&self) -> String {
+        TRAY_ICON_NAME.into()
+    }
     fn icon_pixmap(&self) -> Vec<Icon> {
         super::ICONS
             .iter()
@@ -111,6 +116,9 @@ pub fn run() -> Result<()> {
 pub const AUTOSTART: &str = "/etc/xdg/autostart/bmuster-agent.desktop";
 /// Where the desktop looks up `Icon=bmuster`.
 const APP_ICON: &str = "/usr/share/icons/hicolor/scalable/apps/bmuster.svg";
+/// The tray's own icon name: the small mark, so the panel draws it sharp at any size.
+const TRAY_ICON_NAME: &str = "bmuster-tray";
+const TRAY_ICON: &str = "/usr/share/icons/hicolor/scalable/apps/bmuster-tray.svg";
 
 /// The staging folder for rewritten shortcuts, under the data folder.
 const STAGED_SHORTCUTS: &str = "staged-shortcuts";
@@ -118,13 +126,14 @@ const STAGED_SHORTCUTS: &str = "staged-shortcuts";
 /// The autostart entry, the applications-menu entry and their icon, each with the text
 /// this version writes: both start the current program under /opt
 /// (SPEC-TRAY-SESSIONS 5).
-pub fn shortcuts() -> [(&'static str, String); 3] {
+pub fn shortcuts() -> [(&'static str, String); 4] {
     let program = crate::paths::CURRENT_PROGRAM;
     [
         (AUTOSTART, format!("[Desktop Entry]\nType=Application\nName=BMuster Agent\nComment=Show the BMuster connection status\nExec={program} tray\nIcon=bmuster\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")),
         ("/usr/share/applications/bmuster-agent.desktop", format!("[Desktop Entry]\nType=Application\nName=BMuster\nComment=Open this computer's BMuster management page\nExec={program} tray --open\nIcon=bmuster\nTerminal=false\nCategories=System;RemoteAccess;\n")),
         // The radar, so the menu and autostart entries show BMuster's own icon.
         (APP_ICON, include_str!("../../assets/bmuster.svg").to_string()),
+        (TRAY_ICON, include_str!("../../assets/bmuster-tray.svg").to_string()),
     ]
 }
 

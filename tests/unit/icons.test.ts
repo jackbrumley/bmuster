@@ -26,10 +26,11 @@ describe('icons from one drawing (SPEC-BRAND-ICON)', () => {
 		}
 	});
 
-	it('I1: the drawing keeps the light-mode look: white tile, brand green, muted rings', () => {
-		expect(sourceText).toMatch(/<rect id="tile"[^>]*fill="#ffffff"/);
-		expect(sourceText).toMatch(/<path id="beam"[^>]*stroke="#46720e"/);
-		expect(sourceText).toMatch(/<circle id="ring-outer"[^>]*stroke="#657061"/);
+	it('I1: the drawing is the night radar: a dark disc with no tile, a lime beam, muted rings', () => {
+		expect(sourceText).not.toContain('id="tile"');
+		expect(sourceText).toMatch(/<circle id="face"[^>]*fill="#13200f"/);
+		expect(sourceText).toMatch(/<path id="beam"[^>]*stroke="#a3e635"/);
+		expect(sourceText).toMatch(/<circle id="ring-outer"[^>]*stroke="#7f9a72"/);
 		for (const id of ['ring-inner', 'blip', 'blip-faint', 'blip-halo', 'centre', 'sweep']) {
 			expect(sourceText).toContain(`id="${id}"`);
 		}
@@ -58,9 +59,13 @@ describe('icons from one drawing (SPEC-BRAND-ICON)', () => {
 		}
 	});
 
-	it('I5: each tray icon is raw ARGB of its size', () => {
+	it('I5: each tray icon is raw ARGB of its size: an opaque disc with clear corners', () => {
 		for (const size of TRAY_SIZES) {
-			expect(readFileSync(trayFile(size)).length).toBe(size * size * 4);
+			const pixels = readFileSync(trayFile(size));
+			expect(pixels.length).toBe(size * size * 4);
+			const centre = (Math.floor(size / 2) * size + Math.floor(size / 2)) * 4;
+			expect(pixels[centre], `${String(size)}px centre alpha`).toBe(255);
+			expect(pixels[0], `${String(size)}px corner alpha`).toBe(0);
 		}
 	});
 });

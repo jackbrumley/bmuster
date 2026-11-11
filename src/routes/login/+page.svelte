@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import { IconBrandWindows, IconShieldLock } from '@tabler/icons-svelte-runes';
+	import {
+		IconBrandWindows,
+		IconDeviceDesktopPlus,
+		IconShieldLock
+	} from '@tabler/icons-svelte-runes';
 	import PublicPage from '#lib/shell/public-page.svelte';
 	import Button from '#lib/ui/button.svelte';
 	import TextField from '#lib/ui/text-field.svelte';
@@ -81,6 +85,11 @@
 	{#if data.canResetByEmail}
 		<p class="forgot"><a href={resolve('/login/forgot')}>Forgot your password?</a></p>
 	{/if}
+	<!-- Someone enrolling a computer uses an enrolment code, not a password (SPEC-JOIN J14). -->
+	<p class="divider"><span>Adding a computer?</span></p>
+	<a class="join" href={resolve('/join')}
+		><IconDeviceDesktopPlus size={20} />Enrol this computer with a code</a
+	>
 </PublicPage>
 
 <style>
@@ -126,6 +135,24 @@
 
 	.forgot a {
 		color: var(--brand);
+	}
+
+	.join {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-2);
+		min-height: 48px;
+		padding: var(--space-2) var(--space-4);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-pill);
+		color: var(--brand);
+		font-weight: var(--weight-semibold);
+		text-decoration: none;
+	}
+
+	.join:hover {
+		background: var(--surface-muted);
 	}
 
 	.problem {

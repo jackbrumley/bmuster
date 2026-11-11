@@ -116,13 +116,19 @@ pub fn create_and_start(spec: &ServiceSpec) -> Result<()> {
         .context("could not start the service")
 }
 
+/// What setting the rescue rules needs: changing the configuration, and
+/// starting the service, because the rules include restarts.
+pub const RESCUE_ACCESS: ServiceAccess = ServiceAccess::CHANGE_CONFIG.union(ServiceAccess::START);
+
 /// After two restarts in five minutes, runs `command` (the agent's rescue
 /// copy). Only crashes count: a clean stop with an exit code (a removed
 /// machine) is not a failure.
 pub fn set_rescue_actions(name: &str, command: &OsStr) -> Result<()> {
     let manager = manager(ServiceManagerAccess::CONNECT)?;
+    // Windows refuses restart actions ("Access is denied") unless the handle
+    // may also start the service (ChangeServiceConfig2, SC_ACTION_RESTART).
     let service = manager
-        .open_service(name, ServiceAccess::CHANGE_CONFIG)
+        .open_service(name, RESCUE_ACCESS)
         .context("could not open the service")?;
     let restart = ServiceAction {
         action_type: ServiceActionType::Restart,
@@ -276,6 +282,14 @@ pub fn status(state: ServiceState, exit_code: u32) -> ServiceStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A restart action needs SERVICE_START on the handle; without it Windows
+    /// 10 refused the installer with "Access is denied" (os error 5).
+    #[test]
+    fn rescue_rules_open_the_service_with_start_access() {
+        assert!(RESCUE_ACCESS.contains(ServiceAccess::CHANGE_CONFIG));
+        assert!(RESCUE_ACCESS.contains(ServiceAccess::START));
+    }
 
     fn spec(account: Account) -> ServiceSpec {
         ServiceSpec {
