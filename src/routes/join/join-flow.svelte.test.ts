@@ -50,16 +50,16 @@ async function enterCode() {
 		params: {},
 		form: null
 	});
-	await screen.getByRole('textbox', { name: 'Support code' }).fill('123456');
+	await screen.getByRole('textbox', { name: 'Enrolment code' }).fill('123456');
 	await expect
-		.element(screen.getByRole('textbox', { name: 'Support code' }))
+		.element(screen.getByRole('textbox', { name: 'Enrolment code' }))
 		.toHaveValue('123\u2002456');
 	await screen.getByRole('button', { name: 'Continue', exact: true }).click();
 	await expect.element(screen.getByText('Ada Support', { exact: true })).toBeVisible();
 	return screen;
 }
 
-describe('phone support journey (SPEC-JOIN J6–J10)', () => {
+describe('enrolment journey (SPEC-JOIN J6–J10)', () => {
 	it('shows who gets access and requires every safe answer before offering the command', async () => {
 		const api = stubJoin();
 		const screen = await enterCode();
@@ -78,7 +78,7 @@ describe('phone support journey (SPEC-JOIN J6–J10)', () => {
 		expect(screen.container.textContent).not.toContain('Windows PowerShell');
 		api.connect();
 		await expect
-			.element(screen.getByText('Ada Support can now help you.', { exact: false }))
+			.element(screen.getByText('This computer is now managed by Example IT.', { exact: false }))
 			.toBeVisible();
 	});
 

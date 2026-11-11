@@ -126,15 +126,15 @@ function manualSection(container: HTMLElement): HTMLDetailsElement {
 }
 
 describe('Add machine: install manually', () => {
-	it('presents Quick join before the secondary manual install method', async () => {
+	it('presents the enrolment code before the secondary manual install method', async () => {
 		const screen = await renderPage(DOWNLOADS, false);
 		const headings = [...screen.container.querySelectorAll('h2')].map(
 			(heading) => heading.textContent
 		);
-		expect(headings.indexOf('Quick join')).toBeGreaterThanOrEqual(0);
-		expect(headings.indexOf('Quick join')).toBeLessThan(headings.indexOf('Manual install'));
+		expect(headings.indexOf('Enrolment code')).toBeGreaterThanOrEqual(0);
+		expect(headings.indexOf('Enrolment code')).toBeLessThan(headings.indexOf('Manual install'));
 		await expect
-			.element(screen.getByText(/With the person at their computer or helping from elsewhere/))
+			.element(screen.getByText(/Give the person at the computer a short enrolment code/))
 			.toBeVisible();
 	});
 

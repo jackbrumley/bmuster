@@ -4,7 +4,7 @@ import { organisationName } from '#lib/server/services/settings/settings.ts';
 import type { PageServerLoad } from './$types';
 
 /**
- * The public phone support page (SPEC-JOIN). Before a valid code it exposes
+ * The public enrolment page (SPEC-JOIN). Before a valid code it exposes
  * only the organisation name (J5); the rest comes from /join/check and
  * /join/install once a code is typed.
  */

@@ -22,7 +22,7 @@ export type SettingSection = 'general' | 'security' | 'phone-support';
 export const SETTING_SECTIONS: readonly { id: SettingSection; title: string }[] = [
 	{ id: 'general', title: 'General' },
 	{ id: 'security', title: 'Security' },
-	{ id: 'phone-support', title: 'Phone support' }
+	{ id: 'phone-support', title: 'Enrolment page' }
 ];
 
 type SettingDefinition<T> = {
@@ -142,7 +142,7 @@ export const SETTING_DEFINITIONS = {
 	organisationName: {
 		label: 'Organisation name',
 		description:
-			'Who callers are told will get access on the phone support page: “<support person> at <organisation> will be able to see and control this computer”. Blank uses this server’s address.',
+			'Named on the enrolment page (/join) as the organisation that will manage the computer: “Add this computer to <organisation>”. Blank uses this server’s address.',
 		schema: textSchema(ORGANISATION_NAME_MAX, false),
 		defaultValue: '',
 		changedBy: 'admin',
@@ -152,7 +152,7 @@ export const SETTING_DEFINITIONS = {
 	scamImpersonators: {
 		label: 'Who scammers pretend to be',
 		description:
-			'In the warning on the phone support page: “Scammers pretend to be from <this>, and ask you to install remote access.”',
+			'In the warning on the enrolment page: “Scammers pretend to be from <this>, and ask you to install remote access.”',
 		schema: textSchema(SCAM_TEXT_MAX, true),
 		defaultValue: 'Microsoft, your bank, the police, the NBN or a computer company',
 		changedBy: 'admin',
@@ -161,7 +161,8 @@ export const SETTING_DEFINITIONS = {
 	} satisfies SettingDefinition<string>,
 	scamReportAdvice: {
 		label: 'Where to report a scam',
-		description: 'Shown when a caller’s answers look like a scam. Web addresses become links.',
+		description:
+			'Shown when the answers on the enrolment page look like a scam. Web addresses become links.',
 		schema: textSchema(SCAM_TEXT_MAX, true),
 		defaultValue:
 			'Report it to Scamwatch: https://www.scamwatch.gov.au/report-a-scam, or call ReportCyber on 1300 292 371.',

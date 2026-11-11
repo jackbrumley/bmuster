@@ -28,7 +28,7 @@
 	 * Manual install (SPEC-ENROLMENT 4): a join code and one-line install
 	 * command, with a downloadable-agent option underneath (SPEC-INSTALL-OPTIONS M1–M4).
 	 * In local network mode the commands carry the certificate pin (L5, L6).
-	 * Quick join (SPEC-JOIN J12) is the primary path and carries its own groups.
+	 * Enrolment codes (SPEC-JOIN J12) are the primary path and carries its own groups.
 	 */
 	let {
 		origin,
@@ -89,8 +89,8 @@
 
 <Panel heading="Manual install" actions={undefined} tone="normal" padding="normal">
 	<p class="intro">
-		Use this when you can run an administrator command on the computer. For a code-based setup, use
-		Quick join above.
+		Use this when you can run an administrator command on the computer. Otherwise, use an enrolment
+		code above.
 	</p>
 	<div class="code-row">
 		<div>

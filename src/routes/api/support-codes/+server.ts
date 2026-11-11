@@ -8,7 +8,7 @@ import { createSupportCode } from '#lib/server/services/agents/support-codes.ts'
 import { invalidRequest, readJson } from '../replies.server.ts';
 import type { RequestHandler } from './$types';
 
-/** POST /api/support-codes: start phone support (admins), with Add machine's groups (SPEC-JOIN J1). */
+/** POST /api/support-codes: create an enrolment code (admins), with Add machine's groups (SPEC-JOIN J1). */
 export const POST: RequestHandler = route.admin(async ({ request }, { user }) => {
 	const parsed = createSupportCodeRequestSchema.safeParse(await readJson(request));
 	if (!parsed.success) {

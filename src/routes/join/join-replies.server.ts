@@ -2,7 +2,7 @@ import type { JoinRefusal } from '#lib/server/services/agents/support-codes.ts';
 
 /** The one message for every wrong code, so /join never says whether a code existed (SPEC-JOIN J5). */
 export const WRONG_CODE =
-	'That code doesn’t work. Check the numbers, or ask your support person for a new one.';
+	'That code doesn’t work. Check the numbers, or ask your IT administrator for a new one.';
 
 /** 404 for a wrong code; 429 with Retry-After while the guessing limits pause (J4). */
 export function joinRefusal(refusal: JoinRefusal, now: number): Response {

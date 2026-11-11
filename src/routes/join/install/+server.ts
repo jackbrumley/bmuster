@@ -14,9 +14,9 @@ import { joinRefusal } from '../join-replies.server.ts';
 import type { RequestHandler } from './$types';
 
 /**
- * POST /join/install: public. Three safe answers and an open support code →
+ * POST /join/install: public. Three safe answers and an open enrolment code →
  * the one-line install command for each OS the server has a build for, with
- * the join code behind the support code and, in local network mode, the
+ * the join code behind the enrolment code and, in local network mode, the
  * certificate pin (SPEC-JOIN J7, J9).
  */
 export const POST: RequestHandler = route.public(async (event) => {

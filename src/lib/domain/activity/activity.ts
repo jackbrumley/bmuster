@@ -307,13 +307,13 @@ export function activityLabel(kind: AuditKind): string {
 		case 'machine-online':
 			return 'A machine came back online';
 		case 'support-code-started':
-			return 'Started phone support';
+			return 'Created an enrolment code';
 		case 'support-code-cancelled':
-			return 'Cancelled a support code';
+			return 'Cancelled an enrolment code';
 		case 'support-code-entered':
-			return 'A support code was entered on /join';
+			return 'An enrolment code was entered on /join';
 		case 'support-code-scam-stop':
-			return 'A support code was stopped by the scam check';
+			return 'An enrolment code was stopped by the scam check';
 		case 'machine-power-policy-changed':
 			return 'Changed Stay awake on mains power';
 	}

@@ -72,7 +72,7 @@ describe('support codes: start (J1)', () => {
 			expect.objectContaining({
 				kind: 'support-code-started',
 				actorUserId: adminId,
-				target: 'Phone support'
+				target: 'Enrolment code'
 			})
 		);
 		// No support code ever lands in Activity.
@@ -121,7 +121,7 @@ describe('support codes: checking on /join (J2, J6)', () => {
 		expect(entered).toEqual([
 			expect.objectContaining({
 				actorUserId: null,
-				target: 'Support code from ada',
+				target: 'Enrolment code from ada',
 				detail: { address: '198.51.100.7' }
 			})
 		]);
@@ -253,7 +253,7 @@ describe('support codes: the scam check stop (J8)', () => {
 			expect.objectContaining({
 				kind: 'support-code-scam-stop',
 				actorUserId: null,
-				target: 'Support code from ada',
+				target: 'Enrolment code from ada',
 				detail: {
 					question: 'Has anyone asked you to log in to your bank, buy gift cards, or send money?',
 					address: '198.51.100.7'

@@ -11,7 +11,7 @@ import { joinRefusal } from '../join-replies.server.ts';
 import type { RequestHandler } from './$types';
 
 /**
- * POST /join/check: public. A typed support code → who gets access, or
+ * POST /join/check: public. A typed enrolment code → who gets access, or
  * "connected" once the machine has joined (the page polls this). Anything
  * else is one fixed refusal (SPEC-JOIN J2, J5, J6).
  */

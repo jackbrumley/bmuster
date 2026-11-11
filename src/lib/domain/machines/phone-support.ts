@@ -1,18 +1,18 @@
 /**
- * Phone support and the public /join page (SPEC-JOIN): the support code's
+ * Enrolment codes and the public /join page (SPEC-JOIN): the enrolment code's
  * shape, the scam check's questions, and what the page works out for
  * itself. Browser-safe.
  */
 
-/** How long a support code (and the join code behind it) lasts. */
+/** How long an enrolment code (and the join code behind it) lasts. */
 export const SUPPORT_CODE_MINUTES = 15;
 
-/** A support code as people read it out: "482 913". */
+/** An enrolment code as people read it out: "482 913". */
 export function formatSupportCode(digits: string): string {
 	return `${digits.slice(0, 3)} ${digits.slice(3)}`;
 }
 
-/** What a caller typed, as the six digits, or undefined when it cannot be a support code. */
+/** What a caller typed, as the six digits, or undefined when it cannot be an enrolment code. */
 export function supportCodeDigits(typed: string): string | undefined {
 	const digits = typed.replace(/[\s-]/g, '');
 	return /^\d{6}$/.test(digits) ? digits : undefined;
@@ -36,7 +36,7 @@ export type ScamQuestion = {
 export const SCAM_QUESTIONS: readonly ScamQuestion[] = [
 	{
 		id: 'contacted',
-		text: 'Did you contact this person, or are they your workplace’s IT?',
+		text: 'Did this code come from your workplace’s IT, or from someone you contacted yourself?',
 		options: [
 			{ value: 'yes', label: 'Yes' },
 			{ value: 'no', label: 'No' }

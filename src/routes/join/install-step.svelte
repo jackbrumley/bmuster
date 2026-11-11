@@ -58,16 +58,16 @@
 </script>
 
 <div class="step">
-	<h1>Install the helper</h1>
+	<h1>Install the BMuster agent</h1>
 
 	{#if detected === 'phone'}
-		<Notice tone="info" title="Use the computer you need help with">
+		<Notice tone="info" title="Use the computer you are enrolling">
 			<p>Open this page on that computer, so you can copy the command there.</p>
 		</Notice>
 	{/if}
 
 	{#if !anyReady}
-		<p class="plain">This server can’t add computers yet. Tell {supportPerson}.</p>
+		<p class="plain">This server can’t enrol computers yet. Tell {supportPerson}.</p>
 	{:else}
 		<ChipGroup
 			label="Your computer"
@@ -82,7 +82,7 @@
 		/>
 
 		{#if os === 'macos'}
-			<p class="plain">Mac computers are not available yet. Tell {supportPerson}.</p>
+			<p class="plain">Mac computers can’t be enrolled yet. Tell {supportPerson}.</p>
 		{:else if command?.kind === 'ready'}
 			<ol class="steps">
 				{#if os === 'windows'}
@@ -126,7 +126,7 @@
 	{/if}
 
 	<p class="waiting" aria-live="polite">
-		<RadarSpinner size="small" /> Waiting for your computer to connect…
+		<RadarSpinner size="small" /> Waiting for this computer to enrol…
 	</p>
 </div>
 

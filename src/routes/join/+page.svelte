@@ -4,12 +4,12 @@
 	import JoinFlow from './join-flow.svelte';
 	import type { PageProps } from './$types';
 
-	/** The public phone support page (SPEC-JOIN): code, who gets access, scam check, command. */
+	/** The public enrolment page (SPEC-JOIN): code, who gets access, scam check, command. */
 	let { data }: PageProps = $props();
 </script>
 
 <svelte:head>
-	<title>Get help · BMuster</title>
+	<title>Enrol this computer · BMuster</title>
 </svelte:head>
 
 <JoinFlow organisation={data.organisation}>

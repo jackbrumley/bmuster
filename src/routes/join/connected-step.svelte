@@ -4,8 +4,8 @@
 	import { LOCAL_PAGE_ADDRESS } from '#lib/domain/machines/phone-support.ts';
 	import CopyField from '#lib/ui/copy-field.svelte';
 
-	/** The computer has joined (SPEC-JOIN J10), and how to remove the helper later. */
-	let { supportPerson }: { supportPerson: string } = $props();
+	/** The computer has enrolled (SPEC-JOIN J10), and how to remove the agent later. */
+	let { organisation, supportPerson }: { organisation: string; supportPerson: string } = $props();
 
 	const windows = agentCommands('windows');
 	const linux = agentCommands('linux');
@@ -14,8 +14,11 @@
 <div class="step">
 	<div class="title">
 		<IconCircleCheck size={48} stroke={1.75} />
-		<h1>Connected. {supportPerson} can now help you.</h1>
+		<h1>Enrolled. This computer is now managed by {organisation}.</h1>
 	</div>
+	<p class="who">
+		People at {organisation} with access, such as {supportPerson}, can now see and control it.
+	</p>
 
 	<section class="remove" aria-labelledby="remove-heading">
 		<h2 id="remove-heading">To remove it later</h2>
@@ -25,8 +28,8 @@
 			<p>On Linux, in <strong>Terminal</strong>:</p>
 			<CopyField value={linux.uninstall} label="Linux uninstall command" />
 			<p>
-				Or open <strong>{LOCAL_PAGE_ADDRESS}</strong> on this computer: the helper’s own page can remove
-				it too.
+				Or open <strong>{LOCAL_PAGE_ADDRESS}</strong> on this computer: the BMuster agent’s own page can
+				remove it too.
 			</p>
 		</div>
 	</section>
@@ -50,6 +53,12 @@
 		font-size: var(--text-xl);
 		font-weight: var(--weight-bold);
 		color: var(--text);
+	}
+
+	.who {
+		font-size: var(--text-base);
+		line-height: 1.4;
+		text-align: center;
 	}
 
 	h2 {
