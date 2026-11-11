@@ -4,7 +4,7 @@
 	import Panel from '#lib/ui/panel.svelte';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
 	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
-	import { osLabel, signedInUserOf, type Gpu } from '#lib/domain/machines/machine.ts';
+	import { gpuLabel, osLabel, signedInUserOf } from '#lib/domain/machines/machine.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import { canSendUserMessage } from '#lib/domain/machines/user-message.ts';
 	import DisplayCard from './display-card.svelte';
@@ -27,17 +27,6 @@
 			clearInterval(timer);
 		};
 	});
-
-	/** "NVIDIA GeForce RTX 4070 (12 GB)": the card, with its video memory when known (D8). */
-	function gpuLabel(gpu: Gpu): string {
-		if (gpu.memoryBytes.kind === 'unknown') {
-			return gpu.name;
-		}
-		// Video memory comes in whole gigabytes on any card that has that much.
-		const bytes = gpu.memoryBytes.bytes;
-		const gigabytes = bytes / 1024 ** 3;
-		return `${gpu.name} (${gigabytes >= 1 ? `${Math.round(gigabytes)} GB` : formatBytes(bytes)})`;
-	}
 
 	const facts = $derived.by(() => {
 		const list = [

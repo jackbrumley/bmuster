@@ -2,14 +2,19 @@ import type { ReleaseLookup } from '../agents/releases.ts';
 import { consentLabel, permissionLabel } from '#lib/domain/access/access.ts';
 import { activityLabel, type ActivityEntry } from '#lib/domain/activity/activity.ts';
 import { activitySentence } from '#lib/domain/activity/local-page-activity.ts';
-import { osLabel, type Machine } from '#lib/domain/machines/machine.ts';
+import type { MachineUpdateState } from '#lib/domain/machines/agent-updates.ts';
+import { updateBadge } from '#lib/domain/machines/agent-updates.ts';
+import { displayFacts } from '#lib/domain/machines/display-report.ts';
+import { gpuLabel, osLabel, type Machine } from '#lib/domain/machines/machine.ts';
 import {
 	machinesInOrder,
 	machinesMatching,
 	toMachineRow
 } from '#lib/domain/machines/machine-row.ts';
+import { inUseLabel } from '#lib/domain/sessions/session.ts';
 import { roleLabel, signInSummary, type ConsoleUser } from '#lib/domain/users/user.ts';
 import type { ActivityExportQuery, MachinesExportQuery } from '#lib/schemas/exports/exports.ts';
+import { formatBytes, percentOf } from '#lib/utils/format.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { activityScopeFor, canSeeGroups, visibleMachineIds } from '../access/access.ts';
 import { listMachineGroups, listUserGroups } from '../access/groups.ts';
@@ -125,7 +130,8 @@ export function exportMachines(
 		'Last seen',
 		...(groups.kind === 'shown' ? ['Groups'] : []),
 		'Agent version',
-		'Description'
+		'Description',
+		...MACHINE_DETAIL_COLUMNS.map((column) => column.header)
 	];
 	const lines = shown.map(({ machine, cpuPercent, memoryPercent, disk }): CsvCell[] => [
 		machine.name,
@@ -140,7 +146,8 @@ export function exportMachines(
 		machine.lastSeenIso,
 		...(groups.kind === 'shown' ? [(groups.byMachine.get(machine.id) ?? []).join(JOIN)] : []),
 		machine.agentVersion,
-		machine.description
+		machine.description,
+		...MACHINE_DETAIL_COLUMNS.map((column) => column.cell(machine))
 	]);
 	const search = query.search.trim();
 	const filters = {
@@ -157,6 +164,90 @@ export function exportMachines(
 		{ header, rows: lines, dataRows: lines.length, filters },
 		now
 	);
+}
+
+type KnownInventory = Extract<Machine['inventory'], { kind: 'known' }>;
+
+/** A column read from the inventory: empty until the first one arrives (X11). */
+function reported(cell: (inventory: KnownInventory) => CsvCell): (machine: Machine) => CsvCell {
+	return (machine) => (machine.inventory.kind === 'known' ? cell(machine.inventory) : null);
+}
+
+/** Items in one cell, or an empty cell when there are none. */
+function joined(items: readonly string[]): string | null {
+	return items.length > 0 ? items.join(JOIN) : null;
+}
+
+/**
+ * Every other fact the machine's header and Overview tab show (X9–X12), in the Overview's labels
+ * and units, to anyone with `view` on it: nothing from Manage, Notes or the parts of the inventory
+ * the page leaves out.
+ */
+const MACHINE_DETAIL_COLUMNS: { header: string; cell: (machine: Machine) => CsvCell }[] = [
+	{ header: 'Agent update', cell: (machine) => updateLabel(machine.update) },
+	{ header: 'Enrolled', cell: (machine) => machine.enrolledIso },
+	{
+		header: 'Signed in',
+		cell: ({ live }) =>
+			live.kind === 'known'
+				? live.signedInUser.kind === 'user'
+					? live.signedInUser.name
+					: 'Nobody'
+				: null
+	},
+	{
+		header: 'In use',
+		cell: (machine) => (machine.inUse.length > 0 ? inUseLabel(machine.inUse) : null)
+	},
+	{
+		header: 'Last user seen',
+		cell: ({ lastUser }) => (lastUser.kind === 'user' ? lastUser.seenIso : null)
+	},
+	{
+		// Live figures show only while the machine is online, as on the Overview.
+		header: 'Memory used',
+		cell: ({ status, live }) =>
+			status.kind === 'online' && live.kind === 'known' ? formatBytes(live.memoryUsedBytes) : null
+	},
+	{
+		header: 'Pending updates',
+		cell: reported(({ updates }) => (updates.kind === 'known' ? updates.count : null))
+	},
+	{ header: 'OS build', cell: reported(({ osBuild }) => (osBuild === '' ? null : osBuild)) },
+	{ header: 'Processor', cell: reported(({ cpuModel }) => cpuModel) },
+	{ header: 'Cores', cell: reported(({ cpuCores }) => cpuCores) },
+	{
+		header: 'Memory total',
+		cell: reported(({ memoryTotalBytes }) => formatBytes(memoryTotalBytes))
+	},
+	{ header: 'Graphics', cell: reported(({ gpus }) => joined(gpus.map(gpuLabel))) },
+	{
+		header: 'Disks',
+		cell: reported(({ disks }) =>
+			joined(
+				disks.map(
+					(disk) =>
+						`${disk.mount} ${formatBytes(disk.usedBytes)} of ${formatBytes(disk.sizeBytes)} (${percentOf(disk.usedBytes, disk.sizeBytes)}%)`
+				)
+			)
+		)
+	},
+	{ header: 'Addresses', cell: reported(({ addresses }) => joined(addresses)) },
+	{
+		header: 'Display',
+		cell: reported(({ display }) =>
+			joined(displayFacts(display).map((fact) => `${fact.label}: ${fact.value}`))
+		)
+	}
+];
+
+/** The header's update badge, "Up to date", or empty when there is no signed build to compare with. */
+function updateLabel(state: MachineUpdateState): string | null {
+	const badge = updateBadge(state);
+	if (badge.kind === 'shown') {
+		return badge.label;
+	}
+	return state.kind === 'up-to-date' ? 'Up to date' : null;
 }
 
 /** "Ubuntu" once the inventory is in, else the family ("Linux"). */

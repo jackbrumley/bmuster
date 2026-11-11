@@ -72,7 +72,7 @@ type WindowsSystem =
 			sasPolicy: { kind: 'not-set' } | { kind: 'set'; value: number };
 	  };
 
-export type WindowsDisplay = {
+type WindowsDisplay = {
 	kind: 'windows';
 	console: { kind: 'none' } | { kind: 'user'; name: string };
 	system: WindowsSystem;
@@ -112,7 +112,7 @@ function cardLabel(card: DrmCard): string {
 }
 
 /** The Display card's facts, in display order. */
-export function linuxDisplayFacts(report: LinuxDisplay): DisplayFact[] {
+function linuxDisplayFacts(report: LinuxDisplay): DisplayFact[] {
 	return [
 		{ label: 'Session', value: seatLabel(report.seat) },
 		...report.cards.map((card) => ({ label: card.name, value: cardLabel(card) })),
@@ -158,7 +158,7 @@ function sasLabel(policy: { kind: 'not-set' } | { kind: 'set'; value: number }):
 }
 
 /** The Display card's facts for Windows, in display order. */
-export function windowsDisplayFacts(report: WindowsDisplay): DisplayFact[] {
+function windowsDisplayFacts(report: WindowsDisplay): DisplayFact[] {
 	const consoleUser = {
 		label: 'Console user',
 		value: report.console.kind === 'user' ? report.console.name : 'Nobody signed in'
@@ -199,4 +199,20 @@ export function windowsDisplayFacts(report: WindowsDisplay): DisplayFact[] {
 				}))),
 		{ label: 'SAS policy', value: sasLabel(system.sasPolicy) }
 	];
+}
+
+/**
+ * The Display card's facts for any report, in display order; none when the agent does not report
+ * them (an unsupported system or an older agent). Shared by the card and the Machines export.
+ */
+export function displayFacts(report: DisplayReport): DisplayFact[] {
+	switch (report.kind) {
+		case 'linux':
+			return linuxDisplayFacts(report);
+		case 'windows':
+			return windowsDisplayFacts(report);
+		case 'unsupported':
+		case 'unreported':
+			return [];
+	}
 }

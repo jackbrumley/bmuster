@@ -1,4 +1,5 @@
 /** What the console knows about one enrolled machine. Browser-safe: no server imports. */
+import { formatBytes } from '#lib/utils/format.ts';
 import type { SessionInUse, TerminalShell } from '../sessions/session.ts';
 import type { MachineUpdateState } from './agent-updates.ts';
 import type { DisplayReport } from './display-report.ts';
@@ -23,6 +24,20 @@ export type Gpu = {
 	memoryBytes: { kind: 'unknown' } | { kind: 'known'; bytes: number };
 	driver: string;
 };
+
+/**
+ * "NVIDIA GeForce RTX 4070 (12 GB)": the card, with its video memory when known (D8). Shared by
+ * the Overview and the Machines export.
+ */
+export function gpuLabel(gpu: Gpu): string {
+	if (gpu.memoryBytes.kind === 'unknown') {
+		return gpu.name;
+	}
+	// Video memory comes in whole gigabytes on any card that has that much.
+	const bytes = gpu.memoryBytes.bytes;
+	const gigabytes = bytes / 1024 ** 3;
+	return `${gpu.name} (${gigabytes >= 1 ? `${Math.round(gigabytes)} GB` : formatBytes(bytes)})`;
+}
 
 /** The last person seen signed in at the machine (D7), kept after they sign out. */
 type LastUser = { kind: 'none' } | { kind: 'user'; name: string; seenIso: string };

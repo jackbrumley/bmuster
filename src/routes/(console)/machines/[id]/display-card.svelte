@@ -1,10 +1,6 @@
 <script lang="ts">
 	import Panel from '#lib/ui/panel.svelte';
-	import {
-		linuxDisplayFacts,
-		windowsDisplayFacts,
-		type DisplayReport
-	} from '#lib/domain/machines/display-report.ts';
+	import { displayFacts, type DisplayReport } from '#lib/domain/machines/display-report.ts';
 
 	/**
 	 * Overview → Display (SPEC-AGENT-LOGS 3): what a remote desktop on this machine depends on,
@@ -12,20 +8,7 @@
 	 */
 	let { report }: { report: DisplayReport | undefined } = $props();
 
-	const facts = $derived.by(() => {
-		if (report === undefined) {
-			return [];
-		}
-		switch (report.kind) {
-			case 'linux':
-				return linuxDisplayFacts(report);
-			case 'windows':
-				return windowsDisplayFacts(report);
-			case 'unsupported':
-			case 'unreported':
-				return [];
-		}
-	});
+	const facts = $derived(report === undefined ? [] : displayFacts(report));
 
 	const note = $derived.by(() => {
 		if (report === undefined) {
