@@ -1,12 +1,19 @@
 //! Windows notification area and read-only, ACL-checked status.
 use super::status;
+use super::windows_sessions::{replaced, FileId, MUTEX_NAME};
 use anyhow::{bail, Context as _, Result};
+use std::cell::Cell;
 use std::fs::{File, OpenOptions};
 use std::os::windows::fs::{MetadataExt as _, OpenOptionsExt as _};
 use std::os::windows::io::AsRawHandle as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::OnceLock;
 use windows::core::{w, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{LocalFree, HANDLE, HLOCAL, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{
+    CloseHandle, GetLastError, LocalFree, ERROR_ALREADY_EXISTS, HANDLE, HLOCAL, HWND, LPARAM,
+    LRESULT, POINT, WPARAM,
+};
 use windows::Win32::Security::Authorization::{
     ConvertSidToStringSidW, GetSecurityInfo, SE_FILE_OBJECT,
 };
@@ -14,9 +21,14 @@ use windows::Win32::Security::{
     GetAce, ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, DACL_SECURITY_INFORMATION,
     OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
 };
+use windows::Win32::Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION};
 use windows::Win32::Storage::FileSystem::{
     MoveFileExW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_EXECUTE,
     FILE_GENERIC_READ, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+};
+use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::UI::HiDpi::{
+    SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_SYSTEM_AWARE,
 };
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -30,7 +42,11 @@ fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
     value.encode_wide().chain(Some(0)).collect()
 }
 
-unsafe fn sid_text(sid: PSID) -> Result<String> {
+/// `sid` as a string (`S-1-5-18`).
+///
+/// # Safety
+/// `sid` must point to a valid SID.
+pub(super) unsafe fn sid_text(sid: PSID) -> Result<String> {
     let mut text = PWSTR::null();
     unsafe {
         ConvertSidToStringSidW(sid, &mut text)?;
@@ -141,6 +157,93 @@ pub fn write_public(dir: &Path, file: &str, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// The tray's two icons, made once at start on the tray's thread.
+#[derive(Clone, Copy)]
+struct Icons {
+    plain: HICON,
+    connected: HICON,
+}
+
+thread_local! {
+    static ICONS: Cell<Icons> = const {
+        Cell::new(Icons {
+            plain: HICON(std::ptr::null_mut()),
+            connected: HICON(std::ptr::null_mut()),
+        })
+    };
+}
+
+/// The program this helper started from, and which file it was then.
+static PROGRAM: OnceLock<(PathBuf, Option<FileId>)> = OnceLock::new();
+/// Timer ticks (one a second); the program is checked every fifth.
+static TICKS: AtomicU32 = AtomicU32::new(0);
+
+/// The BMuster mark at the notification area's size (SPEC-BRAND-ICON),
+/// plain and with the red dot.
+fn load_icons() -> Result<Icons> {
+    let edge = unsafe { GetSystemMetrics(SM_CXSMICON) }.max(16);
+    let make = |connected: bool| -> Result<HICON> {
+        let bits =
+            super::icon::tray_icon(edge.unsigned_abs(), connected).map_err(anyhow::Error::msg)?;
+        let icon = unsafe {
+            CreateIconFromResourceEx(&bits, true, 0x0003_0000, edge, edge, LR_DEFAULTCOLOR)
+        }
+        .context("Could not make the tray icon")?;
+        Ok(icon)
+    };
+    Ok(Icons {
+        plain: make(false)?,
+        connected: make(true)?,
+    })
+}
+
+/// The file at `path` as NTFS knows it, when it can be opened.
+fn file_id(path: &Path) -> Option<FileId> {
+    // Attributes only, sharing everything: never in the way of an update.
+    let file = OpenOptions::new().access_mode(0).open(path).ok()?;
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut info) }.ok()?;
+    Some(FileId {
+        volume: info.dwVolumeSerialNumber,
+        index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    })
+}
+
+/// Every fifth tick: whether another file now stands where this helper's
+/// program was (the agent's install or rescue-copy refresh puts the new
+/// version there and moves the running one aside).
+fn program_replaced() -> bool {
+    if TICKS.fetch_add(1, Ordering::Relaxed) % 5 != 4 {
+        return false;
+    }
+    PROGRAM
+        .get()
+        .is_some_and(|(path, started)| replaced(*started, file_id(path)))
+}
+
+/// Holds the session's single-instance mutex until dropped.
+pub struct Instance(HANDLE);
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = CloseHandle(self.0);
+        }
+    }
+}
+
+/// Takes `Local\BMusterTray`, one per session; `None` when another helper
+/// already holds it (the sign-in `Run` entry and the agent's starter may
+/// both start one).
+pub fn single_instance() -> Result<Option<Instance>> {
+    let name = wide(std::ffi::OsStr::new(MUTEX_NAME));
+    let handle = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }
+        .context("Could not create the tray's single-instance mutex")?;
+    let already = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+    let instance = Instance(handle);
+    Ok((!already).then_some(instance))
+}
+
 fn icon_data(window: HWND) -> NOTIFYICONDATAW {
     let mut data = NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
@@ -150,15 +253,15 @@ fn icon_data(window: HWND) -> NOTIFYICONDATAW {
         uCallbackMessage: CALLBACK,
         ..Default::default()
     };
-    // Someone connected to the screen: the warning icon and their names
-    // (SPEC-DESKTOP 8.2); the notice bar has the Disconnect button.
+    // Someone connected to the screen: the mark with the red dot and their
+    // names (SPEC-DESKTOP 8.2); the notice bar has the Disconnect button.
     let names = status::read_viewers();
-    let icon = if names.is_empty() {
-        IDI_INFORMATION
+    let icons = ICONS.get();
+    data.hIcon = if names.is_empty() {
+        icons.plain
     } else {
-        IDI_WARNING
+        icons.connected
     };
-    data.hIcon = unsafe { LoadIconW(None, icon) }.unwrap_or_default();
     let state = match status::read() {
         Ok(s) => s.state.label(),
         Err(_) => "Agent not running",
@@ -179,6 +282,16 @@ unsafe extern "system" fn procedure(window: HWND, message: u32, wp: WPARAM, lp: 
             LRESULT(0)
         }
         WM_TIMER => {
+            if program_replaced() {
+                // A new version of the program is in place: this helper
+                // bows out and the agent's tray starter runs the new one
+                // within about 30 s (SPEC-TRAY-SESSIONS, Windows).
+                log::info!("A new agent version is in place; the tray helper restarts on it.");
+                unsafe {
+                    let _ = DestroyWindow(window);
+                }
+                return LRESULT(0);
+            }
             unsafe {
                 let _ = Shell_NotifyIconW(NIM_MODIFY, &icon_data(window));
             }
@@ -266,6 +379,25 @@ unsafe fn menu(window: HWND) -> Result<()> {
 }
 
 pub fn run() -> Result<()> {
+    // Real pixels, so the icon is made at the notification area's own size.
+    if let Err(error) = unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE) }
+    {
+        log::debug!("Tray DPI awareness: {error}");
+    }
+    let program = std::env::current_exe().context("could not find this program's path")?;
+    let started = file_id(&program);
+    let _ = PROGRAM.set((program, started));
+    let icons = load_icons()?;
+    ICONS.set(icons);
+    let result = message_loop();
+    unsafe {
+        let _ = DestroyIcon(icons.plain);
+        let _ = DestroyIcon(icons.connected);
+    }
+    result
+}
+
+fn message_loop() -> Result<()> {
     unsafe {
         let instance = windows::Win32::System::LibraryLoader::GetModuleHandleW(None)?;
         let class = w!("BMusterAgentTray");

@@ -202,6 +202,8 @@ pub fn run(
     // The tray in desktops already signed in (SPEC-TRAY-SESSIONS).
     #[cfg(target_os = "linux")]
     crate::tray::starter::start(&options.data_dir, options.launched, Arc::clone(&stop));
+    #[cfg(windows)]
+    crate::tray::windows_starter::start(&options.data_dir, options.launched, Arc::clone(&stop));
     let socket_thread = {
         let session = Arc::clone(&session);
         let stop = Arc::clone(&stop);

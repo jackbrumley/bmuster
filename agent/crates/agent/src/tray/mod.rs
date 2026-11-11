@@ -3,16 +3,29 @@
 mod connected;
 #[cfg(target_os = "linux")]
 mod disconnect;
+#[cfg(any(windows, test))]
+mod ico;
+#[cfg(any(windows, all(test, target_os = "linux")))]
+mod icon;
 #[cfg(target_os = "linux")]
 pub mod linux;
 #[cfg(target_os = "linux")]
 mod notify;
+// The program's icon resource: built by build.rs, checked by the tests.
+#[cfg(test)]
+mod resource;
 #[cfg(target_os = "linux")]
 pub mod starter;
+#[cfg(any(target_os = "linux", windows))]
+mod starts;
 mod status;
 pub mod viewers;
 #[cfg(windows)]
 pub mod windows;
+#[cfg(any(windows, test))]
+mod windows_sessions;
+#[cfg(windows)]
+pub mod windows_starter;
 
 use anyhow::{bail, Result};
 use std::sync::Arc;
@@ -57,6 +70,10 @@ pub fn run(open_only: bool) -> Result<()> {
     }
     #[cfg(windows)]
     {
+        let Some(_instance) = windows::single_instance()? else {
+            log::info!("Another BMuster tray already runs in this session.");
+            return Ok(());
+        };
         windows::run()
     }
     #[cfg(not(any(target_os = "linux", windows)))]
