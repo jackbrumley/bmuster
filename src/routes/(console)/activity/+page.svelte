@@ -15,6 +15,7 @@
 		IconEdit,
 		IconFileText,
 		IconFolderPlus,
+		IconChartDonut,
 		IconNoteOff,
 		IconRefresh,
 		IconKey,
@@ -208,6 +209,8 @@
 				return IconEdit;
 			case 'folder-created':
 				return IconFolderPlus;
+			case 'storage-rescan-requested':
+				return IconChartDonut;
 			case 'machine-offline':
 				return IconWifiOff;
 			case 'machine-online':

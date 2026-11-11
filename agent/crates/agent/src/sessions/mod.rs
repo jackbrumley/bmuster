@@ -53,7 +53,6 @@ pub struct Sessions {
 }
 
 struct Inner {
-    #[cfg(target_os = "linux")]
     data_dir: std::path::PathBuf,
     session: Arc<Session>,
     server_key: VerifyingKey,
@@ -99,13 +98,10 @@ impl Sessions {
         data_dir: std::path::PathBuf,
         live: Arc<Live>,
     ) -> Self {
-        #[cfg(not(target_os = "linux"))]
-        let _ = data_dir;
         log::info!("{}", mode.describe());
         mode.sweep();
         Self {
             inner: Arc::new(Inner {
-                #[cfg(target_os = "linux")]
                 data_dir,
                 session,
                 server_key,
@@ -317,18 +313,22 @@ fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<End
             }
         }
         SessionPurpose::Files {} => match placement(Kind::Files) {
-            Ok(Placement::InProcess) => files::run(&mut socket, &inner.stop),
+            Ok(Placement::InProcess) => {
+                files::run(&mut socket, &inner.stop, inner.data_dir.clone())
+            }
             #[cfg(target_os = "linux")]
-            Ok(Placement::Unit(unit)) => match files_helper::start(&unit, &inner.stop) {
-                Ok(started) => {
-                    crate::timeline::step("started", "files helper");
-                    files_helper::relay(&mut socket, &unit, started, &inner.stop)
+            Ok(Placement::Unit(unit)) => {
+                match files_helper::start(&unit, &inner.stop, &inner.data_dir) {
+                    Ok(started) => {
+                        crate::timeline::step("started", "files helper");
+                        files_helper::relay(&mut socket, &unit, started, &inner.stop)
+                    }
+                    Err(e) => {
+                        failed_to_start(&ticket.purpose);
+                        fail(&mut socket, &e)
+                    }
                 }
-                Err(e) => {
-                    failed_to_start(&ticket.purpose);
-                    fail(&mut socket, &e)
-                }
-            },
+            }
             Err(e) => {
                 failed_to_start(&ticket.purpose);
                 fail(&mut socket, &e)

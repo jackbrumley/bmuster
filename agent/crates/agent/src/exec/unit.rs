@@ -56,6 +56,7 @@ impl Manager {
 #[derive(Debug)]
 pub struct TransientUnit {
     name: String,
+    kind: Kind,
     manager: Manager,
     stopped: AtomicBool,
 }
@@ -71,6 +72,7 @@ fn prefix(kind: Kind) -> &'static str {
         Kind::Terminal => "bmuster-terminal-",
         Kind::Exec => "bmuster-exec-",
         Kind::Files => "bmuster-files-",
+        Kind::Storage => "bmuster-storage-",
     }
 }
 
@@ -108,6 +110,7 @@ impl TransientUnit {
         }
         Ok(Self {
             name: format!("{}{session_id}.service", prefix(kind)),
+            kind,
             manager,
             stopped: AtomicBool::new(false),
         })
@@ -138,9 +141,19 @@ impl TransientUnit {
         property("KillMode=control-group".into());
         property("KillSignal=SIGHUP".into());
         property(format!("TimeoutStopSec={STOP_GRACE_SECONDS}").into());
-        // Files an admin makes are readable by others, as from a login shell
-        // (the agent's own unit uses 0077 for its data folder).
-        property("UMask=0022".into());
+        match self.kind {
+            // Files an admin makes are readable by others, as from a login
+            // shell (the agent's own unit uses 0077 for its data folder).
+            Kind::Terminal | Kind::Exec | Kind::Files => property("UMask=0022".into()),
+            // The storage scan reads the drives and writes only its own
+            // owner-only files; it never talks to anything (SPEC-STORAGE 10).
+            Kind::Storage => {
+                property("UMask=0077".into());
+                property("PrivateNetwork=yes".into());
+                property("Nice=19".into());
+                property("IOSchedulingClass=idle".into());
+            }
+        }
         property(joined(&[
             OsStr::new("WorkingDirectory="),
             launch.cwd.as_os_str(),
@@ -229,8 +242,8 @@ pub fn stop_units(manager: Manager, units: &[&str]) {
 
 /// Stops every session unit (an earlier run's, left by a crash).
 pub fn sweep(manager: Manager) {
-    let patterns =
-        [Kind::Terminal, Kind::Exec, Kind::Files].map(|kind| format!("{}*", prefix(kind)));
+    let patterns = [Kind::Terminal, Kind::Exec, Kind::Files, Kind::Storage]
+        .map(|kind| format!("{}*", prefix(kind)));
     let patterns: Vec<&str> = patterns.iter().map(String::as_str).collect();
     stop_units(manager, &patterns);
 }
@@ -338,6 +351,30 @@ mod tests {
                 "X=1; echo $$X $${HOME} $$$$ %h"
             ]
         );
+    }
+
+    #[test]
+    fn s11_the_storage_scan_runs_without_network_at_the_lowest_priority() {
+        let unit = TransientUnit::new(Manager::System, Kind::Storage, "scan").unwrap();
+        assert_eq!(unit.name(), "bmuster-storage-scan.service");
+        let args = strings(&unit.arguments(None, &launch("/opt/bmuster-agent", &["storage-scan"])));
+        for property in [
+            "PrivateNetwork=yes",
+            "UMask=0077",
+            "Nice=19",
+            "IOSchedulingClass=idle",
+        ] {
+            assert!(args.contains(&property.to_string()), "{property}");
+        }
+        assert!(!args.contains(&"UMask=0022".to_string()));
+        let session = TransientUnit::new(Manager::System, Kind::Files, ID).unwrap();
+        let args = strings(&session.arguments(None, &launch("/bin/bash", &[])));
+        assert!(!args.contains(&"PrivateNetwork=yes".to_string()));
+    }
+
+    #[test]
+    fn s11_the_sweep_includes_a_leftover_storage_scan() {
+        assert_eq!(prefix(Kind::Storage), "bmuster-storage-");
     }
 
     /// CB3: no unit property passes a pty path or an agent descriptor.

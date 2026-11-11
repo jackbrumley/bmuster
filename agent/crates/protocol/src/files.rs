@@ -98,6 +98,21 @@ pub enum FilesOp {
     },
     /// Stop read `id` (the download was abandoned).
     Cancel,
+    /// Each scanned drive and its scan state (SPEC-STORAGE 5).
+    StorageSummary,
+    /// One scanned folder of the drive at `mount`, sub-folders from `offset`.
+    StorageFolder {
+        mount: String,
+        path: String,
+        offset: u64,
+    },
+    /// The largest files under `path` from the drive's last scan.
+    StorageLargest {
+        mount: String,
+        path: String,
+    },
+    /// Start a scan pass now.
+    StorageRescan,
 }
 
 /// The agent's answer to one request.
@@ -168,6 +183,14 @@ pub enum FilesResult {
         path: String,
         size: u64,
         sha256: String,
+    },
+    StorageSummary {
+        drives: Vec<crate::storage::DriveSummary>,
+        problem: crate::storage::StorageProblem,
+    },
+    StorageFolder(crate::storage::FolderView),
+    StorageLargest {
+        files: Vec<crate::storage::LargeFile>,
     },
     Nothing {},
 }
@@ -275,6 +298,21 @@ mod tests {
                 replace: false
             }
         );
+        let folder: FilesRequest = serde_json::from_value(json!({
+            "id": 5, "op": "storage-folder", "mount": "/", "path": "/var", "offset": 200
+        }))
+        .unwrap();
+        assert_eq!(
+            folder.op,
+            FilesOp::StorageFolder {
+                mount: "/".into(),
+                path: "/var".into(),
+                offset: 200
+            }
+        );
+        let summary: FilesRequest =
+            serde_json::from_value(json!({ "id": 6, "op": "storage-summary" })).unwrap();
+        assert_eq!(summary.op, FilesOp::StorageSummary);
         let cancel: FilesRequest =
             serde_json::from_value(json!({ "id": 3, "op": "cancel" })).unwrap();
         assert_eq!(cancel.op, FilesOp::Cancel);

@@ -100,14 +100,18 @@ fn write_all(output: impl Write, outgoing: &Receiver<Outgoing>) {
 
 /// `bmuster-agent files-helper`: serves one files session's requests from
 /// `input` until it closes, replying on `output`.
-pub fn serve(input: impl Read, output: impl Write + Send + 'static) -> Result<()> {
+pub fn serve(
+    input: impl Read,
+    output: impl Write + Send + 'static,
+    data_dir: PathBuf,
+) -> Result<()> {
     let stop = Arc::new(AtomicBool::new(false));
     let (sender, outgoing) = mpsc::sync_channel::<Outgoing>(OUTPUT_QUEUE);
     let writer = std::thread::Builder::new()
         .name("files-output".into())
         .spawn(move || write_all(output, &outgoing))
         .context("could not start the output thread")?;
-    let mut requests = Requests::new(sender, Arc::clone(&stop));
+    let mut requests = Requests::new(sender, Arc::clone(&stop), data_dir);
     let mut input = BufReader::new(input);
     let read = loop {
         match read_frame(&mut input) {
@@ -192,13 +196,22 @@ fn helper_environment() -> Vec<(OsString, OsString)> {
 
 /// Starts the helper in `unit` under `stdio-host` and waits for it to
 /// connect back. Errors are the session's failure to start.
-pub fn start(unit: &TransientUnit, stop: &AtomicBool) -> Result<Started> {
+pub fn start(
+    unit: &TransientUnit,
+    stop: &AtomicBool,
+    data_dir: &std::path::Path,
+) -> Result<Started> {
     let program: PathBuf = crate::exec::unit::program(unit.manager())?;
     let launch = Launch {
         program: Program {
             arg0: program.clone().into_os_string(),
             path: program,
-            args: vec!["files-helper".into()],
+            // The storage requests read the scans there (SPEC-STORAGE 5).
+            args: vec![
+                "files-helper".into(),
+                "--data-dir".into(),
+                data_dir.as_os_str().to_os_string(),
+            ],
         },
         env: helper_environment(),
         cwd: PathBuf::from("/"),
@@ -273,7 +286,7 @@ mod tests {
         let (mut client, server) = socket_pair();
         let (helper_in, relay_out) = std::io::pipe().unwrap();
         let (relay_in, helper_out) = std::io::pipe().unwrap();
-        std::thread::spawn(move || serve(helper_in, helper_out).unwrap());
+        std::thread::spawn(move || serve(helper_in, helper_out, std::env::temp_dir()).unwrap());
         let agent = std::thread::spawn(move || {
             let stop = AtomicBool::new(false);
             relay_streams(&mut client, relay_out, relay_in, &stop).unwrap()

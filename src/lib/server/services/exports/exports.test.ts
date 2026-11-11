@@ -88,7 +88,8 @@ function checkInUpFor(
 			load: { cpuPercent: 5, memoryUsedBytes: 1024 },
 			inventory: { kind: 'full', hash: 'b'.repeat(64), data },
 			localUsers: { kind: 'unsupported' },
-			checks: { kind: 'unreported' }
+			checks: { kind: 'unreported' },
+			storage: { kind: 'unreported' }
 		},
 		at
 	);

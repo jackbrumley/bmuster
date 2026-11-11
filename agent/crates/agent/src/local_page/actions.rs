@@ -135,7 +135,14 @@ pub fn test_connection(page: &Page) -> Vec<Step> {
     let mut probe = lock_probe(page);
     let probe = probe.get_or_insert_with(Probe::new);
     let report = updates::report(&page.data_dir, page.launched);
-    let result = match worker::check_in(&page.session, probe, &mut None, &page.people, report) {
+    let result = match worker::check_in(
+        &page.session,
+        probe,
+        &mut None,
+        &page.people,
+        report,
+        &page.data_dir,
+    ) {
         Ok(Reply::Ok(reply)) => {
             let interval = page.board.snapshot().check_in_seconds;
             page.board.checked_in(&reply.machine_name, interval);

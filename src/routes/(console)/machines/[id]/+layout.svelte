@@ -7,6 +7,7 @@
 		IconChevronLeft,
 		IconDeviceDesktop,
 		IconFolder,
+		IconChartDonut,
 		IconInfoCircle,
 		IconNotes,
 		IconSettings,
@@ -42,6 +43,11 @@
 			icon: IconDeviceDesktop
 		},
 		{ href: resolve('/(console)/machines/[id]/files', params), label: 'Files', icon: IconFolder },
+		{
+			href: resolve('/(console)/machines/[id]/storage', params),
+			label: 'Storage',
+			icon: IconChartDonut
+		},
 		{ href: resolve('/(console)/machines/[id]/notes', params), label: 'Notes', icon: IconNotes },
 		// Manage is for admins (its page refuses members anyway).
 		...(data.user.role === 'admin'

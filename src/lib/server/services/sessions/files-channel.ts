@@ -23,7 +23,12 @@ export type FilesOp =
 	| { op: 'delete'; dir: string; names: string[]; recursive: boolean }
 	| { op: 'write-begin'; dir: string; name: string; size: number; replace: boolean }
 	| { op: 'write-end'; dir: string; name: string; size: number; sha256: string }
-	| { op: 'write-cancel'; dir: string; name: string };
+	| { op: 'write-cancel'; dir: string; name: string }
+	// Storage (SPEC-STORAGE 5): the last scans, read on the same session.
+	| { op: 'storage-summary' }
+	| { op: 'storage-folder'; mount: string; path: string; offset: number }
+	| { op: 'storage-largest'; mount: string; path: string }
+	| { op: 'storage-rescan' };
 
 /** A read the caller is streaming: acknowledge what was passed on, or give up. */
 export type ReadHandle = {

@@ -30,6 +30,7 @@ mod service_windows;
 mod sessions;
 mod socket;
 mod status;
+mod storage;
 mod timeline;
 mod tls;
 mod totp;
@@ -202,7 +203,22 @@ enum Command {
     /// transient systemd service, under stdio-host; not for use by hand)
     #[cfg(target_os = "linux")]
     #[command(hide = true)]
-    FilesHelper,
+    FilesHelper {
+        /// Data folder, where the storage scans are (SPEC-STORAGE 5)
+        #[arg(long)]
+        data_dir: PathBuf,
+    },
+    /// Scan every local drive once, slowly, at the lowest priority (started
+    /// by the agent; SPEC-STORAGE 3; not for use by hand)
+    #[command(hide = true)]
+    StorageScan {
+        /// Data folder; the scans are kept in its storage folder
+        #[arg(long)]
+        data_dir: PathBuf,
+        /// Someone asked for this pass (Rescan now): less pausing
+        #[arg(long)]
+        asked: bool,
+    },
     /// Run desktop sessions in this console session for the service (started
     /// by the Windows service as SYSTEM; not for use by hand)
     #[cfg(windows)]
@@ -450,8 +466,17 @@ fn dispatch(command: Command) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         #[cfg(target_os = "linux")]
-        Command::FilesHelper => {
-            sessions::files_helper::serve(std::io::stdin(), std::io::stdout())?;
+        Command::StorageScan { data_dir, asked } => {
+            let speed = if asked {
+                storage::pace::Speed::Asked
+            } else {
+                storage::pace::Speed::Background
+            };
+            storage::scan::run(&data_dir, speed)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::FilesHelper { data_dir } => {
+            sessions::files_helper::serve(std::io::stdin(), std::io::stdout(), data_dir)?;
             Ok(ExitCode::SUCCESS)
         }
         #[cfg(windows)]

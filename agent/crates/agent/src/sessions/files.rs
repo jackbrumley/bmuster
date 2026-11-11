@@ -7,11 +7,13 @@ use super::pump::{pump, Ended, Incoming, Outgoing};
 use crate::files::transfer::{self, Credit};
 use crate::files::{ops, roots, FileError};
 use crate::socket::Socket;
+use crate::storage;
 use anyhow::Result;
 use bmuster_protocol::files::{
     frame, split_frame, ErrorCode, FilesOp, FilesReply, FilesRequest, FilesResult,
 };
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex};
@@ -27,9 +29,18 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Runs one request that is not part of a read or a chunk.
-fn handle(op: &FilesOp) -> Result<FilesResult, FileError> {
+/// Runs one request that is not part of a read or a chunk. Storage
+/// requests read the scans in `data_dir` (SPEC-STORAGE 5).
+fn handle(op: &FilesOp, data_dir: &Path) -> Result<FilesResult, FileError> {
     match op {
+        FilesOp::StorageSummary => Ok(storage::query::summary(data_dir)),
+        FilesOp::StorageFolder {
+            mount,
+            path,
+            offset,
+        } => storage::query::folder(data_dir, mount, path, *offset),
+        FilesOp::StorageLargest { mount, path } => storage::query::largest(data_dir, mount, path),
+        FilesOp::StorageRescan => storage::query::rescan(data_dir),
         FilesOp::Roots => Ok(roots::roots()),
         FilesOp::List { path } => ops::list(path),
         FilesOp::Stat { path } => ops::stat(path),
@@ -83,6 +94,7 @@ struct Shared {
     reads: Mutex<HashMap<u32, Arc<Credit>>>,
     running: AtomicUsize,
     stop: Arc<AtomicBool>,
+    data_dir: PathBuf,
 }
 
 impl Shared {
@@ -152,14 +164,16 @@ pub struct Requests {
 }
 
 impl Requests {
-    /// Replies and read data go to `output`; `stop` ends reads early.
-    pub fn new(output: SyncSender<Outgoing>, stop: Arc<AtomicBool>) -> Self {
+    /// Replies and read data go to `output`; `stop` ends reads early;
+    /// storage requests read the scans in `data_dir`.
+    pub fn new(output: SyncSender<Outgoing>, stop: Arc<AtomicBool>, data_dir: PathBuf) -> Self {
         Self {
             shared: Arc::new(Shared {
                 output,
                 reads: Mutex::new(HashMap::new()),
                 running: AtomicUsize::new(0),
                 stop,
+                data_dir,
             }),
             awaiting: HashMap::new(),
         }
@@ -196,9 +210,9 @@ impl Requests {
 
 /// Serves file requests over `socket` in the agent's own process until the
 /// server closes it or `stop`.
-pub fn run(socket: &mut Socket, stop: &Arc<AtomicBool>) -> Result<Ended> {
+pub fn run(socket: &mut Socket, stop: &Arc<AtomicBool>, data_dir: PathBuf) -> Result<Ended> {
     let (output, outgoing) = mpsc::sync_channel::<Outgoing>(OUTPUT_QUEUE);
-    let mut requests = Requests::new(output, Arc::clone(stop));
+    let mut requests = Requests::new(output, Arc::clone(stop), data_dir);
     let ended = pump(
         socket,
         &outgoing,
@@ -238,7 +252,7 @@ fn dispatch(
         FilesOp::WriteChunk { dir, name, offset } => {
             awaiting.insert(id, (dir, name, offset));
         }
-        op => shared.spawn(id, move |_| handle(&op)),
+        op => shared.spawn(id, move |shared| handle(&op, &shared.data_dir)),
     }
 }
 
@@ -252,7 +266,12 @@ mod tests {
         let (mut client, server) = socket_pair();
         let agent = std::thread::spawn(move || {
             let stop = Arc::new(AtomicBool::new(false));
-            run(&mut client, &stop).unwrap()
+            run(
+                &mut client,
+                &stop,
+                std::env::temp_dir().join("bmuster-no-storage"),
+            )
+            .unwrap()
         });
         (Server::new(server), agent)
     }

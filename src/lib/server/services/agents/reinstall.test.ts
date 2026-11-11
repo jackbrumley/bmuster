@@ -47,7 +47,8 @@ async function reinstallable(database: AppDatabase) {
 			load: { cpuPercent: 1, memoryUsedBytes: 1 },
 			inventory: { kind: 'full', hash: 'c'.repeat(64), data: SAMPLE_INVENTORY },
 			localUsers: { kind: 'unsupported' },
-			checks: { kind: 'unreported' }
+			checks: { kind: 'unreported' },
+			storage: { kind: 'unreported' }
 		},
 		NOW + 3
 	);

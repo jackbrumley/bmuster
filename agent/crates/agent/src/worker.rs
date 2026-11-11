@@ -178,6 +178,12 @@ pub fn run(
         data_dir: options.data_dir.clone(),
         mode: options.sessions,
     });
+    // The background storage scan (SPEC-STORAGE 3.1).
+    crate::storage::schedule::start(
+        options.data_dir.clone(),
+        options.sessions,
+        Arc::clone(&stop),
+    );
     // The saved policy applies before the server is reachable (SPEC-STAY-AWAKE).
     let power = crate::power::start(options.data_dir.clone());
     let server_key = decode_public_key(&identity.server_public_key)
@@ -302,6 +308,7 @@ pub fn check_in_loop(
             &mut server_hash,
             local.people,
             local.updates.report(),
+            data_dir,
         ) {
             Ok(Reply::Ok(reply)) => {
                 backoff.reset();
@@ -415,6 +422,7 @@ pub fn check_in(
     server_hash: &mut Option<String>,
     people: &People,
     update: UpdateReport,
+    data_dir: &Path,
 ) -> Result<Reply<CheckInReply>> {
     let inventory = probe.inventory()?;
     let hash = inventory.hash()?;
@@ -436,6 +444,7 @@ pub fn check_in(
         local_users: people.held(),
         update,
         checks: crate::checks::LATEST.report(),
+        storage: crate::storage::report(data_dir),
     };
     let body = serde_json::to_vec(&request)?;
     let reply = session.post_signed::<CheckInReply>(CHECK_IN_PATH, &body)?;

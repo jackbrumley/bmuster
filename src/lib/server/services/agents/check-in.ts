@@ -4,6 +4,7 @@ import { machineInventory, machineStatus, machines } from '../../database/schema
 import type { AppDatabase } from '../../database/connection.ts';
 import type { AuthenticatedAgent } from './agent-auth.ts';
 import { storeCheckInChecks } from '../logs/machine-checks.ts';
+import { storeCheckInStorage } from '../machines/machine-storage.ts';
 import { localCodesFrom, localUsersUpdate } from './local-users.ts';
 
 /** What a check-in records, before the update offer is added (SPEC-AGENT-UPDATES). */
@@ -49,6 +50,8 @@ export function recordCheckIn(
 
 		// The latest self-check results replace the last set (SPEC-DIAGNOSTICS 1).
 		storeCheckInChecks(tx, agent.machineId, checkIn.checks, now);
+		// Each scanned drive's size, free space and scan freshness (SPEC-STORAGE 6).
+		storeCheckInStorage(tx, agent.machineId, checkIn.storage, now);
 
 		let inventoryWanted = false;
 		switch (checkIn.inventory.kind) {
