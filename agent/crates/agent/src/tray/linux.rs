@@ -203,12 +203,30 @@ pub fn run() -> Result<()> {
         notifier: Notifier::start(disconnect_from_notification),
     };
     tray.refresh();
+    let started_from = std::fs::canonicalize("/proc/self/exe").ok();
     let handle = tray.assume_sni_available(true).spawn()?;
     while !handle.is_closed() {
         std::thread::sleep(POLL);
+        if started_from.as_deref().is_some_and(|program| {
+            replaced(program, std::path::Path::new(crate::paths::CURRENT_PROGRAM))
+        }) {
+            // The agent moved to a new version: this helper bows out and the
+            // agent's tray starter runs the new one within about 30 s, so a
+            // new tray feature shows without signing out and in.
+            log::info!("A new agent version is current; the tray helper restarts on it.");
+            handle.shutdown();
+            return Ok(());
+        }
         handle.update(AgentTray::refresh);
     }
     Ok(())
+}
+
+/// True when `current` (the link to the current version) now resolves to
+/// another program than the one this helper started from. A link that cannot
+/// be read (mid-switch, or no install) is not a replacement.
+fn replaced(started_from: &std::path::Path, current: &std::path::Path) -> bool {
+    std::fs::canonicalize(current).is_ok_and(|now| now != started_from)
 }
 
 /// The autostart entry's path, which the `tray` check reads.
