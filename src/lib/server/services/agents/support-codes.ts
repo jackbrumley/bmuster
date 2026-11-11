@@ -20,9 +20,9 @@ import {
 } from './support-code-limits.ts';
 
 /**
- * Phone support codes (SPEC-JOIN): six digits standing for one single-use
- * join code. An admin makes one on Add machine; a caller types it on the
- * public /join page. Every lookup from /join goes through the guessing
+ * Enrolment codes (SPEC-JOIN): six digits standing for one single-use
+ * join code. An admin makes one on Add machine; the person at the computer
+ * types it on the public /join page. Every lookup from /join goes through the guessing
  * limits, and every refusal looks the same.
  */
 
@@ -72,7 +72,7 @@ export function createSupportCode(
 			{
 				actor: { kind: 'user', userId: options.createdBy },
 				kind: 'support-code-started',
-				target: 'Phone support',
+				target: 'Enrolment code',
 				machineId: null,
 				detail: {
 					expires: joinCode.expiresAt.toISOString(),
@@ -110,7 +110,7 @@ export function cancelSupportCode(
 			{
 				actor: { kind: 'user', userId: actorUserId },
 				kind: 'support-code-cancelled',
-				target: 'Phone support',
+				target: 'Enrolment code',
 				machineId: null,
 				detail: {}
 			},
@@ -170,7 +170,7 @@ export function checkSupportCode(
 				{
 					actor: { kind: 'system' },
 					kind: 'support-code-entered',
-					target: `Support code from ${supportPerson}`,
+					target: `Enrolment code from ${supportPerson}`,
 					machineId: null,
 					detail: { address: attempt.address }
 				},
@@ -209,7 +209,7 @@ export function recordScamStop(
 			{
 				actor: { kind: 'system' },
 				kind: 'support-code-scam-stop',
-				target: `Support code from ${personName(tx, found.row.createdBy)}`,
+				target: `Enrolment code from ${personName(tx, found.row.createdBy)}`,
 				machineId: null,
 				detail: { question: asked === undefined ? question : asked.text, address: attempt.address }
 			},

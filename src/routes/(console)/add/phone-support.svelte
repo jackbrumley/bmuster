@@ -15,8 +15,8 @@
 	import MachineGroupPicker from './machine-group-picker.svelte';
 
 	/**
-	 * Quick join on Add machine (SPEC-JOIN J12): a 6-digit one-time code
-	 * and the address to read out, both large; the live status of the join
+	 * Enrolment codes on Add machine (SPEC-JOIN J12): a 6-digit one-time code
+	 * and the address to give the person at the computer, both large; the live status of the join
 	 * code behind it; Cancel. It carries the machine groups picked above.
 	 */
 	let {
@@ -25,7 +25,7 @@
 		machineGroups,
 		onMachineGroupsChange
 	}: {
-		/** This server's address, as the caller will reach it. */
+		/** This server's address, as the person at the computer will reach it. */
 		origin: string;
 		machineGroupIds: readonly string[];
 		machineGroups: { id: string; name: string }[];
@@ -40,7 +40,7 @@
 
 	let support = $state<Support>({ kind: 'idle' });
 
-	/** What to read out: the address without https://. */
+	/** What to give out: the address without https://. */
 	const address = $derived(`${new URL(origin).host}${resolve('/join')}`);
 
 	async function start(): Promise<void> {
@@ -64,8 +64,9 @@
 
 	async function cancel(id: string): Promise<void> {
 		const yes = await confirmAction({
-			title: 'Cancel this support code?',
-			message: 'The code stops working straight away, even if the caller is part way through.',
+			title: 'Cancel this enrolment code?',
+			message:
+				'The code stops working straight away, even if someone is part way through enrolling.',
 			confirmLabel: 'Cancel code'
 		});
 		if (!yes) {
@@ -78,7 +79,7 @@
 			reply: cancelSupportCodeReplySchema
 		});
 		showToast(
-			result.ok ? 'Support code cancelled.' : result.message,
+			result.ok ? 'Enrolment code cancelled.' : result.message,
 			result.ok ? 'success' : 'error'
 		);
 		if (result.ok) {
@@ -91,7 +92,7 @@
 	}
 </script>
 
-<Panel heading="Quick join" actions={undefined} tone="normal" padding="normal">
+<Panel heading="Enrolment code" actions={undefined} tone="normal" padding="normal">
 	<MachineGroupPicker
 		groups={machineGroups}
 		selected={machineGroupIds}
@@ -99,10 +100,10 @@
 	/>
 	{#if support.kind === 'active'}
 		<div class="read-out">
-			<p class="label">Ask them to go to</p>
+			<p class="label">Give this code to the person at the computer. They go to</p>
 			<p class="address">{address}</p>
-			<p class="label">and type the support code</p>
-			<p class="code" aria-label="Support code">{formatSupportCode(support.code)}</p>
+			<p class="label">and enter the enrolment code</p>
+			<p class="code" aria-label="Enrolment code">{formatSupportCode(support.code)}</p>
 			<p class="hint">Works once. Expires at {expiryTime(support.expiresAtIso)}.</p>
 		</div>
 		<JoinCodeStatus
@@ -130,9 +131,9 @@
 		</div>
 	{:else}
 		<p class="intro">
-			With the person at their computer or helping from elsewhere, give them a short code for
-			<strong>{address}</strong>. It works once, for {SUPPORT_CODE_MINUTES} minutes, and shows a scam
-			warning before the install command.
+			Give the person at the computer a short enrolment code; they enter it at
+			<strong>{address}</strong> to enrol the computer. It works once, for {SUPPORT_CODE_MINUTES} minutes,
+			and the page shows a scam warning before the install command.
 		</p>
 		{#if support.kind === 'failed'}
 			<p class="error">{support.message}</p>
@@ -149,7 +150,7 @@
 				}}
 			>
 				<IconLink size={18} />
-				{support.kind === 'making' ? 'Creating code…' : 'Create Quick join code'}
+				{support.kind === 'making' ? 'Creating code…' : 'Create enrolment code'}
 			</Button>
 		</div>
 	{/if}

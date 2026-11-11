@@ -4,7 +4,7 @@ Updated 2026-11-08 after recovering the interrupted session.
 
 ## Completed in the recovery batch (0.2.0)
 
-- Public `/join` phone support, started by an admin on Add machine: a single-use 15-minute support code, caller warning questions, install commands for available builds and a Connected state after enrolment.
+- Public `/join` enrolment page, driven by an enrolment code an admin creates on Add machine: a single-use 15-minute code, scam warning questions, install commands for available builds and an Enrolled state once the computer is registered.
 - Phone-support organisation and warning wording in Settings; code creation, use and cancellation in Activity; guessing limits on public endpoints.
 - Themed public, console and machine error pages, guarded JSON for unknown API endpoints, and log references for unexpected exceptions.
 - Release notes on Updates, with server and Rust workspace versions aligned at 0.2.0.

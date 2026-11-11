@@ -20,8 +20,8 @@
 		<h1>Stop. This looks like a scam.</h1>
 	</div>
 	<ul class="actions">
-		<li>Hang up the phone.</li>
-		<li>Don’t install anything.</li>
+		<li>If you are on a call, hang up.</li>
+		<li>Don’t enrol this computer or install anything.</li>
 		<li>If you shared bank details or passwords, call your bank now.</li>
 	</ul>
 	<p class="report">

@@ -35,7 +35,7 @@ it('J12: makes a code for the chosen groups and shows its address, expiry and li
 		machineGroups: [{ id: group, name: 'Support' }],
 		onMachineGroupsChange: () => undefined
 	});
-	await screen.getByRole('button', { name: 'Create Quick join code' }).click();
+	await screen.getByRole('button', { name: 'Create enrolment code' }).click();
 	await expect.element(screen.getByText('123 456')).toBeVisible();
 	await expect
 		.element(screen.getByText('support.example.test/join', { exact: true }))
@@ -45,7 +45,7 @@ it('J12: makes a code for the chosen groups and shows its address, expiry and li
 	expect(requests[0]).toEqual({ url: '/api/support-codes', body: { machineGroupIds: [group] } });
 });
 
-describe('J12: starting phone support fails visibly', () => {
+describe('J12: creating an enrolment code fails visibly', () => {
 	it('keeps a retry action when the server refuses', async () => {
 		vi.stubGlobal(
 			'fetch',
@@ -57,10 +57,10 @@ describe('J12: starting phone support fails visibly', () => {
 			machineGroups: [],
 			onMachineGroupsChange: () => undefined
 		});
-		await screen.getByRole('button', { name: 'Create Quick join code' }).click();
+		await screen.getByRole('button', { name: 'Create enrolment code' }).click();
 		await expect.element(screen.getByText('Sign in again.')).toBeVisible();
 		await expect
-			.element(screen.getByRole('button', { name: 'Create Quick join code' }))
+			.element(screen.getByRole('button', { name: 'Create enrolment code' }))
 			.toBeVisible();
 	});
 });

@@ -137,7 +137,8 @@ describe('/join gives out the command only after a safe scam check (SPEC-JOIN J7
 			expect.objectContaining({
 				kind: 'support-code-scam-stop',
 				detail: {
-					question: 'Did you contact this person, or are they your workplace’s IT?',
+					question:
+						'Did this code come from your workplace’s IT, or from someone you contacted yourself?',
 					address: '192.0.2.40'
 				}
 			})

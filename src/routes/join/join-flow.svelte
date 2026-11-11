@@ -15,8 +15,8 @@
 	import StopStep from './stop-step.svelte';
 
 	/**
-	 * /join, one step at a time (SPEC-JOIN): the code, who gets access and the
-	 * scam check, the command, then Connected. The code stays in this page's
+	 * /join, one step at a time (SPEC-JOIN): the enrolment code, who gets access and
+	 * the scam check, the command, then Enrolled. The code stays in this page's
 	 * memory only; a reload starts again.
 	 */
 	let {
@@ -128,7 +128,7 @@
 			if (!result.ok && result.status !== 0) {
 				step = {
 					...step,
-					problem: `This support code has run out. Ask ${who.supportPerson} for a new one.`
+					problem: `This enrolment code has run out. Ask ${who.supportPerson} for a new one.`
 				};
 				return;
 			}
@@ -183,7 +183,7 @@
 			<p class="problem" role="alert">{step.problem}</p>
 		{/if}
 	{:else}
-		<ConnectedStep supportPerson={step.supportPerson} />
+		<ConnectedStep {organisation} supportPerson={step.supportPerson} />
 	{/if}
 {/snippet}
 

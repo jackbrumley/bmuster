@@ -43,14 +43,16 @@
 
 <div class="step">
 	<p class="who">
-		<strong>{supportPerson}</strong> at <strong>{organisation}</strong> will be able to see and control
-		this computer, and open its files.
+		After enrolment, people at <strong>{organisation}</strong> with access, such as
+		<strong>{supportPerson}</strong> who made this code, can see and control this computer and open its
+		files.
 	</p>
 
 	<Notice tone="danger" title="Is this a scam?">
 		<p class="warning">
-			Scammers pretend to be from {impersonators}, and ask you to install remote access. If the call
-			was unexpected, stop and check with the organisation using contact details you found yourself.
+			Scammers pretend to be from {impersonators}, and ask you to install remote access. Enrolling
+			gives {organisation} control of this computer. If the request was unexpected, stop and check with
+			the organisation using contact details you found yourself.
 		</p>
 		<p class="warning"><strong>If someone called YOU unexpectedly, hang up now.</strong></p>
 	</Notice>

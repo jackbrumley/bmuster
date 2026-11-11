@@ -7,8 +7,8 @@ import {
 	textWithLinks
 } from './phone-support.ts';
 
-describe('phone support (SPEC-JOIN)', () => {
-	it('reads a support code out in two groups, and accepts it typed with spaces or a hyphen', () => {
+describe('enrolment codes (SPEC-JOIN)', () => {
+	it('reads an enrolment code out in two groups, and accepts it typed with spaces or a hyphen', () => {
 		expect(formatSupportCode('482913')).toBe('482 913');
 		expect(supportCodeDigits(' 482 913 ')).toBe('482913');
 		expect(supportCodeDigits('482-913')).toBe('482913');

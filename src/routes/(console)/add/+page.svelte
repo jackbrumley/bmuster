@@ -10,7 +10,7 @@
 
 <PageHeader
 	title="Add a machine"
-	summary="Use Quick join for the easiest setup, or install the agent manually."
+	summary="Give the person at the computer an enrolment code, or install the agent manually."
 	actions={undefined}
 />
 

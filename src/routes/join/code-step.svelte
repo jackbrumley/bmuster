@@ -33,9 +33,13 @@
 </script>
 
 <form class="step" onsubmit={send}>
-	<h1>Get help from {organisation}</h1>
+	<h1>Add this computer to {organisation}</h1>
+	<p class="intro">
+		{organisation} manages its computers with BMuster. Enrolling installs the BMuster agent, so this computer
+		is registered with {organisation} and managed by it.
+	</p>
 	<label class="field">
-		<span class="label">Support code</span>
+		<span class="label">Enrolment code</span>
 		<input
 			data-raw-input="code-entry"
 			class="code"
@@ -57,7 +61,7 @@
 	{#if problem !== undefined}
 		<p class="problem" id={problemId} role="alert">{problem}</p>
 	{/if}
-	<p class="hint">Ask your support person for a code.</p>
+	<p class="hint">Your IT administrator gives you the enrolment code.</p>
 	<Button variant="primary" size="large" type="submit" onclick={undefined}>
 		{busy ? 'Checking…' : 'Continue'}
 	</Button>
@@ -72,6 +76,13 @@
 	h1 {
 		font-size: var(--text-xl);
 		font-weight: var(--weight-bold);
+		text-align: center;
+	}
+
+	.intro {
+		color: var(--text-soft);
+		font-size: var(--text-base);
+		line-height: 1.4;
 		text-align: center;
 	}
 
