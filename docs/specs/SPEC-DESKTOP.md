@@ -404,7 +404,7 @@ Report the step and the last lines of both logs for anything that ends the sessi
 
 **Risks and not tested here:** none of this has run on Windows yet. In particular: whether `SendSAS` accepts a call from the worker (a SYSTEM child of the service, not the process registered with the service manager; if not, the call has to move into the launcher's service process), DXGI on the Winlogon desktop (GDI is the fallback), the GDI picture of the UAC secure desktop, `CreateProcessAsUserW` without explicitly enabled privileges (as RustDesk does it), the input-desktop switch timing, the pipe ACL under a real SYSTEM token, and RDP-attached or multi-monitor consoles.
 
-## Picture quality, version 2 (IMPLEMENTED (pending release))
+## Picture quality, version 2 (IMPLEMENTED (v0.4.17))
 
 Approved 2026-11-11. Jack: "even high quality feels a bit grainy ... maybe have an extra high that gets you close to native".
 
@@ -422,7 +422,7 @@ Approved 2026-11-11. Jack: "even high quality feels a bit grainy ... maybe have 
 
 ## 18. Notice, version 2: a bar that folds, and the tray (2026-11-11)
 
-**Status:** `IMPLEMENTED (pending release)` · security and transparency work (what the person at the machine sees while someone controls it) · version bump and changelog left for the release step.
+**Status:** `IMPLEMENTED (v0.4.17)` · security and transparency work (what the person at the machine sees while someone controls it) · version bump and changelog left for the release step.
 
 ### 18.1 Problem
 

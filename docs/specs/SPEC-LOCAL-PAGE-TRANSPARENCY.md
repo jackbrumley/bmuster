@@ -1,6 +1,6 @@
 # SPEC-LOCAL-PAGE-TRANSPARENCY: Who manages this computer, and how to remove BMuster
 
-**Status:** `IMPLEMENTED (pending release)` · Approved by Jack, 2026-11-11. Extends SPEC-AGENT-LOCAL.
+**Status:** `IMPLEMENTED (v0.4.17)` · Approved by Jack, 2026-11-11. Extends SPEC-AGENT-LOCAL.
 
 **This is security work.** It changes what the agent's local page shows before sign-in, and it adds a signed request the agent sends when an administrator uninstalls it at the machine. No check is weakened: the page still needs a code for every change, and the new request is checked like every other agent request.
 

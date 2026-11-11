@@ -34,7 +34,9 @@ pub enum Kind {
     Terminal,
     Exec,
     Files,
-    /// The background storage scan (SPEC-STORAGE 3.2), not a session.
+    /// The background storage scan (SPEC-STORAGE 3.2), not a session; only
+    /// Linux runs it as a unit.
+    #[cfg(target_os = "linux")]
     Storage,
 }
 

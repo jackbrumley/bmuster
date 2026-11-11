@@ -465,7 +465,6 @@ fn dispatch(command: Command) -> Result<ExitCode> {
             platform::refresh_service()?;
             Ok(ExitCode::SUCCESS)
         }
-        #[cfg(target_os = "linux")]
         Command::StorageScan { data_dir, asked } => {
             let speed = if asked {
                 storage::pace::Speed::Asked
@@ -475,6 +474,7 @@ fn dispatch(command: Command) -> Result<ExitCode> {
             storage::scan::run(&data_dir, speed)?;
             Ok(ExitCode::SUCCESS)
         }
+        #[cfg(target_os = "linux")]
         Command::FilesHelper { data_dir } => {
             sessions::files_helper::serve(std::io::stdin(), std::io::stdout(), data_dir)?;
             Ok(ExitCode::SUCCESS)

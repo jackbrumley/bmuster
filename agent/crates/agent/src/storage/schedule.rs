@@ -70,13 +70,16 @@ enum Pass {
 }
 
 impl Pass {
-    fn finished(&mut self) -> bool {
-        let child = match self {
+    fn child(&mut self) -> &mut Child {
+        match self {
             Pass::Child(child) => child,
             #[cfg(target_os = "linux")]
             Pass::Unit(child, _) => child,
-        };
-        !matches!(child.try_wait(), Ok(None))
+        }
+    }
+
+    fn finished(&mut self) -> bool {
+        !matches!(self.child().try_wait(), Ok(None))
     }
 
     fn stop(self) {

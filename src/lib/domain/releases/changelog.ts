@@ -1,6 +1,17 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.17',
+		changes: [
+			'A new Storage tab shows where disk space goes on each machine, from a slow, low-priority background scan that is ready before you need it, even on a full disk',
+			'Desktop picture: High keeps full colour detail, and a new Extra high setting is close to native for text',
+			'Fixed: on Linux machines captured from the graphics card, scales below 100% showed a black screen',
+			'The on-screen notice folds to a small pill after a few seconds and opens again under the pointer; on Wayland desktops the tray icon, a notification and the tray menu show who is connected, with Disconnect',
+			'The agent page on each machine shows who manages it, who is connected right now and the command to remove BMuster, before any sign-in; removing it at the machine is recorded in Activity',
+			'Tray helpers pick up a new agent version by themselves, without signing out'
+		]
+	},
+	{
 		version: '0.4.16',
 		changes: [
 			'Fixed: the Windows remote desktop dropped a moment after the first picture, so the screen froze and could not be controlled',
