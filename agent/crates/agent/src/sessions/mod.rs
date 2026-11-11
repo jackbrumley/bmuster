@@ -12,6 +12,7 @@ mod exec;
 mod files;
 #[cfg(target_os = "linux")]
 pub mod files_helper;
+pub mod live;
 mod pump;
 mod readiness;
 mod terminal;
@@ -35,6 +36,7 @@ use bmuster_protocol::session::{
     open_ticket, session_socket_path, SessionEvent, SessionPurpose, SessionTicket, TicketError,
 };
 use ed25519_dalek::VerifyingKey;
+use live::Live;
 use pump::Ended;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -62,6 +64,8 @@ struct Inner {
     stop: Arc<AtomicBool>,
     /// Where terminal, exec and files sessions run.
     mode: SessionMode,
+    /// Who is connected, for the local page.
+    live: Arc<Live>,
 }
 
 /// A `session-open` the agent would not start.
@@ -93,6 +97,7 @@ impl Sessions {
         stop: Arc<AtomicBool>,
         mode: SessionMode,
         data_dir: std::path::PathBuf,
+        live: Arc<Live>,
     ) -> Self {
         #[cfg(not(target_os = "linux"))]
         let _ = data_dir;
@@ -108,6 +113,7 @@ impl Sessions {
                 running: Mutex::new(0),
                 stop,
                 mode,
+                live,
             }),
         }
     }
@@ -171,6 +177,11 @@ impl Sessions {
                 // No idle sleep while this session runs (SPEC-DESKTOP-WAKE);
                 // let go when the thread ends, however it ends.
                 let _awake = crate::power::sessions::hold();
+                // Listed for the local page until the thread ends.
+                let _listed =
+                    inner
+                        .live
+                        .enter(&admitted.session_id, &admitted.purpose, &admitted.user.name);
                 let label = purpose_label(&admitted.purpose);
                 log::info!(
                     "Session {} for {} ({label}) started.",
@@ -396,6 +407,7 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             SessionMode::InProcess,
             std::env::temp_dir(),
+            Arc::new(Live::default()),
         )
     }
 

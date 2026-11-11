@@ -112,6 +112,7 @@
 			case 'machine-moved':
 				return IconArrowsExchange;
 			case 'machine-uninstalled':
+			case 'machine-removed-at-machine':
 				return IconDeviceDesktopMinus;
 			case 'local-code-viewed':
 				return IconKey;
@@ -254,7 +255,7 @@
 						Reported by the agent {formatRelative(sentence.sentIso, data.now)}, after it was offline
 					</p>
 				{/if}
-			{:else if sentence.kind === 'presence'}
+			{:else if sentence.kind === 'machine'}
 				<p class="what">{sentence.text}</p>
 			{:else}
 				<p class="what">

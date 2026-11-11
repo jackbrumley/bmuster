@@ -6,6 +6,7 @@ import { listAudit } from '../audit/audit.ts';
 import { findMachine, listMachines } from '../machines/machine-views.ts';
 import { authenticateAgent } from './agent-auth.ts';
 import { isRefusal } from './agent-refusal.ts';
+import { leaveRequestSchema } from '#lib/schemas/agents/agent-protocol.ts';
 import { recordLeave } from './leave.ts';
 import { agentConnected, isAgentConnected } from './live-agents.ts';
 
@@ -76,6 +77,30 @@ describe('leaving a server (SPEC-AGENT-LOCAL 3)', () => {
 			message: 'This machine was removed from the server.'
 		});
 		expect(listAudit(database, 1)[0]?.kind).toBe('machine-uninstalled');
+	});
+
+	it('records BMuster removed at the machine by a local administrator (SPEC-LOCAL-PAGE-TRANSPARENCY T7)', () => {
+		const database = testDatabase();
+		const agent = enrolFakeAgent(database, NOW);
+		const body = '{"reason":"removed-at-machine"}';
+		// Signed with the machine's own key, like every agent request.
+		const auth = authenticateAgent(database, agent.signed('POST', LEAVE, body, NOW + 1), NOW + 1);
+		if (isRefusal(auth)) throw new Error(auth.message);
+		const parsed = leaveRequestSchema.parse(JSON.parse(body));
+		recordLeave(database, auth, parsed.reason, NOW + 1);
+
+		const row = database.select().from(machines).get();
+		expect(row?.movedAt).toBeNull();
+		expect(row?.removedAt).toEqual(new Date(NOW + 1));
+		expect(
+			authenticateAgent(database, agent.signed('POST', CHECK_IN, '{}', NOW + 2), NOW + 2)
+		).toMatchObject({ refused: true, reason: 'revoked' });
+		expect(listAudit(database, 1)[0]).toMatchObject({
+			kind: 'machine-removed-at-machine',
+			actorUserId: null,
+			target: 'Test machine',
+			detail: { hostname: 'test-host' }
+		});
 	});
 
 	it('refuses a second leave with revoked, which the agent takes as done', () => {

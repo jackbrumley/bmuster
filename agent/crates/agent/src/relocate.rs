@@ -21,15 +21,27 @@ use std::path::Path;
 /// The server refuses the machine from then on.
 pub fn leave(session: &Session, reason: LeaveReason) -> Result<()> {
     let body = serde_json::to_vec(&LeaveRequest { reason })?;
-    match session.post_signed::<serde::de::IgnoredAny>(LEAVE_PATH, &body)? {
-        Reply::Ok(_) => Ok(()),
-        // Already removed there: nothing left to tell.
-        Reply::Refused(refusal) if refusal.reason == RefusalReason::Revoked => Ok(()),
-        Reply::Refused(refusal) => bail!(
-            "the server refused: {} ({})",
-            refusal.message,
-            refusal.reason
-        ),
+    let mut tries = 0;
+    loop {
+        tries += 1;
+        match session.post_signed::<serde::de::IgnoredAny>(LEAVE_PATH, &body)? {
+            Reply::Ok(_) => return Ok(()),
+            // Already removed there: nothing left to tell.
+            Reply::Refused(refusal) if refusal.reason == RefusalReason::Revoked => return Ok(()),
+            // A fresh process (`uninstall --purge`) signs with this machine's
+            // clock; the refusal's Date header has corrected it, so once more.
+            Reply::Refused(refusal)
+                if tries == 1
+                    && matches!(
+                        refusal.reason,
+                        RefusalReason::StaleTimestamp | RefusalReason::ReplayedTimestamp
+                    ) => {}
+            Reply::Refused(refusal) => bail!(
+                "the server refused: {} ({})",
+                refusal.message,
+                refusal.reason
+            ),
+        }
     }
 }
 
@@ -190,7 +202,7 @@ pub(crate) mod tests {
     }
 
     /// A data folder enrolled with `old_url` as machine "old-machine", and its session.
-    fn enrolled(old_url: &str) -> (tempfile::TempDir, Session) {
+    pub(crate) fn enrolled(old_url: &str) -> (tempfile::TempDir, Session) {
         let dir = tempfile::tempdir().unwrap();
         identity::prepare_data_dir(dir.path()).unwrap();
         identity::save(
@@ -353,5 +365,22 @@ pub(crate) mod tests {
         let (_dir, session) = enrolled(&url);
         leave(&session, LeaveReason::Uninstalled).unwrap();
         assert_eq!(*seen.lock().unwrap(), ["old POST /agent/v1/leave"]);
+    }
+
+    #[test]
+    fn a_refused_timestamp_is_tried_once_more_with_the_corrected_clock() {
+        let seen = Seen::default();
+        let url = fake_server(
+            "old",
+            401,
+            r#"{"reason":"stale-timestamp","message":"The request's clock is too far off."}"#,
+            &seen,
+        );
+        let (_dir, session) = enrolled(&url);
+        assert!(leave(&session, LeaveReason::RemovedAtMachine).is_err());
+        assert_eq!(
+            *seen.lock().unwrap(),
+            ["old POST /agent/v1/leave", "old POST /agent/v1/leave"]
+        );
     }
 }

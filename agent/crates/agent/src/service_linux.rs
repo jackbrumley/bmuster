@@ -147,7 +147,7 @@ pub fn install(url: &str, code: &str, name: Option<&str>, trust: ServerTrust) ->
     // identity), so a half-finished or old install never gets in the way.
     let staged = if UNIT.exists() || Path::new(INSTALL_DIR).exists() || data_dir.exists() {
         log::info!(
-            "Found an earlier BMuster agent on this machine; removing it before installing."
+            "Found an earlier BMuster Agent on this machine; removing it before installing."
         );
         // This program may itself live in INSTALL_DIR, which uninstall deletes.
         let staged =

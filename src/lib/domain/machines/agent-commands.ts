@@ -6,7 +6,10 @@ export type AgentCommands = {
 	shell: string;
 	status: string;
 	uninstall: string;
-	/** Uninstall and delete the agent's identity and logs. */
+	/**
+	 * Uninstall and delete the agent's identity and logs; it tells the server first. The agent's
+	 * local page shows the same command (agent/crates/agent/src/removal.rs; a test keeps them equal).
+	 */
 	purge: string;
 	/** Move to another server (SPEC-AGENT-LOCAL); the placeholders are filled in by hand. */
 	rejoin: string;
@@ -18,10 +21,11 @@ export function agentCommands(family: OsFamily): AgentCommands {
 		case 'macos':
 			return {
 				shell: 'In a terminal',
-				status: 'sudo /opt/bmuster/bmuster-agent status',
-				uninstall: 'sudo /opt/bmuster/bmuster-agent uninstall',
-				purge: 'sudo /opt/bmuster/bmuster-agent uninstall --purge',
-				rejoin: 'sudo /opt/bmuster/bmuster-agent rejoin --url <new server> --code <join code>'
+				status: 'sudo /opt/bmuster/versions/current/bmuster-agent status',
+				uninstall: 'sudo /opt/bmuster/versions/current/bmuster-agent uninstall',
+				purge: 'sudo /opt/bmuster/versions/current/bmuster-agent uninstall --purge',
+				rejoin:
+					'sudo /opt/bmuster/versions/current/bmuster-agent rejoin --url <new server> --code <join code>'
 			};
 		case 'windows':
 			return {

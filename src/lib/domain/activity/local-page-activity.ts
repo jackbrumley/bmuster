@@ -48,7 +48,7 @@ function isLocalPageKind(kind: AuditKind): kind is LocalPageKind {
 export type ActivitySentence =
 	| { kind: 'standard' }
 	| { kind: 'local'; text: string; warning: boolean; sentIso: string }
-	| { kind: 'presence'; text: string; warning: boolean };
+	| { kind: 'machine'; text: string; warning: boolean };
 
 function detailValue(entry: ActivityEntry, label: string): string {
 	return entry.detail.find((item) => item.label === label)?.value ?? '';
@@ -59,16 +59,24 @@ function capitalised(text: string): string {
 }
 
 /**
- * The sentence for a local page entry, or for a machine going offline and coming back
- * (SPEC-PRESENCE P6: "mint went offline"); `standard` for every other entry.
+ * The sentence for a local page entry, for a machine going offline and coming back
+ * (SPEC-PRESENCE P6: "mint went offline"), or for BMuster removed at the machine
+ * (SPEC-LOCAL-PAGE-TRANSPARENCY); `standard` for every other entry.
  */
 export function activitySentence(entry: ActivityEntry): ActivitySentence {
 	const kind = entry.kind;
 	if (kind === 'machine-offline') {
-		return { kind: 'presence', text: `${entry.target} went offline`, warning: true };
+		return { kind: 'machine', text: `${entry.target} went offline`, warning: true };
 	}
 	if (kind === 'machine-online') {
-		return { kind: 'presence', text: `${entry.target} came back online`, warning: false };
+		return { kind: 'machine', text: `${entry.target} came back online`, warning: false };
+	}
+	if (kind === 'machine-removed-at-machine') {
+		return {
+			kind: 'machine',
+			text: `BMuster was removed from ${entry.target} at the machine by a local administrator`,
+			warning: true
+		};
 	}
 	if (!isLocalPageKind(kind)) {
 		return { kind: 'standard' };

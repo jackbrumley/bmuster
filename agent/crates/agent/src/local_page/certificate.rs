@@ -101,7 +101,7 @@ fn make_certificate() -> Result<(Vec<u8>, Vec<u8>)> {
         }
     }
     let mut name = DistinguishedName::new();
-    name.push(DnType::CommonName, "BMuster agent local page");
+    name.push(DnType::CommonName, "BMuster Agent local page");
     params.distinguished_name = name;
     params.is_ca = IsCa::ExplicitNoCa;
     params.key_usages = vec![KeyUsagePurpose::DigitalSignature];

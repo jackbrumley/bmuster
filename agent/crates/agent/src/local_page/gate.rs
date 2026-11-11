@@ -12,6 +12,7 @@ use crate::totp;
 use bmuster_protocol::{CodeOwners, LocalEvent};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub const COOKIE: &str = "bmuster_local_session";
@@ -297,11 +298,40 @@ impl Hosts {
         if !self.loopback_only {
             return true;
         }
+        self.is_loopback_name(host)
+    }
+
+    /// `localhost`, `127.0.0.1` or `[::1]` with this page's port.
+    fn is_loopback_name(&self, host: &str) -> bool {
         let host = host.to_ascii_lowercase();
         ["localhost", "127.0.0.1", "[::1]"]
             .iter()
             .any(|name| host == format!("{name}:{}", self.port))
     }
+
+    /// Whether the visitor sits at this computer (SPEC-LOCAL-PAGE-TRANSPARENCY):
+    /// the connection comes from a loopback address (127.0.0.0/8 or ::1, also
+    /// IPv4-mapped) and the browser asked for a loopback name. The name check
+    /// matters while the page is open to the network, where any `Host` is
+    /// answered: without it a web page that points its own name at
+    /// 127.0.0.1 (DNS rebinding) could read the details in a local browser.
+    pub fn visitor(&self, peer: IpAddr, host: Option<&str>) -> Visitor {
+        if peer.to_canonical().is_loopback() && host.is_some_and(|host| self.is_loopback_name(host))
+        {
+            Visitor::AtThisComputer
+        } else {
+            Visitor::FromTheNetwork
+        }
+    }
+}
+
+/// Who opened the page, for what it shows before sign-in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Visitor {
+    /// Sees who manages the computer, its server and who is connected.
+    AtThisComputer,
+    /// Sees only the sign-in form and how to remove BMuster.
+    FromTheNetwork,
 }
 
 /// A form counts only when the browser says it came from this page's own
@@ -708,5 +738,42 @@ mod tests {
             loopback_only: false,
         };
         assert!(open.allows(Some("192.168.1.20:47500")));
+    }
+
+    #[test]
+    fn only_loopback_visitors_asking_for_a_local_name_are_at_this_computer() {
+        let open = Hosts {
+            port: 47500,
+            loopback_only: false,
+        };
+        let peer = |text: &str| text.parse::<IpAddr>().unwrap();
+        for (address, host) in [
+            ("127.0.0.1", "localhost:47500"),
+            ("127.8.9.10", "127.0.0.1:47500"),
+            ("::1", "[::1]:47500"),
+            ("::ffff:127.0.0.1", "localhost:47500"),
+        ] {
+            assert_eq!(
+                open.visitor(peer(address), Some(host)),
+                Visitor::AtThisComputer,
+                "{address} {host}"
+            );
+        }
+        for (address, host) in [
+            ("192.168.1.20", Some("192.168.1.5:47500")),
+            ("10.0.0.1", Some("localhost:47500")),
+            ("::ffff:192.168.1.20", Some("localhost:47500")),
+            ("fe80::1", Some("localhost:47500")),
+            // DNS rebinding: a loopback connection to a name that is not local.
+            ("127.0.0.1", Some("rebound.example:47500")),
+            ("127.0.0.1", Some("localhost:47400")),
+            ("127.0.0.1", None),
+        ] {
+            assert_eq!(
+                open.visitor(peer(address), host),
+                Visitor::FromTheNetwork,
+                "{address} {host:?}"
+            );
+        }
     }
 }

@@ -6,8 +6,11 @@
 //! Sign-in is a 6-digit code (TOTP) the console shows to admins; the secret
 //! is made here and sent once to the server in a signed request. Each person
 //! on the server's list has their own code derived from it, and what happens
-//! here is reported to the server's Activity (SPEC-AGENT-LOCAL 7).
+//! here is reported to the server's Activity (SPEC-AGENT-LOCAL 7). Before
+//! sign-in it shows who manages the computer and how to remove BMuster
+//! (SPEC-LOCAL-PAGE-TRANSPARENCY).
 
+mod about;
 mod actions;
 mod certificate;
 mod gate;
@@ -21,6 +24,7 @@ use crate::client::{Reply, Session};
 use crate::identity::write_private;
 use crate::inventory::Probe;
 use crate::paths::{LOCAL_PAGE_CONFIG_FILE, LOCAL_PAGE_REPORTED_FILE};
+use crate::sessions::live::Live;
 use crate::status::{RunMode, StatusBoard};
 use crate::worker::Signal;
 use anyhow::{bail, Context as _, Result};
@@ -64,6 +68,8 @@ pub struct Setup {
     pub journal: Arc<Journal>,
     /// Started by the launcher, so it can update itself (SPEC-AGENT-UPDATES).
     pub launched: bool,
+    /// Who is connected now, shown to someone at this computer.
+    pub live: Arc<Live>,
 }
 
 /// The running page's shared state.
@@ -78,6 +84,7 @@ pub struct Page {
     gate: Gate,
     people: Arc<People>,
     journal: Arc<Journal>,
+    live: Arc<Live>,
     hosts: Hosts,
     listen: Vec<SocketAddr>,
     /// The certificate's SHA-256 as browsers show it.
@@ -231,6 +238,7 @@ fn try_start(setup: Setup) -> Result<Reporter> {
         ),
         people: setup.people,
         journal: setup.journal,
+        live: setup.live,
         launched: setup.launched,
         hosts: listen.hosts,
         listen: listeners.iter().map(|(address, _)| *address).collect(),
@@ -319,12 +327,18 @@ fn serve_connection(page: &Page, tcp: TcpStream, tls: Arc<ServerConfig>) {
     {
         return;
     }
+    let Ok(peer) = tcp.peer_addr() else {
+        return;
+    };
     let Ok(connection) = ServerConnection::new(tls) else {
         return;
     };
     let mut stream = StreamOwned::new(connection, tcp);
     let (response, after) = match http::read_request(&mut stream) {
-        Ok(request) => routes::handle(page, &request),
+        Ok(request) => {
+            let visitor = page.hosts.visitor(peer.ip(), request.header("host"));
+            routes::handle(page, &request, visitor)
+        }
         // A browser that gave up, a plain-HTTP visitor or a refused certificate.
         Err(http::ReadError::Closed) => return,
         Err(http::ReadError::Bad(reason)) => {

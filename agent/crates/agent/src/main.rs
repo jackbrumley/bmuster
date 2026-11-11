@@ -21,6 +21,7 @@ mod move_to_opt;
 mod paths;
 mod power;
 mod relocate;
+mod removal;
 mod rescue;
 #[cfg(target_os = "linux")]
 mod service_linux;
@@ -59,7 +60,7 @@ const EXIT_RESTART: u8 = 4;
 const EXIT_UPDATE: u8 = launcher::EXIT_UPDATE;
 
 #[derive(Parser)]
-#[command(name = "bmuster-agent", version = updates::VERSION, about = "BMuster agent")]
+#[command(name = "bmuster-agent", version = updates::VERSION, about = "BMuster Agent")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -427,6 +428,16 @@ fn dispatch(command: Command) -> Result<ExitCode> {
         } => rejoin(&join, data_dir, insecure_dev_tls),
         Command::Status { data_dir } => status(&paths::data_dir(data_dir)?),
         Command::Uninstall { purge } => {
+            platform::require_admin()?;
+            // Purged, the machine leaves its server for good: say so first
+            // (SPEC-LOCAL-PAGE-TRANSPARENCY). Kept, the identity may be used
+            // again by a reinstall, so the server is not told.
+            #[cfg(any(target_os = "linux", windows))]
+            if purge {
+                let report =
+                    removal::tell_server(&paths::default_data_dir()?, removal::REPORT_LIMIT);
+                log::info!("{}", removal::describe(&report));
+            }
             platform::uninstall(purge)?;
             Ok(ExitCode::SUCCESS)
         }

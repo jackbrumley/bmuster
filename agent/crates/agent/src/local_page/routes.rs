@@ -2,8 +2,9 @@
 //! (POST) must come from the page itself; everything but sign-in, the
 //! stylesheet and `/healthz` needs a session.
 
+use super::about;
 use super::actions::{self, MoveForm, MoveResult, Uninstall};
-use super::gate::{same_origin, SignIn, COOKIE, MAX_SESSION_MS};
+use super::gate::{same_origin, SignIn, Visitor, COOKIE, MAX_SESSION_MS};
 use super::http::{field, Request, Response};
 use super::pages::{self, Row};
 use super::Page;
@@ -40,7 +41,7 @@ fn html(status: u16, body: String) -> (Response, After) {
     (Response::html(status, body), After::Nothing)
 }
 
-pub fn handle(page: &Page, request: &Request) -> (Response, After) {
+pub fn handle(page: &Page, request: &Request, visitor: Visitor) -> (Response, After) {
     let host = request.header("host");
     if !page.hosts.allows(host) {
         return (
@@ -84,15 +85,17 @@ pub fn handle(page: &Page, request: &Request) -> (Response, After) {
     let now = now_ms();
     let token = request.cookie(COOKIE);
     if (method, path) == ("POST", "/sign-in") {
-        return sign_in(page, request, now);
+        return sign_in(page, request, visitor, now);
     }
     let Some(codes) = page.gate.session(token, now) else {
         return match (method, path) {
-            ("GET", "/") => html(200, pages::sign_in(&hostname(), None)),
+            ("GET", "/") => html(200, about::signed_out(page, visitor, &hostname(), None)),
             ("GET", _) => (Response::redirect("/"), After::Nothing),
             _ => html(
                 401,
-                pages::sign_in(
+                about::signed_out(
+                    page,
+                    visitor,
                     &hostname(),
                     Some("You were signed out. Sign in again, then retry."),
                 ),
@@ -181,7 +184,7 @@ fn hostname() -> String {
     inventory::hostname().unwrap_or_else(|_| "this machine".into())
 }
 
-fn sign_in(page: &Page, request: &Request, now: u64) -> (Response, After) {
+fn sign_in(page: &Page, request: &Request, visitor: Visitor, now: u64) -> (Response, After) {
     let form = request.form();
     let problem = match page.gate.sign_in(field(&form, "code"), now) {
         SignIn::SignedIn { token } => {
@@ -211,7 +214,10 @@ fn sign_in(page: &Page, request: &Request, now: u64) -> (Response, After) {
                 .into(),
         ),
     };
-    html(problem.0, pages::sign_in(&hostname(), Some(&problem.1)))
+    html(
+        problem.0,
+        about::signed_out(page, visitor, &hostname(), Some(&problem.1)),
+    )
 }
 
 /// Only fixed notices; nothing from the address is shown back.
@@ -492,8 +498,10 @@ mod tests {
     use super::super::people::People;
     use super::*;
     use crate::client::{Security, ServerUrl, Session, TlsMode, Transport};
+    use crate::sessions::live::Live;
     use crate::status::StatusBoard;
     use crate::totp;
+    use bmuster_protocol::session::{Consent, SessionPurpose};
     use bmuster_protocol::ServerTrust;
     use ed25519_dalek::SigningKey;
     use std::sync::atomic::AtomicUsize;
@@ -528,6 +536,7 @@ mod tests {
             gate: Gate::new(SECRET, Arc::clone(&people), Arc::clone(&journal)),
             people,
             journal,
+            live: Arc::new(Live::default()),
             launched: false,
             hosts: Hosts {
                 port: 47591,
@@ -561,6 +570,11 @@ mod tests {
             headers.push(("Cookie", cookie.as_str()));
         }
         Request::new("POST", path, &headers, body.as_bytes())
+    }
+
+    /// Most tests visit from this computer.
+    fn handle(page: &Page, request: &Request) -> (Response, After) {
+        super::handle(page, request, Visitor::AtThisComputer)
     }
 
     fn body(response: &Response) -> String {
@@ -601,10 +615,69 @@ mod tests {
     }
 
     #[test]
+    fn before_sign_in_this_computer_sees_who_manages_it_and_who_is_connected() {
+        let (page, _signals, _dir) = page(RunMode::Foreground);
+        let (response, _) = handle(&page, &get("/", None));
+        let text = body(&response);
+        assert_eq!(response.status, 200);
+        assert!(
+            text.contains("This computer is managed by <strong>127.0.0.1</strong> with BMuster.")
+        );
+        assert!(text.contains("http://127.0.0.1:9"));
+        assert!(text.contains("Nobody is connected right now."));
+        assert!(text.contains("uninstall --purge"));
+        // The machine id and the page's certificate stay behind sign-in.
+        assert!(!text.contains("m-1"));
+        assert!(!text.contains("AB:CD"));
+
+        let _desktop = page.live.enter(
+            "s1",
+            &SessionPurpose::Desktop {
+                consent: Consent::Unattended,
+                notice: true,
+            },
+            "Jack Brumley",
+        );
+        let text = body(&handle(&page, &get("/", None)).0);
+        assert!(
+            text.contains("<dt>Desktop</dt><dd>Jack Brumley</dd>"),
+            "{text}"
+        );
+        assert!(text.contains("a notice on the screen names them"));
+    }
+
+    #[test]
+    fn before_sign_in_the_network_sees_only_removal_and_sign_in() {
+        let (page, _signals, _dir) = page(RunMode::Foreground);
+        let _desktop = page.live.enter(
+            "s1",
+            &SessionPurpose::Desktop {
+                consent: Consent::Unattended,
+                notice: true,
+            },
+            "Jack Brumley",
+        );
+        for request in [
+            get("/", None),
+            post("/sign-in", "code=000000", Some(ORIGIN), None),
+        ] {
+            let (response, _) = super::handle(&page, &request, Visitor::FromTheNetwork);
+            let text = body(&response);
+            assert!(text.contains("Remove BMuster"));
+            assert!(text.contains("uninstall --purge"));
+            assert!(text.contains("to make changes"));
+            for private in ["127.0.0.1:9", "Jack Brumley", "Right now", "Who manages"] {
+                assert!(!text.contains(private), "{private}");
+            }
+        }
+    }
+
+    #[test]
     fn everything_else_needs_a_session() {
         let (page, _signals, _dir) = page(RunMode::Foreground);
         let (home, _) = handle(&page, &get("/", None));
         assert!(body(&home).contains("Sign in on"));
+        assert!(body(&home).contains("to make changes"));
         assert_eq!(handle(&page, &get("/move", None)).0.status, 303);
         let (response, after) = handle(&page, &post("/restart", "", Some(ORIGIN), None));
         assert_eq!(response.status, 401);
