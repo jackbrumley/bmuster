@@ -10,6 +10,7 @@
 	import type { Crumb } from '#lib/domain/files/files.ts';
 	import type { Machine } from '#lib/domain/machines/machine.ts';
 	import {
+		lowDiskDrives,
 		scanLine,
 		storageCrumbs,
 		type DriveSummary,
@@ -32,6 +33,8 @@
 	import FolderList from './folder-list.svelte';
 	import LargestList from './largest-list.svelte';
 	import { storageApi } from './storage-api.ts';
+	import CleanupPanel from './cleanup-panel.svelte';
+	import LowDiskNotice from '../low-disk-notice.svelte';
 
 	/**
 	 * Where the machine's disk space went (SPEC-STORAGE 7), from the agent's
@@ -49,6 +52,18 @@
 
 	/** While a scan runs, the drives are read again this often. */
 	const REFRESH_MS = 30_000;
+	/** After Rescan now, the drives are read this often until the scan shows (S27). */
+	const PENDING_MS = 2000;
+	/** After this, the tab stops waiting and says the machine will scan when it can. */
+	const PENDING_LIMIT_MS = 60_000;
+
+	/** Rescan now, from the click to the scan showing (SPEC-STORAGE S27). */
+	type Rescan =
+		| { kind: 'idle' }
+		| { kind: 'asking' }
+		| { kind: 'waiting'; sinceMs: number }
+		| { kind: 'already' }
+		| { kind: 'late' };
 
 	const api = $derived(storageApi(machine.id));
 	const filesKey = $derived(`bmuster.files.${machine.id}`);
@@ -58,7 +73,7 @@
 	let folder = $state<Loaded<Folder>>({ kind: 'loading' });
 	let largest = $state<Loaded<LargeFile[]>>({ kind: 'loading' });
 	let mode = $state<Mode>('folders');
-	let asking = $state(false);
+	let rescanState = $state<Rescan>({ kind: 'idle' });
 	let now = $state(Date.now());
 	let loads = 0;
 
@@ -75,6 +90,26 @@
 			: undefined;
 	});
 	const scanning = $derived(drives.some((drive) => drive.scanning.kind === 'running'));
+	const scanPercent = $derived(
+		drives.reduce(
+			(found, drive) => (drive.scanning.kind === 'running' ? drive.scanning.percent : found),
+			0
+		)
+	);
+	const nearlyFull = $derived(lowDiskDrives(drives));
+	const pending = $derived(rescanState.kind === 'asking' || rescanState.kind === 'waiting');
+	const rescanHint = $derived.by(() => {
+		switch (rescanState.kind) {
+			case 'already':
+				return `Already scanning, ${scanPercent} %.`;
+			case 'late':
+				return 'The machine has not started the scan yet; it will when it can.';
+			case 'idle':
+			case 'asking':
+			case 'waiting':
+				return 'Scans run slowly in the background, about once a day.';
+		}
+	});
 	const modeOptions = [
 		{ value: 'folders' as const, label: 'Folders', count: undefined },
 		{ value: 'files' as const, label: 'Largest files', count: undefined }
@@ -88,8 +123,12 @@
 				void loadSummary(false);
 			}
 		}, REFRESH_MS);
+		const pendingTimer = setInterval(() => {
+			void followRescan();
+		}, PENDING_MS);
 		return () => {
 			clearInterval(timer);
+			clearInterval(pendingTimer);
 		};
 	});
 
@@ -167,15 +206,46 @@
 	}
 
 	async function rescan(): Promise<void> {
-		asking = true;
+		rescanState = { kind: 'asking' };
 		const result = await api.rescan();
-		asking = false;
 		if (!result.ok) {
+			rescanState = { kind: 'idle' };
 			showToast(result.message, 'error');
 			return;
 		}
-		showToast('A new scan starts within a minute. It builds slowly in the background.', 'success');
+		rescanState = result.data.alreadyScanning
+			? { kind: 'already' }
+			: { kind: 'waiting', sinceMs: Date.now() };
 		await loadSummary(false);
+	}
+
+	/** Whether the asked-for scan shows: a pass running, or a scan finished since the click. */
+	function scanShows(sinceMs: number): boolean {
+		return drives.some(
+			(drive) =>
+				drive.scanning.kind === 'running' ||
+				(drive.lastScan.kind === 'complete' && drive.lastScan.finishedAtMs >= sinceMs)
+		);
+	}
+
+	/** Every 2 s after Rescan now: back to normal once the scan shows, or say it is late. */
+	async function followRescan(): Promise<void> {
+		const current = rescanState;
+		if (current.kind === 'already' && !scanning) {
+			rescanState = { kind: 'idle' };
+		}
+		if (current.kind !== 'waiting') {
+			return;
+		}
+		await loadSummary(false);
+		if (rescanState !== current) {
+			return;
+		}
+		if (scanShows(current.sinceMs)) {
+			rescanState = { kind: 'idle' };
+		} else if (Date.now() - current.sinceMs >= PENDING_LIMIT_MS) {
+			rescanState = { kind: 'late' };
+		}
 	}
 
 	function setMode(value: Mode | null): void {
@@ -254,23 +324,28 @@
 			</Notice>
 		{/if}
 		<div class="toolbar">
-			<p class="hint">Scans run slowly in the background, about once a day.</p>
-			<Button
-				variant="secondary"
-				size="compact"
-				type="button"
-				onclick={() => {
-					void rescan();
-				}}
-			>
-				{#if asking}
-					<RadarSpinner size="small" />
-				{:else}
+			{#if pending}
+				<p class="hint pending" role="status">
+					<RadarSpinner size="small" /> Asking {machine.name} to scan…
+				</p>
+			{:else}
+				<p class="hint" role="status">{rescanHint}</p>
+			{/if}
+			{#if !pending}
+				<Button
+					variant="secondary"
+					size="compact"
+					type="button"
+					onclick={() => {
+						void rescan();
+					}}
+				>
 					<IconRefresh size={18} />
-				{/if}
-				Rescan now
-			</Button>
+					Rescan now
+				</Button>
+			{/if}
 		</div>
+		<LowDiskNotice drives={nearlyFull} storageOf={undefined} />
 		<DriveList
 			drives={summary.value.drives}
 			{now}
@@ -278,6 +353,7 @@
 				open({ kind: 'folder', mount, path: mount });
 			}}
 		/>
+		<CleanupPanel {api} />
 	{:else if openDrive?.lastScan.kind === 'none'}
 		{@render notScanned(openDrive)}
 	{:else if folder.kind === 'loading'}
@@ -349,6 +425,9 @@
 	}
 
 	.hint {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
 		margin: 0;
 		color: var(--muted);
 		font-size: var(--text-sm);

@@ -9,7 +9,9 @@
 	import { powerSourceLabel } from '#lib/domain/machines/power.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import { canSendUserMessage } from '#lib/domain/machines/user-message.ts';
+	import { hasPermission } from '#lib/domain/access/access.ts';
 	import DisplayCard from './display-card.svelte';
+	import LowDiskNotice from './low-disk-notice.svelte';
 	import InventoryList from './inventory-list.svelte';
 	import SendMessage from './send-message.svelte';
 	import type { PageProps } from './$types';
@@ -109,6 +111,10 @@
 {/snippet}
 
 <div class="sections">
+	<LowDiskNotice
+		drives={machine.lowDisk}
+		storageOf={hasPermission(data.grants, 'files') ? machine.id : undefined}
+	/>
 	<Panel heading="Health" actions={undefined} tone="normal" padding="normal">
 		{#if machine.status.kind === 'online' && machine.live.kind === 'known'}
 			<div class="meters">

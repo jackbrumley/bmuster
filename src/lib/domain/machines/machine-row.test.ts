@@ -48,6 +48,7 @@ function machine(overrides: Partial<Machine>): Machine {
 		enrolledIso: '2026-11-01T00:00:00.000Z',
 		lastSeenIso: '2026-11-07T12:00:00.000Z',
 		inUse: [],
+		lowDisk: [],
 		...overrides
 	};
 }
@@ -80,18 +81,18 @@ describe('Machines list rows', () => {
 		expect([pending.memoryPercent, pending.disk]).toEqual([null, undefined]);
 	});
 
-	it('needs attention for pending updates or a disk at 90% or more', () => {
+	it('needs attention for pending updates or a nearly full drive (SPEC-STORAGE S21)', () => {
 		const updates = toMachineRow(machine({ inventory: inventory([], 3) }));
 		const full = toMachineRow(
-			machine({
-				inventory: inventory([{ mount: 'C:', sizeBytes: 100 * GB, usedBytes: 90 * GB }], 0)
-			})
+			machine({ lowDisk: [{ mount: 'C:\\', percent: 94, freeBytes: 6 * GB }] })
 		);
 		for (const row of [updates, full]) {
 			expect(row.attention).toBe(true);
 			expect(matchesFilter(row, 'attention')).toBe(true);
 		}
 		expect(updates.updates).toBe(3);
+		expect(matchesFilter(full, 'low-disk')).toBe(true);
+		expect(matchesFilter(updates, 'low-disk')).toBe(false);
 	});
 
 	it('filters by status', () => {

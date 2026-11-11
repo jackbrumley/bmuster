@@ -21,7 +21,8 @@ export {
 	machineNotes,
 	machineStatus,
 	machineStorage,
-	machines
+	machines,
+	storageCleanups
 } from './schema/machines.ts';
 export { notificationEvents, notificationRules } from './schema/notifications.ts';
 export { passwordLinks } from './schema/password-links.ts';

@@ -7,6 +7,7 @@ import { emailSettingsFor, SECRETS_KEY, setUpEmail } from '#tests/helpers/email.
 import { addTestUser, NOW, PASSWORD } from '#tests/helpers/people.ts';
 import { createGroup, listMachineGroups, setGroupMembers } from '../access/groups.ts';
 import { listAudit } from '../audit/audit.ts';
+import { storeCheckInStorage } from '../machines/machine-storage.ts';
 import { removeMachine } from '../machines/machine-views.ts';
 import { updateEmailSettings } from '../settings/email-settings.ts';
 import { toConsoleUser } from '../users/users.ts';
@@ -48,6 +49,36 @@ function queuedTo(database: AppDatabase): string[] {
 		.map((row) => row.toAddress)
 		.sort();
 }
+
+describe('Disk nearly full (SPEC-STORAGE S23)', () => {
+	it('emails the drive with how full it is', async () => {
+		const { database, admin } = await setUp();
+		done(createRule(database, admin.id, rule({ eventKind: 'disk-nearly-full' }), NOW));
+		const { machineId } = enrolFakeAgent(database, NOW);
+		storeCheckInStorage(
+			database,
+			machineId,
+			{
+				kind: 'reported',
+				drives: [
+					{
+						mount: 'C:\\',
+						sizeBytes: 100 * 1024 ** 3,
+						freeBytes: 3 * 1024 ** 3,
+						lastScan: { kind: 'none' },
+						scanning: { kind: 'idle' }
+					}
+				],
+				cleanup: { kind: 'none' }
+			},
+			NOW
+		);
+		expect(processNotificationEvents(database, NOW)).toBe(1);
+		const [message] = database.select().from(emailMessages).all();
+		expect(message?.subject).toBe('Disk nearly full: Test machine C:\\');
+		expect(message?.body).toContain('97 %');
+	});
+});
 
 describe('notification rules (E6)', () => {
 	it('sends nothing by default: an enrolment with no rules queues no email', async () => {

@@ -1,10 +1,16 @@
 import { resolve } from '$app/paths';
-import { emptyReplySchema } from '#lib/schemas/files/files.ts';
 import {
 	folderViewReplySchema,
 	largestReplySchema,
+	rescanReplySchema,
 	storageSummaryReplySchema
 } from '#lib/schemas/storage/storage.ts';
+import {
+	cleanupSizesReplySchema,
+	cleanupStartReplySchema,
+	cleanupStatusReplySchema
+} from '#lib/schemas/storage/cleanup.ts';
+import type { CleanupItemId } from '#lib/domain/storage/cleanup.ts';
 import { apiRequest } from '#lib/utils/api-client.ts';
 
 /** The Storage tab's calls to the server (SPEC-STORAGE 5). */
@@ -39,7 +45,29 @@ export function storageApi(machineId: string) {
 				method: 'POST',
 				url: resolve('/api/machines/[id]/storage/rescan', params),
 				body: {},
-				reply: emptyReplySchema
+				reply: rescanReplySchema
+			}),
+		// Clean-up (SPEC-STORAGE 11.5): item ids only.
+		cleanupItems: () =>
+			apiRequest({
+				method: 'GET',
+				url: resolve('/api/machines/[id]/storage/cleanup/items', params),
+				body: undefined,
+				reply: cleanupSizesReplySchema
+			}),
+		cleanupStatus: () =>
+			apiRequest({
+				method: 'GET',
+				url: resolve('/api/machines/[id]/storage/cleanup', params),
+				body: undefined,
+				reply: cleanupStatusReplySchema
+			}),
+		startCleanup: (items: CleanupItemId[]) =>
+			apiRequest({
+				method: 'POST',
+				url: resolve('/api/machines/[id]/storage/cleanup', params),
+				body: { items },
+				reply: cleanupStartReplySchema
 			})
 	};
 }

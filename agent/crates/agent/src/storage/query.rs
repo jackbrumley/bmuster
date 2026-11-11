@@ -137,10 +137,19 @@ pub fn summary(data_dir: &Path) -> FilesResult {
     }
 }
 
-/// Asks the scheduler for a pass now.
+/// Asks the scheduler for a pass now; it notices within a second (S25).
+/// While a pass runs, nothing is asked: the answer says it is already
+/// scanning, so the console can say so (S26).
 pub fn rescan(data_dir: &Path) -> Result<FilesResult, FileError> {
+    if super::pass_running(data_dir) {
+        return Ok(FilesResult::StorageRescan {
+            already_scanning: true,
+        });
+    }
     super::request_rescan(data_dir).map_err(|e| FileError::new(ErrorCode::Io, format!("{e:#}")))?;
-    Ok(FilesResult::Nothing {})
+    Ok(FilesResult::StorageRescan {
+        already_scanning: false,
+    })
 }
 
 #[cfg(all(test, unix))]
@@ -225,9 +234,27 @@ mod tests {
     }
 
     #[test]
-    fn rescan_asks_for_a_pass() {
+    fn s26_rescan_asks_for_a_pass_or_says_one_runs() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(rescan(dir.path()).unwrap(), FilesResult::Nothing {});
+        assert_eq!(
+            rescan(dir.path()).unwrap(),
+            FilesResult::StorageRescan {
+                already_scanning: false
+            }
+        );
         assert!(super::super::rescan_requested(dir.path()));
+        super::super::clear_rescan(dir.path());
+        let held = std::fs::File::create(super::super::dir(dir.path()).join("scan.lock")).unwrap();
+        held.lock().unwrap();
+        assert_eq!(
+            rescan(dir.path()).unwrap(),
+            FilesResult::StorageRescan {
+                already_scanning: true
+            }
+        );
+        assert!(
+            !super::super::rescan_requested(dir.path()),
+            "no second pass queued"
+        );
     }
 }

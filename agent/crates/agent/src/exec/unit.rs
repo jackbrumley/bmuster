@@ -377,6 +377,15 @@ mod tests {
         assert_eq!(prefix(Kind::Storage), "bmuster-storage-");
     }
 
+    #[test]
+    fn s18_the_clean_up_runs_as_its_own_unit_without_network() {
+        let unit = TransientUnit::new(Manager::System, Kind::Storage, "clean").unwrap();
+        assert_eq!(unit.name(), "bmuster-storage-clean.service");
+        let args =
+            strings(&unit.arguments(None, &launch("/opt/bmuster-agent", &["storage-clean"])));
+        assert!(args.contains(&"PrivateNetwork=yes".to_string()));
+    }
+
     /// CB3: no unit property passes a pty path or an agent descriptor.
     #[test]
     fn units_take_no_agent_descriptors() {

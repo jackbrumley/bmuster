@@ -23,8 +23,10 @@ pub const FIRST_DELAY: Duration = Duration::from_secs(10 * 60);
 pub const RESCAN_AFTER_MS: i64 = 24 * 60 * 60 * 1000;
 /// A pass that did not finish every drive is tried again after this.
 pub const RETRY_AFTER: Duration = Duration::from_secs(60 * 60);
-/// How often the scheduler looks.
+/// How often the scheduler looks for a due pass.
 const CHECK_EVERY: Duration = Duration::from_secs(60);
+/// How often it wakes: to notice Rescan now and clean-up requests, and to stop.
+const TICK: Duration = Duration::from_millis(500);
 
 /// What the scheduler knows when it looks.
 pub struct Looking<'a> {
@@ -62,8 +64,8 @@ pub fn due(looking: &Looking) -> Option<Speed> {
     stale.then_some(Speed::Background)
 }
 
-/// A pass that is running.
-enum Pass {
+/// A helper process that is running: the scan pass or the clean-up.
+pub(super) enum Pass {
     Child(Child),
     #[cfg(target_os = "linux")]
     Unit(Child, crate::exec::unit::TransientUnit),
@@ -78,11 +80,11 @@ impl Pass {
         }
     }
 
-    fn finished(&mut self) -> bool {
+    pub(super) fn finished(&mut self) -> bool {
         !matches!(self.child().try_wait(), Ok(None))
     }
 
-    fn stop(self) {
+    pub(super) fn stop(self) {
         match self {
             Pass::Child(mut child) => {
                 let _ = child.kill();
@@ -109,19 +111,27 @@ fn arguments(data_dir: &Path, speed: Speed) -> Vec<OsString> {
     args
 }
 
-fn launch(data_dir: &Path, speed: Speed, mode: SessionMode) -> Result<Pass> {
+/// Starts `bmuster-agent <args>`: the transient service
+/// `bmuster-storage-<unit>.service` on an installed Linux agent (as root,
+/// no network, lowest priority), a child process otherwise.
+pub(super) fn launch(
+    args: Vec<OsString>,
+    unit: &str,
+    what: &'static str,
+    mode: SessionMode,
+) -> Result<Pass> {
     #[cfg(target_os = "linux")]
     if let Some(manager) = mode.manager() {
         use crate::exec::placement::Kind;
         use crate::exec::spawn::{Launch, Program};
         use crate::exec::unit::TransientUnit;
-        let unit = TransientUnit::new(manager, Kind::Storage, "scan")?;
+        let unit = TransientUnit::new(manager, Kind::Storage, unit)?;
         let program: PathBuf = crate::exec::unit::program(manager)?;
         let launch = Launch {
             program: Program {
                 arg0: program.clone().into_os_string(),
                 path: program,
-                args: arguments(data_dir, speed),
+                args,
             },
             env: vec![("PATH".into(), crate::exec::spawn::UNIX_PATH.into())],
             cwd: PathBuf::from("/"),
@@ -132,25 +142,26 @@ fn launch(data_dir: &Path, speed: Speed, mode: SessionMode) -> Result<Pass> {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .context("could not run systemd-run for the storage scan")?;
-        log::info!("Storage scan started as {}.", unit.name());
+            .with_context(|| format!("could not run systemd-run for the {what}"))?;
+        log::info!("Storage: the {what} started as {}.", unit.name());
         return Ok(Pass::Unit(child, unit));
     }
-    let _ = mode;
+    let _ = (mode, unit);
     let program = std::env::current_exe().context("could not find this program's path")?;
     let mut child = Command::new(program)
-        .args(arguments(data_dir, speed))
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .context("could not start the storage scan")?;
-    crate::diagnostics::ship_helper_stderr("storage-scan", child.stderr.take());
-    log::info!("Storage scan started (process {}).", child.id());
+        .with_context(|| format!("could not start the {what}"))?;
+    crate::diagnostics::ship_helper_stderr(what, child.stderr.take());
+    log::info!("Storage: the {what} started (process {}).", child.id());
     Ok(Pass::Child(child))
 }
 
 /// Starts the scheduler's thread; it ends, stopping any pass, with `stop`.
+/// It also starts clean-ups when asked ([`super::cleanup::launch`]).
 pub fn start(data_dir: PathBuf, mode: SessionMode, stop: Arc<AtomicBool>) {
     let started = std::thread::Builder::new()
         .name("storage-scheduler".into())
@@ -160,15 +171,25 @@ pub fn start(data_dir: PathBuf, mode: SessionMode, stop: Arc<AtomicBool>) {
     }
 }
 
+/// Whether to look for a due pass now: at the regular minute, or at once
+/// when someone asked for one and no pass runs (S25).
+pub fn look_now(next_look: Instant, now: Instant, rescan: bool, running: bool) -> bool {
+    !running && (rescan || now >= next_look)
+}
+
 fn run(data_dir: &Path, mode: SessionMode, stop: &AtomicBool) {
     let agent_started = Instant::now();
     let mut last_pass: Option<Instant> = None;
     let mut running: Option<Pass> = None;
+    let mut cleaner = super::cleanup::launch::Launcher::default();
+    let mut next_look = Instant::now();
     while !stop.load(Ordering::SeqCst) {
         if running.as_mut().is_some_and(Pass::finished) {
             running = None;
         }
-        if running.is_none() {
+        let rescan = rescan_requested(data_dir);
+        if look_now(next_look, Instant::now(), rescan, running.is_some()) {
+            next_look = Instant::now() + CHECK_EVERY;
             let state = load_state(data_dir);
             let targets = crate::files::roots::scan_targets();
             let looking = Looking {
@@ -177,26 +198,24 @@ fn run(data_dir: &Path, mode: SessionMode, stop: &AtomicBool) {
                 since_last_pass: last_pass.map(|at| at.elapsed()),
                 state: &state,
                 targets: &targets,
-                rescan: rescan_requested(data_dir),
+                rescan,
             };
             if let Some(speed) = due(&looking) {
                 clear_rescan(data_dir);
                 last_pass = Some(Instant::now());
-                match launch(data_dir, speed, mode) {
+                match launch(arguments(data_dir, speed), "scan", "storage scan", mode) {
                     Ok(pass) => running = Some(pass),
                     Err(e) => log::warn!("Storage: {e:#}"),
                 }
             }
         }
-        // Wakes often enough to stop promptly.
-        let until = Instant::now() + CHECK_EVERY;
-        while Instant::now() < until && !stop.load(Ordering::SeqCst) {
-            std::thread::sleep(Duration::from_millis(500));
-        }
+        cleaner.tick(data_dir, mode);
+        std::thread::sleep(TICK);
     }
     if let Some(pass) = running {
         pass.stop();
     }
+    cleaner.stop();
 }
 
 #[cfg(test)]
@@ -269,6 +288,20 @@ mod tests {
         asked.since_last_pass = Some(Duration::from_secs(1));
         asked.rescan = true;
         assert_eq!(due(&asked), Some(Speed::Asked));
+    }
+
+    #[test]
+    fn s25_a_rescan_request_is_looked_at_within_a_tick() {
+        let now = Instant::now();
+        let later = now + CHECK_EVERY;
+        assert!(look_now(later, now, true, false), "asked: at once");
+        assert!(
+            !look_now(later, now, false, false),
+            "not asked: at the minute"
+        );
+        assert!(look_now(now, now, false, false));
+        assert!(!look_now(now, now, true, true), "never while a pass runs");
+        assert!(TICK <= Duration::from_secs(1));
     }
 
     #[test]

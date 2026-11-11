@@ -5,7 +5,10 @@ import {
 	testDatabase,
 	NO_RELEASES
 } from '#tests/helpers/fake-agent.ts';
+import { addTestUser } from '#tests/helpers/people.ts';
+import { listAudit } from '../audit/audit.ts';
 import { reportedStorage } from '../machines/machine-storage.ts';
+import { recordCleanupStart } from '../machines/storage-cleanups.ts';
 import { findMachine } from '../machines/machine-views.ts';
 import { checkInRequestSchema } from '#lib/schemas/agents/agent-protocol.ts';
 import { recordCheckIn } from './check-in.ts';
@@ -119,7 +122,7 @@ describe('the per-drive storage summary (SPEC-STORAGE S8)', () => {
 			auth,
 			{
 				...checkIn({ kind: 'unchanged', hash: HASH }),
-				storage: { kind: 'reported', drives: [drive] }
+				storage: { kind: 'reported', drives: [drive], cleanup: { kind: 'none' } }
 			},
 			NOW
 		);
@@ -137,11 +140,55 @@ describe('the per-drive storage summary (SPEC-STORAGE S8)', () => {
 		const auth = { machineId: agent.machineId, checkInSeconds: 60 };
 		const report = (freeBytes: number) => ({
 			...checkIn({ kind: 'unchanged', hash: HASH }),
-			storage: { kind: 'reported' as const, drives: [{ ...drive, freeBytes }] }
+			storage: {
+				kind: 'reported' as const,
+				drives: [{ ...drive, freeBytes }],
+				cleanup: { kind: 'none' as const }
+			}
 		});
 		recordCheckIn(database, auth, report(5), NOW);
 		recordCheckIn(database, auth, report(50), NOW + 60_000);
 		const stored = reportedStorage(database, agent.machineId);
 		expect(stored.kind === 'reported' ? stored.drives[0]?.freeBytes : undefined).toBe(50);
+	});
+});
+
+describe('the check-in records a clean-up nobody watched (SPEC-STORAGE S19)', () => {
+	it('records and audits the last run once', async () => {
+		const database = testDatabase();
+		const agent = enrolFakeAgent(database, NOW);
+		const auth = { machineId: agent.machineId, checkInSeconds: 60 };
+		const admin = await addTestUser(database, {
+			email: 'ada@example.com',
+			role: 'admin',
+			password: null
+		});
+		const runId = crypto.randomUUID();
+		recordCleanupStart(
+			database,
+			{ runId, machineId: agent.machineId, userId: admin.id, items: ['journal'] },
+			NOW
+		);
+		const report = {
+			...checkIn({ kind: 'unchanged', hash: HASH }),
+			storage: {
+				kind: 'reported' as const,
+				drives: [],
+				cleanup: {
+					kind: 'interrupted' as const,
+					runId,
+					startedAtMs: NOW,
+					items: [{ id: 'journal' as const, state: { kind: 'waiting' as const } }]
+				}
+			}
+		};
+		recordCheckIn(database, auth, report, NOW + 60_000);
+		recordCheckIn(database, auth, report, NOW + 120_000);
+		const entries = listAudit(database, 10).filter((entry) => entry.kind === 'storage-cleanup');
+		expect(entries).toHaveLength(1);
+		expect(entries[0]).toMatchObject({
+			actorUserId: admin.id,
+			detail: { result: 'Stopped before the end' }
+		});
 	});
 });

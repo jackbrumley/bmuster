@@ -41,6 +41,13 @@ fn handle(op: &FilesOp, data_dir: &Path) -> Result<FilesResult, FileError> {
         } => storage::query::folder(data_dir, mount, path, *offset),
         FilesOp::StorageLargest { mount, path } => storage::query::largest(data_dir, mount, path),
         FilesOp::StorageRescan => storage::query::rescan(data_dir),
+        FilesOp::StorageCleanupSizes => Ok(storage::cleanup::sizes()),
+        FilesOp::StorageCleanupStart { run_id, items } => {
+            storage::cleanup::start(data_dir, run_id, items)
+        }
+        FilesOp::StorageCleanupStatus => Ok(FilesResult::StorageCleanup {
+            run: storage::cleanup::status(data_dir),
+        }),
         FilesOp::Roots => Ok(roots::roots()),
         FilesOp::List { path } => ops::list(path),
         FilesOp::Stat { path } => ops::stat(path),

@@ -1,9 +1,9 @@
 import {
 	folderViewReplySchema,
 	largestReplySchema,
+	rescanReplySchema,
 	storageSummaryReplySchema
 } from '#lib/schemas/storage/storage.ts';
-import { emptyReplySchema } from '#lib/schemas/files/files.ts';
 import { ANSWER_MS, auditFiles, outcomeOf, withChannel, type FilesContext } from './files.ts';
 
 /**
@@ -40,14 +40,17 @@ export function storageLargest(context: FilesContext, mount: string, path: strin
 	);
 }
 
-/** Rescan now: the agent starts a pass at its next look (within a minute). Audited. */
+/**
+ * Rescan now: the agent starts a pass within a second, or says one is already running (S25,
+ * S26). Audited when a pass was asked for.
+ */
 export function requestRescan(context: FilesContext) {
 	return withChannel(context, async (channel, machine) => {
 		const asked = outcomeOf(
 			await channel.ask({ op: 'storage-rescan' }, ANSWER_MS.quick),
-			emptyReplySchema
+			rescanReplySchema
 		);
-		if (asked.kind === 'ok') {
+		if (asked.kind === 'ok' && !asked.value.alreadyScanning) {
 			auditFiles(context, machine, 'storage-rescan-requested', {});
 		}
 		return asked;

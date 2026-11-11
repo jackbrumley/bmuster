@@ -7,6 +7,7 @@
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import UpdateBadge from '#lib/ui/update-badge.svelte';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
+	import LowDiskTag from './low-disk-tag.svelte';
 	import { formatBytes, formatRelative } from '#lib/utils/format.ts';
 	import { updateBadge } from '#lib/domain/machines/agent-updates.ts';
 	import { osLabel } from '#lib/domain/machines/machine.ts';
@@ -67,8 +68,11 @@
 								</p>
 							{/if}
 
-							{#if updates > 0 || machine.inUse.length > 0 || updateBadge(machine.update).kind === 'shown'}
+							{#if updates > 0 || machine.inUse.length > 0 || machine.lowDisk.length > 0 || updateBadge(machine.update).kind === 'shown'}
 								<div class="tags">
+									{#if machine.lowDisk.length > 0}
+										<LowDiskTag drives={machine.lowDisk} />
+									{/if}
 									{#if machine.inUse.length > 0}
 										<span class="tag in-use">In use: {inUseLabel(machine.inUse)}</span>
 									{/if}

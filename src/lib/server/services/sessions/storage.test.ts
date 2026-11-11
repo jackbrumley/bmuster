@@ -88,7 +88,10 @@ describe('who may read storage (SPEC-STORAGE S9)', () => {
 		fakeAgent(relay, machineId);
 		await storageSummary(context(admin));
 		await storageFolder(context(admin), '/', '/', 0);
-		expect(await requestRescan(context(admin))).toEqual({ kind: 'ok', value: {} });
+		expect(await requestRescan(context(admin))).toEqual({
+			kind: 'ok',
+			value: { alreadyScanning: false }
+		});
 		const kinds = listAudit(database, 10).map((entry) => entry.kind);
 		expect(kinds.filter((kind) => kind === 'storage-rescan-requested')).toHaveLength(1);
 		expect(kinds.filter((kind) => kind.startsWith('file'))).toEqual([]);

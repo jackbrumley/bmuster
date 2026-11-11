@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
+import type { Grant } from '#lib/domain/access/access.ts';
 import type { Machine, MachineInventory } from '#lib/domain/machines/machine.ts';
 import Overview from './+page.svelte';
 
@@ -74,10 +75,14 @@ const MACHINE: Machine = {
 	inventory: INVENTORY,
 	enrolledIso: '2026-11-01T00:00:00.000Z',
 	lastSeenIso: '2026-11-11T12:00:00.000Z',
-	inUse: []
+	inUse: [],
+	lowDisk: []
 };
 
-function renderOverview(machine: Machine) {
+function renderOverview(
+	machine: Machine,
+	grants: Grant[] = [{ permission: 'view', consent: 'unattended' }]
+) {
 	return render(Overview, {
 		params: { id: MACHINE_ID },
 		data: {
@@ -87,7 +92,7 @@ function renderOverview(machine: Machine) {
 			signedIn: true,
 			now: NOW,
 			machine,
-			grants: [{ permission: 'view', consent: 'unattended' }]
+			grants
 		}
 	});
 }
@@ -164,5 +169,29 @@ describe('Overview: inventory (SPEC-MACHINE-DETAILS D10–D14)', () => {
 		expect(screen.getByText('Waiting for the first inventory.').all()).toHaveLength(4);
 		expect(factOf(screen.container, 'Power')).toBeUndefined();
 		expect(factOf(screen.container, 'Uptime')).toBeUndefined();
+	});
+
+	it('SPEC-STORAGE S22: warns of a nearly full drive, linking Storage only for people with files', async () => {
+		const full = {
+			...MACHINE,
+			lowDisk: [{ mount: '/srv', percent: 96, freeBytes: 2 * 1024 ** 3 }]
+		};
+		const viewer = await renderOverview(full);
+		await expect.element(viewer.getByText('Disk nearly full')).toBeVisible();
+		await expect.element(viewer.getByText('/srv is 96 % full, 2.0 GB free.')).toBeVisible();
+		await expect
+			.element(viewer.getByRole('link', { name: /Open Storage/ }))
+			.not.toBeInTheDocument();
+		await viewer.unmount();
+		const helper = await renderOverview(full, [
+			{ permission: 'view', consent: 'unattended' },
+			{ permission: 'files', consent: 'unattended' }
+		]);
+		await expect.element(helper.getByRole('link', { name: /Open Storage/ })).toBeVisible();
+	});
+
+	it('SPEC-STORAGE S22: says nothing when no drive is nearly full', async () => {
+		const screen = await renderOverview(MACHINE);
+		await expect.element(screen.getByText('Disk nearly full')).not.toBeInTheDocument();
 	});
 });

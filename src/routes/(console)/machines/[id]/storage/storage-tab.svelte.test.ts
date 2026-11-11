@@ -83,6 +83,7 @@ const FOLDERS: Record<string, FolderView> = {
 };
 
 let summary: StorageSummary;
+let rescanReply: unknown;
 const requests: { method: string; url: URL }[] = [];
 
 beforeEach(async () => {
@@ -90,6 +91,7 @@ beforeEach(async () => {
 	sessionStorage.clear();
 	requests.length = 0;
 	summary = { drives: [scanned('/', 3), NEW_DRIVE], problem: { kind: 'none' } };
+	rescanReply = {};
 	vi.stubGlobal(
 		'fetch',
 		vi.fn((input: string, init: RequestInit) => {
@@ -123,7 +125,10 @@ beforeEach(async () => {
 				});
 			}
 			if (url.pathname.endsWith('/storage/rescan')) {
-				return reply({});
+				return reply(rescanReply);
+			}
+			if (url.pathname.endsWith('/storage/cleanup')) {
+				return reply({ run: { kind: 'none' } });
 			}
 			return reply({ message: 'Not here.' }, 404);
 		})
@@ -235,5 +240,55 @@ describe('the Storage tab (SPEC-STORAGE S10)', () => {
 		const screen = await openTab(TEST_MACHINE, [{ permission: 'view', consent: 'unattended' }]);
 		await expect.element(screen.getByText("You don't have permission for this.")).toBeVisible();
 		expect(requests).toEqual([]);
+	});
+
+	it('S22: warns that a drive is nearly full, above the drives', async () => {
+		const screen = await openTab(TEST_MACHINE);
+		await expect.element(screen.getByText('Disk nearly full')).toBeVisible();
+		await expect.element(screen.getByText('/ is 96 % full, 4.0 GB free.')).toBeVisible();
+	});
+
+	it('S27: Rescan now shows at once that it is asking, until the scan shows', async () => {
+		summary = { drives: [scanned('/', 3)], problem: { kind: 'none' } };
+		const screen = await openTab(TEST_MACHINE);
+		await screen.getByRole('button', { name: 'Rescan now' }).click();
+		await expect.element(screen.getByText('Asking Reception PC to scan…')).toBeVisible();
+		await expect
+			.element(screen.getByRole('button', { name: 'Rescan now' }))
+			.not.toBeInTheDocument();
+		summary = {
+			drives: [
+				{ ...scanned('/', 3), scanning: { kind: 'running', startedAtMs: Date.now(), percent: 1 } }
+			],
+			problem: { kind: 'none' }
+		};
+		await expect
+			.element(screen.getByText('Scans run slowly in the background, about once a day.'), {
+				timeout: 5000
+			})
+			.toBeVisible();
+		await expect.element(screen.getByText(/scanning again, 1 %/)).toBeVisible();
+	});
+
+	it('S27: says plainly when the machine has not started the scan after a minute', async () => {
+		summary = { drives: [scanned('/', 3)], problem: { kind: 'none' } };
+		const screen = await openTab(TEST_MACHINE);
+		await screen.getByRole('button', { name: 'Rescan now' }).click();
+		await expect.element(screen.getByText('Asking Reception PC to scan…')).toBeVisible();
+		const later = Date.now() + 61_000;
+		vi.spyOn(Date, 'now').mockReturnValue(later);
+		await expect
+			.element(screen.getByText('The machine has not started the scan yet; it will when it can.'), {
+				timeout: 5000
+			})
+			.toBeVisible();
+		await expect.element(screen.getByRole('button', { name: 'Rescan now' })).toBeVisible();
+	});
+
+	it('S27: says when a scan is already running, with its progress', async () => {
+		rescanReply = { alreadyScanning: true };
+		const screen = await openTab(TEST_MACHINE);
+		await screen.getByRole('button', { name: 'Rescan now' }).click();
+		await expect.element(screen.getByText('Already scanning, 42 %.')).toBeVisible();
 	});
 });
