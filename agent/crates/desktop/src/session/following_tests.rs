@@ -535,7 +535,7 @@ mod kms {
     use super::*;
     use crate::capture::kms::capturer::fake::{display, FakeKms};
     use crate::capture::kms::capturer::{SharedSource, LAYOUT_EVERY};
-    use crate::capture::kms::mutter::NoLayout;
+    use crate::capture::kms::compositor::NoLayout;
     use crate::input::uinput::Opener;
 
     struct KmsWatch {

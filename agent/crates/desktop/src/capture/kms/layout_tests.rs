@@ -1,5 +1,6 @@
+use super::super::mutter::parse_current_state;
 use super::*;
-use serde_json::json;
+use serde_json::{json, Value};
 
 fn kms(id: &str, name: &str, x: i32, width: u32, height: u32) -> KmsDisplay {
     KmsDisplay {
@@ -90,23 +91,41 @@ fn layout_parses_mutters_current_state() {
         ],
     ))
     .unwrap();
+    assert_eq!(state.compositor, Compositor::Mutter);
     assert_eq!(state.mode, LayoutMode::Logical);
     assert_eq!(
         state.monitors,
         vec![
-            MutterMonitor {
+            PlacedMonitor {
                 connector: "eDP-1".into(),
-                mode: Some((2880, 1800))
+                x: 0,
+                y: 0,
+                scale: 2.0,
+                transform: 0,
+                primary: true,
+                size: MonitorSize::Mode(Some((2880, 1800))),
             },
-            MutterMonitor {
+            PlacedMonitor {
                 connector: "HDMI-1".into(),
-                mode: Some((1920, 1080))
+                x: 1440,
+                y: 0,
+                scale: 1.0,
+                transform: 0,
+                primary: false,
+                size: MonitorSize::Mode(Some((1920, 1080))),
             }
         ]
     );
-    assert_eq!(state.logical[1].x, 1440);
-    assert_eq!(state.logical[0].scale, 2.0);
-    assert!(state.logical[0].primary);
+    // A logical monitor showing a connector with no current mode.
+    let modeless =
+        parse_current_state(&reply(Some(1), &[], &[(0, 0, 1.0, 0, true, &["DP-1"])])).unwrap();
+    assert_eq!(modeless.monitors[0].size, MonitorSize::Mode(None));
+    assert_eq!(
+        arrange(&[kms("card1-DP-1", "DP-1", 0, 10, 10)], Ok(&modeless)).source,
+        LayoutSource::SideBySide {
+            reason: "mutter has no mode for DP-1".into()
+        }
+    );
     // Physical mode, and no layout-mode at all (logical).
     let physical = reply(
         Some(2),
@@ -149,7 +168,10 @@ fn layout_one_above_the_other_with_different_sizes_and_negative_offsets() {
         kms("card1-DP-2", "DP-2", 1920, 2560, 1440),
     ];
     let arrangement = arrange(&displays, Ok(&state));
-    assert_eq!(arrangement.source, LayoutSource::Mutter);
+    assert_eq!(
+        arrangement.source,
+        LayoutSource::Compositor(Compositor::Mutter)
+    );
     // The desktop starts at the box's corner.
     assert_eq!(
         rects(&arrangement),
@@ -197,7 +219,10 @@ fn layout_fractional_and_mixed_scales_use_the_smallest_scale() {
         kms("card1-HDMI-A-1", "HDMI-A-1", 2880, 2560, 1440),
     ];
     let arrangement = arrange(&displays, Ok(&state));
-    assert_eq!(arrangement.source, LayoutSource::Mutter);
+    assert_eq!(
+        arrangement.source,
+        LayoutSource::Compositor(Compositor::Mutter)
+    );
     assert_eq!(
         rects(&arrangement),
         vec![
@@ -259,7 +284,10 @@ fn layout_reads_a_real_reply_with_one_monitor_above_the_others() {
         kms("card1-DisplayPort-2", "DisplayPort-2", 5360, 1920, 1080),
     ];
     let arrangement = arrange(&displays, Ok(&state));
-    assert_eq!(arrangement.source, LayoutSource::Mutter);
+    assert_eq!(
+        arrangement.source,
+        LayoutSource::Compositor(Compositor::Mutter)
+    );
     assert_eq!(
         rects(&arrangement),
         vec![
@@ -298,7 +326,7 @@ fn layout_falls_back_side_by_side_with_the_reason() {
     ];
     let reason = |arrangement: &Arrangement| match &arrangement.source {
         LayoutSource::SideBySide { reason } => reason.clone(),
-        LayoutSource::Mutter => panic!("used mutter"),
+        LayoutSource::Compositor(_) => panic!("used the compositor's layout"),
     };
     // The bus call failed (the greeter, KDE, no session bus).
     let failed = arrange(&displays, Err("busctl exited with 1".into()));

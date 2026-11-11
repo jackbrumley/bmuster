@@ -5,7 +5,7 @@
 //! the box's corner, exactly as for one display.
 //!
 //! A display whose image is a different size from its rectangle (a high-DPI
-//! KMS display laid out in mutter's logical pixels) is resampled into it.
+//! KMS display laid out in the compositor's logical pixels) is resampled into it.
 
 use super::{bounds_of, DisplayInfo, Frame, Rect, BYTES_PER_PIXEL};
 use crate::capture::Damage;
