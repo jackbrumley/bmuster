@@ -191,9 +191,18 @@ mod tests {
 
     #[test]
     fn high_qualities_keep_full_colour_detail() {
-        assert!(matches!(sampling_for(84), jpeg_encoder::SamplingFactor::R_4_2_0));
-        assert!(matches!(sampling_for(85), jpeg_encoder::SamplingFactor::R_4_4_4));
-        assert!(matches!(sampling_for(95), jpeg_encoder::SamplingFactor::R_4_4_4));
+        assert!(matches!(
+            sampling_for(84),
+            jpeg_encoder::SamplingFactor::R_4_2_0
+        ));
+        assert!(matches!(
+            sampling_for(85),
+            jpeg_encoder::SamplingFactor::R_4_4_4
+        ));
+        assert!(matches!(
+            sampling_for(95),
+            jpeg_encoder::SamplingFactor::R_4_4_4
+        ));
     }
 
     const RED: [u8; 4] = [0, 0, 255, 0];

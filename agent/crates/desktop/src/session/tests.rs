@@ -448,6 +448,41 @@ fn session_scale_halves_the_stream_and_cursor() {
     );
 }
 
+/// A KMS screen that is not changing reports no damage. Switching to a
+/// smaller scale then sent a black keyframe (Fedora, 2026-11-11): the new
+/// scaled frame must be drawn from the screen whatever the damage says.
+#[test]
+fn session_scale_change_on_a_still_screen_sends_the_screen_not_black() {
+    let mut h = harness(Mode::Watch);
+    h.send(HELLO);
+    // BGRX green-ish; solid tiles carry it as RGBA (30, 200, 10, 255).
+    h.screen.lock().unwrap().paint = vec![(Rect::new(0, 0, 128, 64), [10, 200, 30, 0])];
+    h.tick();
+    h.send(r#"{"type":"ack","seq":1}"#);
+    // Nothing changes on the screen from here on.
+    for scale in ["0.5", "0.25", "0.75"] {
+        h.send(&format!(
+            r#"{{"type":"settings","quality":"medium","scale":{scale},"maxFps":30}}"#
+        ));
+        let out = h.tick();
+        let keyframe = frames(&out);
+        assert!(!keyframe.is_empty(), "scale {scale}: a keyframe");
+        assert_eq!(
+            keyframe[0][2] & FLAG_KEYFRAME,
+            FLAG_KEYFRAME,
+            "scale {scale}"
+        );
+        let shows_screen = keyframe
+            .iter()
+            .any(|batch| batch.windows(4).any(|w| w == [30, 200, 10, 255]));
+        assert!(
+            shows_screen,
+            "scale {scale}: the keyframe shows the screen, not black"
+        );
+        h.send(&format!(r#"{{"type":"ack","seq":{}}}"#, u32::MAX / 2));
+    }
+}
+
 #[test]
 fn session_layout_change_resends_displays_and_a_keyframe() {
     let mut h = harness(Mode::Watch);

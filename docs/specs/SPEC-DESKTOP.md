@@ -416,3 +416,5 @@ Approved 2026-11-11. Jack: "even high quality feels a bit grainy ... maybe have 
 | :----- | :------------------------------------------------- | :------------------------------------------------------------------ |
 | R10.v2 | Quality 85 and up encodes 4:4:4; below, 4:2:0.     | Rust `encode::tiles::tests::high_qualities_keep_full_colour_detail` |
 | R10.v2 | Extra high is offered only to agents that know it. | `messages.test.ts` "R10"                                            |
+
+**Scale below 100% on a still screen (fixed for 0.4.17).** A new scale starts a new stream with a fresh scaled frame, but the frame was only drawn from the screen when the capture reported a change. A still KMS screen reports none, so 75%, 50% and 25% showed black on Fedora until something changed. A new stream now always draws the scaled frame in full. Test: `session_scale_change_on_a_still_screen_sends_the_screen_not_black`.

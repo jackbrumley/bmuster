@@ -123,19 +123,6 @@ impl Video {
         let factor = factor(source.width, source.height);
         let (width, height) = scale::scaled_size(source.width, source.height, factor);
         let scaled = (width, height) != (source.width, source.height);
-        let damage = if scaled {
-            if (self.scaled.width, self.scaled.height) != (width, height) {
-                self.scaled = Frame::new(width, height);
-            }
-            if damage != Damage::None {
-                scale::downscale(source, &mut self.scaled);
-            }
-            scale::scale_damage(&damage, (source.width, source.height), (width, height))
-        } else {
-            damage
-        };
-        let frame = if scaled { &self.scaled } else { source };
-
         let key = StreamKey {
             view: capturer.view(),
             width,
@@ -143,6 +130,27 @@ impl Video {
             scale: if scaled { factor } else { 1.0 },
         };
         let new_stream = self.stream != Some(key);
+        let damage = if scaled {
+            if (self.scaled.width, self.scaled.height) != (width, height) {
+                self.scaled = Frame::new(width, height);
+            }
+            // A new stream (another scale, display or size) starts from a
+            // scaled frame that is empty or stale, so it is drawn in full
+            // even when the capture saw no change: a still KMS screen reports
+            // none, which sent a black keyframe at every scale below 100%.
+            if new_stream || damage != Damage::None {
+                scale::downscale(source, &mut self.scaled);
+            }
+            if new_stream {
+                Damage::Unknown
+            } else {
+                scale::scale_damage(&damage, (source.width, source.height), (width, height))
+            }
+        } else {
+            damage
+        };
+        let frame = if scaled { &self.scaled } else { source };
+
         let size_changed = self
             .stream
             .is_some_and(|old| (old.width, old.height) != (width, height));
