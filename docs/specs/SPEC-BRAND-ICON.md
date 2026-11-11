@@ -62,7 +62,7 @@ Approved 2026-11-11. Jack: the other apps' icons are "the naked shape of the ico
 | I5  | (Replaces "opaque tile".) Each tray icon is ARGB of its size with an opaque centre and clear corners.      | `icons.test.ts` "I5", Rust `each_tray_icon_is_square_argb_of_its_size` |
 | I6  | The tray names `bmuster-tray`, and the agent installs `bmuster-tray.svg` with the other shortcuts.         | `icons.test.ts` "I1" (generated file), Rust `shortcuts` tests          |
 
-## Windows icon (IMPLEMENTED (pending release))
+## Windows icon (IMPLEMENTED (v0.4.19))
 
 Asked for 2026-11-11, with the Windows tray starter (SPEC-TRAY-SESSIONS, Windows). The Windows tray showed the stock information icon (and the stock warning icon while someone was connected), and `bmuster-agent.exe` had no icon of its own.
 

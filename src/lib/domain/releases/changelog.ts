@@ -1,6 +1,13 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.19',
+		changes: [
+			'On Windows, the BMuster tray icon now appears for everyone already signed in, within about a minute, running as that person and never with administrator rights',
+			'Windows shows the BMuster radar as the tray icon (with a red dot while someone is connected) and as the program icon'
+		]
+	},
+	{
 		version: '0.4.18',
 		changes: [
 			'Storage clean-up: a fixed list of known-safe items for each system (temp folders, update caches, crash dumps, Recycle Bins, package caches, old journal entries and more), each sized first, ticked, confirmed and recorded in Activity with the space freed',

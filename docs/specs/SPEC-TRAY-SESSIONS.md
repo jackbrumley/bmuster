@@ -1,6 +1,6 @@
 # SPEC-TRAY-SESSIONS: The tray in every signed-in desktop
 
-**Status:** `IMPLEMENTED (v0.4.8)` (Linux) · Windows `IMPLEMENTED (pending release)` · Approved by Jack, 2026-11-10; Windows asked for 2026-11-11 after testing 0.4.17 on a Windows 10 PC. Extends SPEC-AGENT-TRAY.
+**Status:** `IMPLEMENTED (v0.4.8)` (Linux) · Windows `IMPLEMENTED (v0.4.19)` · Approved by Jack, 2026-11-10; Windows asked for 2026-11-11 after testing 0.4.17 on a Windows 10 PC. Extends SPEC-AGENT-TRAY.
 
 **This is security work.** A root service now starts a program inside another person's desktop session. The rules below keep that to one fixed program with fixed arguments, run as that person, never as root, and never more than once per person.
 
@@ -73,7 +73,7 @@ On the Fedora laptop, 0.4.12 logged "Could not start the tray for jackbrumley (u
 
 **Helpers follow updates (added for 0.4.17).** A tray helper that is running when the agent moves to a new version notices within 5 s that `/opt/bmuster/versions/current/bmuster-agent` now points at another program, and exits. The agent's tray starter runs the new one within about 30 s, so new tray features (such as the connected notice, SPEC-DESKTOP section 18) show without signing out and in. A link that cannot be read mid-switch is not a new version. Test: `tray::linux::tests::the_helper_sees_when_the_current_version_moves`.
 
-## Windows (IMPLEMENTED (pending release))
+## Windows (IMPLEMENTED (v0.4.19))
 
 **Problem.** On a Windows 10 PC with 0.4.17 the tray icon does not appear for a person who was already signed in when the agent was installed or updated. The helper starts only from the `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` entry, at sign-in.
 
