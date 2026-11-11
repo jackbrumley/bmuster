@@ -41,7 +41,7 @@ None: the icon and theme are presentation only. The tray change swaps embedded p
 - **Rasterising** uses the Chromium Playwright already installs for the browser tests (canvas pixels and PNGs), not Inkscape or ImageMagick, so the command needs no system tool. The output is byte-for-byte stable across runs. The pure transforms live in `scripts/icons/drawing.ts` so the unit test can check the committed files.
 - **Console logo** (`src/lib/ui/logo.svelte`) is now an `<img>` of the generated file instead of an inline copy of the drawing, so there is one drawing; the `--logo-*` tokens went with it. The error page keeps needing no request, so it carries the full mark as a data URI.
 - **Removed:** `scripts/brand-icons.ts` and `npm run brand:icons` (replaced), `src/lib/assets/favicon.svg` (an unused Svelte logo) and the hygiene layout's `assets` folder.
-- **Windows tray** still shows the stock information icon: it uses no `.ico`, and building a custom icon needs Windows-only code that could not be compiled here. A follow-up can load the same pixels with `CreateIcon`.
+- **Windows tray** still shows the stock information icon: it uses no `.ico`, and building a custom icon needs Windows-only code that could not be compiled here. A follow-up can load the same pixels with `CreateIcon`. (Done: see "Windows icon" below.)
 - **Linux `.desktop` launchers** still name the stock `network-workgroup` icon; installing an icon file is installer work for a follow-up.
 
 - **Linux menu icon (added for 0.4.12).** `npm run icons:generate` also writes `agent/crates/agent/assets/bmuster.svg` (the full mark). The agent installs it as `/usr/share/icons/hicolor/scalable/apps/bmuster.svg` with the autostart and applications-menu entries (rewritten on every start when different, removed at uninstall), and both entries say `Icon=bmuster` instead of the stock `network-workgroup`.
@@ -61,3 +61,25 @@ Approved 2026-11-11. Jack: the other apps' icons are "the naked shape of the ico
 | I1  | (Replaces the light-look check.) The drawing is the night radar: a dark `face` disc, no `tile`, lime beam. | `tests/unit/icons.test.ts` "I1"                                        |
 | I5  | (Replaces "opaque tile".) Each tray icon is ARGB of its size with an opaque centre and clear corners.      | `icons.test.ts` "I5", Rust `each_tray_icon_is_square_argb_of_its_size` |
 | I6  | The tray names `bmuster-tray`, and the agent installs `bmuster-tray.svg` with the other shortcuts.         | `icons.test.ts` "I1" (generated file), Rust `shortcuts` tests          |
+
+## Windows icon (IMPLEMENTED (pending release))
+
+Asked for 2026-11-11, with the Windows tray starter (SPEC-TRAY-SESSIONS, Windows). The Windows tray showed the stock information icon (and the stock warning icon while someone was connected), and `bmuster-agent.exe` had no icon of its own.
+
+1. **One icon file.** `npm run icons:generate` also writes `agent/crates/agent/assets/bmuster.ico`: the same drawing at 16, 20, 24, 32, 40, 48, 64 and 256px (every size Windows asks for from 100% to 400% scaling). The 256px image is a PNG; the others are 32-bit DIBs with straight alpha and a clear mask, the classic layout every Windows version reads. The writer is `scripts/icons/ico.ts`, a few lines of plain TypeScript, so the command still needs no image tool.
+2. **The tray** draws the mark from the icon file embedded in the program. It takes the DIB of the notification area's size (`SM_CXSMICON`, with the tray system-DPI aware) or the next larger, and makes the icon with `CreateIconFromResourceEx`. While someone is connected to the screen it shows the same mark with the Linux tray's red dot (`connected_icon`, now shared), instead of the stock warning icon. The tooltip and menu are unchanged.
+3. **The program's icon.** `build.rs` makes a compiled resource file (`.res`) from `bmuster.ico` for Windows targets: one `RT_ICON` per image and an `RT_GROUP_ICON` (id 1) listing them, written in Rust (`src/tray/resource.rs`), so the build needs no resource compiler and no new crate. The MSVC linker takes a `.res` file as an input, so the release build (`x86_64-pc-windows-msvc`) links it into `bmuster-agent.exe`, and Explorer, the Start menu shortcut and Task Manager show the mark. The output was checked byte for byte against `zig rc` (an `rc.exe`-compatible compiler) compiling `1 ICON "bmuster.ico"`: identical.
+4. **GNU builds** (`x86_64-pc-windows-gnu`, used here only to lint) write the resource file but do not link it: MinGW's `ld` takes resources only as objects made by `windres`, which is not installed. Their program has no icon; their tray still draws the mark.
+
+| #   | Criterion                                                                                             | Named test                                                                |
+| :-- | :---------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------ |
+| I7  | `bmuster.ico` holds every size from the drawing; at 32 and 48px its pixels are the tray's ARGB files. | `tests/unit/icons.test.ts` "I7"                                           |
+| W1  | The committed icon has every Windows size, a PNG only at 256px.                                       | Rust `tray::ico::tests::the_windows_icon_has_every_size`                  |
+| W2  | The program's resource file holds every image of the icon and a group naming them.                    | Rust `tray::resource::tests::the_program_icon_resource_holds_every_image` |
+| W3  | The tray picks the notification area's size or the next larger DIB, never the PNG.                    | Rust `tray::icon::tests::the_tray_picks_its_size_from_the_icon`           |
+| W4  | The connected tray icon is the mark with the red dot; the 32px DIB matches the Linux tray's pixels.   | Rust `tray::icon::tests::the_connected_tray_icon_adds_the_red_dot`        |
+| W5  | The icon file writer lays out DIBs and the directory as Windows reads them, and reads them back.      | `tests/unit/ico.test.ts` "W5"                                             |
+
+**Security notes.** Presentation only: the icon bytes are fixed at build time and come from the committed drawing. No tray behaviour changes.
+
+**Only linted, not run:** the Win32 calls that make and show the tray icon (`CreateIconFromResourceEx`, `GetSystemMetrics`, `SetProcessDpiAwarenessContext`, `DestroyIcon`) and the MSVC link of the resource file. Release test: the installed `bmuster-agent.exe` shows the mark in Explorer; the tray shows the mark, sharp at 100% and 150% scaling, and the red-dot mark while a desktop session is open.

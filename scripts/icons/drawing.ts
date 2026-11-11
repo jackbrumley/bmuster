@@ -107,3 +107,12 @@ export const TRAY_SIZES = [22, 32, 48] as const;
 export function trayFile(size: number): string {
 	return `agent/crates/agent/assets/tray-${String(size)}.argb`;
 }
+
+/**
+ * The Windows icon (the program's icon and the Windows tray's): every size
+ * Windows asks for at 100% to 400% scaling, 256px as a PNG, the rest as DIBs.
+ */
+export const ICO_FILE = 'agent/crates/agent/assets/bmuster.ico';
+export const ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 256] as const;
+/** Sizes up to this are DIBs, which the tray can mark with the red dot. */
+export const ICO_LARGEST_DIB = 64;

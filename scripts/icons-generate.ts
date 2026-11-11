@@ -12,6 +12,9 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { chromium, type Page } from 'playwright';
 import {
+	ICO_FILE,
+	ICO_LARGEST_DIB,
+	ICO_SIZES,
 	PNG_ICONS,
 	SOURCE,
 	TRAY_SIZES,
@@ -23,6 +26,7 @@ import {
 	trayFile,
 	withoutComments
 } from './icons/drawing.ts';
+import { type IcoImage, dib, icoFile } from './icons/ico.ts';
 
 /** Draws the SVG at `size` and returns its PNG bytes and its straight (not premultiplied) RGBA pixels. */
 async function rasterise(
@@ -85,6 +89,12 @@ try {
 		const { rgba } = await rasterise(page, drawings.full, size);
 		await write(trayFile(size), argb(rgba));
 	}
+	const images: IcoImage[] = [];
+	for (const size of ICO_SIZES) {
+		const { png, rgba } = await rasterise(page, drawings.full, size);
+		images.push({ size, data: size > ICO_LARGEST_DIB ? png : dib(rgba, size) });
+	}
+	await write(ICO_FILE, icoFile(images));
 } finally {
 	await browser.close();
 }

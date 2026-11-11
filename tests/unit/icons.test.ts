@@ -2,19 +2,24 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+	ICO_FILE,
+	ICO_LARGEST_DIB,
+	ICO_SIZES,
 	PNG_ICONS,
 	SOURCE,
 	TRAY_SIZES,
+	argb,
 	errorPageLogo,
 	svgFiles,
 	trayFile
 } from '../../scripts/icons/drawing.ts';
+import { dibRgba, readIco } from '../../scripts/icons/ico.ts';
 
 const sourceText = readFileSync(SOURCE, 'utf8');
 
-/** A PNG's width and height, from its IHDR chunk. */
-function pngSize(file: string): [number, number] {
-	const bytes = readFileSync(file);
+/** A PNG's width and height, from its IHDR chunk; `file` is a path or the PNG itself. */
+function pngSize(file: string | Buffer): [number, number] {
+	const bytes = typeof file === 'string' ? readFileSync(file) : file;
 	expect(bytes.subarray(1, 4).toString('latin1')).toBe('PNG');
 	return [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
 }
@@ -56,6 +61,26 @@ describe('icons from one drawing (SPEC-BRAND-ICON)', () => {
 		const layout = readFileSync('src/routes/+layout.svelte', 'utf8');
 		for (const [, name] of layout.matchAll(/asset\('([^']+)'\)/g)) {
 			expect(existsSync(`static/${name ?? ''}`), name).toBe(true);
+		}
+	});
+
+	it('I7: the Windows icon holds every size, drawn from the same drawing as the tray pixels', () => {
+		const images = readIco(readFileSync(ICO_FILE));
+		expect(images.map((image) => image.size)).toEqual([...ICO_SIZES]);
+		for (const image of images) {
+			if (image.size > ICO_LARGEST_DIB) {
+				expect(pngSize(image.data)).toEqual([image.size, image.size]);
+				continue;
+			}
+			const { size, rgba } = dibRgba(image.data);
+			expect(size).toBe(image.size);
+			const centre = (Math.floor(size / 2) * size + Math.floor(size / 2)) * 4;
+			expect(rgba[centre + 3], `${String(size)}px centre alpha`).toBe(255);
+			expect(rgba[3], `${String(size)}px corner alpha`).toBe(0);
+			// The same rasterising as the tray's ARGB files at the shared sizes.
+			if ((TRAY_SIZES as readonly number[]).includes(size)) {
+				expect(argb(rgba).equals(readFileSync(trayFile(size))), `${String(size)}px`).toBe(true);
+			}
 		}
 	});
 

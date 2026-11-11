@@ -15,8 +15,8 @@ pub fn title(state: &str, names: &[String]) -> String {
     }
 }
 
-// Disconnect, the notification and the marked icon are the Linux tray's:
-// on Windows the notice bar has them.
+// Disconnect and the notification are the Linux tray's: on Windows the
+// notice bar has them. Both trays draw the marked icon.
 #[cfg(target_os = "linux")]
 /// The menu item that ends every desktop session, when there is one:
 /// "Disconnect Kim", or "Disconnect everyone" for several viewers. Either
@@ -68,7 +68,7 @@ impl Arrivals {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 /// The tray mark with a red dot in its lower right corner: the "someone is
 /// connected" icon. `pixels` is StatusNotifierItem ARGB (network order),
 /// `edge` pixels square.
@@ -160,7 +160,7 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     #[test]
     fn tray_connected_icon_adds_a_red_dot_and_keeps_the_rest() {
         let edge = 22;

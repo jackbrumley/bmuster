@@ -3,14 +3,17 @@
 //! The root agent reads logind's session records every [`POLL`]. Each real
 //! person signed in at a Wayland or X11 desktop gets one helper, started as
 //! them in their own systemd user manager ([`start_arguments`]), once their
-//! session has been seen for [`SETTLE`]. A person whose helper already runs
-//! (started by the autostart entry or by the agent: [`helper_pids`]) gets
-//! nothing, and nobody gets more than one attempt in [`RETRY`].
+//! session has been seen for [`SETTLE`](super::starts::SETTLE). A person
+//! whose helper already runs (started by the autostart entry or by the
+//! agent: [`helper_pids`]) gets nothing, and nobody gets more than one
+//! attempt in [`RETRY`](super::starts::RETRY).
 //!
 //! The only program ever started is [`crate::paths::CURRENT_PROGRAM`] with
 //! the one argument `tray`; nothing from the server or the session changes
 //! it. The user name comes from logind and must look like an account name.
+//! When to start is [`Starter`]'s, shared with Windows (`starts.rs`).
 
+use super::starts::{Desktop, Starter};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::io::Read as _;
@@ -27,11 +30,6 @@ pub const SESSIONS_DIR: &str = "/run/systemd/sessions";
 pub const UNIT: &str = "bmuster-tray.service";
 /// How often the sessions are read.
 pub const POLL: Duration = Duration::from_secs(10);
-/// How long a session is seen before its first start, so the desktop has
-/// put its environment into the user manager.
-pub const SETTLE: Duration = Duration::from_secs(30);
-/// At most one start attempt per person in this long.
-pub const RETRY: Duration = Duration::from_secs(60);
 /// Sign-in screens and first-run setup run as these accounts.
 const GREETERS: [&str; 4] = ["gdm", "sddm", "lightdm", "gnome-initial-setup"];
 /// The first uid of a person's account (`UID_MIN` in login.defs).
@@ -177,86 +175,18 @@ pub fn helper_pids(proc: &Path, uid: u32) -> Vec<u32> {
     pids
 }
 
-/// What the starter sees and does; tests use a fake.
-pub trait Desktop {
-    fn users(&mut self) -> Vec<TrayUser>;
-    fn running(&mut self, uid: u32) -> bool;
-    fn start(&mut self, user: &TrayUser) -> Result<(), String>;
-}
-
-/// One start attempt, and whether its failure reason is new (logged as a
-/// warning; a repeated reason is logged at debug).
-#[derive(Debug, PartialEq, Eq)]
-pub struct Attempt {
-    pub user: TrayUser,
-    pub result: Result<(), String>,
-    pub new_reason: bool,
-}
-
-/// When each person was first seen, last tried and last failed.
-#[derive(Debug, Default)]
-pub struct Starter {
-    first_seen: HashMap<u32, Instant>,
-    last_attempt: HashMap<u32, Instant>,
-    last_error: HashMap<u32, String>,
-}
-
-impl Starter {
-    /// One look at the sessions at `now`: starts the helper for each
-    /// settled person without one, at most once per [`RETRY`].
-    pub fn tick(&mut self, desktop: &mut dyn Desktop, now: Instant) -> Vec<Attempt> {
-        let users = desktop.users();
-        let present: HashSet<u32> = users.iter().map(|user| user.uid).collect();
-        // Someone who signed out settles again when they come back.
-        self.first_seen.retain(|uid, _| present.contains(uid));
-        let mut attempts = Vec::new();
-        for user in users {
-            let seen = *self.first_seen.entry(user.uid).or_insert(now);
-            if now.saturating_duration_since(seen) < SETTLE {
-                continue;
-            }
-            if desktop.running(user.uid) {
-                self.last_error.remove(&user.uid);
-                continue;
-            }
-            let recent = self
-                .last_attempt
-                .get(&user.uid)
-                .is_some_and(|at| now.saturating_duration_since(*at) < RETRY);
-            if recent {
-                continue;
-            }
-            self.last_attempt.insert(user.uid, now);
-            let result = desktop.start(&user);
-            let new_reason = match &result {
-                Ok(()) => {
-                    self.last_error.remove(&user.uid);
-                    true
-                }
-                Err(reason) => {
-                    self.last_error.insert(user.uid, reason.clone()).as_ref() != Some(reason)
-                }
-            };
-            attempts.push(Attempt {
-                user,
-                result,
-                new_reason,
-            });
-        }
-        attempts
-    }
-}
-
 /// The machine itself: logind's records, `/proc` and `systemd-run`.
 struct System;
 
 impl Desktop for System {
-    fn users(&mut self) -> Vec<TrayUser> {
+    type Who = TrayUser;
+
+    fn signed_in(&mut self) -> Vec<TrayUser> {
         read_tray_users(Path::new(SESSIONS_DIR))
     }
 
-    fn running(&mut self, uid: u32) -> bool {
-        !helper_pids(Path::new("/proc"), uid).is_empty()
+    fn running(&mut self, user: &TrayUser) -> bool {
+        !helper_pids(Path::new("/proc"), user.uid).is_empty()
     }
 
     fn start(&mut self, user: &TrayUser) -> Result<(), String> {
@@ -339,7 +269,7 @@ pub fn start(data_dir: &Path, launched: bool, stop: Arc<AtomicBool>) {
             let mut system = System;
             while !stop.load(Ordering::SeqCst) {
                 for attempt in starter.tick(&mut system, Instant::now()) {
-                    let who = format!("{} (uid {})", attempt.user.name, attempt.user.uid);
+                    let who = format!("{} (uid {})", attempt.who.name, attempt.who.uid);
                     match attempt.result {
                         Ok(()) => log::info!("Started the tray for {who}."),
                         Err(reason) if attempt.new_reason => {
@@ -445,116 +375,6 @@ mod tests {
             ]
         );
         assert_eq!(SYSTEMD_RUN, "/usr/bin/systemd-run");
-    }
-
-    #[derive(Default)]
-    struct FakeDesktop {
-        users: Vec<TrayUser>,
-        running: HashSet<u32>,
-        starts: Vec<TrayUser>,
-        fail_with: Option<String>,
-        /// A started helper keeps running.
-        stays_up: bool,
-    }
-
-    impl Desktop for FakeDesktop {
-        fn users(&mut self) -> Vec<TrayUser> {
-            self.users.clone()
-        }
-        fn running(&mut self, uid: u32) -> bool {
-            self.running.contains(&uid)
-        }
-        fn start(&mut self, user: &TrayUser) -> Result<(), String> {
-            self.starts.push(user.clone());
-            if let Some(reason) = &self.fail_with {
-                return Err(reason.clone());
-            }
-            if self.stays_up {
-                self.running.insert(user.uid);
-            }
-            Ok(())
-        }
-    }
-
-    /// SPEC-TRAY-SESSIONS TS3.
-    #[test]
-    fn once_per_user() {
-        let t0 = Instant::now();
-        let mut fake = FakeDesktop {
-            users: vec![user(1000, "jack"), user(1001, "sam")],
-            running: HashSet::from([1001]),
-            stays_up: true,
-            ..FakeDesktop::default()
-        };
-        let mut starter = Starter::default();
-        assert!(starter.tick(&mut fake, t0).is_empty(), "nobody has settled");
-        assert!(starter.tick(&mut fake, t0 + SETTLE / 2).is_empty());
-        let attempts = starter.tick(&mut fake, t0 + SETTLE);
-        assert_eq!(attempts.len(), 1);
-        assert_eq!(attempts[0].user, user(1000, "jack"));
-        assert_eq!(attempts[0].result, Ok(()));
-        assert_eq!(
-            fake.starts,
-            [user(1000, "jack")],
-            "sam's helper already runs"
-        );
-        for minutes in 1..10 {
-            starter.tick(&mut fake, t0 + SETTLE + RETRY * minutes);
-        }
-        assert_eq!(
-            fake.starts.len(),
-            1,
-            "a running helper is never started again"
-        );
-
-        // Jack signs out and in again: his new session settles first.
-        fake.users = vec![user(1001, "sam")];
-        fake.running.remove(&1000);
-        let later = t0 + RETRY * 20;
-        starter.tick(&mut fake, later);
-        fake.users = vec![user(1000, "jack"), user(1001, "sam")];
-        assert!(starter.tick(&mut fake, later + POLL).is_empty());
-        assert_eq!(starter.tick(&mut fake, later + POLL + SETTLE).len(), 1);
-        assert_eq!(fake.starts.len(), 2);
-    }
-
-    /// SPEC-TRAY-SESSIONS TS4.
-    #[test]
-    fn at_most_once_a_minute() {
-        let t0 = Instant::now();
-        let mut fake = FakeDesktop {
-            users: vec![user(1000, "jack")],
-            fail_with: Some("Failed to connect to user bus".into()),
-            ..FakeDesktop::default()
-        };
-        let mut starter = Starter::default();
-        starter.tick(&mut fake, t0);
-        let mut at = t0 + SETTLE;
-        let first = starter.tick(&mut fake, at);
-        assert!(first[0].new_reason, "the first failure is a warning");
-        while at < t0 + SETTLE + RETRY * 3 {
-            at += POLL;
-            for attempt in starter.tick(&mut fake, at) {
-                assert!(!attempt.new_reason, "the same reason is not warned again");
-            }
-        }
-        assert_eq!(fake.starts.len(), 4, "one attempt a minute: {at:?}");
-
-        // A helper that starts and exits is not restarted faster either.
-        fake.fail_with = None;
-        let mut exits = Starter::default();
-        let mut starts = 0;
-        let mut at = t0;
-        while at <= t0 + SETTLE + RETRY * 2 {
-            starts += exits.tick(&mut fake, at).len();
-            at += POLL;
-        }
-        assert_eq!(starts, 3);
-
-        // A changed reason is warned again.
-        fake.fail_with = Some("Unit bmuster-tray.service already exists".into());
-        let attempts = starter.tick(&mut fake, t0 + RETRY * 10);
-        assert!(attempts[0].new_reason);
     }
 
     fn process(proc: &Path, pid: u32, uid: u32, cmdline: &[u8]) {
