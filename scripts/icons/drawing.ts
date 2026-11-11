@@ -5,10 +5,6 @@
  */
 export const SOURCE = 'docs/logo.svg';
 
-/** Wedges of the sweep the small version keeps (the ones nearest the beam), and how much it darkens them. */
-const SMALL_SWEEP_WEDGES = 17;
-const SMALL_SWEEP_GAIN = 1.6;
-
 type Attributes = Readonly<Record<string, string>>;
 
 function elementPattern(id: string): RegExp {
@@ -23,14 +19,6 @@ function find(svg: string, id: string): string {
 	return match[0];
 }
 
-function drop(svg: string, id: string): string {
-	return svg.replace(new RegExp(`\\s*${literal(find(svg, id))}`), '');
-}
-
-function literal(text: string): string {
-	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function setAttributes(element: string, attributes: Attributes): string {
 	let next = element;
 	for (const [name, value] of Object.entries(attributes)) {
@@ -41,41 +29,8 @@ function setAttributes(element: string, attributes: Attributes): string {
 	return next;
 }
 
-function change(svg: string, id: string, attributes: Attributes): string {
-	const element = find(svg, id);
-	return svg.replace(element, setAttributes(element, attributes));
-}
-
 export function withoutComments(svg: string): string {
 	return svg.replace(/\s*<!--[\s\S]*?-->/g, '');
-}
-
-/** Keeps the wedges nearest the beam (the last ones drawn) and darkens them to read at 16–32px. */
-function shortSweep(svg: string): string {
-	const group = find(svg, 'sweep');
-	const wedges = [...group.matchAll(/<path [^>]*\/>/g)].map((match) => match[0]);
-	if (wedges.length < SMALL_SWEEP_WEDGES) throw new Error(`${SOURCE}: the sweep is too short`);
-	const kept = wedges.slice(-SMALL_SWEEP_WEDGES).map((wedge) => {
-		const opacity = /fill-opacity="([0-9.]+)"/.exec(wedge);
-		if (opacity === null) throw new Error(`${SOURCE}: a sweep wedge has no fill-opacity`);
-		const darker = Math.min(1, Number(opacity[1]) * SMALL_SWEEP_GAIN).toFixed(4);
-		return setAttributes(wedge, { 'fill-opacity': darker });
-	});
-	const opening = group.slice(0, group.indexOf('>') + 1);
-	return svg.replace(group, `${opening}\n\t\t${kept.join('\n\t\t')}\n\t</g>`);
-}
-
-export function small(full: string): string {
-	let svg = full;
-	for (const id of ['ring-inner', 'blip-halo', 'blip-faint', 'blip-old']) svg = drop(svg, id);
-	// A brighter, wider rim so the dark disc's edge still shows on a black panel.
-	svg = change(svg, 'face', { r: '97', 'stroke-width': '6', 'stroke-opacity': '0.6' });
-	svg = change(svg, 'ring-outer', { 'stroke-width': '14', 'stroke-opacity': '0.7' });
-	svg = change(svg, 'beam', { 'stroke-width': '20' });
-	svg = change(svg, 'centre', { r: '20' });
-	svg = change(svg, 'blip', { r: '18' });
-	svg = change(svg, 'blip-second', { r: '14', 'fill-opacity': '1' });
-	return shortSweep(svg);
 }
 
 /** iOS wants an opaque square and rounds its corners itself, so its icon is the disc's colour filling the square. */
@@ -122,16 +77,15 @@ export function argb(rgba: Buffer): Buffer {
  */
 export function svgFiles(sourceText: string): readonly (readonly [string, string])[] {
 	const source = withoutComments(sourceText);
-	const smallSvg = small(source);
 	return [
 		['static/brand/bmuster-logo.svg', source],
-		['static/favicon.svg', sized(smallSvg, 32)],
-		['docs/favicon.svg', sized(smallSvg, 32)],
-		['agent/crates/agent/assets/logo-small.svg', decorative(smallSvg, 32)],
+		['static/favicon.svg', sized(source, 32)],
+		['docs/favicon.svg', sized(source, 32)],
+		['agent/crates/agent/assets/logo-small.svg', decorative(source, 32)],
 		// The Linux applications-menu and autostart icon (hicolor scalable).
 		['agent/crates/agent/assets/bmuster.svg', source],
 		// The Linux tray icon by name (hicolor scalable), drawn sharp at any panel size.
-		['agent/crates/agent/assets/bmuster-tray.svg', sized(smallSvg, 22)]
+		['agent/crates/agent/assets/bmuster-tray.svg', sized(source, 22)]
 	];
 }
 
@@ -147,7 +101,7 @@ export const PNG_ICONS = [
 	{ file: 'static/apple-touch-icon.png', drawing: 'full-bleed', size: 180 }
 ] as const;
 
-/** The agent's tray icons (raw ARGB), all the small drawing. */
+/** The agent's tray icons (raw ARGB), the same drawing as every other icon. */
 export const TRAY_SIZES = [22, 32, 48] as const;
 
 export function trayFile(size: number): string {

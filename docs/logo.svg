@@ -4,11 +4,11 @@
 		A round dark radar screen with no tile: it is the shape itself, like the
 		other apps' icons. The beam points to four o'clock and turns clockwise,
 		so its trail lights the right side, and the contacts it has passed fade
-		with age: the newest bright with a halo, the oldest low on the left.
-		Every icon file is generated from it by `npm run icons:generate`
-		(scripts/icons-generate.ts), which also draws the small version for 32px
-		and below by dropping and thickening the elements named by id here.
-		Edit this file, run the command and commit what it writes.
+		with age: the newest bright with a halo, the oldest at seven o'clock.
+		Every icon file is this drawing, written at its size by
+		`npm run icons:generate` (scripts/icons-generate.ts); there is no
+		separate small version. Edit this file, run the command and commit
+		what it writes.
 	-->
 	<title>BMuster</title>
 	<defs>
@@ -58,6 +58,6 @@
 	<circle id="blip" cx="186.00" cy="100.95" r="9" fill="#d9f99d"/>
 	<circle id="blip-second" cx="137.15" cy="84.96" r="7" fill="#d9f99d" fill-opacity="0.8"/>
 	<circle id="blip-faint" cx="77.09" cy="77.09" r="6" fill="#d9f99d" fill-opacity="0.5"/>
-	<circle id="blip-old" cx="76.04" cy="158.00" r="5" fill="#d9f99d" fill-opacity="0.3"/>
+	<circle id="blip-old" cx="99.00" cy="178.23" r="5" fill="#d9f99d" fill-opacity="0.3"/>
 	<circle id="centre" cx="128" cy="128" r="12" fill="#a3e635"/>
 </svg>

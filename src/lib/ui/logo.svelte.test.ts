@@ -15,10 +15,10 @@ afterEach(() => {
 });
 
 describe('Logo (SPEC-BRAND-ICON I4)', () => {
-	it('I4: draws the small mark at 32px and below, the full mark above', async () => {
+	it('I4: draws the one mark at every size', async () => {
 		const small = await render(Logo, { size: 32 });
 		const full = await render(Logo, { size: 48 });
-		expect(image(small.container).getAttribute('src')).toMatch(/\/favicon\.svg$/);
+		expect(image(small.container).getAttribute('src')).toMatch(/\/brand\/bmuster-logo\.svg$/);
 		expect(image(full.container).getAttribute('src')).toMatch(/\/brand\/bmuster-logo\.svg$/);
 		expect(image(small.container).alt).toBe('');
 	});

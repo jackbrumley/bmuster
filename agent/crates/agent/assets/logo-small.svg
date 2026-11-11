@@ -2,29 +2,49 @@
 	<defs>
 		<clipPath id="disc"><circle cx="128" cy="128" r="92"/></clipPath>
 	</defs>
-	<circle id="face" cx="128" cy="128" r="97" fill="#13200f" stroke="#a3e635" stroke-opacity="0.6" stroke-width="6"/>
+	<circle id="face" cx="128" cy="128" r="96" fill="#13200f" stroke="#a3e635" stroke-opacity="0.25" stroke-width="3"/>
 	<g id="sweep" clip-path="url(#disc)">
-		<path d="M128 128 L190.90 58.14 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0240"/>
-		<path d="M128 128 L196.19 63.29 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0245"/>
-		<path d="M128 128 L201.05 68.84 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0251"/>
-		<path d="M128 128 L205.47 74.76 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0258"/>
-		<path d="M128 128 L209.41 81.00 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0262"/>
-		<path d="M128 128 L212.84 87.53 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0269"/>
-		<path d="M128 128 L215.76 94.31 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0275"/>
-		<path d="M128 128 L218.13 101.30 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0280"/>
-		<path d="M128 128 L219.95 108.46 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0286"/>
-		<path d="M128 128 L221.20 115.73 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0293"/>
-		<path d="M128 128 L221.87 123.08 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0298"/>
-		<path d="M128 128 L221.97 130.46 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0304"/>
-		<path d="M128 128 L221.49 137.83 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0310"/>
-		<path d="M128 128 L220.43 145.13 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0315"/>
-		<path d="M128 128 L218.80 152.33 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0322"/>
-		<path d="M128 128 L216.61 159.38 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0328"/>
-		<path d="M128 128 L213.87 166.23 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0333"/>
+		<path d="M128 128 L81.00 46.59 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0091"/>
+		<path d="M128 128 L87.53 43.16 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0095"/>
+		<path d="M128 128 L94.31 40.24 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0098"/>
+		<path d="M128 128 L101.30 37.87 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0102"/>
+		<path d="M128 128 L108.46 36.05 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0106"/>
+		<path d="M128 128 L115.73 34.80 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0109"/>
+		<path d="M128 128 L123.08 34.13 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0113"/>
+		<path d="M128 128 L130.46 34.03 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0117"/>
+		<path d="M128 128 L137.83 34.51 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0120"/>
+		<path d="M128 128 L145.13 35.57 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0124"/>
+		<path d="M128 128 L152.33 37.20 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0128"/>
+		<path d="M128 128 L159.38 39.39 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0131"/>
+		<path d="M128 128 L166.23 42.13 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0135"/>
+		<path d="M128 128 L172.85 45.39 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0139"/>
+		<path d="M128 128 L179.20 49.16 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0142"/>
+		<path d="M128 128 L185.22 53.42 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0146"/>
+		<path d="M128 128 L190.90 58.14 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0150"/>
+		<path d="M128 128 L196.19 63.29 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0153"/>
+		<path d="M128 128 L201.05 68.84 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0157"/>
+		<path d="M128 128 L205.47 74.76 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0161"/>
+		<path d="M128 128 L209.41 81.00 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0164"/>
+		<path d="M128 128 L212.84 87.53 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0168"/>
+		<path d="M128 128 L215.76 94.31 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0172"/>
+		<path d="M128 128 L218.13 101.30 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0175"/>
+		<path d="M128 128 L219.95 108.46 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0179"/>
+		<path d="M128 128 L221.20 115.73 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0183"/>
+		<path d="M128 128 L221.87 123.08 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0186"/>
+		<path d="M128 128 L221.97 130.46 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0190"/>
+		<path d="M128 128 L221.49 137.83 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0194"/>
+		<path d="M128 128 L220.43 145.13 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0197"/>
+		<path d="M128 128 L218.80 152.33 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0201"/>
+		<path d="M128 128 L216.61 159.38 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0205"/>
+		<path d="M128 128 L213.87 166.23 A94 94 0 0 1 209.41 175.00 Z" fill="#a3e635" fill-opacity="0.0208"/>
 	</g>
-	<circle id="ring-outer" cx="128" cy="128" r="92" fill="none" stroke="#7f9a72" stroke-opacity="0.7" stroke-width="14"/>
-	<path id="beam" d="M128 128 L207.67 174.00" stroke="#a3e635" stroke-width="20" stroke-linecap="round"/>
-	<circle id="blip" cx="186.00" cy="100.95" r="18" fill="#d9f99d"/>
-	<circle id="blip-second" cx="137.15" cy="84.96" r="14" fill="#d9f99d" fill-opacity="1"/>
-	<circle id="centre" cx="128" cy="128" r="20" fill="#a3e635"/>
+	<circle id="ring-outer" cx="128" cy="128" r="92" fill="none" stroke="#7f9a72" stroke-opacity="0.6" stroke-width="6"/>
+	<circle id="ring-inner" cx="128" cy="128" r="56" fill="none" stroke="#7f9a72" stroke-opacity="0.37" stroke-width="5"/>
+	<path id="beam" d="M128 128 L207.67 174.00" stroke="#a3e635" stroke-width="9" stroke-linecap="round"/>
+	<circle id="blip-halo" cx="186.00" cy="100.95" r="16" fill="#d9f99d" fill-opacity="0.15"/>
+	<circle id="blip" cx="186.00" cy="100.95" r="9" fill="#d9f99d"/>
+	<circle id="blip-second" cx="137.15" cy="84.96" r="7" fill="#d9f99d" fill-opacity="0.8"/>
+	<circle id="blip-faint" cx="77.09" cy="77.09" r="6" fill="#d9f99d" fill-opacity="0.5"/>
+	<circle id="blip-old" cx="99.00" cy="178.23" r="5" fill="#d9f99d" fill-opacity="0.3"/>
+	<circle id="centre" cx="128" cy="128" r="12" fill="#a3e635"/>
 </svg>

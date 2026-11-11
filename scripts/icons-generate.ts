@@ -3,10 +3,9 @@
  * (`npm run icons:generate`, SPEC-BRAND-ICON). Run it after changing the
  * drawing and commit what it writes; nothing runs it at build time.
  *
- * It draws two versions: the full mark (two rings, the long sweep, both
- * blips) and a small one for 32px and below (one thicker ring, a short
- * sweep, one blip), made by dropping and thickening the elements the
- * drawing names by id. Pixels come from the Chromium that Playwright
+ * Every file is the same drawing at every size (Jack, 2026-11-11: one
+ * version scaled reads better than a separate small one); only the iPhone
+ * icon gets an opaque square behind it. Pixels come from the Chromium that Playwright
  * already installs for the browser tests, so it needs no image library or
  * system tool.
  */
@@ -20,7 +19,6 @@ import {
 	dataUri,
 	errorPageLogo,
 	fullBleed,
-	small,
 	svgFiles,
 	trayFile,
 	withoutComments
@@ -76,7 +74,7 @@ for (const [file, svg] of svgFiles(sourceText)) await write(file, svg);
 await inlineInErrorPage(errorPageLogo(sourceText));
 
 const full = withoutComments(sourceText);
-const drawings = { full, 'full-bleed': fullBleed(full), small: small(full) } as const;
+const drawings = { full, 'full-bleed': fullBleed(full) } as const;
 const browser = await chromium.launch();
 try {
 	const page = await browser.newPage();
@@ -84,7 +82,7 @@ try {
 		await write(icon.file, (await rasterise(page, drawings[icon.drawing], icon.size)).png);
 	}
 	for (const size of TRAY_SIZES) {
-		const { rgba } = await rasterise(page, drawings.small, size);
+		const { rgba } = await rasterise(page, drawings.full, size);
 		await write(trayFile(size), argb(rgba));
 	}
 } finally {
