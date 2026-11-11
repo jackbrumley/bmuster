@@ -379,6 +379,13 @@ unsafe fn menu(window: HWND) -> Result<()> {
 }
 
 pub fn run() -> Result<()> {
+    // The agent is a console program, so a tray started by the Run key at
+    // sign-in gets a console window of its own: let it go at once, so only
+    // the icon remains. From a terminal it just stops printing there.
+    // SAFETY: no arguments; failing (no console) is fine.
+    unsafe {
+        windows_sys::Win32::System::Console::FreeConsole();
+    }
     // Real pixels, so the icon is made at the notification area's own size.
     if let Err(error) = unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE) }
     {
