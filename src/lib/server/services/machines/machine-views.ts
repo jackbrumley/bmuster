@@ -184,7 +184,7 @@ function toMachine(
 					}
 				: { kind: 'none' },
 		status: presenceOf(machine, now),
-		live: toLive(machine.id, status),
+		live: toLive(machine.id, status, now),
 		inventory: toInventory(inventory),
 		enrolledIso: machine.enrolledAt.toISOString(),
 		lastSeenIso: machine.lastSeenAt.toISOString(),
@@ -192,7 +192,7 @@ function toMachine(
 	};
 }
 
-function toLive(machineId: string, status: StatusRow | null): LiveFigures {
+function toLive(machineId: string, status: StatusRow | null, now: number): LiveFigures {
 	if (status === null) {
 		return { kind: 'none' };
 	}
@@ -202,7 +202,9 @@ function toLive(machineId: string, status: StatusRow | null): LiveFigures {
 		kind: 'known',
 		cpuPercent: fresher && live !== undefined ? live.cpuPercent : status.cpuPercent,
 		memoryUsedBytes: fresher && live !== undefined ? live.memoryUsedBytes : status.memoryUsedBytes,
-		uptimeSeconds: status.uptimeSeconds,
+		// Counted on from the check-in that reported it (SPEC-MACHINE-DETAILS D12).
+		uptimeSeconds:
+			status.uptimeSeconds + Math.max(0, Math.floor((now - status.updatedAt.getTime()) / 1000)),
 		signedInUser: parseSignedInUser(status.signedInUser)
 	};
 }
@@ -236,8 +238,7 @@ function toInventory(row: InventoryRow | null): MachineInventory {
 		cpuCores: data.cpu.cores,
 		memoryTotalBytes: data.memoryTotalBytes,
 		disks: data.disks,
-		displayCount: data.displays.length,
-		addresses: data.network.flatMap((network) => network.addresses),
+		network: data.network,
 		gpus: data.gpus,
 		display: data.display,
 		power: data.power

@@ -18,8 +18,7 @@ function inventory(
 		cpuCores: 4,
 		memoryTotalBytes: 16 * GB,
 		disks,
-		displayCount: 1,
-		addresses: [],
+		network: [],
 		gpus: [],
 		display: { kind: 'unreported' },
 		power: { kind: 'unreported' }

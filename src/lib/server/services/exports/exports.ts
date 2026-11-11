@@ -5,7 +5,9 @@ import { activitySentence } from '#lib/domain/activity/local-page-activity.ts';
 import type { MachineUpdateState } from '#lib/domain/machines/agent-updates.ts';
 import { updateBadge } from '#lib/domain/machines/agent-updates.ts';
 import { displayFacts } from '#lib/domain/machines/display-report.ts';
+import { adapterItem, gpuItem, itemText } from '#lib/domain/machines/inventory-items.ts';
 import { gpuLabel, osLabel, type Machine } from '#lib/domain/machines/machine.ts';
+import { powerSourceLabel } from '#lib/domain/machines/power.ts';
 import {
 	machinesInOrder,
 	machinesMatching,
@@ -14,7 +16,7 @@ import {
 import { inUseLabel } from '#lib/domain/sessions/session.ts';
 import { roleLabel, signInSummary, type ConsoleUser } from '#lib/domain/users/user.ts';
 import type { ActivityExportQuery, MachinesExportQuery } from '#lib/schemas/exports/exports.ts';
-import { formatBytes, percentOf } from '#lib/utils/format.ts';
+import { formatBytes, formatDuration, percentOf } from '#lib/utils/format.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { activityScopeFor, canSeeGroups, visibleMachineIds } from '../access/access.ts';
 import { listMachineGroups, listUserGroups } from '../access/groups.ts';
@@ -232,11 +234,31 @@ const MACHINE_DETAIL_COLUMNS: { header: string; cell: (machine: Machine) => CsvC
 			)
 		)
 	},
-	{ header: 'Addresses', cell: reported(({ addresses }) => joined(addresses)) },
+	{
+		header: 'Addresses',
+		cell: reported(({ network }) => joined(network.flatMap((adapter) => adapter.addresses)))
+	},
 	{
 		header: 'Display',
 		cell: reported(({ display }) =>
 			joined(displayFacts(display).map((fact) => `${fact.label}: ${fact.value}`))
+		)
+	},
+	// SPEC-CSV-EXPORT X13: the facts Overview gained with SPEC-MACHINE-DETAILS D10–D13.
+	{
+		header: 'Uptime',
+		cell: ({ status, live }) =>
+			status.kind === 'online' && live.kind === 'known' ? formatDuration(live.uptimeSeconds) : null
+	},
+	{ header: 'Power', cell: reported(({ power }) => powerSourceLabel(power)) },
+	{
+		header: 'Graphics details',
+		cell: reported(({ gpus }) => joined(gpus.map((gpu) => itemText(gpuItem(gpu)))))
+	},
+	{
+		header: 'Network adapters',
+		cell: reported(({ network }) =>
+			joined(network.map((adapter) => itemText(adapterItem(adapter))))
 		)
 	}
 ];

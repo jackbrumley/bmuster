@@ -3,11 +3,14 @@
 	import { refreshAll } from '$app/navigation';
 	import Panel from '#lib/ui/panel.svelte';
 	import UsageBar from '#lib/ui/usage-bar.svelte';
-	import { formatBytes, formatRelative, percentOf } from '#lib/utils/format.ts';
-	import { gpuLabel, osLabel, signedInUserOf } from '#lib/domain/machines/machine.ts';
+	import { formatBytes, formatDuration, formatRelative, percentOf } from '#lib/utils/format.ts';
+	import { adapterItem, gpuItem } from '#lib/domain/machines/inventory-items.ts';
+	import { osLabel, signedInUserOf } from '#lib/domain/machines/machine.ts';
+	import { powerSourceLabel } from '#lib/domain/machines/power.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import { canSendUserMessage } from '#lib/domain/machines/user-message.ts';
 	import DisplayCard from './display-card.svelte';
+	import InventoryList from './inventory-list.svelte';
 	import SendMessage from './send-message.svelte';
 	import type { PageProps } from './$types';
 
@@ -48,7 +51,11 @@
 						? 'Now'
 						: formatRelative(machine.status.sinceIso, data.now)
 			},
-			{ label: 'Enrolled', value: formatRelative(machine.enrolledIso, data.now) }
+			{ label: 'Enrolled', value: formatRelative(machine.enrolledIso, data.now) },
+			// A live figure: stale once the machine is offline (D12).
+			...(machine.status.kind === 'online' && machine.live.kind === 'known'
+				? [{ label: 'Uptime', value: formatDuration(machine.live.uptimeSeconds) }]
+				: [])
 		];
 		if (machine.inventory.kind === 'known') {
 			const inventory = machine.inventory;
@@ -64,20 +71,37 @@
 				},
 				{ label: 'Processor', value: `${inventory.cpuModel} · ${inventory.cpuCores} cores` },
 				{ label: 'Memory', value: formatBytes(inventory.memoryTotalBytes) },
-				{
-					label: 'Graphics',
-					value:
-						inventory.gpus.length === 0 ? 'None reported' : inventory.gpus.map(gpuLabel).join(', ')
-				},
 				{ label: 'Build', value: inventory.osBuild === '' ? 'Not reported' : inventory.osBuild },
-				{
-					label: 'Addresses',
-					value: inventory.addresses.length === 0 ? 'None reported' : inventory.addresses.join(', ')
-				}
+				{ label: 'Power', value: powerSourceLabel(inventory.power) }
 			);
 		}
 		return list;
 	});
+
+	// Two identical cards are two rows, so graphics rows are keyed by position.
+	const graphics = $derived(
+		machine.inventory.kind === 'known'
+			? {
+					kind: 'known' as const,
+					items: machine.inventory.gpus.map((gpu, index) => ({
+						key: String(index),
+						...gpuItem(gpu)
+					}))
+				}
+			: { kind: 'waiting' as const }
+	);
+
+	const network = $derived(
+		machine.inventory.kind === 'known'
+			? {
+					kind: 'known' as const,
+					items: machine.inventory.network.map((adapter) => ({
+						key: adapter.name,
+						...adapterItem(adapter)
+					}))
+				}
+			: { kind: 'waiting' as const }
+	);
 </script>
 
 {#snippet messageAction()}
@@ -141,6 +165,20 @@
 			</dl>
 		</Panel>
 	</div>
+
+	<InventoryList
+		heading="Graphics"
+		label="Graphics cards"
+		rows={graphics}
+		none="No graphics cards reported."
+	/>
+
+	<InventoryList
+		heading="Network"
+		label="Network adapters"
+		rows={network}
+		none="No network adapters reported."
+	/>
 
 	<div class="wide">
 		<DisplayCard

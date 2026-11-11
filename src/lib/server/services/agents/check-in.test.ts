@@ -58,7 +58,7 @@ describe('check-in (A6)', () => {
 			kind: 'known',
 			osName: 'Ubuntu',
 			updates: { kind: 'known', count: 3 },
-			addresses: ['10.0.0.5']
+			network: [{ name: 'eth0', mac: '00:11:22:33:44:55', addresses: ['10.0.0.5'] }]
 		});
 	});
 
