@@ -1,10 +1,6 @@
 <script lang="ts">
-	import {
-		IconAlertTriangle,
-		IconCloudDownload,
-		IconLoader2,
-		IconPin
-	} from '@tabler/icons-svelte-runes';
+	import { IconAlertTriangle, IconCloudDownload, IconPin } from '@tabler/icons-svelte-runes';
+	import RadarSpinner from './radar-spinner.svelte';
 	import { updateBadge, type MachineUpdateState } from '#lib/domain/machines/agent-updates.ts';
 
 	/**
@@ -17,17 +13,19 @@
 	const Icon = $derived(
 		state.kind === 'pinned'
 			? IconPin
-			: state.kind === 'updating'
-				? IconLoader2
-				: state.kind === 'rolled-back' || state.kind === 'refused'
-					? IconAlertTriangle
-					: IconCloudDownload
+			: state.kind === 'rolled-back' || state.kind === 'refused'
+				? IconAlertTriangle
+				: IconCloudDownload
 	);
 </script>
 
 {#if badge.kind === 'shown'}
 	<span class="badge tone-{badge.tone}" data-update-state={state.kind}>
-		<Icon size={14} stroke={2} />
+		{#if state.kind === 'updating'}
+			<RadarSpinner size="tiny" />
+		{:else}
+			<Icon size={14} stroke={2} />
+		{/if}
 		{badge.label}
 	</span>
 {/if}

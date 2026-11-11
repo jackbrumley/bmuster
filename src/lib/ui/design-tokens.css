@@ -91,6 +91,16 @@
 	--brand-hover: light-dark(#3f6212, #bef264);
 	--brand-contrast: light-dark(#ffffff, #14180f);
 	--brand-tint: light-dark(rgba(101, 163, 13, 0.12), rgba(163, 230, 53, 0.14));
+	/*
+	 * The night radar (SPEC-BRAND-ICON, SPEC-LOADING): the icon's own colours,
+	 * the same in both themes, for the medium and large loading radar.
+	 */
+	--radar-face: light-dark(#13200f, #13200f);
+	--radar-rim: light-dark(rgba(163, 230, 53, 0.28), rgba(163, 230, 53, 0.28));
+	--radar-ring: light-dark(rgba(127, 154, 114, 0.6), rgba(127, 154, 114, 0.6));
+	--radar-ring-faint: light-dark(rgba(127, 154, 114, 0.37), rgba(127, 154, 114, 0.37));
+	--radar-beam: light-dark(#a3e635, #a3e635);
+	--radar-contact: light-dark(#d9f99d, #d9f99d);
 	--focus-ring: var(--brand);
 	--success: light-dark(#16a34a, #4ade80);
 	--success-bg: light-dark(#dcfce7, rgba(74, 222, 128, 0.14));

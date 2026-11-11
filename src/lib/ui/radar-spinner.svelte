@@ -1,37 +1,47 @@
 <script lang="ts">
 	/**
-	 * The one loading mark of the console (SPEC-LOADING): a small radar whose
-	 * soft sweep turns once every 2.4 s over two faint rings, with a blip that
-	 * glows as the sweep passes it. `small` (24px) sits inline in buttons and
-	 * rows, `medium` (48px) in a block, `large` (96px) in LoadingVeil.
+	 * The one loading mark of BMuster (SPEC-LOADING): the icon come alive
+	 * (SPEC-BRAND-ICON). A night radar whose beam turns once every 2.4 s, its
+	 * trail almost as bright as the beam where they touch and fading over
+	 * almost half a turn, and whose four contacts flare as the beam passes,
+	 * then fade. Sizes: `tiny` (16px, inside a badge), `small` (24px, inline in buttons and rows), `medium`
+	 * (48px, in a block), `large` (96px, in LoadingVeil).
 	 *
 	 * It is decoration: the words beside it (the button label, the veil's
 	 * title) say what is happening. With reduced motion the sweep stops and
 	 * the radar breathes gently instead.
 	 */
-	let { size }: { size: 'small' | 'medium' | 'large' } = $props();
+	let { size }: { size: 'tiny' | 'small' | 'medium' | 'large' } = $props();
 </script>
 
 <span class="radar {size}" data-radar={size} aria-hidden="true">
+	<span class="sweep"></span>
 	<span class="ring outer"></span>
 	<span class="ring inner"></span>
-	<span class="sweep"></span>
-	<span class="blip"></span>
+	<!-- Where the icon's contacts sit, clockwise from the top in degrees. -->
+	<span class="contact newest" style:--at="65"></span>
+	<span class="contact second" style:--at="12"></span>
+	<span class="contact faint" style:--at="315"></span>
+	<span class="contact old" style:--at="210"></span>
 	<span class="core"></span>
 </span>
 
 <style>
+	/* The icon's dark face, rim, rings, lime beam and pale contacts. */
 	.radar {
 		position: relative;
 		display: inline-block;
 		flex: none;
+		overflow: hidden;
 		vertical-align: middle;
 		border-radius: var(--radius-round);
-		background: radial-gradient(
-			circle,
-			color-mix(in oklab, var(--brand) 10%, transparent) 0%,
-			transparent 70%
-		);
+		background: var(--radar-face);
+		box-shadow: inset 0 0 0 1px var(--radar-rim);
+	}
+
+	.tiny {
+		width: 16px;
+		height: 16px;
 	}
 
 	.small {
@@ -51,74 +61,122 @@
 
 	.ring,
 	.sweep,
-	.blip,
+	.contact,
 	.core {
 		position: absolute;
 		border-radius: var(--radius-round);
 	}
 
 	.ring {
-		border: 1px solid color-mix(in oklab, var(--muted) 40%, transparent);
+		border: 1px solid var(--radar-ring);
 	}
 
 	.outer {
-		inset: 0;
+		inset: 4%;
 	}
 
 	.inner {
-		inset: 25%;
-		border-color: color-mix(in oklab, var(--muted) 28%, transparent);
+		inset: 29%;
+		border-color: var(--radar-ring-faint);
 	}
 
 	/*
-	 * The sweep is a cone that is clear for most of its turn and brightens
-	 * towards its leading edge (at 0deg, the top, as it turns clockwise), so
-	 * it trails off like a phosphor afterglow.
+	 * The trail: clear for the back of the turn, then brightening to almost
+	 * the beam's own colour at its leading edge (0deg, the top, as it turns
+	 * clockwise), the same curve as the icon's.
 	 */
 	.sweep {
-		inset: 0;
+		inset: 4%;
 		background: conic-gradient(
 			from 0deg,
 			transparent 0deg,
-			transparent 200deg,
-			color-mix(in oklab, var(--brand) 12%, transparent) 280deg,
-			color-mix(in oklab, var(--brand) 55%, transparent) 356deg,
-			var(--brand) 360deg
+			transparent 195deg,
+			color-mix(in oklab, var(--radar-beam) 2%, transparent) 210deg,
+			color-mix(in oklab, var(--radar-beam) 9%, transparent) 240deg,
+			color-mix(in oklab, var(--radar-beam) 22%, transparent) 270deg,
+			color-mix(in oklab, var(--radar-beam) 40%, transparent) 300deg,
+			color-mix(in oklab, var(--radar-beam) 63%, transparent) 330deg,
+			color-mix(in oklab, var(--radar-beam) 80%, transparent) 350deg,
+			color-mix(in oklab, var(--radar-beam) 90%, transparent) 360deg
 		);
 		animation: radar-sweep 2.4s linear infinite;
 	}
 
-	/* The blip sits 60deg clockwise of the top, where the sweep passes it a sixth into the turn. */
-	.blip {
-		top: 33%;
-		left: 70%;
-		width: 16%;
-		height: 16%;
-		background: radial-gradient(
-			circle,
-			var(--brand) 0%,
-			var(--brand) 32%,
-			color-mix(in oklab, var(--brand) 30%, transparent) 50%,
-			transparent 72%
-		);
-		opacity: 0;
-		transform: translate(-50%, -50%);
-		animation: radar-blip 2.4s linear infinite;
+	/* The beam: the sweep's leading edge, from the centre to the rim. */
+	.sweep::after {
+		position: absolute;
+		top: 0;
+		left: 50%;
+		width: 3px;
+		height: 50%;
+		margin-left: -1.5px;
+		border-radius: var(--radius-round);
+		background: var(--radar-beam);
+		content: '';
+	}
+
+	.medium .sweep::after {
+		width: 2px;
+		margin-left: -1px;
+	}
+
+	.tiny .sweep::after,
+	.small .sweep::after {
+		width: 1.5px;
+		margin-left: -0.75px;
 	}
 
 	.core {
 		top: 50%;
 		left: 50%;
-		width: 8%;
-		height: 8%;
+		width: 11%;
+		height: 11%;
 		min-width: 2px;
 		min-height: 2px;
-		background: var(--brand);
+		background: var(--radar-beam);
 		transform: translate(-50%, -50%);
 	}
 
-	.small .inner {
-		inset: 30%;
+	/*
+	 * Each contact sits where it does on the icon and flares as the beam
+	 * reaches it: the delay starts its fade that far into the turn.
+	 */
+	.contact {
+		width: 8%;
+		height: 8%;
+		min-width: 1.5px;
+		min-height: 1.5px;
+		background: var(--radar-contact);
+		opacity: 0.2;
+		transform: translate(-50%, -50%);
+		animation: radar-contact 2.4s linear infinite;
+		animation-delay: calc(-2.4s * (1 - var(--at) / 360));
+	}
+
+	.newest {
+		top: 36.1%;
+		left: 79.9%;
+		width: 9.5%;
+		height: 9.5%;
+	}
+
+	.second {
+		top: 27.5%;
+		left: 54.8%;
+	}
+
+	.faint {
+		top: 23.5%;
+		left: 23.5%;
+		width: 7%;
+		height: 7%;
+	}
+
+	.old {
+		top: 76%;
+		left: 35%;
+		width: 6%;
+		height: 6%;
 	}
 
 	@keyframes radar-sweep {
@@ -127,21 +185,20 @@
 		}
 	}
 
-	@keyframes radar-blip {
-		0%,
-		15% {
-			opacity: 0;
-			transform: translate(-50%, -50%) scale(0.6);
-		}
-
-		19% {
+	@keyframes radar-contact {
+		0% {
 			opacity: 1;
-			transform: translate(-50%, -50%) scale(1.15);
+			transform: translate(-50%, -50%) scale(1.3);
 		}
 
-		70%,
+		12% {
+			opacity: 0.9;
+			transform: translate(-50%, -50%) scale(1);
+		}
+
+		75%,
 		100% {
-			opacity: 0;
+			opacity: 0.2;
 			transform: translate(-50%, -50%) scale(0.9);
 		}
 	}
@@ -163,11 +220,11 @@
 		}
 
 		.sweep,
-		.blip {
+		.contact {
 			animation: none;
 		}
 
-		.blip {
+		.contact {
 			opacity: 0.8;
 		}
 	}
