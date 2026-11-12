@@ -1,6 +1,8 @@
 //! Windows notification area and read-only, ACL-checked status.
 use super::status;
-use super::windows_sessions::{replaced, FileId, MUTEX_NAME};
+use super::windows_sessions::{
+    icon_call, replaced, FileId, IconCall, IconEvent, ICON_RETRY, MUTEX_NAME, RUN_KEY, RUN_VALUE,
+};
 use anyhow::{bail, Context as _, Result};
 use std::cell::Cell;
 use std::fs::{File, OpenOptions};
@@ -36,6 +38,10 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 const CALLBACK: u32 = WM_APP + 1;
 const OPEN: usize = 1;
 const COPY: usize = 2;
+/// The once-a-second timer that keeps the icon current.
+const TICK_TIMER: usize = 1;
+/// The timer that tries to add the icon again while it is not shown.
+const RETRY_TIMER: usize = 2;
 
 fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt as _;
@@ -171,6 +177,8 @@ thread_local! {
             connected: HICON(std::ptr::null_mut()),
         })
     };
+    /// Whether the notification area shows the icon now.
+    static SHOWN: Cell<bool> = const { Cell::new(false) };
 }
 
 /// The program this helper started from, and which file it was then.
@@ -233,8 +241,7 @@ impl Drop for Instance {
 }
 
 /// Takes `Local\BMusterTray`, one per session; `None` when another helper
-/// already holds it (the sign-in `Run` entry and the agent's starter may
-/// both start one).
+/// already holds it (someone ran `tray` by hand beside the starter's).
 pub fn single_instance() -> Result<Option<Instance>> {
     let name = wide(std::ffi::OsStr::new(MUTEX_NAME));
     let handle = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }
@@ -273,28 +280,70 @@ fn icon_data(window: HWND) -> NOTIFYICONDATAW {
     data
 }
 
+/// Shows, refreshes or retries the icon for `event` (SPEC-TRAY-SESSIONS
+/// TS15): at sign-in the taskbar may not be ready, so a failed add keeps
+/// the window and tries again every [`ICON_RETRY`] and on `TaskbarCreated`.
+fn icon(window: HWND, event: IconEvent) {
+    match icon_call(SHOWN.get(), event) {
+        IconCall::Nothing => {}
+        IconCall::Modify => unsafe {
+            let _ = Shell_NotifyIconW(NIM_MODIFY, &icon_data(window));
+        },
+        IconCall::Add => {
+            let data = icon_data(window);
+            // An add fails when the icon is already there (Windows also
+            // sends TaskbarCreated on a DPI change); a modify that works
+            // shows it is.
+            let shown = unsafe {
+                Shell_NotifyIconW(NIM_ADD, &data).as_bool()
+                    || Shell_NotifyIconW(NIM_MODIFY, &data).as_bool()
+            };
+            let was_shown = SHOWN.replace(shown);
+            if shown {
+                unsafe {
+                    let _ = KillTimer(Some(window), RETRY_TIMER);
+                }
+                if event == IconEvent::Retry {
+                    log::info!("The taskbar is ready; the tray icon shows now.");
+                }
+            } else {
+                if was_shown || event != IconEvent::Retry {
+                    log::info!(
+                        "The taskbar is not ready; the tray icon tries again every {} s.",
+                        ICON_RETRY.as_secs()
+                    );
+                }
+                let every = u32::try_from(ICON_RETRY.as_millis()).unwrap_or(u32::MAX);
+                if unsafe { SetTimer(Some(window), RETRY_TIMER, every, None) } == 0 {
+                    log::warn!("Could not start the tray icon's retry timer.");
+                }
+            }
+        }
+    }
+}
+
 unsafe extern "system" fn procedure(window: HWND, message: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     match message {
         _ if message == unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) } => {
-            unsafe {
-                let _ = Shell_NotifyIconW(NIM_ADD, &icon_data(window));
-            }
+            icon(window, IconEvent::TaskbarCreated);
+            LRESULT(0)
+        }
+        WM_TIMER if wp.0 == RETRY_TIMER => {
+            icon(window, IconEvent::Retry);
             LRESULT(0)
         }
         WM_TIMER => {
             if program_replaced() {
-                // A new version of the program is in place: this helper
-                // bows out and the agent's tray starter runs the new one
-                // within about 30 s (SPEC-TRAY-SESSIONS, Windows).
+                // Another program is in place: this helper bows out and the
+                // agent's tray starter runs the current one within seconds
+                // (SPEC-TRAY-SESSIONS, Windows).
                 log::info!("A new agent version is in place; the tray helper restarts on it.");
                 unsafe {
                     let _ = DestroyWindow(window);
                 }
                 return LRESULT(0);
             }
-            unsafe {
-                let _ = Shell_NotifyIconW(NIM_MODIFY, &icon_data(window));
-            }
+            icon(window, IconEvent::Tick);
             LRESULT(0)
         }
         CALLBACK => {
@@ -313,7 +362,9 @@ unsafe extern "system" fn procedure(window: HWND, message: u32, wp: WPARAM, lp: 
         }
         WM_DESTROY => {
             unsafe {
-                let _ = Shell_NotifyIconW(NIM_DELETE, &icon_data(window));
+                if SHOWN.replace(false) {
+                    let _ = Shell_NotifyIconW(NIM_DELETE, &icon_data(window));
+                }
                 PostQuitMessage(0);
             }
             LRESULT(0)
@@ -379,9 +430,9 @@ unsafe fn menu(window: HWND) -> Result<()> {
 }
 
 pub fn run() -> Result<()> {
-    // The agent is a console program, so a tray started by the Run key at
-    // sign-in gets a console window of its own: let it go at once, so only
-    // the icon remains. From a terminal it just stops printing there.
+    // The agent is a console program. The starter gives the tray no console
+    // window; one started any other way lets its console go at once, so
+    // only the icon remains. From a terminal it just stops printing there.
     // SAFETY: no arguments; failing (no console) is fine.
     unsafe {
         windows_sys::Win32::System::Console::FreeConsole();
@@ -431,15 +482,12 @@ fn message_loop() -> Result<()> {
             Some(instance.into()),
             None,
         )?;
-        if !Shell_NotifyIconW(NIM_ADD, &icon_data(window)).as_bool() {
-            let _ = DestroyWindow(window);
-            bail!("Could not add the notification icon");
-        }
         // Every second, so a new viewer shows in the icon at once.
-        if SetTimer(Some(window), 1, 1000, None) == 0 {
+        if SetTimer(Some(window), TICK_TIMER, 1000, None) == 0 {
             let _ = DestroyWindow(window);
             bail!("Could not start the tray timer");
         }
+        icon(window, IconEvent::Start);
         let mut message = MSG::default();
         loop {
             let result = GetMessageW(&mut message, None, 0, 0).0;
@@ -479,24 +527,8 @@ pub fn install(binary: &Path) -> Result<()> {
             bail!("Could not protect the public status folder");
         }
     }
-    let path = format!("\"{}\" tray", binary.display());
-    if !std::process::Command::new("reg")
-        .args([
-            "add",
-            r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run",
-            "/v",
-            "BMusterAgent",
-            "/t",
-            "REG_SZ",
-            "/d",
-            &path,
-            "/f",
-        ])
-        .status()?
-        .success()
-    {
-        bail!("Could not install the tray autostart entry");
-    }
+    // The service's starter is the one way the tray starts.
+    remove_sign_in_entry()?;
     // The shortcut opens management directly, even without a tray host.
     let programs = bmuster_service::windows::known_folder("ProgramData")?
         .join(r"Microsoft\Windows\Start Menu\Programs");
@@ -512,19 +544,27 @@ pub fn install(binary: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn uninstall() -> Result<()> {
-    let key = r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run";
-    let query = std::process::Command::new("reg")
-        .args(["query", key, "/v", "BMusterAgent"])
-        .output()?;
-    if query.status.success()
-        && !std::process::Command::new("reg")
-            .args(["delete", key, "/v", "BMusterAgent", "/f"])
-            .status()?
-            .success()
-    {
-        bail!("Could not remove the tray autostart entry");
+/// Removes the sign-in `Run` entry 0.4.19 and earlier wrote, when it is
+/// there: it started the rescue copy, with a console window, beside the
+/// service's starter (SPEC-TRAY-SESSIONS, Windows version 2).
+pub fn remove_sign_in_entry() -> Result<()> {
+    let key = windows_registry::LOCAL_MACHINE
+        .options()
+        .read()
+        .write()
+        .open(RUN_KEY)
+        .with_context(|| format!(r"could not open HKLM\{RUN_KEY}"))?;
+    if key.get_type(RUN_VALUE).is_err() {
+        return Ok(());
     }
+    key.remove_value(RUN_VALUE)
+        .with_context(|| format!("could not remove the {RUN_VALUE} sign-in entry"))?;
+    log::info!("Removed the old {RUN_VALUE} sign-in entry; the agent starts the tray itself.");
+    Ok(())
+}
+
+pub fn uninstall() -> Result<()> {
+    remove_sign_in_entry()?;
     let shortcut = bmuster_service::windows::known_folder("ProgramData")?
         .join(r"Microsoft\Windows\Start Menu\Programs\BMuster.lnk");
     if shortcut.exists() {

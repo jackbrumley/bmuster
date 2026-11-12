@@ -1,10 +1,119 @@
 //! The Windows tray starter's decisions (SPEC-TRAY-SESSIONS, Windows): which
-//! sessions get a helper, which token it runs with, its fixed command line,
-//! and when a running helper bows out for a new program. Pure, so the tests
-//! run on every build machine; the Win32 calls are in `windows_starter.rs`
-//! and `windows.rs`.
+//! sessions get a helper, which token it runs with, which program and fixed
+//! command line, which running processes are older helpers, when a running
+//! helper bows out for a new program, and when it tries to show its icon
+//! again. Pure, so the tests run on every build machine; the Win32 calls are
+//! in `windows_starter.rs` and `windows.rs`.
 
 use bmuster_desktop::winsession::command_line::quote;
+use std::time::Duration;
+
+/// The sign-in entry 0.4.19 and earlier wrote, which ran the rescue copy
+/// with a console window; the agent removes it (SPEC-TRAY-SESSIONS,
+/// Windows version 2).
+pub const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+pub const RUN_VALUE: &str = "BMusterAgent";
+
+/// How often the Windows starter lists the sessions.
+pub const POLL: Duration = Duration::from_secs(2);
+/// How long a Windows session is seen before its first helper starts.
+pub const SETTLE: Duration = Duration::from_secs(5);
+
+/// Every tray copy's name starts with this.
+const TRAY_PREFIX: &str = "bmuster-tray-";
+
+/// This version's tray program in the program folder: its own copy, so
+/// the tray always runs the agent's current version.
+pub fn tray_file_name(version: &str) -> String {
+    format!("{TRAY_PREFIX}{version}.exe")
+}
+
+/// Whether a program or file named `name` is a tray copy (of any version,
+/// or one's leftover).
+pub fn is_tray_file(name: &str) -> bool {
+    name.to_ascii_lowercase().starts_with(TRAY_PREFIX)
+}
+
+/// Whether `name`, a file in the program folder, is a tray copy (or one's
+/// leftover `.new` or `.old`) other than `current`: removed when not in use.
+pub fn is_other_tray_file(name: &str, current: &str) -> bool {
+    is_tray_file(name) && !name.eq_ignore_ascii_case(current)
+}
+
+/// The folder and the last part of a Windows path.
+fn split(path: &str) -> (&str, &str) {
+    match path.rfind('\\') {
+        Some(at) => (&path[..at], &path[at + 1..]),
+        None => ("", path),
+    }
+}
+
+/// What a process in a signed-in session is to the starter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Helper {
+    /// This version's tray copy.
+    Current,
+    /// An older (or other) tray: ended so the current one can start.
+    Stale,
+    /// Not a BMuster tray; never touched.
+    Other,
+}
+
+/// What a process whose program is `image` is, given this version's tray
+/// copy `tray` and the rescue copy `rescue` (full paths in the program
+/// folder). `elevated` is `None` when it could not be read. The rescue copy
+/// unelevated is a helper from 0.4.19 or earlier; elevated (or unknown) it
+/// is an administrator's own command and is left alone.
+pub fn helper_kind(image: &str, tray: &str, rescue: &str, elevated: Option<bool>) -> Helper {
+    if image.eq_ignore_ascii_case(tray) {
+        return Helper::Current;
+    }
+    let (folder, name) = split(image);
+    let (program_folder, _) = split(tray);
+    if !folder.is_empty() && folder.eq_ignore_ascii_case(program_folder) && is_tray_file(name) {
+        return Helper::Stale;
+    }
+    if image.eq_ignore_ascii_case(rescue) && elevated == Some(false) {
+        return Helper::Stale;
+    }
+    Helper::Other
+}
+
+/// What wakes the helper's window, for its notification icon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IconEvent {
+    /// The helper has just made its window.
+    Start,
+    /// Explorer (re)made the taskbar: any icon it had is gone.
+    TaskbarCreated,
+    /// The once-a-second timer that keeps the icon current.
+    Tick,
+    /// The retry timer, running while the icon is not shown.
+    Retry,
+}
+
+/// What the helper asks `Shell_NotifyIconW` for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IconCall {
+    Add,
+    Modify,
+    Nothing,
+}
+
+/// How often the helper tries again to add its icon.
+pub const ICON_RETRY: Duration = Duration::from_secs(2);
+
+/// The call for `event` while the icon is (`shown`) or is not shown. After
+/// an `Add` the retry timer runs exactly while the icon is not shown.
+pub fn icon_call(shown: bool, event: IconEvent) -> IconCall {
+    match event {
+        IconEvent::Start | IconEvent::TaskbarCreated => IconCall::Add,
+        IconEvent::Retry if shown => IconCall::Nothing,
+        IconEvent::Retry => IconCall::Add,
+        IconEvent::Tick if shown => IconCall::Modify,
+        IconEvent::Tick => IconCall::Nothing,
+    }
+}
 
 /// The helper's single-instance mutex. `Local\` names live in the
 /// session's own namespace, so there is one helper per session.
@@ -199,8 +308,8 @@ mod tests {
     #[test]
     fn the_windows_helper_command_is_fixed() {
         assert_eq!(
-            command_line(r"C:\Program Files\BMuster\bmuster-agent.exe"),
-            r#""C:\Program Files\BMuster\bmuster-agent.exe" tray"#
+            command_line(r"C:\Program Files\BMuster\bmuster-tray-0.4.20.exe"),
+            r#""C:\Program Files\BMuster\bmuster-tray-0.4.20.exe" tray"#
         );
         assert_eq!(MUTEX_NAME, r"Local\BMusterTray");
     }
@@ -224,5 +333,93 @@ mod tests {
             "a path that cannot be read mid-switch is not a new version"
         );
         assert!(!replaced(None, Some(new_file)), "nothing to compare with");
+    }
+
+    /// SPEC-TRAY-SESSIONS TS15.
+    #[test]
+    fn the_icon_waits_for_the_taskbar() {
+        // Start and a new taskbar always add, shown or not.
+        for shown in [false, true] {
+            assert_eq!(icon_call(shown, IconEvent::Start), IconCall::Add);
+            assert_eq!(icon_call(shown, IconEvent::TaskbarCreated), IconCall::Add);
+        }
+        // Not shown (the taskbar was not ready): retry adds, tick waits.
+        assert_eq!(icon_call(false, IconEvent::Retry), IconCall::Add);
+        assert_eq!(icon_call(false, IconEvent::Tick), IconCall::Nothing);
+        // Shown: tick keeps it current, a late retry does nothing.
+        assert_eq!(icon_call(true, IconEvent::Tick), IconCall::Modify);
+        assert_eq!(icon_call(true, IconEvent::Retry), IconCall::Nothing);
+        assert_eq!(ICON_RETRY, Duration::from_secs(2));
+    }
+
+    /// SPEC-TRAY-SESSIONS TS16.
+    #[test]
+    fn each_version_has_its_own_tray_program() {
+        let current = tray_file_name("0.4.20");
+        assert_eq!(current, "bmuster-tray-0.4.20.exe");
+        for other in [
+            "bmuster-tray-0.4.19.exe",
+            "BMuster-Tray-0.4.21.EXE",
+            "bmuster-tray-0.4.20.exe.new",
+            "bmuster-tray-0.4.20.exe.4321.old",
+        ] {
+            assert!(is_other_tray_file(other, &current), "{other}");
+            assert!(is_tray_file(other), "{other}");
+        }
+        assert!(is_tray_file(&current));
+        assert!(!is_tray_file("bmuster-agent.exe"));
+        for kept in [
+            "bmuster-tray-0.4.20.exe",
+            "BMUSTER-TRAY-0.4.20.EXE",
+            "bmuster-agent.exe",
+            "bmuster-agent.old",
+            "notes.txt",
+        ] {
+            assert!(!is_other_tray_file(kept, &current), "{kept}");
+        }
+    }
+
+    /// SPEC-TRAY-SESSIONS TS17.
+    #[test]
+    fn older_trays_are_recognised() {
+        let tray = r"C:\Program Files\BMuster\bmuster-tray-0.4.20.exe";
+        let rescue = r"C:\Program Files\BMuster\bmuster-agent.exe";
+        let kind = |image: &str, elevated| helper_kind(image, tray, rescue, elevated);
+        assert_eq!(kind(tray, Some(false)), Helper::Current);
+        assert_eq!(
+            kind(r"c:\program files\bmuster\BMUSTER-TRAY-0.4.20.EXE", None),
+            Helper::Current
+        );
+        assert_eq!(
+            kind(
+                r"C:\Program Files\BMuster\bmuster-tray-0.4.19.exe",
+                Some(false)
+            ),
+            Helper::Stale
+        );
+        // The rescue copy: 0.4.19 and earlier ran the tray from it.
+        assert_eq!(kind(rescue, Some(false)), Helper::Stale);
+        assert_eq!(kind(&rescue.to_uppercase(), Some(false)), Helper::Stale);
+        // An administrator's own elevated command, or unknown: left alone.
+        assert_eq!(kind(rescue, Some(true)), Helper::Other);
+        assert_eq!(kind(rescue, None), Helper::Other);
+        // A tray-like name anywhere else, and other programs.
+        for other in [
+            r"C:\Users\kim\Downloads\bmuster-tray-0.4.20.exe",
+            r"C:\Users\kim\bmuster-agent.exe",
+            r"C:\ProgramData\BMuster\versions\current\bmuster-agent.exe",
+            r"C:\Windows\explorer.exe",
+            "bmuster-tray-0.4.19.exe",
+            "",
+        ] {
+            assert_eq!(kind(other, Some(false)), Helper::Other, "{other}");
+        }
+    }
+
+    /// SPEC-TRAY-SESSIONS TS19.
+    #[test]
+    fn the_old_sign_in_entry_is_known() {
+        assert_eq!(RUN_KEY, r"Software\Microsoft\Windows\CurrentVersion\Run");
+        assert_eq!(RUN_VALUE, "BMusterAgent");
     }
 }

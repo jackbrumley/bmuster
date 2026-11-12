@@ -58,8 +58,9 @@ pub fn run(open_only: bool) -> Result<()> {
     if open_only {
         return open_management();
     }
-    // The autostart entry and the agent may both start a helper for the
-    // same person; the second one leaves quietly (SPEC-TRAY-SESSIONS 3).
+    // Linux: the autostart entry and the agent may both start a helper for
+    // the same person; Windows: someone may run `tray` by hand. The second
+    // one leaves quietly (SPEC-TRAY-SESSIONS 3).
     #[cfg(target_os = "linux")]
     {
         let Some(_lock) = linux::single_instance(&linux::runtime_dir())? else {

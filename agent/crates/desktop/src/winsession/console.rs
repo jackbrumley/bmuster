@@ -117,6 +117,11 @@ impl Drop for Owned {
 
 /// Process ids whose executable is `exe` (any case) in `session`.
 pub fn processes_in_session(exe: &str, session: u32) -> Vec<u32> {
+    session_processes(session, |name| name.eq_ignore_ascii_case(exe))
+}
+
+/// Process ids in `session` whose executable's file name `wanted` accepts.
+pub fn session_processes(session: u32, wanted: impl Fn(&str) -> bool) -> Vec<u32> {
     // SAFETY: a process snapshot, walked with a correctly sized entry and
     // closed when `snapshot` drops.
     unsafe {
@@ -133,7 +138,7 @@ pub fn processes_in_session(exe: &str, session: u32) -> Vec<u32> {
         while more {
             let name = crate::capture::windows::wide_to_string(&entry.szExeFile);
             let mut in_session = u32::MAX;
-            if name.eq_ignore_ascii_case(exe)
+            if wanted(&name)
                 && ProcessIdToSessionId(entry.th32ProcessID, &mut in_session).is_ok()
                 && in_session == session
             {

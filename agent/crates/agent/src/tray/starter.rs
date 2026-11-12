@@ -265,7 +265,7 @@ pub fn start(data_dir: &Path, launched: bool, stop: Arc<AtomicBool>) {
     let started = std::thread::Builder::new()
         .name("tray sessions".into())
         .spawn(move || {
-            let mut starter = Starter::default();
+            let mut starter = Starter::new(super::starts::SETTLE);
             let mut system = System;
             while !stop.load(Ordering::SeqCst) {
                 for attempt in starter.tick(&mut system, Instant::now()) {

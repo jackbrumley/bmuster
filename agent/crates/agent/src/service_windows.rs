@@ -38,8 +38,8 @@ fn install_dir() -> Result<PathBuf> {
     Ok(service::known_folder("ProgramFiles")?.join("BMuster"))
 }
 
-/// The installed program: the service's launcher, the rescue copy, and the
-/// tray every user runs (SPEC-TRAY-SESSIONS).
+/// The installed program: the service's launcher and the rescue copy. The
+/// tray runs its own per-version copy beside it (SPEC-TRAY-SESSIONS).
 pub fn binary_path() -> Result<PathBuf> {
     Ok(install_dir()?.join("bmuster-agent.exe"))
 }
@@ -126,9 +126,9 @@ pub fn uninstall(purge: bool) -> Result<()> {
     if service::stop_and_delete(SERVICE_NAME)? {
         log::info!("Removed the \"{DISPLAY_NAME}\" service.");
     }
-    // Tray helpers run the program in each session; end them so its folder
+    // Tray helpers run from the program folder in each session; end them so it
     // can go (the service, whose starter would start them again, is gone).
-    let ended = crate::tray::windows_starter::stop_helpers(&binary_path()?);
+    let ended = crate::tray::windows_starter::stop_helpers();
     if ended > 0 {
         log::info!("Closed the BMuster tray in {ended} session(s).");
     }
