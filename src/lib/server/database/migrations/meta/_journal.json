@@ -141,6 +141,13 @@
       "when": 1794476861648,
       "tag": "0019_blue_tattoo",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1794480108852,
+      "tag": "0020_deep_adam_warlock",
+      "breakpoints": true
     }
   ]
 }

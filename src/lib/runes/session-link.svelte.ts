@@ -4,7 +4,6 @@ import {
 	serverControlSchema,
 	type OpenSessionRequest
 } from '#lib/schemas/sessions/sessions.ts';
-import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 import { apiRequest } from '#lib/utils/api-client.ts';
 import { announceAgentLost } from './machine-presence.svelte.ts';
 
@@ -48,6 +47,8 @@ export type LinkEvents = {
 export type SessionRoute = {
 	/** POST here with the open request; the reply is the session and a browser ticket. */
 	openUrl: string;
+	/** What is posted: the console's open request as it is, or a guest's with who they are. */
+	openBody(request: OpenSessionRequest): unknown;
 	/** The request for a fresh browser ticket for this running session. */
 	ticket(sessionId: string): { url: string; body: unknown };
 	/** Where this tab remembers its running session (sessionStorage). */
@@ -61,6 +62,7 @@ export function consoleSessionRoute(
 ): SessionRoute {
 	return {
 		openUrl: `/api/machines/${machineId}/sessions`,
+		openBody: (request) => request,
 		ticket: (sessionId) => ({ url: `/api/sessions/${sessionId}/browser-ticket`, body: undefined }),
 		storageKey: `bmuster.${kind}.${machineId}`
 	};
@@ -169,17 +171,14 @@ export class SessionLink {
 		return saved.tag;
 	}
 
-	/**
-	 * Asks for a new session; false when the server refused (the reason is in `connection`).
-	 * The body is the console's open request, or a guest's `{ mode }`.
-	 */
-	async start(request: OpenSessionRequest | { mode: DesktopMode }, tag: string): Promise<boolean> {
+	/** Asks for a new session; false when the server refused (the reason is in `connection`). */
+	async start(request: OpenSessionRequest, tag: string): Promise<boolean> {
 		this.#closeSocket();
 		this.connection = { kind: 'starting' };
 		const result = await apiRequest({
 			method: 'POST',
 			url: this.#route.openUrl,
-			body: request,
+			body: this.#route.openBody(request),
 			reply: openSessionReplySchema
 		});
 		if (!result.ok) {

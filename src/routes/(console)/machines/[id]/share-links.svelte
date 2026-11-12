@@ -3,8 +3,9 @@
 	import { resolve } from '$app/paths';
 	import { IconLink } from '@tabler/icons-svelte-runes';
 	import {
+		lastUseLabel,
 		SHARE_DURATIONS,
-		shareDurationLabel,
+		shareDurationShortLabel,
 		sharePermissionsLabel,
 		timeLeftLabel,
 		type ShareDuration,
@@ -23,11 +24,11 @@
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
 	import Modal from '#lib/ui/modal.svelte';
-	import Notice from '#lib/ui/notice.svelte';
 	import SegmentedControl from '#lib/ui/segmented-control.svelte';
 	import TextField from '#lib/ui/text-field.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
+	import { formatRelative } from '#lib/utils/format.ts';
 
 	/**
 	 * Share links on a machine's page (SPEC-SHARE-LINKS SL17): the active
@@ -52,7 +53,10 @@
 	let busy = $state(false);
 
 	const listUrl = $derived(resolve('/api/machines/[id]/share-links', { id: machineId }));
-	const durations = SHARE_DURATIONS.map((value) => ({ value, label: shareDurationLabel(value) }));
+	const durations = SHARE_DURATIONS.map((value) => ({
+		value,
+		label: shareDurationShortLabel(value)
+	}));
 
 	async function load(): Promise<void> {
 		const result = await apiRequest({
@@ -167,6 +171,7 @@
 					now
 				)} left
 			</p>
+			<p class="what">{lastUseLabel(link.lastUse, (iso) => formatRelative(iso, now))}</p>
 		</div>
 		<Button variant="secondary" size="compact" type="button" onclick={() => void endNow(link)}
 			>End now</Button
@@ -199,8 +204,11 @@
 	{:else}
 		<div class="fields">
 			<p class="hint">
-				Anyone with the link can open this machine's screen until it ends. The person at the screen
-				is asked first, and it is kept in Activity.
+				Anyone with the link can open this machine's screen until it ends. It is kept in Activity.
+			</p>
+			<p class="hint">
+				The guest connects without asking the person at the machine first. They will see that
+				someone is connected and can disconnect them.
 			</p>
 			<TextField
 				label="Who it is for"
@@ -220,12 +228,6 @@
 					<Checkbox label="Control desktop" error={undefined} bind:checked={control} />
 				{/if}
 			</div>
-			<Notice tone="warning" title="Guests cannot connect yet">
-				<p>
-					The person at the screen must allow every guest, and this server cannot ask them until
-					consent prompts arrive. The link opens, but connecting is refused until then.
-				</p>
-			</Notice>
 		</div>
 	{/if}
 	{#snippet footer()}

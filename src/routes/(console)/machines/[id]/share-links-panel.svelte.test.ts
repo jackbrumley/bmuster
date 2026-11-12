@@ -19,6 +19,7 @@ function linkView(overrides: Partial<ShareLinkView>): ShareLinkView {
 		createdByName: 'Jack',
 		createdIso: new Date().toISOString(),
 		expiresIso: new Date(Date.now() + 65 * 60_000).toISOString(),
+		lastUse: { kind: 'never' },
 		...overrides
 	};
 }
@@ -71,12 +72,48 @@ describe('Share links on the machine page (SPEC-SHARE-LINKS)', () => {
 			.toBeVisible();
 	});
 
+	it('SL20: each link says who last used it, as they named themselves, and from where', async () => {
+		stubServer({
+			existing: [
+				linkView({}),
+				linkView({
+					id: '44444444-4444-4444-8444-444444444444',
+					recipient: 'Eve, Beta Plumbing',
+					lastUse: {
+						kind: 'used',
+						name: 'Alex Smith',
+						company: 'Acme',
+						address: '203.0.113.5',
+						atIso: new Date(Date.now() - 5 * 60_000).toISOString()
+					}
+				})
+			],
+			canControl: false
+		});
+		await render(ShareLinks, { machineId: MACHINE_ID, machineName: 'Front desk' });
+		await expect.element(page.getByText('Not used yet')).toBeVisible();
+		await expect
+			.element(
+				page.getByText(
+					/^Last used by someone who says they are Alex Smith \(Acme\), from 203\.0\.113\.5, /
+				)
+			)
+			.toBeVisible();
+	});
+
 	it('SL17: Create sends the recipient, duration and ticks, then shows the link once with Copy', async () => {
 		stubServer({ existing: [], canControl: true });
 		const screen = await render(ShareLinks, { machineId: MACHINE_ID, machineName: 'Front desk' });
 		await screen.getByRole('button', { name: 'Share' }).click();
 		await page.getByRole('textbox', { name: 'Who it is for' }).fill('Dave, Acme Printers');
-		await page.getByRole('button', { name: '4 hours' }).click();
+		await expect
+			.element(
+				page.getByText(
+					'The guest connects without asking the person at the machine first. They will see that someone is connected and can disconnect them.'
+				)
+			)
+			.toBeVisible();
+		await page.getByRole('button', { name: '7 days' }).click();
 		await page.getByRole('checkbox', { name: 'Control desktop' }).click();
 		await page.getByRole('button', { name: 'Create link' }).click();
 		await expect
@@ -85,7 +122,7 @@ describe('Share links on the machine page (SPEC-SHARE-LINKS)', () => {
 				{
 					method: 'POST',
 					url: `/api/machines/${MACHINE_ID}/share-links`,
-					body: { recipient: 'Dave, Acme Printers', duration: '4h', control: true, files: false }
+					body: { recipient: 'Dave, Acme Printers', duration: '7d', control: true, files: false }
 				}
 			]);
 		await expect.element(page.getByText(URL_ONCE)).toBeVisible();

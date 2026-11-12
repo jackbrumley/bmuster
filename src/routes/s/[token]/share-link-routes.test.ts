@@ -2,7 +2,13 @@ import { isHttpError, type Cookies, type RequestEvent } from '@sveltejs/kit';
 import { describe, expect, it } from 'vitest';
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
 import { database } from '#lib/server/database/app-database.ts';
+import {
+	agentConnected,
+	agentDisconnected,
+	type LivePeer
+} from '#lib/server/services/agents/live-agents.ts';
 import { listAudit } from '#lib/server/services/audit/audit.ts';
+import { sessionRelay } from '#lib/server/services/sessions/relay.ts';
 import { SHARE_LINK_LIMIT } from '#lib/server/services/share-links/share-link-limits.ts';
 import { toConsoleUser } from '#lib/server/services/users/users.ts';
 import { grantAccess } from '#tests/helpers/access.ts';
@@ -321,20 +327,39 @@ describe('the guest page and its requests (SL5, SL9, SL10, SL19)', () => {
 		expect(await status(second.token, cookies)).toBe(404);
 	});
 
-	it('SL12: the guest session route refuses until consent prompts exist, with a plain reason', async () => {
+	it('SL20: the guest must give a name; the session records it with the address and browser from the request', async () => {
 		const { admin, machineId } = await setUp();
-		const { token } = await linkFor(admin, machineId);
-		const address = randomAddress();
-		const cookies = jar();
-		loadPage(token, cookies, address);
-		const response = await sessionPost(
-			guestEvent(`/s/${token}/session`, 'POST', token, cookies, address, {
-				mode: 'watch'
-			}) as Parameters<typeof sessionPost>[0]
-		);
-		expect(response.status).toBe(409);
-		expect(((await response.json()) as { message: string }).message).toContain(
-			'must allow each connection'
-		);
+		const peer: LivePeer = { send: () => undefined, close: () => undefined };
+		agentConnected(machineId, peer);
+		const { token, linkId } = await linkFor(admin, machineId);
+		try {
+			const address = randomAddress();
+			const cookies = jar();
+			loadPage(token, cookies, address);
+			const post = (body: unknown) =>
+				sessionPost(
+					guestEvent(`/s/${token}/session`, 'POST', token, cookies, address, body) as Parameters<
+						typeof sessionPost
+					>[0]
+				);
+			expect((await post({ mode: 'watch', name: '   ', company: '' })).status).toBe(400);
+			expect((await post({ mode: 'watch', company: 'Acme' })).status).toBe(400);
+			const response = await post({ mode: 'watch', name: '  Alex Smith ', company: ' Acme ' });
+			expect(response.status).toBe(200);
+			const opened = listAudit(database, 500).find(
+				(entry) => entry.kind === 'session-opened' && entry.detail['share link'] === linkId
+			);
+			expect(opened?.detail).toMatchObject({
+				'says they are': 'Alex Smith',
+				company: 'Acme',
+				from: address,
+				browser: 'Guest browser'
+			});
+		} finally {
+			for (const sessionId of sessionRelay().sessionsOf(linkId)) {
+				sessionRelay().end(sessionId, 'closed', 'The test ended.');
+			}
+			agentDisconnected(machineId, peer);
+		}
 	});
 });

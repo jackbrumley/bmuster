@@ -125,7 +125,14 @@ export const SHARE_LINK: ShareLinkView = {
 	permissions: ['desktop-view', 'desktop-control', 'files'],
 	createdByName: LONG_PERSON,
 	createdIso: new Date(NOW - 600_000).toISOString(),
-	expiresIso: new Date(NOW + 3_600_000).toISOString()
+	expiresIso: new Date(NOW + 3_600_000).toISOString(),
+	lastUse: {
+		kind: 'used',
+		name: LONG_PERSON,
+		company: LONG_GROUP,
+		address: '2001:0db8:85a3:0000:0000:8a2e:0370:7334',
+		atIso: new Date(NOW - 60_000).toISOString()
+	}
 };
 
 export const USER_GROUP_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

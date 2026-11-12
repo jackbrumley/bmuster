@@ -91,8 +91,8 @@
 				canControl={guest.permissions.includes('desktop-control')}
 			/>
 			<p class="note">
-				The person at this computer is asked before you connect and can see that you are connected.
-				Everything is recorded.
+				The person at this computer sees that you are connected, with the name you give, and can
+				disconnect you. Your name, address and browser are recorded.
 			</p>
 		</div>
 	{/if}

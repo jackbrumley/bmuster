@@ -7,6 +7,7 @@ import {
 	type SessionInUse,
 	type TerminalShell
 } from '#lib/domain/sessions/session.ts';
+import type { GuestIdentity } from '#lib/domain/share-links/share-links.ts';
 import {
 	agentClipboardReplySchema,
 	viewerClipboardRequestSchema
@@ -87,10 +88,18 @@ export type RelayPeer = {
 
 /**
  * Who a session is for: a console user, or the guest of a share link
- * (SPEC-SHARE-LINKS), who has no account.
+ * (SPEC-SHARE-LINKS), who has no account. A guest's name and company are what
+ * they typed (self-declared, D17); the browser line is cut to 300 characters.
  */
 type SessionViewer =
-	{ kind: 'user' } | { kind: 'guest'; shareLinkId: string; sharedByUserId: string };
+	| { kind: 'user' }
+	| {
+			kind: 'guest';
+			shareLinkId: string;
+			sharedBy: { id: string; name: string };
+			identity: GuestIdentity;
+			userAgent: string;
+	  };
 
 /** What a session is, from the moment it is asked for. */
 export type SessionRecord = {

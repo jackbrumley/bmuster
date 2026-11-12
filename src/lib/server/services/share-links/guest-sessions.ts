@@ -1,59 +1,56 @@
+import { eq } from 'drizzle-orm';
+import { guestLabel, type GuestIdentity } from '#lib/domain/share-links/share-links.ts';
 import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 import type { BrowserTicketReply } from '#lib/schemas/sessions/sessions.ts';
 import type { AppDatabase } from '../../database/connection.ts';
+import { shareLinks } from '../../database/schema.ts';
 import { isAgentConnected } from '../agents/live-agents.ts';
-import { getSetting } from '../settings/settings.ts';
+import type { SignInClient } from '../auth/client.ts';
 import type { Relay, SessionRecord } from '../sessions/relay.ts';
-import {
-	canAskAtScreen,
-	startSession,
-	type OpenSessionResult,
-	type SessionTerms
-} from '../sessions/sessions.ts';
-import { guestNameOf, sweepShareLinks, type GuestGrant } from './share-links.ts';
+import { startSession, type OpenSessionResult, type SessionTerms } from '../sessions/sessions.ts';
+import { sweepShareLinks, type GuestGrant } from './share-links.ts';
 
 /**
  * A share link's guest on the machine's desktop (SPEC-SHARE-LINKS SL11–SL13).
  * The guest's session is an ordinary desktop session: the same signed ticket,
- * relay and sockets, but its terms come from the link alone and it always
- * asks the person at the screen first (D1). One session per link (D6).
+ * relay and sockets, but its terms come from the link alone. By the owner's
+ * decision (D1, 2026-11-12) it connects without asking the person at the
+ * screen, who is always shown that the guest is connected and can disconnect
+ * them. One session per link (D6).
  */
+
+/** How much of the browser's user agent is kept (D17). */
+const GUEST_USER_AGENT_MAX_LENGTH = 300;
 
 /**
  * SL11: what the guest's ticket carries. Only the link's desktop permissions, control only
- * on a control link asking for it, and consent `ask` whatever the machine's rules say.
+ * on a control link asking for it, no consent prompt, and the connected notice always on
+ * whatever the server's setting says (D1).
  */
-export function guestDesktopTerms(
-	grant: GuestGrant,
-	mode: DesktopMode,
-	notice: boolean
-): SessionTerms {
+export function guestDesktopTerms(grant: GuestGrant, mode: DesktopMode): SessionTerms {
 	const control = mode === 'control' && grant.permissions.includes('desktop-control');
 	return {
 		permissions: control ? ['desktop-view', 'desktop-control'] : ['desktop-view'],
-		purpose: { kind: 'desktop', consent: 'ask', notice }
+		purpose: { kind: 'desktop', consent: 'unattended', notice: true }
 	};
 }
 
-/** SL12–SL13: opens the link's desktop session, ending any it already has (another tab's). */
+/**
+ * SL12–SL13, SL20: opens the link's desktop session, ending any it already has (another
+ * tab's). The guest's typed name and company, address and browser are kept on the session,
+ * its audit entry and the link's last use.
+ */
 export function openGuestDesktop(
 	database: AppDatabase,
 	relay: Relay,
 	secretsKey: Buffer,
 	grant: GuestGrant,
-	mode: DesktopMode,
-	ip: string,
+	request: { mode: DesktopMode; identity: GuestIdentity },
+	client: SignInClient,
 	now: number
 ): OpenSessionResult {
-	if (mode === 'control' && !grant.permissions.includes('desktop-control')) {
+	if (request.mode === 'control' && !grant.permissions.includes('desktop-control')) {
 		return { kind: 'refused', status: 403, message: 'This link only lets you watch the screen.' };
-	}
-	if (!canAskAtScreen()) {
-		return {
-			kind: 'refused',
-			status: 409,
-			message: `The person at this computer must allow each connection, and this server cannot ask them yet. Ask ${grant.sharedBy.name} for another way in.`
-		};
 	}
 	if (!isAgentConnected(grant.machineId)) {
 		return { kind: 'refused', status: 409, message: 'This computer is offline. Try again later.' };
@@ -65,11 +62,17 @@ export function openGuestDesktop(
 		id: crypto.randomUUID(),
 		machineId: grant.machineId,
 		userId: grant.linkId,
-		userName: guestNameOf(grant),
-		viewer: { kind: 'guest', shareLinkId: grant.linkId, sharedByUserId: grant.sharedBy.id },
+		userName: guestLabel(request.identity, grant.sharedBy.name),
+		viewer: {
+			kind: 'guest',
+			shareLinkId: grant.linkId,
+			sharedBy: grant.sharedBy,
+			identity: request.identity,
+			userAgent: client.userAgent.slice(0, GUEST_USER_AGENT_MAX_LENGTH)
+		},
 		kind: 'desktop',
-		mode,
-		ip,
+		mode: request.mode,
+		ip: client.ip,
 		openedAt: now
 	};
 	const opened = startSession(
@@ -78,10 +81,20 @@ export function openGuestDesktop(
 		secretsKey,
 		record,
 		grant.machineName,
-		guestDesktopTerms(grant, mode, getSetting(database, 'connectedNotice')),
+		guestDesktopTerms(grant, request.mode),
 		now
 	);
 	if (opened.kind === 'opened') {
+		database
+			.update(shareLinks)
+			.set({
+				lastGuestName: request.identity.name,
+				lastGuestCompany: request.identity.company,
+				lastGuestAddress: client.ip,
+				lastUsedAt: new Date(now)
+			})
+			.where(eq(shareLinks.id, grant.linkId))
+			.run();
 		// The session ends at the link's exact end, not up to a sweep later (D7).
 		const timer = setTimeout(
 			() => {

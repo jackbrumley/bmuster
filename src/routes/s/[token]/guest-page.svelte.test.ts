@@ -5,8 +5,7 @@ import type { GuestView } from '#lib/domain/share-links/share-links.ts';
 import GuestPage from './guest-page.svelte';
 
 const TOKEN = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ';
-const REFUSAL =
-	'The person at this computer must allow each connection, and this server cannot ask them yet.';
+const REFUSAL = 'This computer is offline. Try again later.';
 
 function guestView(overrides: Partial<GuestView>): GuestView {
 	return {
@@ -60,16 +59,25 @@ describe('the guest page (SPEC-SHARE-LINKS)', () => {
 		await expect.element(page.getByRole('navigation')).not.toBeInTheDocument();
 	});
 
-	it('SL18: a watch-only link offers Watch only; Watch asks the guest endpoint and shows its refusal', async () => {
+	it('SL18, SL20: Watch needs a name first, then asks the guest endpoint as that person and shows its refusal', async () => {
 		await render(GuestPage, { token: TOKEN, guest: guestView({}), loadedAtMs: Date.now() });
 		await expect
 			.element(page.getByRole('button', { name: 'Control the screen' }))
 			.not.toBeInTheDocument();
 		await page.getByRole('button', { name: 'Watch the screen' }).click();
+		await expect.element(page.getByText('Type your name.')).toBeVisible();
+		expect(calls).toEqual([]);
+		await page.getByRole('textbox', { name: /^Your name/ }).fill('  Alex Smith ');
+		await page.getByRole('textbox', { name: /^Company or organisation/ }).fill('Acme');
+		await page.getByRole('button', { name: 'Watch the screen' }).click();
 		await expect
 			.poll(() => calls)
 			.toEqual([
-				{ method: 'POST', url: `/s/${TOKEN}/session`, body: { kind: 'desktop', mode: 'watch' } }
+				{
+					method: 'POST',
+					url: `/s/${TOKEN}/session`,
+					body: { kind: 'desktop', mode: 'watch', name: 'Alex Smith', company: 'Acme' }
+				}
 			]);
 		await expect.element(page.getByText(REFUSAL)).toBeVisible();
 	});

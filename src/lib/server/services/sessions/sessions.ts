@@ -37,10 +37,11 @@ export type SessionTerms = { permissions: string[]; purpose: TicketPurpose };
 
 /**
  * Whether BMuster can ask the person at the screen yet (SPEC-DESKTOP 8, phase 5). Until it
- * can, every session that must ask (an `ask` rule, any share link) is refused, never
- * connected without asking. The one place that changes when consent prompts arrive.
+ * can, every session under an `ask` rule is refused, never connected without asking. Share
+ * links' guests do not come here: by the owner's decision they connect with the machine
+ * notified (SPEC-SHARE-LINKS D1). The one place that changes when consent prompts arrive.
  */
-export function canAskAtScreen(): boolean {
+function canAskAtScreen(): boolean {
 	return false;
 }
 

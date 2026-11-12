@@ -190,7 +190,7 @@ Text frames, JSON, one object with a `type` per frame. Each side ignores unknown
 - `control.rs` filters every incoming message before it reaches input or clipboard code. On a watch-only ticket, `pointer`, `wheel`, `key`, `text`, `special`, `release-all`, `clipboard-push` and `clipboard-pull` are dropped; the first one dropped gets one `error {code: 'not-allowed'}` and is logged. Clipboard pull needs control because it reads the person's data.
 - The input and clipboard objects are not even created for a watch-only session, so a missed filter case cannot inject input.
 - Consent comes from the ticket too: `ask` means no capture until Allow. The browser cannot change it.
-- The server works out the ticket: admins unattended with control; members get the permissions from their rules, `unattended` if any rule giving the requested permission says so; share links always `ask` (when someone is signed in).
+- The server works out the ticket: admins unattended with control; members get the permissions from their rules, `unattended` if any rule giving the requested permission says so; share links always `ask` (when someone is signed in). _Until consent prompts exist, share-link guests get `unattended` with the notice forced on, by owner decision of 2026-11-12 (SPEC-SHARE-LINKS D1, D15)._
 - Any message before `hello`, or malformed JSON, gets `error {code: 'bad-message'}`; 20 bad messages end the session.
 
 ## 8. Notice and consent at the machine

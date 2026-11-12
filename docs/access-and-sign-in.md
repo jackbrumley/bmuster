@@ -92,13 +92,15 @@ A share link gives someone without an account (an outside vendor, urgently) acce
 - From a machine's page, by someone with the `share-links` permission on that machine.
 - **Required:** who it is for (free text, e.g. "Dave, Acme Printers"), what it allows, and how long it lasts.
 - **What it allows:** tick boxes. _Watch desktop_ is always on; tick _Control desktop_ and _Files_ (upload and download, e.g. to send an installer) as needed. Terminal is never offered; anyone who needs a shell gets an account. The creator can only tick what they hold themselves on that machine.
-- **How long:** chosen from a list: 15 minutes, 1 hour, 4 hours, 8 hours, 24 hours. **24 hours is the maximum.** Longer access means an account with a group and a rule.
+- **How long:** chosen from a list: 15 minutes, 1 hour, 4 hours, 8 hours, 24 hours, 48 hours, 7 days. **7 days is the maximum** (raised from 24 hours by the owner on 2026-11-12). Longer access means an account with a group and a rule.
 - The link is shown **once**, with a copy button. It contains a 256-bit random token; the server stores only its hash.
 
 ### Using one
 
 - `https://<server>/s/<token>` opens a guest page: no console, just the machine's desktop (and a Files panel if ticked), a banner ("Shared by Jack Brumley · ends 3:40 pm") and a countdown.
 - **The person at the screen is always asked first** when someone is signed in, whatever the machine's rules say. A machine at the sign-in screen, with nobody to ask, connects straight away.
+- **Deferred by owner decision (2026-11-12) until consent prompts exist:** guests connect without being asked. The person at the machine always sees the connected notice naming the guest and who shared the link, and can disconnect them. When consent prompts ship, guests are asked again as above. See SPEC-SHARE-LINKS D1, D15.
+- Before connecting, the guest types their name and, if they like, their company. The machine's notice, Activity and the link's list show it as what the guest says, not as a checked identity (SPEC-SHARE-LINKS D17).
 - One guest session at a time per link.
 - When the time runs out, the link stops working **and any open session ends**.
 

@@ -1,3 +1,4 @@
+import { declaredLabel } from '../share-links/share-links.ts';
 import type { ActivityEntry, AuditKind } from './activity.ts';
 
 /**
@@ -59,9 +60,21 @@ function capitalised(text: string): string {
 }
 
 /**
+ * A share link's guest connected (SPEC-SHARE-LINKS D17): "Someone who says they are Alex Smith
+ * (Acme) connected to mint through a share link from 203.0.113.5, shared by Jack Brumley". The
+ * name is what the guest typed, so it is never shown as fact.
+ */
+function guestConnectedText(entry: ActivityEntry): string {
+	const company = detailValue(entry, 'company');
+	const who = declaredLabel({ name: detailValue(entry, 'says they are'), company });
+	return `Someone who says they are ${who} connected to ${entry.target} through a share link from ${detailValue(entry, 'from')}, shared by ${detailValue(entry, 'shared by')}`;
+}
+
+/**
  * The sentence for a local page entry, for a machine going offline and coming back
  * (SPEC-PRESENCE P6: "mint went offline"), or for BMuster removed at the machine
- * (SPEC-LOCAL-PAGE-TRANSPARENCY); `standard` for every other entry.
+ * (SPEC-LOCAL-PAGE-TRANSPARENCY), or for a share link's guest connecting; `standard` for
+ * every other entry.
  */
 export function activitySentence(entry: ActivityEntry): ActivitySentence {
 	const kind = entry.kind;
@@ -77,6 +90,9 @@ export function activitySentence(entry: ActivityEntry): ActivitySentence {
 			text: `BMuster was removed from ${entry.target} at the machine by a local administrator`,
 			warning: true
 		};
+	}
+	if (kind === 'session-opened' && detailValue(entry, 'says they are') !== '') {
+		return { kind: 'machine', text: guestConnectedText(entry), warning: false };
 	}
 	if (!isLocalPageKind(kind)) {
 		return { kind: 'standard' };

@@ -28,7 +28,16 @@ export const shareLinks = sqliteTable(
 		/** Null while the link is active. */
 		endedAt: integer({ mode: 'timestamp_ms' }),
 		/** Who pressed End now; null when it expired or ended by itself (its creator lost access). */
-		endedBy: text().references(() => users.id)
+		endedBy: text().references(() => users.id),
+		/**
+		 * The last guest session through the link (SPEC-SHARE-LINKS D17): the name and company the
+		 * guest typed (self-declared; company '' when not given) and their address. All null until
+		 * the first session.
+		 */
+		lastGuestName: text(),
+		lastGuestCompany: text(),
+		lastGuestAddress: text(),
+		lastUsedAt: integer({ mode: 'timestamp_ms' })
 	},
 	(table) => [index('share_links_machine').on(table.machineId, table.endedAt)]
 );

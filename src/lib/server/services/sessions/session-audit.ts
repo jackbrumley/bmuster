@@ -20,13 +20,25 @@ function typeDetail(record: SessionRecord): Record<string, string> {
 	return { ...kindDetail(record), ...viewerDetail(record), session: record.id };
 }
 
-/** A guest has no account: the entry names them and the link (SPEC-SHARE-LINKS D13). */
+/**
+ * A guest has no account: the entry names them as they named themselves (self-declared), who
+ * shared the link, the link and their browser (SPEC-SHARE-LINKS D13, D17).
+ */
 function viewerDetail(record: SessionRecord): Record<string, string> {
 	switch (record.viewer.kind) {
 		case 'user':
 			return {};
-		case 'guest':
-			return { guest: record.userName, 'share link': record.viewer.shareLinkId };
+		case 'guest': {
+			const { identity } = record.viewer;
+			return {
+				guest: record.userName,
+				'says they are': identity.name,
+				...(identity.company === '' ? {} : { company: identity.company }),
+				'shared by': record.viewer.sharedBy.name,
+				'share link': record.viewer.shareLinkId,
+				browser: record.viewer.userAgent
+			};
+		}
 	}
 }
 
@@ -47,11 +59,12 @@ function kindDetail(record: SessionRecord): Record<string, string> {
 		case 'files':
 			return { type: 'files', 'run as': RUN_AS_LABEL };
 		case 'desktop':
-			// Ask sessions are refused until consent prompts exist (SPEC-DESKTOP 13); a guest's always asks.
+			// Ask sessions are refused until consent prompts exist (SPEC-DESKTOP 13). A guest connects
+			// without asking, the machine always notified, by the owner's decision (SPEC-SHARE-LINKS D1).
 			return {
 				type: 'desktop',
 				mode: record.mode,
-				consent: record.viewer.kind === 'guest' ? 'ask' : 'unattended',
+				consent: record.viewer.kind === 'guest' ? 'not asked, machine notified' : 'unattended',
 				codec: 'JPEG tiles'
 			};
 	}

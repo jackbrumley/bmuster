@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { ServerSocketMessage } from '#lib/schemas/agents/agent-protocol.ts';
 import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
@@ -10,19 +10,18 @@ import { guestBrowserTicket, openGuestDesktop } from './guest-sessions.ts';
 import {
 	createShareLink,
 	endShareLink,
+	listMachineShareLinks,
 	resolveShareToken,
 	sweepShareLinks
 } from './share-links.ts';
 
 /**
- * The guest's session once BMuster can ask the person at the screen (SPEC-DESKTOP phase 5).
- * Until then every guest session is refused (share-links.test.ts, SL12); these tests lift
- * that one gate to prove what happens after it, so the day it opens nothing else changes.
+ * The guest's session on the real path: by the owner's decision (SPEC-SHARE-LINKS D1) it
+ * connects without a consent prompt, with the machine always notified.
  */
-vi.mock(import('../sessions/sessions.ts'), async (importOriginal) => ({
-	...(await importOriginal()),
-	canAskAtScreen: () => true
-}));
+
+const GUEST = { name: 'Alex Smith', company: 'Acme' };
+const GUEST_LABEL = 'Alex Smith (Acme) via a link from ada';
 
 const SECRETS_KEY = Buffer.alloc(32, 5);
 const CONTROL = {
@@ -66,8 +65,8 @@ function open(setup: Setup, mode: 'watch' | 'control') {
 		setup.relay,
 		SECRETS_KEY,
 		setup.grant,
-		mode,
-		'198.51.100.7',
+		{ mode, identity: GUEST },
+		{ ip: '198.51.100.7', userAgent: 'Mozilla/5.0 '.repeat(40) },
 		NOW
 	);
 	if (result.kind !== 'opened') throw new Error(result.message);
@@ -79,15 +78,29 @@ function ticketOf(message: ServerSocketMessage | undefined): unknown {
 	return JSON.parse(Buffer.from(message.ticket, 'base64').toString('utf8'));
 }
 
-describe('a guest session, once the person at the screen can be asked', () => {
-	it('SL11: the signed ticket names the guest, only the link permissions, and asks first', async () => {
+describe('a guest session', () => {
+	it('SL11: the signed ticket names the guest, only the link permissions, no prompt, notice on', async () => {
 		const setup = await setUp();
 		open(setup, 'control');
 		expect(ticketOf(setup.sent[0])).toMatchObject({
 			machineId: setup.machineId,
-			user: { id: setup.link.id, name: 'Dave, Acme Printers (shared by ada)' },
+			user: { id: setup.link.id, name: GUEST_LABEL },
 			permissions: ['desktop-view', 'desktop-control'],
-			purpose: { kind: 'desktop', consent: 'ask' }
+			purpose: { kind: 'desktop', consent: 'unattended', notice: true }
+		});
+	});
+
+	it('SL20: the link keeps its last use: the typed name and company, the address and the time', async () => {
+		const setup = await setUp();
+		open(setup, 'watch');
+		const links = listMachineShareLinks(setup.database, setup.admin, setup.machineId, NOW);
+		if (links.kind !== 'ok') throw new Error(links.message);
+		expect(links.links[0]?.lastUse).toEqual({
+			kind: 'used',
+			name: 'Alex Smith',
+			company: 'Acme',
+			address: '198.51.100.7',
+			atIso: new Date(NOW).toISOString()
 		});
 	});
 
@@ -148,7 +161,7 @@ describe('a guest session, once the person at the screen can be asked', () => {
 		);
 	});
 
-	it('SL14: the session is audited as the guest, with the link, under System', async () => {
+	it('SL14, SL20: the session is audited as the guest, with the link, under System', async () => {
 		const setup = await setUp();
 		const reply = open(setup, 'control');
 		endShareLink(setup.database, setup.relay, setup.admin, setup.link.id, NOW);
@@ -160,9 +173,14 @@ describe('a guest session, once the person at the screen can be asked', () => {
 				detail: {
 					type: 'desktop',
 					mode: 'control',
-					consent: 'ask',
-					guest: 'Dave, Acme Printers (shared by ada)',
+					consent: 'not asked, machine notified',
+					guest: GUEST_LABEL,
+					'says they are': 'Alex Smith',
+					company: 'Acme',
+					'shared by': 'ada',
 					'share link': setup.link.id,
+					browser: 'Mozilla/5.0 '.repeat(40).slice(0, 300),
+					from: '198.51.100.7',
 					session: reply.sessionId
 				}
 			});
@@ -171,6 +189,7 @@ describe('a guest session, once the person at the screen can be asked', () => {
 			'The share link ended'
 		);
 	});
+
 	it('a guest copy or paste is audited under System, naming the guest and the link', async () => {
 		const setup = await setUp();
 		const reply = open(setup, 'control');
@@ -192,7 +211,7 @@ describe('a guest session, once the person at the screen can be asked', () => {
 			detail: {
 				direction: 'to the machine',
 				bytes: '5',
-				guest: 'Dave, Acme Printers (shared by ada)',
+				guest: GUEST_LABEL,
 				'share link': setup.link.id,
 				session: reply.sessionId
 			}

@@ -3,13 +3,14 @@ import { and, asc, eq, gt, isNull } from 'drizzle-orm';
 import { hasPermission, type Permission } from '#lib/domain/access/access.ts';
 import type { OsFamily } from '#lib/domain/machines/machine.ts';
 import {
-	guestLabel,
+	linkLabel,
 	MAX_ACTIVE_LINKS_PER_MACHINE,
 	shareDurationLabel,
 	shareDurationMs,
 	sharePermissionsFrom,
 	sharePermissionsLabel,
 	type GuestView,
+	type ShareLinkLastUse,
 	type ShareLinkPermission,
 	type ShareLinkView
 } from '#lib/domain/share-links/share-links.ts';
@@ -94,7 +95,22 @@ function viewOf(row: ShareLinkRow, machineName: string, createdByName: string): 
 		permissions: permissionsOf(row),
 		createdByName,
 		createdIso: row.createdAt.toISOString(),
-		expiresIso: row.expiresAt.toISOString()
+		expiresIso: row.expiresAt.toISOString(),
+		lastUse: lastUseOf(row)
+	};
+}
+
+/** D17: the last guest session's typed name and company, address and time, once there was one. */
+function lastUseOf(row: ShareLinkRow): ShareLinkLastUse {
+	if (row.lastUsedAt === null || row.lastGuestName === null) {
+		return { kind: 'never' };
+	}
+	return {
+		kind: 'used',
+		name: row.lastGuestName,
+		company: row.lastGuestCompany ?? '',
+		address: row.lastGuestAddress ?? '',
+		atIso: row.lastUsedAt.toISOString()
 	};
 }
 
@@ -140,7 +156,11 @@ export function createShareLink(
 		createdAt: new Date(now),
 		expiresAt: new Date(now + shareDurationMs(request.duration)),
 		endedAt: null,
-		endedBy: null
+		endedBy: null,
+		lastGuestName: null,
+		lastGuestCompany: null,
+		lastGuestAddress: null,
+		lastUsedAt: null
 	};
 	database.insert(shareLinks).values(row).run();
 	recordAudit(
@@ -328,11 +348,6 @@ export type GuestGrant = {
 	expiresAt: number;
 };
 
-/** The guest's name at the machine and in Activity: "<recipient> (shared by <name>)". */
-export function guestNameOf(grant: GuestGrant): string {
-	return guestLabel(grant.recipient, grant.sharedBy.name);
-}
-
 export function guestViewOf(grant: GuestGrant): GuestView {
 	return {
 		machineName: grant.machineName,
@@ -441,7 +456,7 @@ export function auditGuestOpened(
 			target: grant.machineName,
 			machineId: grant.machineId,
 			detail: {
-				guest: guestNameOf(grant),
+				guest: linkLabel(grant.recipient, grant.sharedBy.name),
 				'share link': grant.linkId,
 				from: client.ip,
 				browser: client.userAgent

@@ -11,10 +11,13 @@
 	import { shownSize } from '#lib/domain/desktop/displays.ts';
 	import type { InputMessage } from '#lib/domain/desktop/messages.ts';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
+	import type { GuestIdentity } from '#lib/domain/share-links/share-links.ts';
 	import type { SessionRoute } from '#lib/runes/session-link.svelte.ts';
 	import Button from '#lib/ui/button.svelte';
 	import LoadingVeil from '#lib/ui/loading-veil.svelte';
 	import Notice from '#lib/ui/notice.svelte';
+	import TextField from '#lib/ui/text-field.svelte';
+	import { guestIdentitySchema } from '#lib/schemas/share-links/share-links.ts';
 	import ClipboardPanel from '../../(console)/machines/[id]/desktop/clipboard-panel.svelte';
 	import { DesktopCanvas } from '../../(console)/machines/[id]/desktop/desktop-canvas.ts';
 	import { DesktopSession } from '../../(console)/machines/[id]/desktop/desktop-session.svelte.ts';
@@ -37,7 +40,9 @@
 	 * guest endpoints. Watch, or Control when the link allows it. The server
 	 * and the agent enforce the link's permissions whatever this page does.
 	 * Copy and paste (SPEC-DESKTOP 21) needs control, so only a link that
-	 * carries desktop control offers it.
+	 * carries desktop control offers it. Before connecting the guest types
+	 * their name (and company, if they like), which the machine's notice and
+	 * Activity show (SPEC-SHARE-LINKS D17); the server checks it again.
 	 */
 	let {
 		token,
@@ -72,9 +77,17 @@
 		running && frame === undefined ? `Connecting to ${machineName}` : undefined
 	);
 
+	let name = $state('');
+	let company = $state('');
+	let nameError = $state<string | undefined>(undefined);
+	let companyError = $state<string | undefined>(undefined);
+	/** Who the guest said they are when they last pressed Watch or Control. */
+	let identity: GuestIdentity = { name: '', company: '' };
+
 	function route(): SessionRoute {
 		return {
 			openUrl: resolve('/s/[token]/session', { token }),
+			openBody: (request) => ({ ...request, ...identity }),
 			ticket: (sessionId) => ({
 				url: resolve('/s/[token]/browser-ticket', { token }),
 				body: { sessionId }
@@ -92,6 +105,20 @@
 	}
 
 	function start(mode: DesktopMode): void {
+		const parsed = guestIdentitySchema.safeParse({ name, company });
+		nameError = undefined;
+		companyError = undefined;
+		if (!parsed.success) {
+			for (const issue of parsed.error.issues) {
+				if (issue.path[0] === 'name') {
+					nameError = issue.message;
+				} else {
+					companyError = issue.message;
+				}
+			}
+			return;
+		}
+		identity = parsed.data;
 		void session?.start(mode);
 	}
 
@@ -144,6 +171,28 @@
 	{/if}
 
 	{#if choosing}
+		<div class="who">
+			<TextField
+				label="Your name"
+				name="name"
+				type="text"
+				autocomplete="name"
+				autocapitalize="words"
+				required={true}
+				error={nameError}
+				bind:value={name}
+			/>
+			<TextField
+				label="Company or organisation (optional)"
+				name="company"
+				type="text"
+				autocomplete="off"
+				autocapitalize="words"
+				required={false}
+				error={companyError}
+				bind:value={company}
+			/>
+		</div>
 		<div class="choose">
 			<Button
 				variant="primary"
@@ -260,6 +309,12 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-3);
+	}
+
+	.who {
+		display: grid;
+		gap: var(--space-3);
+		max-width: 28rem;
 	}
 
 	.choose,

@@ -104,3 +104,34 @@ describe('Activity wording for the local page (SPEC-AGENT-LOCAL 7, E3)', () => {
 		expect(activitySentence(entry('sign-in', {}))).toEqual({ kind: 'standard' });
 	});
 });
+
+describe('Activity wording for a share link guest (SPEC-SHARE-LINKS SL20)', () => {
+	const guest = (company: string) =>
+		activitySentence(
+			entry('session-opened', {
+				type: 'desktop',
+				guest: 'Alex Smith (Acme) via a link from Jack Brumley',
+				'says they are': 'Alex Smith',
+				...(company === '' ? {} : { company }),
+				'shared by': 'Jack Brumley',
+				from: '203.0.113.5'
+			})
+		);
+
+	it('SL20: says who the guest says they are, from where, and who shared the link', () => {
+		expect(guest('Acme')).toEqual({
+			kind: 'machine',
+			text: 'Someone who says they are Alex Smith (Acme) connected to mint through a share link from 203.0.113.5, shared by Jack Brumley',
+			warning: false
+		});
+		expect(guest('')).toMatchObject({
+			text: 'Someone who says they are Alex Smith connected to mint through a share link from 203.0.113.5, shared by Jack Brumley'
+		});
+	});
+
+	it("a person's own session keeps the standard wording", () => {
+		expect(activitySentence(entry('session-opened', { type: 'desktop' }))).toEqual({
+			kind: 'standard'
+		});
+	});
+});

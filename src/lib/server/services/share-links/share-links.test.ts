@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ServerSocketMessage } from '#lib/schemas/agents/agent-protocol.ts';
-import { createShareLinkRequestSchema } from '#lib/schemas/share-links/share-links.ts';
+import {
+	createShareLinkRequestSchema,
+	guestSessionRequestSchema
+} from '#lib/schemas/share-links/share-links.ts';
 import { grantAccess } from '#tests/helpers/access.ts';
 import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
@@ -10,6 +13,7 @@ import { setGroupMembers } from '../access/groups.ts';
 import { agentConnected, agentDisconnected, type LivePeer } from '../agents/live-agents.ts';
 import { listAudit } from '../audit/audit.ts';
 import { removeMachine } from '../machines/machine-views.ts';
+import { updateSetting } from '../settings/settings.ts';
 import { createRelay, RELAY_LIMITS } from '../sessions/relay.ts';
 import { disableUser, toConsoleUser } from '../users/users.ts';
 import { guestDesktopTerms, openGuestDesktop } from './guest-sessions.ts';
@@ -25,6 +29,8 @@ import {
 } from './share-links.ts';
 
 const SECRETS_KEY = Buffer.alloc(32, 5);
+const GUEST = { name: 'Alex Smith', company: 'Acme' };
+const GUEST_CLIENT = { ip: '203.0.113.5', userAgent: 'Firefox' };
 const HOUR = 60 * 60_000;
 const WATCH = {
 	recipient: 'Dave, Acme Printers',
@@ -166,29 +172,45 @@ describe('making a link (SL1–SL4, SL16)', () => {
 		expect(parsed.success && 'terminal' in parsed.data).toBe(false);
 	});
 
-	it('SL4: only 15 min, 1 h, 4 h, 8 h and 24 h; 24 hours is the most', async () => {
+	it('SL4: only 15 min, 1 h, 4 h, 8 h, 24 h, 48 h and 7 days; 7 days is the most', async () => {
 		const setup = await setUp();
-		for (const duration of ['15m', '1h', '4h', '8h', '24h']) {
+		for (const duration of ['15m', '1h', '4h', '8h', '24h', '48h', '7d']) {
 			expect(createShareLinkRequestSchema.safeParse({ ...WATCH, duration }).success).toBe(true);
 		}
-		for (const duration of ['30m', '25h', '48h', '', 3600]) {
+		for (const duration of ['30m', '25h', '72h', '8d', '14d', '', 3600]) {
 			expect(createShareLinkRequestSchema.safeParse({ ...WATCH, duration }).success).toBe(false);
 		}
-		const day = created(
-			createShareLink(
-				setup.database,
-				setup.admin,
-				setup.machineId,
-				{ ...WATCH, duration: '24h' },
-				NOW
-			)
-		);
-		expect(Date.parse(day.link.expiresIso) - NOW).toBe(24 * HOUR);
+		const lasting = (duration: '24h' | '48h' | '7d') =>
+			Date.parse(
+				created(
+					createShareLink(setup.database, setup.admin, setup.machineId, { ...WATCH, duration }, NOW)
+				).link.expiresIso
+			) - NOW;
+		expect(lasting('24h')).toBe(24 * HOUR);
+		expect(lasting('48h')).toBe(48 * HOUR);
+		expect(lasting('7d')).toBe(7 * 24 * HOUR);
 	});
 
 	it('refuses labels that are empty, too long or have control characters', () => {
 		for (const recipient of ['', '   ', 'x'.repeat(81), 'Dave\nFake line', 'Dave\u0007']) {
 			expect(createShareLinkRequestSchema.safeParse({ ...WATCH, recipient }).success).toBe(false);
+		}
+	});
+
+	it('SL20: a guest must give a name (1–80 characters) and may give a company (0–80), plain text, trimmed', () => {
+		const parse = (body: Record<string, unknown>) =>
+			guestSessionRequestSchema.safeParse({ mode: 'watch', ...body });
+		expect(parse({ name: '  Alex Smith  ', company: '  Acme ' })).toMatchObject({
+			success: true,
+			data: { mode: 'watch', name: 'Alex Smith', company: 'Acme' }
+		});
+		expect(parse({ name: 'Alex', company: '' }).success).toBe(true);
+		expect(parse({ name: 'x'.repeat(80), company: 'y'.repeat(80) }).success).toBe(true);
+		for (const name of ['', '   ', 'x'.repeat(81), 'Alex\nFake line', 'Alex\u0007', 42]) {
+			expect(parse({ name, company: '' }).success).toBe(false);
+		}
+		for (const company of ['y'.repeat(81), 'Acme\r\nFake', undefined]) {
+			expect(parse({ name: 'Alex', company }).success).toBe(false);
 		}
 	});
 
@@ -393,31 +415,32 @@ describe('ending a link (SL7, SL8)', () => {
 });
 
 describe('the guest on the desktop (SL11, SL12)', () => {
-	it('SL11: the ticket names only the link permissions, always asks, and control only when allowed', async () => {
+	it('SL11: the ticket names only the link permissions, asks nobody, always notifies, and control only when allowed', async () => {
 		const setup = await setUp();
 		const watchOnly = grantOf(
 			setup,
 			created(createShareLink(setup.database, setup.pat, setup.machineId, WATCH, NOW)).token,
 			NOW
 		);
-		expect(guestDesktopTerms(watchOnly, 'control', true)).toEqual({
+		expect(guestDesktopTerms(watchOnly, 'control')).toEqual({
 			permissions: ['desktop-view'],
-			purpose: { kind: 'desktop', consent: 'ask', notice: true }
+			purpose: { kind: 'desktop', consent: 'unattended', notice: true }
 		});
 		const control = grantOf(
 			setup,
 			created(createShareLink(setup.database, setup.admin, setup.machineId, CONTROL, NOW)).token,
 			NOW
 		);
-		expect(guestDesktopTerms(control, 'control', false)).toEqual({
+		expect(guestDesktopTerms(control, 'control')).toEqual({
 			permissions: ['desktop-view', 'desktop-control'],
-			purpose: { kind: 'desktop', consent: 'ask', notice: false }
+			purpose: { kind: 'desktop', consent: 'unattended', notice: true }
 		});
-		expect(guestDesktopTerms(control, 'watch', true).permissions).toEqual(['desktop-view']);
+		expect(guestDesktopTerms(control, 'watch').permissions).toEqual(['desktop-view']);
 	});
 
-	it('SL12: until consent prompts exist, a guest session is refused and nothing goes to the agent', async () => {
+	it('SL12: a guest connects without a consent prompt, with the notice on even when the setting is off', async () => {
 		const setup = await setUp();
+		updateSetting(setup.database, setup.admin.id, 'connectedNotice', false, NOW);
 		const sent = connect(setup.machineId);
 		const grant = grantOf(
 			setup,
@@ -429,15 +452,18 @@ describe('the guest on the desktop (SL11, SL12)', () => {
 			setup.relay,
 			SECRETS_KEY,
 			grant,
-			'control',
-			'198.51.100.7',
+			{ mode: 'control', identity: GUEST },
+			GUEST_CLIENT,
 			NOW
 		);
-		expect(result).toMatchObject({ kind: 'refused', status: 409 });
-		expect(result.kind === 'refused' ? result.message : '').toContain('must allow each connection');
-		expect(sent).toEqual([]);
-		expect(setup.relay.sessionsOf(grant.linkId)).toEqual([]);
-		expect(auditKinds(setup)).not.toContain('session-opened');
+		expect(result.kind).toBe('opened');
+		const open = sent.find((message) => message.type === 'session-open');
+		if (open?.type !== 'session-open') throw new Error('Expected a session-open');
+		const ticket: unknown = JSON.parse(Buffer.from(open.ticket, 'base64').toString('utf8'));
+		expect(ticket).toMatchObject({
+			user: { id: grant.linkId, name: 'Alex Smith (Acme) via a link from ada' },
+			purpose: { kind: 'desktop', consent: 'unattended', notice: true }
+		});
 	});
 
 	it('a watch-only link refuses a request to control', async () => {
@@ -453,8 +479,8 @@ describe('the guest on the desktop (SL11, SL12)', () => {
 				setup.relay,
 				SECRETS_KEY,
 				grant,
-				'control',
-				'198.51.100.7',
+				{ mode: 'control', identity: GUEST },
+				GUEST_CLIENT,
 				NOW
 			)
 		).toMatchObject({ kind: 'refused', status: 403 });
