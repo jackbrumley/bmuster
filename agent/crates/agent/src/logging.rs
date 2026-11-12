@@ -491,20 +491,39 @@ fn panic_records(
 mod tests {
     use super::*;
 
+    /// Names the spool folder for [`panic_hook_child`], and tells it that
+    /// it runs as the child of [`panic_is_spooled_before_exit`].
+    const PANIC_CHILD_SPOOL: &str = "BMUSTER_TEST_PANIC_SPOOL";
+
     /// SPEC-DIAGNOSTICS D5.
+    ///
+    /// The panic hook is process-wide, and other tests in this binary panic
+    /// on purpose (a check that panics, a session thread that fails). With
+    /// the hook installed here, a panic from a test running alongside wrote
+    /// its own records into this spool, so the first record or the count
+    /// was sometimes not ours. The panic therefore runs in a child test
+    /// process that runs nothing else.
     #[test]
     fn panic_is_spooled_before_exit() {
         let dir = tempfile::tempdir().unwrap();
         let spool_dir = dir.path().join("logs");
-        install_panic_hook(spool_dir.clone());
-        let crashed = std::thread::Builder::new()
-            .name("crasher".into())
-            .spawn(|| panic!("check panic 4711 token=abc"))
-            .unwrap()
-            .join();
-        // Back to the default hook for the other tests.
-        let _ = std::panic::take_hook();
-        assert!(crashed.is_err());
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "logging::tests::panic_hook_child",
+                "--ignored",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(PANIC_CHILD_SPOOL, &spool_dir)
+            .output()
+            .unwrap();
+        let child_output = String::from_utf8_lossy(&child.stdout);
+        assert!(child.status.success(), "{child_output}");
+        assert!(
+            child_output.contains("1 passed"),
+            "the child ran the panic: {child_output}"
+        );
 
         // The records are on disk already; the next start ships them.
         let spool =
@@ -534,6 +553,25 @@ mod tests {
             Some(records.len()),
             "taken in once: the left files are gone, the records wait in the spool"
         );
+    }
+
+    /// The panicking half of [`panic_is_spooled_before_exit`], run by it in
+    /// a process of its own.
+    #[test]
+    #[ignore = "run by panic_is_spooled_before_exit in a process of its own"]
+    fn panic_hook_child() {
+        // `cargo test -- --ignored` runs it too, with no spool named: the
+        // test is then only meant as the child, so it has nothing to do.
+        let Some(spool_dir) = std::env::var_os(PANIC_CHILD_SPOOL) else {
+            return;
+        };
+        install_panic_hook(PathBuf::from(spool_dir));
+        let crashed = std::thread::Builder::new()
+            .name("crasher".into())
+            .spawn(|| panic!("check panic 4711 token=abc"))
+            .unwrap()
+            .join();
+        assert!(crashed.is_err());
     }
 
     #[test]
