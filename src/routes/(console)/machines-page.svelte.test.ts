@@ -470,4 +470,27 @@ describe('Machines list, live (SPEC-PRESENCE P5)', () => {
 			vi.useRealTimers();
 		}
 	});
+
+	it('T9: on a phone the Table view puts "In use" under the name, inside the screen', async () => {
+		await page.viewport(390, 844);
+		localStorage.setItem('bmuster-machines-view', 'table');
+		const screen = await renderPage([
+			machine({
+				id: '33333333-3333-4333-8333-333333333333',
+				name: 'AUADRNBK00007',
+				osFamily: 'windows',
+				inUse: [
+					{ kind: 'files', userName: 'Jack Brumley' },
+					{ kind: 'terminal', userName: 'Jack Brumley' }
+				]
+			})
+		]);
+		const visible = (elements: Element[]) =>
+			elements.map((element) => element.getBoundingClientRect()).find((box) => box.width > 0);
+		const status = visible(screen.getByText('Online', { exact: true }).elements());
+		const line = visible(screen.getByText(/^In use: files by Jack Brumley/).elements());
+		if (status === undefined || line === undefined) throw new Error('Badge or line not shown');
+		expect(line.right).toBeLessThanOrEqual(status.left);
+		expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
+	});
 });

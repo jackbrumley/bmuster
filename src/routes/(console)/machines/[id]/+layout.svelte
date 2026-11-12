@@ -86,8 +86,10 @@
 {@render children()}
 
 <style>
+	/* minmax(0, 1fr): a long name or badge shortens the name, never widens the page. */
 	.machine-header {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-3);
 	}
 
@@ -119,6 +121,8 @@
 	/* Side by side when there is room; stacked to the right on a phone. */
 	.badges {
 		display: flex;
+		flex-shrink: 0;
+		max-width: 50%;
 		flex-wrap: wrap;
 		justify-content: flex-end;
 		gap: var(--space-1);
@@ -134,8 +138,11 @@
 	}
 
 	.names p {
+		overflow: hidden;
 		color: var(--muted);
 		font-size: var(--text-sm);
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	/* Plain text from the admins: line breaks kept, long words wrapped (D2). */
