@@ -5,6 +5,7 @@ import {
 	type OpenSessionRequest
 } from '#lib/schemas/sessions/sessions.ts';
 import { apiRequest } from '#lib/utils/api-client.ts';
+import { announceAgentLost } from './machine-presence.svelte.ts';
 
 /**
  * One session's link to the server, as a page sees it (SPEC-SESSIONS T4,
@@ -307,6 +308,10 @@ export class SessionLink {
 				this.#events.ready();
 				return;
 			case 'ended':
+				// The machine's socket went with it: the page's status says so at once (SPEC-PRESENCE P11).
+				if (parsed.data.reason === 'agent-lost') {
+					announceAgentLost(this.#machineId);
+				}
 				this.#ended(parsed.data.message);
 				return;
 		}

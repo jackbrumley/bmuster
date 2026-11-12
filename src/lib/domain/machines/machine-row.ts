@@ -1,6 +1,6 @@
 import { formatBytes, percentOf } from '#lib/utils/format.ts';
 import { sortRows, type CellValue, type SortDirection } from '#lib/utils/sort-rows.ts';
-import { matchesSearch, osLabel, type Machine } from './machine.ts';
+import { matchesSearch, osLabel, type Machine, type MachineStatus } from './machine.ts';
 
 /** The fullest disk, which is the one worth showing on the list. */
 type DiskSummary = { mount: string; percent: number; detail: string };
@@ -46,13 +46,20 @@ export type MachineSortKey = (typeof MACHINE_SORT_KEYS)[number];
 export type MachineOrder =
 	{ kind: 'list' } | { kind: 'column'; column: MachineSortKey; direction: SortDirection };
 
+/** The Status column sorts offline, then reconnecting, then online (as offline sorted before online). */
+const STATUS_ORDER: Record<MachineStatus['kind'], number> = {
+	offline: 0,
+	reconnecting: 1,
+	online: 2
+};
+
 /** What a Table column compares by. Online machines count as seen `now`, ahead of every offline one. */
 export function machineSortValue(key: MachineSortKey, now: number): (row: MachineRow) => CellValue {
 	switch (key) {
 		case 'name':
 			return (row) => row.machine.name;
 		case 'status':
-			return (row) => row.machine.status.kind;
+			return (row) => STATUS_ORDER[row.machine.status.kind];
 		case 'os':
 			return (row) => osLabel(row.machine);
 		case 'cpu':
@@ -119,8 +126,9 @@ export function matchesFilter(row: MachineRow, filter: MachineFilter): boolean {
 			return true;
 		case 'online':
 			return row.machine.status.kind === 'online';
+		// Reconnecting counts as offline: a session cannot start on it (SPEC-PRESENCE P9).
 		case 'offline':
-			return row.machine.status.kind === 'offline';
+			return row.machine.status.kind !== 'online';
 		case 'attention':
 			return row.attention;
 		case 'low-disk':

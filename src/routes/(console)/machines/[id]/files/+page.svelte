@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { IconPlugConnected } from '@tabler/icons-svelte-runes';
 	import { hasPermission } from '#lib/domain/access/access.ts';
-	import EmptyState from '#lib/ui/empty-state.svelte';
+	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
+	import MachineUnreachable from '../machine-unreachable.svelte';
 	import NoPermission from '../no-permission.svelte';
 	import FileBrowser from './file-browser.svelte';
 	import type { PageProps } from './$types';
@@ -10,17 +10,15 @@
 	let { data }: PageProps = $props();
 
 	const machine = $derived(data.machine);
+	// The machine page's one live status (SPEC-PRESENCE P10): Files opens when it comes back.
+	const presence = machinePresence();
+	const status = $derived(presence.status);
 </script>
 
 {#if !hasPermission(data.grants, 'files')}
 	<NoPermission />
-{:else if machine.status.kind === 'offline'}
-	<EmptyState
-		icon={IconPlugConnected}
-		title="This machine is offline."
-		detail="Files open when it checks in again."
-		children={undefined}
-	/>
+{:else if status.kind !== 'online'}
+	<MachineUnreachable {status} detail="Files open when it is back." />
 {:else}
 	{#key machine.id}
 		<FileBrowser {machine} />

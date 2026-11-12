@@ -17,16 +17,19 @@
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import UpdateBadge from '#lib/ui/update-badge.svelte';
 	import TabNav from '#lib/ui/tab-nav.svelte';
-	import { LiveStatuses } from '#lib/runes/live-statuses.svelte.ts';
+	import { MachinePresence, provideMachinePresence } from '#lib/runes/machine-presence.svelte.ts';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
 
-	// The header's status follows the machine live, on every tab (SPEC-PRESENCE P5).
-	const statuses = new LiveStatuses();
-	onMount(() => statuses.connect(resolve('/api/machines/events'), refreshAll));
-	const status = $derived(statuses.statusOf(data.machine.id, data.machine.status, data.now));
-	const now = $derived(Math.max(data.now, statuses.latestAtMs));
+	// One live status for the header and every tab (SPEC-PRESENCE P5, P10).
+	const presence = new MachinePresence(() => ({
+		machineId: data.machine.id,
+		status: data.machine.status,
+		loadedAtMs: data.now
+	}));
+	provideMachinePresence(presence);
+	onMount(() => presence.connect(resolve('/api/machines/events'), refreshAll));
 
 	const params = $derived({ id: data.machine.id });
 
@@ -72,7 +75,7 @@
 			<p>{data.machine.hostname}</p>
 		</div>
 		<div class="badges">
-			<StatusBadge {status} {now} since="shown" />
+			<StatusBadge status={presence.status} now={presence.now} since="shown" />
 			<UpdateBadge state={data.machine.update} />
 		</div>
 	</div>

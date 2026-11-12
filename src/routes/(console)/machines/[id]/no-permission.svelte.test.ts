@@ -5,6 +5,7 @@ import type { Machine } from '#lib/domain/machines/machine.ts';
 import DesktopTab from './desktop/+page.svelte';
 import FilesTab from './files/+page.svelte';
 import TerminalTab from './terminal/+page.svelte';
+import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.ts';
 
 const MACHINE: Machine = {
 	id: '11111111-1111-4111-8111-111111111111',
@@ -41,13 +42,18 @@ function props(grants: Grant[]) {
 	};
 }
 
+/** The machine layout's live status, as the tabs get it (SPEC-PRESENCE P10). */
+function layout() {
+	return underMachineLayout(presenceOf(MACHINE, props([]).data.now));
+}
+
 const VIEW_ONLY: Grant[] = [{ permission: 'view', consent: 'ask' }];
 const NO_PERMISSION = "You don't have permission for this.";
 
 describe('machine tabs without the permission (SPEC-ACCESS A6)', () => {
 	it('Terminal, Desktop and Files say so when the rules do not allow them', async () => {
 		for (const Tab of [TerminalTab, DesktopTab, FilesTab]) {
-			const screen = await render(Tab, props(VIEW_ONLY));
+			const screen = await render(Tab, props(VIEW_ONLY), layout());
 			await expect.element(screen.getByText(NO_PERMISSION)).toBeVisible();
 			await screen.unmount();
 		}
@@ -56,14 +62,16 @@ describe('machine tabs without the permission (SPEC-ACCESS A6)', () => {
 	it('opens each tab when its permission is there', async () => {
 		const terminal = await render(
 			TerminalTab,
-			props([...VIEW_ONLY, { permission: 'terminal', consent: 'ask' }])
+			props([...VIEW_ONLY, { permission: 'terminal', consent: 'ask' }]),
+			layout()
 		);
 		await expect.element(terminal.getByRole('group', { name: 'Shell' })).toBeVisible();
 		expect(terminal.container.textContent).not.toContain(NO_PERMISSION);
 		await terminal.unmount();
 		const desktop = await render(
 			DesktopTab,
-			props([...VIEW_ONLY, { permission: 'desktop-view', consent: 'ask' }])
+			props([...VIEW_ONLY, { permission: 'desktop-view', consent: 'ask' }]),
+			layout()
 		);
 		expect(desktop.container.textContent).not.toContain(NO_PERMISSION);
 		await desktop.unmount();
@@ -74,7 +82,8 @@ describe('machine tabs without the permission (SPEC-ACCESS A6)', () => {
 		);
 		const files = await render(
 			FilesTab,
-			props([...VIEW_ONLY, { permission: 'files', consent: 'ask' }])
+			props([...VIEW_ONLY, { permission: 'files', consent: 'ask' }]),
+			layout()
 		);
 		expect(files.container.textContent).not.toContain(NO_PERMISSION);
 	});

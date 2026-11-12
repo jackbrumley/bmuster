@@ -8,6 +8,7 @@ import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import TerminalTab from './+page.svelte';
 import TerminalInFrame from './terminal-in-frame.svelte';
+import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.ts';
 
 const SESSION_ID = '22222222-2222-4222-8222-222222222222';
 
@@ -60,10 +61,15 @@ function props() {
 	};
 }
 
+/** The machine layout's live status, as the tab gets it (SPEC-PRESENCE P10). */
+function layout() {
+	return underMachineLayout(presenceOf(MACHINE, props().data.now));
+}
+
 async function openTerminal(framed = false) {
 	const screen = framed
-		? await render(TerminalInFrame, { pageProps: props() })
-		: await render(TerminalTab, props());
+		? await render(TerminalInFrame, { pageProps: props() }, layout())
+		: await render(TerminalTab, props(), layout());
 	await expect.poll(() => FakeSocket.last?.url ?? '').toContain('ticket=ticket-1');
 	const socket = FakeSocket.last;
 	if (socket === undefined) throw new Error('no socket');

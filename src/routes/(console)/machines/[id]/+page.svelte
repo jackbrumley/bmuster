@@ -10,6 +10,7 @@
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import { canSendUserMessage } from '#lib/domain/machines/user-message.ts';
 	import { hasPermission } from '#lib/domain/access/access.ts';
+	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
 	import DisplayCard from './display-card.svelte';
 	import LowDiskNotice from './low-disk-notice.svelte';
 	import InventoryList from './inventory-list.svelte';
@@ -20,6 +21,9 @@
 
 	const machine = $derived(data.machine);
 	const user = $derived(signedInUserOf(machine));
+	// The machine page's one live status, the header's too (SPEC-PRESENCE P10).
+	const presence = machinePresence();
+	const status = $derived(presence.status);
 
 	// Live figures: refresh while the page is visible (the server asks the agent to stream).
 	onMount(() => {
@@ -48,14 +52,11 @@
 			{ label: 'Agent', value: `v${machine.agentVersion}` },
 			{
 				label: 'Last seen',
-				value:
-					machine.status.kind === 'online'
-						? 'Now'
-						: formatRelative(machine.status.sinceIso, data.now)
+				value: status.kind === 'online' ? 'Now' : formatRelative(status.sinceIso, data.now)
 			},
 			{ label: 'Enrolled', value: formatRelative(machine.enrolledIso, data.now) },
 			// A live figure: stale once the machine is offline (D12).
-			...(machine.status.kind === 'online' && machine.live.kind === 'known'
+			...(status.kind === 'online' && machine.live.kind === 'known'
 				? [{ label: 'Uptime', value: formatDuration(machine.live.uptimeSeconds) }]
 				: [])
 		];
@@ -116,7 +117,7 @@
 		storageOf={hasPermission(data.grants, 'files') ? machine.id : undefined}
 	/>
 	<Panel heading="Health" actions={undefined} tone="normal" padding="normal">
-		{#if machine.status.kind === 'online' && machine.live.kind === 'known'}
+		{#if status.kind === 'online' && machine.live.kind === 'known'}
 			<div class="meters">
 				<UsageBar
 					label="CPU"

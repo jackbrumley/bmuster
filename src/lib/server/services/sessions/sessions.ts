@@ -9,6 +9,7 @@ import type {
 import type { AppDatabase } from '../../database/connection.ts';
 import { permissionsFor } from '../access/access.ts';
 import { isAgentConnected, sendToAgent } from '../agents/live-agents.ts';
+import { unreachableMessage } from '../agents/presence.ts';
 import { serverKey } from '../agents/server-keys.ts';
 import { activeMachineBasics } from '../machines/machine-views.ts';
 import { getSetting } from '../settings/settings.ts';
@@ -49,7 +50,7 @@ function checkMachine(
 		return { kind: 'refused', status: 404, message: 'No machine with this id.' };
 	}
 	if (!isAgentConnected(machineId)) {
-		return { kind: 'refused', status: 409, message: 'This machine is offline.' };
+		return { kind: 'refused', status: 409, message: unreachableMessage(machineId, Date.now()) };
 	}
 	if (relay.countFor(user.id) >= MAX_SESSIONS_PER_PERSON) {
 		return {

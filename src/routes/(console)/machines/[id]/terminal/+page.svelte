@@ -1,15 +1,16 @@
 <script lang="ts">
 	import '@xterm/xterm/css/xterm.css';
 	import { onMount, tick } from 'svelte';
-	import { IconMinus, IconPlugConnected, IconPlus } from '@tabler/icons-svelte-runes';
+	import { IconMinus, IconPlus } from '@tabler/icons-svelte-runes';
 	import { hasPermission } from '#lib/domain/access/access.ts';
 	import { shellsFor } from '#lib/domain/machines/machine.ts';
 	import type { TerminalShell } from '#lib/domain/sessions/session.ts';
 	import Button from '#lib/ui/button.svelte';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
-	import EmptyState from '#lib/ui/empty-state.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
+	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
+	import MachineUnreachable from '../machine-unreachable.svelte';
 	import NoPermission from '../no-permission.svelte';
 	import { copyText } from '#lib/utils/clipboard.ts';
 	import ExtraKeys from './extra-keys.svelte';
@@ -26,6 +27,9 @@
 	let { data }: PageProps = $props();
 
 	const machine = $derived(data.machine);
+	// The machine page's one live status (SPEC-PRESENCE P10); ./+layout.svelte remounts the tab when it changes.
+	const presence = machinePresence();
+	const presenceStatus = $derived(presence.status);
 	const allowed = $derived(hasPermission(data.grants, 'terminal'));
 	const shells = $derived(shellsFor(machine.osFamily));
 
@@ -167,12 +171,7 @@
 	}
 
 	onMount(() => {
-		if (
-			!allowed ||
-			machine.status.kind === 'offline' ||
-			host === undefined ||
-			probe === undefined
-		) {
+		if (!allowed || presenceStatus.kind !== 'online' || host === undefined || probe === undefined) {
 			return;
 		}
 		let disposed = false;
@@ -233,13 +232,8 @@
 
 {#if !allowed}
 	<NoPermission />
-{:else if machine.status.kind === 'offline'}
-	<EmptyState
-		icon={IconPlugConnected}
-		title="This machine is offline."
-		detail="A terminal opens when it checks in again."
-		children={undefined}
-	/>
+{:else if presenceStatus.kind !== 'online'}
+	<MachineUnreachable status={presenceStatus} detail="A terminal opens when it is back." />
 {:else}
 	<div class="session">
 		<div class="bar">

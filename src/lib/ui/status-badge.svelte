@@ -1,24 +1,23 @@
 <script lang="ts">
-	import type { MachineStatus } from '#lib/domain/machines/machine.ts';
+	import { statusLabel, type MachineStatus } from '#lib/domain/machines/machine.ts';
 	import { formatRelative } from '#lib/utils/format.ts';
 
 	/**
-	 * Online or Offline. `since: 'shown'` adds how long ago an offline machine
-	 * went offline; tables that show it in a column of their own hide it.
+	 * Online, Reconnecting (amber, the moment its live socket closed) or
+	 * Offline (SPEC-PRESENCE P9). `since: 'shown'` adds how long ago an offline
+	 * machine went offline; tables that show it in a column of their own hide it.
 	 */
 	let { status, now, since }: { status: MachineStatus; now: number; since: 'shown' | 'hidden' } =
 		$props();
 
 	const label = $derived(
-		status.kind === 'online'
-			? 'Online'
-			: since === 'shown'
-				? `Offline · ${formatRelative(status.sinceIso, now)}`
-				: 'Offline'
+		status.kind === 'offline' && since === 'shown'
+			? `${statusLabel(status)} · ${formatRelative(status.sinceIso, now)}`
+			: statusLabel(status)
 	);
 </script>
 
-<span class="badge" class:online={status.kind === 'online'}>
+<span class="badge {status.kind}">
 	<span class="dot"></span>
 	{label}
 </span>
@@ -52,5 +51,14 @@
 	.online .dot {
 		background: var(--success);
 		box-shadow: var(--shadow-status-online);
+	}
+
+	.reconnecting {
+		background: var(--warning-bg);
+		color: var(--warning);
+	}
+
+	.reconnecting .dot {
+		background: var(--warning);
 	}
 </style>

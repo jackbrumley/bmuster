@@ -87,14 +87,14 @@
 						<div class="actions">
 							<a
 								class="action"
-								class:disabled={machine.status.kind === 'offline'}
+								class:disabled={machine.status.kind !== 'online'}
 								href={resolve('/(console)/machines/[id]/terminal', { id: machine.id })}
 							>
 								<IconTerminal2 size={18} /> Terminal
 							</a>
 							<a
 								class="action"
-								class:disabled={machine.status.kind === 'offline'}
+								class:disabled={machine.status.kind !== 'online'}
 								href={resolve('/(console)/machines/[id]/desktop', { id: machine.id })}
 							>
 								<IconDeviceDesktop size={18} /> Desktop

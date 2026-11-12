@@ -8,6 +8,7 @@ export const machineStatusEventSchema: z.ZodType<MachineStatusEvent> = z.object(
 	machineId: z.string(),
 	status: z.discriminatedUnion('kind', [
 		z.object({ kind: z.literal('online') }),
+		z.object({ kind: z.literal('reconnecting'), sinceIso: z.string() }),
 		z.object({ kind: z.literal('offline'), sinceIso: z.string() })
 	]),
 	atIso: z.string()

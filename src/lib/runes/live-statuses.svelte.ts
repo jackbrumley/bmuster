@@ -8,11 +8,14 @@ import {
 import { apiEvents } from '#lib/utils/api-client.ts';
 
 /**
- * Machine status as it changes (SPEC-PRESENCE P5), for the Machines list and
- * the machine header. The page keeps its loaded data; a pushed status is laid
- * over it only while it is newer than that data, so a later reload wins.
- * Without the push (no EventSource, or the stream refused) the page is
- * reloaded every 15 seconds instead, while it is visible.
+ * Machine status as it changes (SPEC-PRESENCE P5, P9), for the Machines list
+ * and the machine pages (through `MachinePresence`). The page keeps its loaded
+ * data; a pushed status is laid over it only while it is newer than that
+ * data, so a later reload wins. Without the push (no EventSource, or the
+ * stream refused) the page is reloaded every 15 seconds instead, while it is
+ * visible. A page that was hidden (phones suspend a background tab's stream)
+ * or lost the network reloads once and opens the stream again when it is
+ * back (P12).
  */
 
 /** How often the page reloads its data when the live feed is not available. */
@@ -39,31 +42,57 @@ export class LiveStatuses {
 	/**
 	 * Listens to `url` (GET /api/machines/events) until the returned stop is
 	 * called (from `onMount`). `refresh` reloads the page's data: after a
-	 * dropped stream comes back, and on the fallback timer.
+	 * dropped stream comes back, on the fallback timer, and when the page is
+	 * shown again or the network returns.
 	 */
 	connect(url: string, refresh: () => Promise<void>): () => void {
 		let fallback: ReturnType<typeof setInterval> | undefined;
-		const stop = apiEvents({
-			url,
-			event: MACHINE_STATUS_EVENT,
-			reply: machineStatusEventSchema,
-			onEvent: (event) => {
-				this.apply(event);
-			},
-			onReconnect: () => {
-				void refresh();
-			},
-			onFailure: () => {
-				fallback ??= setInterval(() => {
-					if (document.visibilityState === 'visible') {
-						void refresh();
-					}
-				}, FALLBACK_REFRESH_MS);
-			}
-		});
-		return () => {
-			stop();
+		const open = (): (() => void) =>
+			apiEvents({
+				url,
+				event: MACHINE_STATUS_EVENT,
+				reply: machineStatusEventSchema,
+				onEvent: (event) => {
+					this.apply(event);
+				},
+				onReconnect: () => {
+					void refresh();
+				},
+				onFailure: () => {
+					fallback ??= setInterval(() => {
+						if (document.visibilityState === 'visible') {
+							void refresh();
+						}
+					}, FALLBACK_REFRESH_MS);
+				}
+			});
+		let stopStream = open();
+		// Events sent while the page was hidden or offline may be lost: a fresh stream and one reload.
+		const resume = (): void => {
+			stopStream();
 			clearInterval(fallback);
+			fallback = undefined;
+			stopStream = open();
+			void refresh();
+		};
+		let hidden = document.visibilityState === 'hidden';
+		const onVisibility = (): void => {
+			if (document.visibilityState === 'hidden') {
+				hidden = true;
+				return;
+			}
+			if (hidden) {
+				hidden = false;
+				resume();
+			}
+		};
+		document.addEventListener('visibilitychange', onVisibility);
+		window.addEventListener('online', resume);
+		return () => {
+			stopStream();
+			clearInterval(fallback);
+			document.removeEventListener('visibilitychange', onVisibility);
+			window.removeEventListener('online', resume);
 		};
 	}
 }
