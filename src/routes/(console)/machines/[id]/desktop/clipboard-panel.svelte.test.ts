@@ -78,7 +78,7 @@ describe('the clipboard panel', () => {
 		await expect
 			.element(panel.getByRole('alert'))
 			.toHaveTextContent(
-				'This browser did not allow reading its clipboard. Paste into the box with your keys instead.'
+				'This browser will not share its clipboard. Long-press (or right-click) in the box above, choose Paste, then Send to machine.'
 			);
 		await expect.element(box).toHaveValue('from my laptop');
 	});

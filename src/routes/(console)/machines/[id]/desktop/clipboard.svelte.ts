@@ -101,7 +101,7 @@ export class DesktopClipboard {
 			this.note = {
 				kind: 'error',
 				message:
-					'This browser did not allow reading its clipboard. Paste into the box with your keys instead.'
+					'This browser will not share its clipboard. Long-press (or right-click) in the box above, choose Paste, then Send to machine.'
 			};
 			return;
 		}
