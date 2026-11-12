@@ -11,7 +11,7 @@ import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.
 
 // SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6;
 // SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10, FA13, FA14, FA15;
-// SPEC-DESKTOP-ALL-SCREENS A8, A9, A10.
+// SPEC-DESKTOP-ALL-SCREENS A8, A9, A10; SPEC-DESKTOP 20 C8, C12.
 
 const SESSION = '33333333-3333-4333-8333-333333333333';
 
@@ -780,6 +780,43 @@ describe('the desktop tab', () => {
 			.getByRole('button', { name: 'Leave full screen' })
 			.click();
 		await expect.poll(() => document.fullscreenElement).toBeNull();
+	});
+
+	it('C12, C8: the Clipboard button opens the panel, which pulls and shows the reply and errors', async () => {
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await screen.getByRole('button', { name: 'Clipboard', exact: true }).click();
+		const panel = screen.getByRole('region', { name: 'Clipboard' });
+		await panel.getByRole('button', { name: 'Get from machine' }).click();
+		await expect.poll(() => socket.messages()).toContainEqual({ type: 'clipboard-pull' });
+		socket.receive(JSON.stringify({ type: 'clipboard', text: 'C:\\Windows\\System32' }));
+		await expect
+			.element(panel.getByRole('textbox', { name: 'Text' }))
+			.toHaveValue('C:\\Windows\\System32');
+
+		await panel.getByRole('button', { name: 'Send to machine' }).click();
+		await expect
+			.poll(() => socket.messages())
+			.toContainEqual({ type: 'clipboard-push', text: 'C:\\Windows\\System32' });
+		socket.receive(
+			JSON.stringify({
+				type: 'error',
+				code: 'clipboard-failed',
+				message: 'Copy and paste is not available on this screen.'
+			})
+		);
+		await expect
+			.element(panel.getByRole('alert'))
+			.toHaveTextContent('Copy and paste is not available on this screen.');
+	});
+
+	it('C12: a watch-only session has no Clipboard button', async () => {
+		const { screen, socket } = await open(CONTROL, 'Watch only');
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await expect.element(screen.getByText('View only')).toBeVisible();
+		await expect
+			.element(screen.getByRole('button', { name: 'Clipboard', exact: true }))
+			.not.toBeInTheDocument();
 	});
 
 	it('does not offer a session whose rules ask the person at the screen first', async () => {

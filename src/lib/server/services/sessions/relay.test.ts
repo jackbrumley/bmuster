@@ -4,6 +4,7 @@ import {
 	CLOSE_REPLACED,
 	createRelay,
 	RELAY_LIMITS,
+	type ClipboardTransfer,
 	type EndedSession,
 	type RelayPeer,
 	type SessionRecord
@@ -69,7 +70,11 @@ const RECORD: SessionRecord = {
 function started() {
 	const relay = createRelay(RELAY_LIMITS);
 	const ended: EndedSession[] = [];
-	relay.start({ ...RECORD, openedAt: Date.now() }, (session) => ended.push(session));
+	relay.start(
+		{ ...RECORD, openedAt: Date.now() },
+		(session) => ended.push(session),
+		() => undefined
+	);
 	return { relay, ended };
 }
 
@@ -379,8 +384,10 @@ describe('desktop sessions in the relay (SPEC-DESKTOP R2)', () => {
 	function desktop() {
 		const relay = createRelay(RELAY_LIMITS);
 		const ended: EndedSession[] = [];
-		relay.start({ ...RECORD, kind: 'desktop', mode: 'watch', openedAt: Date.now() }, (session) =>
-			ended.push(session)
+		relay.start(
+			{ ...RECORD, kind: 'desktop', mode: 'watch', openedAt: Date.now() },
+			(session) => ended.push(session),
+			() => undefined
 		);
 		const agent = fakePeer(true);
 		const browser = fakePeer(true);
@@ -437,12 +444,76 @@ describe('desktop sessions in the relay (SPEC-DESKTOP R2)', () => {
 	});
 });
 
+describe('copy and paste in the relay (SPEC-DESKTOP 20)', () => {
+	function desktop(mode: 'watch' | 'control') {
+		const relay = createRelay(RELAY_LIMITS);
+		const transfers: ClipboardTransfer[] = [];
+		relay.start(
+			{ ...RECORD, kind: 'desktop', mode, openedAt: Date.now() },
+			() => undefined,
+			(transfer) => transfers.push(transfer)
+		);
+		const agent = fakePeer(true);
+		const browser = fakePeer(true);
+		connectBrowser(relay, browser);
+		relay.attachAgent(RECORD.id, RECORD.machineId, agent);
+		browser.texts.length = 0;
+		return { relay, transfers, agent, browser };
+	}
+
+	it('C6: drops clipboard requests from a watch-only browser before they reach the agent', () => {
+		const { relay, agent, browser } = desktop('watch');
+		relay.browserText(RECORD.id, browser, '{"type":"clipboard-push","text":"secret"}');
+		relay.browserText(RECORD.id, browser, '{"type":"clipboard-pull"}');
+		relay.browserText(RECORD.id, browser, '{"type":"keyframe"}');
+		expect(agent.texts).toEqual([{ type: 'keyframe' }]);
+	});
+
+	it('C6: passes them on for a control session', () => {
+		const { relay, agent, browser } = desktop('control');
+		relay.browserText(RECORD.id, browser, '{"type":"clipboard-push","text":"secret"}');
+		relay.browserText(RECORD.id, browser, '{"type":"clipboard-pull"}');
+		expect(agent.texts).toEqual([
+			{ type: 'clipboard-push', text: 'secret' },
+			{ type: 'clipboard-pull' }
+		]);
+	});
+
+	it('C7: counts each transfer the agent confirms, in UTF-8 bytes, and passes the reply on', () => {
+		const { relay, transfers, agent, browser } = desktop('control');
+		relay.browserText(RECORD.id, browser, '{"type":"clipboard-push","text":"héllo"}');
+		expect(transfers).toEqual([]);
+		relay.agentText(RECORD.id, agent, '{"type":"clipboard-sent","bytes":6}');
+		relay.agentText(RECORD.id, agent, '{"type":"clipboard","text":"Grüße"}');
+		relay.agentText(
+			RECORD.id,
+			agent,
+			'{"type":"error","code":"clipboard-failed","message":"Copy and paste is not available on this screen."}'
+		);
+		expect(transfers).toEqual([
+			{ direction: 'to-machine', bytes: 6, at: Date.now() },
+			{ direction: 'from-machine', bytes: 7, at: Date.now() }
+		]);
+		expect(browser.texts).toEqual([
+			{ type: 'clipboard-sent', bytes: 6 },
+			{ type: 'clipboard', text: 'Grüße' },
+			{
+				type: 'error',
+				code: 'clipboard-failed',
+				message: 'Copy and paste is not available on this screen.'
+			}
+		]);
+	});
+});
+
 describe('desktop agent hand-over (SPEC-DESKTOP R13, Windows helper)', () => {
 	function desktop() {
 		const relay = createRelay(RELAY_LIMITS);
 		const ended: EndedSession[] = [];
-		relay.start({ ...RECORD, kind: 'desktop', mode: 'control', openedAt: Date.now() }, (session) =>
-			ended.push(session)
+		relay.start(
+			{ ...RECORD, kind: 'desktop', mode: 'control', openedAt: Date.now() },
+			(session) => ended.push(session),
+			() => undefined
 		);
 		const agent = fakePeer(true);
 		const browser = fakePeer(true);

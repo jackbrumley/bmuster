@@ -34,6 +34,7 @@
 		IconShieldLock,
 		IconShieldX,
 		IconPlugConnectedX,
+		IconClipboard,
 		IconMessage,
 		IconTerminal2,
 		IconUpload,
@@ -159,6 +160,8 @@
 				return IconTerminal2;
 			case 'session-disconnected-at-machine':
 				return IconPlugConnectedX;
+			case 'desktop-clipboard':
+				return IconClipboard;
 			case 'machine-message-sent':
 				return IconMessage;
 			case 'email-sent':

@@ -26,7 +26,8 @@ const DESKTOP_ERROR_CODES = [
 	'capture-failed',
 	'encoder-failed',
 	'bad-message',
-	'input-failed'
+	'input-failed',
+	'clipboard-failed'
 ] as const;
 
 /** What the screen at the machine shows (`state`). */
@@ -41,6 +42,21 @@ const screenSchema = z.discriminatedUnion('kind', [
 		message: z.string()
 	})
 ]) satisfies z.ZodType<DesktopScreen>;
+
+/** The machine's clipboard text, and the confirmation of a push (SPEC-DESKTOP 20.3). */
+const clipboardTextSchema = z.object({ type: z.literal('clipboard'), text: z.string() });
+const clipboardSentSchema = z.object({ type: z.literal('clipboard-sent'), bytes: z.int().min(0) });
+
+/** The agent's clipboard replies, which the relay audits (SPEC-DESKTOP 20.6). */
+export const agentClipboardReplySchema = z.discriminatedUnion('type', [
+	clipboardTextSchema,
+	clipboardSentSchema
+]);
+
+/** The viewer's clipboard requests, which a watch-only session may not send (SPEC-DESKTOP 7). */
+export const viewerClipboardRequestSchema = z.object({
+	type: z.enum(['clipboard-push', 'clipboard-pull'])
+});
 
 export const agentDesktopMessageSchema = z.discriminatedUnion('type', [
 	z.object({
@@ -61,6 +77,8 @@ export const agentDesktopMessageSchema = z.discriminatedUnion('type', [
 	}),
 	z.object({ type: z.literal('state'), screen: screenSchema }),
 	z.object({ type: z.literal('stalled') }),
+	clipboardTextSchema,
+	clipboardSentSchema,
 	z.object({
 		type: z.literal('error'),
 		code: z.enum(DESKTOP_ERROR_CODES),

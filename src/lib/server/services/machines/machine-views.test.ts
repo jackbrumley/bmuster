@@ -70,6 +70,7 @@ describe('in use (SPEC-SESSIONS T8)', () => {
 				ip: '192.0.2.1',
 				openedAt: NOW
 			},
+			() => undefined,
 			() => undefined
 		);
 		expect(findMachine(database, agent.machineId, NOW, NO_RELEASES)?.inUse).toEqual([
@@ -97,6 +98,7 @@ describe('in use (SPEC-SESSIONS T8)', () => {
 				ip: '192.0.2.1',
 				openedAt: NOW
 			},
+			() => undefined,
 			() => undefined
 		);
 		const inUse = findMachine(database, agent.machineId, NOW, NO_RELEASES)?.inUse ?? [];

@@ -70,7 +70,12 @@ export type ViewerMessage =
 	| { type: 'text'; text: string }
 	| { type: 'special'; name: SpecialKey }
 	| { type: 'release-all' }
+	| { type: 'clipboard-push'; text: string }
+	| { type: 'clipboard-pull' }
 	| { type: 'disconnect' };
+
+/** The most text one clipboard transfer carries, in UTF-8 bytes (SPEC-DESKTOP 20.2). */
+export const MAX_CLIPBOARD_BYTES = 1024 * 1024;
 
 /** Input messages a watch-only viewer never sends (SPEC-DESKTOP 7). */
 export type InputMessage = Extract<
