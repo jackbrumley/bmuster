@@ -493,9 +493,9 @@ The remote cursor disappears over Notepad's text area. Windows' text I-beam is a
 
 ### 19.3 Acceptance criteria
 
-| ID  | Behaviour                                                                                                                   | Named test                                                                          |
-| :-- | :-------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------- |
-| CU1 | A pixel is transparent, a colour with its alpha (opaque or partly), or inverting, from its renders over black and white.  | Rust `capture::cursor_pixels::tests::cursor_pixels_are_classified`                  |
+| ID  | Behaviour                                                                                                                                           | Named test                                                                             |
+| :-- | :-------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------- |
+| CU1 | A pixel is transparent, a colour with its alpha (opaque or partly), or inverting, from its renders over black and white.                            | Rust `capture::cursor_pixels::tests::cursor_pixels_are_classified`                     |
 | CU2 | Inverting pixels come out opaque black, transparent pixels touching them opaque white, other pixels unchanged; no outline without inverting pixels. | Rust `capture::cursor_pixels::tests::inverting_cursors_are_black_with_a_white_outline` |
 
 ### 19.4 As built

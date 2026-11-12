@@ -150,19 +150,20 @@ After a reboot and sign-in on a Windows 10 PC with 0.4.19:
    - anything else: not a helper.
 
    It ends each stale helper (`TerminateProcess`, waiting up to 5 s, so the mutex is free), logs "Closed an older tray in session N.", and then starts the current one in the same pass.
+
 6. **Uninstall** ends every current and stale helper in every session (point 5's rules), then removes the program folder, the `Run` value, and the Start menu shortcut.
 7. **Unchanged:** which sessions get a helper, the token rules, the environment and desktop, the mutex `Local\BMusterTray`, and the helper's own program watch (it still exits when another file stands at its program's path).
 
 ### Acceptance criteria
 
-| ID   | Behaviour                                                                                                                                                            | Named test                                                                       |
-| :--- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
-| TS14 | A new Windows session gets its first start within 7 s of being seen when polled every 2 s; Linux still waits 30 s.                                                   | Rust `tray::starts::tests::windows_starts_soon_after_sign_in`                     |
-| TS15 | The icon is added at start and on `TaskbarCreated`; while it is not shown the retry timer adds it and the second timer does not modify it; once shown, retry stops. | Rust `tray::windows_sessions::tests::the_icon_waits_for_the_taskbar`             |
-| TS16 | The tray program is `bmuster-tray-<version>.exe` in the program folder; other versions' copies and leftovers are recognised for removal, nothing else is.           | Rust `tray::windows_sessions::tests::each_version_has_its_own_tray_program`      |
-| TS17 | A process running this version's copy is the current helper; another version's copy, or the rescue copy unelevated, is stale; an elevated rescue copy or any other program is not a helper. | Rust `tray::windows_sessions::tests::older_trays_are_recognised`       |
-| TS18 | The starter ends stale helpers in a session before it decides whether to start one, and starts the current one in the same pass.                                    | Rust `tray::starts::tests::stale_helpers_end_before_a_start`                     |
-| TS19 | The `Run` value is named `BMusterAgent` under `Software\Microsoft\Windows\CurrentVersion\Run` (the value removed on install, start and uninstall).                    | Rust `tray::windows_sessions::tests::the_old_sign_in_entry_is_known`             |
+| ID   | Behaviour                                                                                                                                                                                   | Named test                                                                  |
+| :--- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :-------------------------------------------------------------------------- |
+| TS14 | A new Windows session gets its first start within 7 s of being seen when polled every 2 s; Linux still waits 30 s.                                                                          | Rust `tray::starts::tests::windows_starts_soon_after_sign_in`               |
+| TS15 | The icon is added at start and on `TaskbarCreated`; while it is not shown the retry timer adds it and the second timer does not modify it; once shown, retry stops.                         | Rust `tray::windows_sessions::tests::the_icon_waits_for_the_taskbar`        |
+| TS16 | The tray program is `bmuster-tray-<version>.exe` in the program folder; other versions' copies and leftovers are recognised for removal, nothing else is.                                   | Rust `tray::windows_sessions::tests::each_version_has_its_own_tray_program` |
+| TS17 | A process running this version's copy is the current helper; another version's copy, or the rescue copy unelevated, is stale; an elevated rescue copy or any other program is not a helper. | Rust `tray::windows_sessions::tests::older_trays_are_recognised`            |
+| TS18 | The starter ends stale helpers in a session before it decides whether to start one, and starts the current one in the same pass.                                                            | Rust `tray::starts::tests::stale_helpers_end_before_a_start`                |
+| TS19 | The `Run` value is named `BMusterAgent` under `Software\Microsoft\Windows\CurrentVersion\Run` (the value removed on install, start and uninstall).                                          | Rust `tray::windows_sessions::tests::the_old_sign_in_entry_is_known`        |
 
 TS12 changes: the command line is the quoted tray copy and `tray`.
 
