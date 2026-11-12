@@ -19,6 +19,7 @@ import { agentDesktopMessageSchema, type DesktopDisplay } from '#lib/schemas/des
 import { readAutoStart, saveAutoStart, sustainedStart, type AutoStart } from './auto-quality.ts';
 import { DesktopClipboard } from './clipboard.svelte.ts';
 import type { DesktopCanvas } from './desktop-canvas.ts';
+import type { LocalCursor } from './local-cursor.ts';
 import type { Handover } from './pop-out.ts';
 
 /**
@@ -72,6 +73,7 @@ export class DesktopSession {
 
 	readonly #link: SessionLink;
 	readonly #canvas: DesktopCanvas;
+	readonly #cursor: LocalCursor;
 	readonly #viewport: () => Viewport;
 	readonly #machineId: string;
 	/** The viewport the agent last heard in `hello`. */
@@ -92,10 +94,12 @@ export class DesktopSession {
 	constructor(
 		machineId: string,
 		canvas: DesktopCanvas,
+		cursor: LocalCursor,
 		viewport: () => Viewport,
 		route: SessionRoute
 	) {
 		this.#canvas = canvas;
+		this.#cursor = cursor;
 		this.#viewport = viewport;
 		this.#machineId = machineId;
 		this.#autoStart = readAutoStart(machineId);
@@ -274,7 +278,7 @@ export class DesktopSession {
 	#greet(): void {
 		this.#parts = undefined;
 		this.#lastDrawn = undefined;
-		this.#canvas.forgetCursor();
+		this.#cursor.forget();
 		const viewport = this.#viewport();
 		this.#sentViewport = viewport;
 		this.#send({ type: 'hello', codecs: ['jpeg'], viewport });
@@ -389,10 +393,10 @@ export class DesktopSession {
 				// Phase 2; this console offers JPEG only, so none should come.
 				return;
 			case 'cursor-shape':
-				void this.#canvas.cursorShape(frame.id, frame.hotspotX, frame.hotspotY, frame.png);
+				void this.#cursor.shape(frame.id, frame.hotspotX, frame.hotspotY, frame.png);
 				return;
 			case 'cursor-position':
-				this.#canvas.cursorPosition(frame.id, frame.x, frame.y, frame.visible);
+				this.#cursor.position(frame.id, frame.x, frame.y, frame.visible);
 				return;
 			case 'tiles':
 				this.#onTiles(frame.header, frame.tiles);

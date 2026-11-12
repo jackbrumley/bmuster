@@ -29,8 +29,6 @@
 	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
 	import { consoleSessionRoute } from '#lib/runes/session-link.svelte.ts';
 	import MachineUnreachable from '../machine-unreachable.svelte';
-	import { readGranted } from '#lib/utils/clipboard.ts';
-	import { attachPasteShortcut } from './clipboard.svelte.ts';
 	import ClipboardPanel from './clipboard-panel.svelte';
 	import NoPermission from '../no-permission.svelte';
 	import { DesktopCanvas } from './desktop-canvas.ts';
@@ -39,10 +37,11 @@
 	import DesktopStart from './desktop-start.svelte';
 	import FloatingControls from './floating-controls.svelte';
 	import FullScreenBar from './full-screen-bar.svelte';
+	import { LocalCursor } from './local-cursor.ts';
 	import { FullScreen } from './full-screen.svelte.ts';
 	import { dismissHint, hintDismissed } from './gesture-hint.ts';
 	import GestureHint from './gesture-hint.svelte';
-	import { attachScreenInput } from './screen-input.ts';
+	import { attachStageInput } from './stage-input.ts';
 	import { watchViewport } from './viewport-watch.ts';
 	import type { Geometry, TouchMode } from './touch-gestures.ts';
 	import TouchInputChoice from './touch-input-choice.svelte';
@@ -293,44 +292,39 @@
 		) {
 			return;
 		}
+		const cursor = new LocalCursor(surface, cursorCanvas, {
+			geometry,
+			zoom: () => zoom,
+			controlling: () => session?.controlling === true
+		});
 		const current = new DesktopSession(
 			machine.id,
-			new DesktopCanvas(screenCanvas, cursorCanvas),
+			new DesktopCanvas(screenCanvas, cursor),
+			cursor,
 			viewport,
 			consoleSessionRoute('desktop', machine.id)
 		);
 		session = current;
 		void current.resume();
 
-		const detachInput = attachScreenInput(surface, {
-			send: (message) => {
-				current.input(message);
-			},
-			controlling: () => current.controlling,
+		const detachInput = attachStageInput(surface, current, {
 			geometry,
 			touchMode: () => touchMode,
 			zoom: (next) => {
 				zoom = next;
-			}
-		});
-		const detachPaste = attachPasteShortcut(surface, {
-			clipboard: current.clipboard,
-			send: (message) => {
-				current.input(message);
 			},
-			controlling: () => current.controlling,
-			readAllowed: readGranted
+			cursor
 		});
 		const detachFullScreen = screenMode.attach();
 		const detachViewport = watchViewport(surface, () => {
 			current.viewportChanged();
 		});
 		return () => {
-			detachPaste();
 			detachInput();
 			detachFullScreen();
 			detachViewport();
 			current.detach();
+			cursor.detach();
 		};
 	});
 </script>

@@ -15,14 +15,13 @@
 	import Button from '#lib/ui/button.svelte';
 	import LoadingVeil from '#lib/ui/loading-veil.svelte';
 	import Notice from '#lib/ui/notice.svelte';
-	import { readGranted } from '#lib/utils/clipboard.ts';
-	import { attachPasteShortcut } from '../../(console)/machines/[id]/desktop/clipboard.svelte.ts';
 	import ClipboardPanel from '../../(console)/machines/[id]/desktop/clipboard-panel.svelte';
 	import { DesktopCanvas } from '../../(console)/machines/[id]/desktop/desktop-canvas.ts';
 	import { DesktopSession } from '../../(console)/machines/[id]/desktop/desktop-session.svelte.ts';
 	import { FullScreen } from '../../(console)/machines/[id]/desktop/full-screen.svelte.ts';
+	import { LocalCursor } from '../../(console)/machines/[id]/desktop/local-cursor.ts';
 	import KeyBar from '../../(console)/machines/[id]/desktop/key-bar.svelte';
-	import { attachScreenInput } from '../../(console)/machines/[id]/desktop/screen-input.ts';
+	import { attachStageInput } from '../../(console)/machines/[id]/desktop/stage-input.ts';
 	import ToolButton from '../../(console)/machines/[id]/desktop/tool-button.svelte';
 	import {
 		isRunning,
@@ -107,39 +106,34 @@
 		if (surface === undefined || screenCanvas === undefined || cursorCanvas === undefined) {
 			return;
 		}
+		const cursor = new LocalCursor(surface, cursorCanvas, {
+			geometry,
+			zoom: () => zoom,
+			controlling: () => session?.controlling === true
+		});
 		const current = new DesktopSession(
 			'shared-machine',
-			new DesktopCanvas(screenCanvas, cursorCanvas),
+			new DesktopCanvas(screenCanvas, cursor),
+			cursor,
 			viewport,
 			route()
 		);
 		session = current;
 		void current.resume();
-		const detachInput = attachScreenInput(surface, {
-			send: (message) => {
-				current.input(message);
-			},
-			controlling: () => current.controlling,
+		const detachInput = attachStageInput(surface, current, {
 			geometry,
 			touchMode: () => 'trackpad',
 			zoom: (next) => {
 				zoom = next;
-			}
-		});
-		const detachPaste = attachPasteShortcut(surface, {
-			clipboard: current.clipboard,
-			send: (message) => {
-				current.input(message);
 			},
-			controlling: () => canControl && current.controlling,
-			readAllowed: readGranted
+			cursor
 		});
 		const detachFullScreen = screenMode.attach();
 		return () => {
-			detachPaste();
 			detachInput();
 			detachFullScreen();
 			current.detach();
+			cursor.detach();
 		};
 	});
 </script>

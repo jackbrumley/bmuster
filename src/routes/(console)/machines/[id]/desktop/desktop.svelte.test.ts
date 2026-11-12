@@ -1,85 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import type { Grant } from '#lib/domain/access/access.ts';
 import { confirmation } from '#lib/ui/confirm-action.svelte.ts';
 import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import '#lib/ui/design-tokens.css';
 import DesktopTab from './+page.svelte';
 import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.ts';
+import {
+	attach,
+	batch,
+	CONTROL,
+	DISPLAYS,
+	open,
+	posted,
+	renderTab,
+	SESSION,
+	stubDesktopServer
+} from './desktop-test-harness.ts';
 
 // SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17, Q1, Q2, Q4, Q5, C8, C12; SPEC-DESKTOP-KEYS K6;
 // SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10, FA13, FA14, FA15, FA20, FA21, FA22;
-// SPEC-DESKTOP-ALL-SCREENS A8, A9, A10.
+// SPEC-DESKTOP-ALL-SCREENS A8, A9, A10. The local cursor's tests are in local-cursor.svelte.test.ts.
 
-const SESSION = '33333333-3333-4333-8333-333333333333';
-
-/** An agent that knows Extra high and reports Auto's level. */
-const NEW_AGENT = { ...TEST_MACHINE, agentVersion: '0.4.22' };
-
-const CONTROL: Grant[] = [
-	{ permission: 'view', consent: 'unattended' },
-	{ permission: 'desktop-view', consent: 'unattended' },
-	{ permission: 'desktop-control', consent: 'unattended' }
-];
-
-const posted: unknown[] = [];
-
-beforeEach(async () => {
-	await page.viewport(1280, 900);
-	sessionStorage.clear();
-	localStorage.removeItem('bmuster.desktop.touchInput');
-	posted.length = 0;
-	FakeSocket.last = undefined;
-	vi.stubGlobal('WebSocket', FakeSocket);
-	vi.stubGlobal(
-		'fetch',
-		vi.fn((_url: string, init: RequestInit) => {
-			posted.push(typeof init.body === 'string' ? JSON.parse(init.body) : undefined);
-			return Promise.resolve(Response.json({ sessionId: SESSION, browserTicket: 't-1' }));
-		})
-	);
-});
+beforeEach(stubDesktopServer);
 
 afterEach(() => {
 	sessionStorage.clear();
 });
 
-/** A tile batch of solid 64x64 tiles, as the agent writes it (SPEC-DESKTOP 4.2). */
-function batch(
-	seq: number,
-	flags: number,
-	tiles: { x: number; y: number; rgb: [number, number, number] }[],
-	size: { width: number; height: number } = { width: 128, height: 64 }
-): Uint8Array {
-	const bytes = new Uint8Array(22 + tiles.length * 17);
-	const view = new DataView(bytes.buffer);
-	bytes.set([2, 0, flags, 1]);
-	view.setUint32(4, seq, true);
-	view.setUint16(16, size.width, true);
-	view.setUint16(18, size.height, true);
-	view.setUint16(20, tiles.length, true);
-	tiles.forEach((tile, index) => {
-		const at = 22 + index * 17;
-		view.setUint16(at, tile.x, true);
-		view.setUint16(at + 2, tile.y, true);
-		view.setUint16(at + 4, 64, true);
-		view.setUint16(at + 6, 64, true);
-		bytes[at + 8] = 3;
-		view.setUint32(at + 9, 4, true);
-		bytes.set([...tile.rgb, 255], at + 13);
-	});
-	return bytes;
-}
-
-const DISPLAYS = {
-	type: 'displays',
-	list: [
-		{ id: 'Xvfb-0', name: 'Screen', x: 0, y: 0, width: 256, height: 128, scale: 1, primary: true }
-	],
-	current: 'Xvfb-0'
-};
+/** An agent that knows Extra high and reports Auto's level. */
+const NEW_AGENT = { ...TEST_MACHINE, agentVersion: '0.4.22' };
 
 /** Two displays side by side, 256x128 and 128x64, from an agent that can show both at once. */
 const TWO_DISPLAYS = {
@@ -91,43 +42,6 @@ const TWO_DISPLAYS = {
 	current: 'L',
 	allScreens: true
 };
-
-function renderTab(grants: Grant[], machine = TEST_MACHINE) {
-	const now = Date.parse('2026-11-07T12:00:00.000Z');
-	return render(
-		DesktopTab,
-		{
-			params: { id: machine.id },
-			data: {
-				user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
-				localNetworkMode: false,
-				serverUpdate: null,
-				signedIn: true,
-				now,
-				machine,
-				grants
-			}
-		},
-		underMachineLayout(presenceOf(machine, now))
-	);
-}
-
-/** The server's side of a socket that just opened: attached, ready, the displays. */
-function attach(socket: FakeSocket): void {
-	socket.receive(JSON.stringify({ type: 'attached', resumed: false }));
-	socket.receive(JSON.stringify({ type: 'ready' }));
-	socket.receive(JSON.stringify(DISPLAYS));
-}
-
-async function open(grants: Grant[], button: 'Connect' | 'Watch only', machine = TEST_MACHINE) {
-	const screen = await renderTab(grants, machine);
-	await screen.getByRole('button', { name: button }).click();
-	await expect.poll(() => FakeSocket.last?.url ?? '').toContain('ticket=t-1');
-	const socket = FakeSocket.last;
-	if (socket === undefined) throw new Error('no socket');
-	attach(socket);
-	return { screen, socket };
-}
 
 function sentTypes(socket: FakeSocket): string[] {
 	return socket

@@ -13,16 +13,15 @@
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import Notice from '#lib/ui/notice.svelte';
 	import { consoleSessionRoute } from '#lib/runes/session-link.svelte.ts';
-	import { readGranted } from '#lib/utils/clipboard.ts';
-	import { attachPasteShortcut } from '../clipboard.svelte.ts';
 	import { DesktopCanvas } from '../desktop-canvas.ts';
 	import { DesktopSession } from '../desktop-session.svelte.ts';
+	import { LocalCursor } from '../local-cursor.ts';
 	import DesktopStart from '../desktop-start.svelte';
 	import FloatingControls from '../floating-controls.svelte';
 	import { handoverFrom } from '../pop-out.ts';
-	import { attachScreenInput } from '../screen-input.ts';
+	import { attachStageInput } from '../stage-input.ts';
 	import StageOverlay from '../stage-overlay.svelte';
-	import { connectingTitle, isRunning } from '../stage-state.ts';
+	import { connectingTitle, isRunning, stageGeometry } from '../stage-state.ts';
 	import type { TouchMode } from '../touch-gestures.ts';
 	import { NO_ZOOM, zoomTransform, type Zoom } from '../zoom.ts';
 	import type { PageProps } from './$types';
@@ -95,9 +94,17 @@
 		) {
 			return;
 		}
+		const geometry = () =>
+			stageGeometry(box, session?.frameSize, shownSize(session?.displays ?? [], session?.current));
+		const cursor = new LocalCursor(surface, cursorCanvas, {
+			geometry,
+			zoom: () => zoom,
+			controlling: () => session?.controlling === true
+		});
 		const current = new DesktopSession(
 			machine.id,
-			new DesktopCanvas(screenCanvas, cursorCanvas),
+			new DesktopCanvas(screenCanvas, cursor),
+			cursor,
 			() => ({
 				width: Math.round(surface.clientWidth),
 				height: Math.round(surface.clientHeight),
@@ -112,36 +119,13 @@
 		}
 		void current.resume();
 
-		const detachInput = attachScreenInput(surface, {
-			send: (message) => {
-				current.input(message);
-			},
-			controlling: () => current.controlling,
-			geometry: () => {
-				const size = current.frameSize;
-				const area = shownSize(current.displays, current.current);
-				if (size === undefined || area === undefined) {
-					return undefined;
-				}
-				const rect = box.getBoundingClientRect();
-				return {
-					box: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-					picture: size,
-					display: area
-				};
-			},
+		const detachInput = attachStageInput(surface, current, {
+			geometry,
 			touchMode: () => touchMode,
 			zoom: (next) => {
 				zoom = next;
-			}
-		});
-		const detachPaste = attachPasteShortcut(surface, {
-			clipboard: current.clipboard,
-			send: (message) => {
-				current.input(message);
 			},
-			controlling: () => current.controlling,
-			readAllowed: readGranted
+			cursor
 		});
 		// The window resized: once it settles, the agent fits the stream to it again.
 		let settle: ReturnType<typeof setTimeout> | undefined;
@@ -156,9 +140,9 @@
 		return () => {
 			clearTimeout(settle);
 			resized.disconnect();
-			detachPaste();
 			detachInput();
 			current.detach();
+			cursor.detach();
 		};
 	});
 </script>
