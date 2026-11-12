@@ -1,6 +1,6 @@
 # SPEC-PRESENCE: Fast, live online and offline
 
-**Status:** P1–P8 `IMPLEMENTED`; P9–P12 built, pending release (version bump and changelog left for the release step) · **Date:** 2026-11-07, P9–P12 2026-11-12 · Changes SPEC-ENROLMENT 8 (online rule); adds two events to SPEC-EMAIL E6.
+**Status:** P1–P8 `IMPLEMENTED`; P9–P12 `IMPLEMENTED (v0.4.21)` · **Date:** 2026-11-07, P9–P12 2026-11-12 · Changes SPEC-ENROLMENT 8 (online rule); adds two events to SPEC-EMAIL E6.
 
 ## 1. Problem
 
@@ -60,7 +60,7 @@ Who is connected, and the grace timers, live in memory (`services/agents/presenc
 8. **A lost session is a hint, not the truth (P11).** The session socket and the agent's live socket are separate, so `agent-lost` usually but not always means the machine went. The hint's time is the newest server time the page knows plus 1 ms, so the feed's next event or the next reload always replaces it; the 65 s check covers the case where no event comes because the machine never left.
 9. **Reload on return (P12).** Rather than replay missed events, a page shown again or back online reloads once and reopens the stream.
 
-## 6. As built (P9–P12, 2026-11-12, pending release)
+## 6. As built (P9–P12, 2026-11-12, v0.4.21)
 
 - `presence.ts`: `socketClosed` publishes `reconnecting`; `presenceOf` returns it during the grace; `socketOpened` publishes `online` unless it replaces an open connection; `unreachableMessage` words the refusal in `sessions.ts` and `files.ts`.
 - `StatusBadge` (amber Reconnecting), `statusLabel` in `domain/machines/machine.ts` (badge and export), `machine-row.ts` (filter, sort), Machines cards and table shortcuts, the Updates page ("reconnecting").

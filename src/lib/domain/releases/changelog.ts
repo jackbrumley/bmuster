@@ -1,6 +1,14 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.21',
+		changes: [
+			'Phone desktop: the menu button sits on any edge and opens a larger panel (a bottom sheet in portrait, a side panel in landscape) with Keys, Picture, Screen and Session tabs',
+			'Phone desktop: pinch to zoom and pan the picture, long press for a right click, and an easier double-tap and drag',
+			'Online status is the same everywhere: Reconnecting shows at once when a machine drops, every tab follows it live, and pages catch up when you come back to them'
+		]
+	},
+	{
 		version: '0.4.20',
 		changes: [
 			'Windows: no more black console window at sign-in, and the tray icon appears within seconds, waits for the taskbar and always runs the current version',

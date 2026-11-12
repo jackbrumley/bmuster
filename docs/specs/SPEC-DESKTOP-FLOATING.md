@@ -1,6 +1,6 @@
 # SPEC-DESKTOP-FLOATING: A movable controls button in full screen on phones and tablets
 
-**Status:** `IMPLEMENTED (v0.4.11)`, redesigned for phones in "Phone controls, redesigned (option A)" (pending release) · approved 2026-11-10 (Jack: "when you're full screen on mobile you can still send these keys somehow easily … a floating action button that you can move anywhere on the screen that you want … a movable sort of home button that allows you to open up the options and do more in full screen when on mobile. 50% of the time people are going to be providing remote support on their mobile phones so we do need to make this easy.") · **security work:** the controls send input to another person's computer. See "As built" at the end.
+**Status:** `IMPLEMENTED (v0.4.11)`, redesigned for phones in "Phone controls, redesigned (option A)" (v0.4.21) · approved 2026-11-10 (Jack: "when you're full screen on mobile you can still send these keys somehow easily … a floating action button that you can move anywhere on the screen that you want … a movable sort of home button that allows you to open up the options and do more in full screen when on mobile. 50% of the time people are going to be providing remote support on their mobile phones so we do need to make this easy.") · **security work:** the controls send input to another person's computer. See "As built" at the end.
 
 ## Problem
 
@@ -61,7 +61,7 @@ None.
 
 ## Phone controls, redesigned (option A)
 
-**Status:** `PENDING RELEASE` · approved 2026-11-12 (Jack tested the full-screen controls on an Android phone and approved "option A") · **security work:** the gestures send input to another person's computer.
+**Status:** `IMPLEMENTED (v0.4.21)` · approved 2026-11-12 (Jack tested the full-screen controls on an Android phone and approved "option A") · **security work:** the gestures send input to another person's computer.
 
 ### Problem
 
