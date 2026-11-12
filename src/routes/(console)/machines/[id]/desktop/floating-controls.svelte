@@ -5,7 +5,8 @@
 		IconEye,
 		IconMenu2,
 		IconPlugConnectedX,
-		IconPointer
+		IconPointer,
+		IconX
 	} from '@tabler/icons-svelte-runes';
 	import type {
 		DesktopSettings as PictureSettings,
@@ -60,6 +61,7 @@
 		ondisplay,
 		onsettings,
 		onswitch,
+		exit,
 		onexit,
 		ondisconnect
 	}: {
@@ -81,6 +83,8 @@
 		ondisplay: (id: string) => void;
 		onsettings: (settings: PictureSettings) => void;
 		onswitch: (mode: DesktopMode) => void;
+		/** What the exit action leaves: full screen, or the pop-out window (SPEC-DESKTOP-POPOUT 9). */
+		exit: 'full-screen' | 'window';
 		onexit: () => void;
 		ondisconnect: () => void;
 	} = $props();
@@ -419,7 +423,9 @@
 												size="compact"
 												type="button"
 												onclick={leave(onexit)}
-												><IconArrowsMinimize size={18} /> Leave full screen</Button
+												>{#if exit === 'window'}<IconX size={18} /> Close window{:else}<IconArrowsMinimize
+														size={18}
+													/> Leave full screen{/if}</Button
 											>
 											{#if mode !== undefined}
 												<Button

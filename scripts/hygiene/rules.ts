@@ -244,14 +244,14 @@ export const HYGIENE_RULES = {
 	'page-frame-required': {
 		severity: 'violation',
 		section: '4',
-		why: 'A page outside ShellFrame and PublicPage lays out its own edges, so on phones it can sit under the status bar, notch or home bar.',
-		fix: 'Put the page under the (console) layout (ShellFrame), or render it in `<PublicPage>` (#lib/shell/public-page.svelte).'
+		why: 'A page outside ShellFrame, PublicPage and WindowFrame lays out its own edges, so on phones it can sit under the status bar, notch or home bar.',
+		fix: 'Put the page under the (console) layout (ShellFrame), render it in `<PublicPage>` (#lib/shell/public-page.svelte), or for a window of its own in `<WindowFrame>` (#lib/shell/window-frame.svelte).'
 	},
 	'page-root-container-forbidden': {
 		severity: 'violation',
 		section: '4',
-		why: 'A full-screen-height container outside the two frames is a page building a frame of its own, without the safe-area insets.',
-		fix: 'Drop the container; only ShellFrame and PublicPage size themselves to the screen.'
+		why: 'A full-screen-height container outside the three frames is a page building a frame of its own, without the safe-area insets.',
+		fix: 'Drop the container; only ShellFrame, PublicPage and WindowFrame size themselves to the screen.'
 	},
 	// Page structure (scripts/hygiene/page-structure.ts)
 	'route-card-look-forbidden': {

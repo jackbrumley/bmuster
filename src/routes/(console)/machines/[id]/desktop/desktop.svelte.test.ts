@@ -148,13 +148,12 @@ function pretendTouchScreen(): void {
 	);
 }
 
-/** Connects at phone size and goes full screen, with the touch layout. */
+/** Connects at phone size, which goes full screen at once (SPEC-DESKTOP-POPOUT PF2), with the touch layout. */
 async function fullScreenOnPhone() {
 	pretendTouchScreen();
 	await page.viewport(375, 667);
 	const opened = await open(CONTROL, 'Connect');
 	opened.socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
-	await opened.screen.getByRole('button', { name: 'Full screen' }).click();
 	await expect.poll(() => document.fullscreenElement !== null).toBe(true);
 	return opened;
 }
@@ -632,7 +631,7 @@ describe('the desktop tab', () => {
 	}
 
 	it('FA13: a pinch enlarges the picture, and a tap then clicks the display pixel under the finger', async () => {
-		pretendTouchScreen();
+		// Touch events on a narrow page with the bar (a phone now opens straight into full screen).
 		await page.viewport(375, 667);
 		const { screen, socket } = await open(CONTROL, 'Connect');
 		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));

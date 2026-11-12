@@ -123,7 +123,7 @@ docs/                   concept, plans, specs
 - **Colour meaning:** `--brand` for actions and the current item; `--success`, `--warning`, `--danger` for status only.
 - **Radius roles:** things you click are pills (`--radius-pill`); things you type into are boxes (`--radius-control`); cards `--radius-card`; modals `--radius-modal`; dots and avatars `--radius-round`.
 - **Shared page blocks:** pages are built from `src/lib/ui`, never their own copies. Every console page starts with `PageHeader` (machine tabs take the machine layout's header); cards are `Panel`, bordered lists are `ListCard` with `ListRow`, link tabs are `TabNav`, pick-one pills are `ChipGroup` / `SegmentedControl`, empty and offline states are `EmptyState`, small uppercase headings are `SectionHeading`. `ShellFrame` spaces a page's blocks with `--gap-section`, so a page adds no outer margins. A route file never declares a card look (hygiene rules `route-card-look-forbidden`, `page-header-required`).
-- **Page frames:** every console page renders inside `ShellFrame`, every other page inside `PublicPage`. Frames own the safe-area padding; a page never adds its own full-height root container. Anything `position: fixed` against an edge adds the matching `--safe-*` inset.
+- **Page frames:** every console page renders inside `ShellFrame`, a page that is a window of its own (the popped-out desktop) inside `WindowFrame`, every other page inside `PublicPage`. Frames own the safe-area padding; a page never adds its own full-height root container. Anything `position: fixed` against an edge adds the matching `--safe-*` inset.
 - **Mobile first:** design at phone width, then widen. Breakpoint for the sidebar layout: 900px. Text boxes (text inputs, textareas, selects, contenteditable, xterm's hidden textarea) are at least 16px (`--text-base`), because iOS zooms the page when a smaller one is focused; src/app.css sets that base, and a component may only make it larger. Helper text and labels beside a box can stay small. Touch targets are at least 40px.
 - No `!important`.
 
@@ -348,18 +348,20 @@ The design is in `docs/access-and-sign-in.md`.
 - `naming` (violation, §2): File and folder names are kebab-case so imports work
   on case-sensitive Linux builds. **Fix:** Rename the file or folder to
   kebab-case (SvelteKit route files and `[param]` folders are exempt).
-- `page-frame-required` (violation, §4): A page outside ShellFrame and
-  PublicPage lays out its own edges, so on phones it can sit under the status
-  bar, notch or home bar. **Fix:** Put the page under the (console) layout
-  (ShellFrame), or render it in `<PublicPage>` (#lib/shell/public-page.svelte).
+- `page-frame-required` (violation, §4): A page outside ShellFrame, PublicPage
+  and WindowFrame lays out its own edges, so on phones it can sit under the
+  status bar, notch or home bar. **Fix:** Put the page under the (console)
+  layout (ShellFrame), render it in `<PublicPage>`
+  (#lib/shell/public-page.svelte), or for a window of its own in `<WindowFrame>`
+  (#lib/shell/window-frame.svelte).
 - `page-header-required` (violation, §4): A console page without PageHeader puts
   its title somewhere else, so pages jump about when moving between them.
   **Fix:** Start the page with `<PageHeader>` (#lib/ui/page-header.svelte), or
   list its folder in PAGE_HEADER_FROM_LAYOUT with the reason.
 - `page-root-container-forbidden` (violation, §4): A full-screen-height
-  container outside the two frames is a page building a frame of its own,
-  without the safe-area insets. **Fix:** Drop the container; only ShellFrame and
-  PublicPage size themselves to the screen.
+  container outside the three frames is a page building a frame of its own,
+  without the safe-area insets. **Fix:** Drop the container; only ShellFrame,
+  PublicPage and WindowFrame size themselves to the screen.
 - `raw-button-reason-required` (violation, §12): Raw `<button>`s skip the
   standard Button’s look, size and focus behaviour. **Fix:** Use `<Button>`
   (src/lib/ui/button.svelte), or for a specialised widget add

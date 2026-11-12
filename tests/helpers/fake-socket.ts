@@ -37,6 +37,14 @@ export class FakeSocket {
 		}
 	}
 
+	/** The server closes the connection with this code (4001: another window took the session). */
+	closedByServer(code: number): void {
+		this.readyState = 3;
+		for (const listener of this.#listeners.get('close') ?? []) {
+			listener({ code });
+		}
+	}
+
 	receive(data: string | Uint8Array): void {
 		const payload = typeof data === 'string' ? data : data.slice().buffer;
 		for (const listener of this.#listeners.get('message') ?? []) {

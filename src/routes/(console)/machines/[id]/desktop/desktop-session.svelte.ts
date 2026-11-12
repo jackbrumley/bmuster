@@ -16,6 +16,7 @@ import { DESKTOP_MODES, type DesktopMode } from '#lib/domain/sessions/session.ts
 import { SessionLink, type Connection } from '#lib/runes/session-link.svelte.ts';
 import { agentDesktopMessageSchema, type DesktopDisplay } from '#lib/schemas/desktop/desktop.ts';
 import type { DesktopCanvas } from './desktop-canvas.ts';
+import type { Handover } from './pop-out.ts';
 
 /**
  * One desktop session as the page sees it (SPEC-DESKTOP): the shared session
@@ -122,6 +123,24 @@ export class DesktopSession {
 	get controlling(): boolean {
 		const connection = this.#link.connection;
 		return this.mode === 'control' && connection.kind === 'live' && connection.ready;
+	}
+
+	/** The running session, for the pop-out window to adopt (SPEC-DESKTOP-POPOUT 6). */
+	get handover(): Handover | undefined {
+		const saved = this.#link.handover;
+		const mode = this.mode;
+		return saved === undefined || mode === undefined
+			? undefined
+			: { sessionId: saved.sessionId, mode, sinceMs: saved.sinceMs };
+	}
+
+	/** Takes on a session handed over from the tab; `resume` then joins it. */
+	adopt(handover: Handover): void {
+		this.#link.adopt({
+			sessionId: handover.sessionId,
+			sinceMs: handover.sinceMs,
+			tag: handover.mode
+		});
 	}
 
 	/** Comes back to this tab's running session after a reload; false when there is none. */

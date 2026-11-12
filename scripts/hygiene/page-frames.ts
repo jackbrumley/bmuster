@@ -4,14 +4,15 @@ import { isTestFile, type SourceFile } from './source-file.ts';
 import { stylesheetDeclarations, type CssDeclaration } from './template.ts';
 
 /**
- * Page frames (AGENTS.md §4): every page sits in one of two frames, and only
+ * Page frames (AGENTS.md §4): every page sits in one of three frames, and only
  * the frames decide where the page's edges are, so nothing lands under a
  * phone's status bar, notch or home bar.
  *
  * - `page-frame-required`: every `+page.svelte` (and `+page@….svelte`,
  *   `+error.svelte`) renders inside a frame: one of its layouts, or the page
- *   itself, uses ShellFrame or PublicPage, directly or through a component
- *   built on them.
+ *   itself, uses ShellFrame, PublicPage or WindowFrame (a page that is a
+ *   window of its own, like the popped-out desktop), directly or through a
+ *   component built on them.
  * - `page-root-container-forbidden`: a full-screen-height container
  *   (`min-height: 100vh` / `svh` / `dvh` / `lvh`) outside the frames is a
  *   page building its own frame.
@@ -27,10 +28,11 @@ const FRAME_RULE = 'page-frame-required';
 const ROOT_CONTAINER_RULE = 'page-root-container-forbidden';
 const FIXED_EDGE_RULE = 'fixed-edge-safe-area';
 
-/** The two frames. Everything built on them counts as a frame too. */
+/** The three frames. Everything built on them counts as a frame too. */
 const BASE_FRAMES: readonly string[] = [
 	'src/lib/shell/shell-frame.svelte',
-	'src/lib/shell/public-page.svelte'
+	'src/lib/shell/public-page.svelte',
+	'src/lib/shell/window-frame.svelte'
 ];
 
 const ROUTES = 'src/routes/';
@@ -98,7 +100,7 @@ function applicableLayouts(relPath: string, layouts: ReadonlySet<string>): strin
 	return found;
 }
 
-/** Pages that render outside both frames. */
+/** Pages that render outside every frame. */
 function unframedPages(files: readonly SourceFile[]): string[] {
 	const frames = frameComponents(files);
 	const byPath = new Map(files.map((f) => [f.relPath, f]));
@@ -171,7 +173,7 @@ export function verifyPageFrames(files: readonly SourceFile[], report: Report): 
 		report(
 			FRAME_RULE,
 			relPath,
-			'renders outside ShellFrame and PublicPage; put it under the (console) layout or wrap it in <PublicPage> (#lib/shell/public-page.svelte).'
+			'renders outside ShellFrame, PublicPage and WindowFrame; put it under the (console) layout, or wrap it in <PublicPage> (#lib/shell/public-page.svelte) or, for a window of its own, <WindowFrame> (#lib/shell/window-frame.svelte).'
 		);
 	}
 	const frames = new Set(BASE_FRAMES);
@@ -182,7 +184,7 @@ export function verifyPageFrames(files: readonly SourceFile[], report: Report): 
 				report(
 					ROOT_CONTAINER_RULE,
 					file.relPath,
-					`Line ${declaration.line}: \`min-height: ${declaration.value.trim()}\` makes a page frame of its own; only ShellFrame and PublicPage size themselves to the screen.`
+					`Line ${declaration.line}: \`min-height: ${declaration.value.trim()}\` makes a page frame of its own; only ShellFrame, PublicPage and WindowFrame size themselves to the screen.`
 				);
 			}
 		}
