@@ -59,6 +59,21 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 		later
 	);
 	let pendingMove: { x: number; y: number; buttons: number } | undefined;
+	// Auto-pan while zoomed (SPEC-DESKTOP-FLOATING FA18): one frame at a time while it moves.
+	let panFrame: number | undefined;
+	let panAt = 0;
+	const panStep = (now: number) => {
+		// A long gap (a hidden tab) moves at most a few frames' worth.
+		const elapsed = Math.min(Math.max(now - panAt, 0), 50);
+		panAt = now;
+		panFrame = gestures.edgePan(elapsed) ? requestAnimationFrame(panStep) : undefined;
+	};
+	const startPan = () => {
+		if (panFrame === undefined) {
+			panAt = performance.now();
+			panFrame = requestAnimationFrame(panStep);
+		}
+	};
 	let moveScheduled = false;
 
 	const mouseAt = (event: PointerEvent) => {
@@ -120,6 +135,7 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 	on('pointermove', (event) => {
 		if (event.pointerType === 'touch') {
 			gestures.move(event.pointerId, event.clientX, event.clientY);
+			startPan();
 			return;
 		}
 		const at = mouseAt(event);
@@ -187,5 +203,8 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 		document.removeEventListener('visibilitychange', onVisibility);
 		keys.reset();
 		gestures.cancel();
+		if (panFrame !== undefined) {
+			cancelAnimationFrame(panFrame);
+		}
 	};
 }

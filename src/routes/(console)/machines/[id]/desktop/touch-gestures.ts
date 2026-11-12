@@ -1,6 +1,19 @@
 import { BUTTON_LEFT, BUTTON_RIGHT } from '#lib/domain/desktop/messages.ts';
-import { contentBox, toDisplay, type Box, type Point, type Size } from './input.ts';
-import { clampZoom, NO_ZOOM, pinched, pinchOf, zoomed, zoomedBox, type Zoom } from './zoom.ts';
+import { centredOn, dragged, underCentre } from './fixed-cursor.ts';
+import { contentBox, toDisplay, toPage, type Box, type Point, type Size } from './input.ts';
+import {
+	clampZoom,
+	edgePanned,
+	MAX_ZOOM,
+	NO_ZOOM,
+	pinched,
+	pinchOf,
+	sameZoom,
+	zoomed,
+	zoomedBox,
+	type Pinch,
+	type Zoom
+} from './zoom.ts';
 
 /**
  * Touch gestures on the remote screen (SPEC-DESKTOP 5.3 and
@@ -8,15 +21,20 @@ import { clampZoom, NO_ZOOM, pinched, pinchOf, zoomed, zoomedBox, type Zoom } fr
  * so the rules are tested without a browser.
  *
  * - Trackpad: one finger moves the pointer by its movement; a tap clicks; a
- *   touch soon after a tap holds the left button and drags.
- * - Touch: a tap moves the pointer there and clicks; a drag holds the button.
- * - Both: a long press right-clicks; a two-finger tap right-clicks; two
+ *   second tap soon after is a second click (a double click), and a second
+ *   touch held or moved holds the left button and drags (FA16, FA17).
+ * - Touch: a tap moves the pointer there and clicks; a drag holds the button;
+ *   a second tap next to the first clicks the same pixel.
+ * - Fixed cursor: the pointer stays at the centre of the stage and a finger
+ *   moves the picture under it; taps as in trackpad (FA22-FA24).
+ * - All: a long press right-clicks; a two-finger tap right-clicks; two
  *   fingers scroll at 1x, and pinch or pan the picture's zoom (drawn in the
  *   browser only); a double two-finger tap while zoomed goes back to 1x.
+ *   Zoomed, a pointer near an edge pans the picture (`edgePan`, FA18).
  */
 
-/** Phones: move a pointer like a laptop's trackpad, or tap where to click. */
-export type TouchMode = 'trackpad' | 'touch';
+/** Phones: a trackpad, tap where to click, or a cursor fixed at the centre. */
+export type TouchMode = 'trackpad' | 'touch' | 'fixed';
 
 /** The unzoomed picture box on the page, the picture's size and the display's. */
 export type Geometry = { box: Box; picture: Size; display: Size };
@@ -35,8 +53,10 @@ export type Later = (run: () => void, ms: number) => () => void;
 const TAP_SLOP = 10;
 /** A tap is shorter than this. */
 const TAP_MS = 300;
-/** A second touch this soon after a tap starts a drag with the button held. */
-export const DRAG_AFTER_TAP_MS = 400;
+/** A touch this soon after a tap's lift is a second tap: a double click, or a drag. */
+export const DOUBLE_TAP_MS = 400;
+/** A second touch held this long (or moved past the slop) holds the left button. */
+export const HOLD_AFTER_TAP_MS = 250;
 /** A finger held still this long right-clicks. */
 const LONG_PRESS_MS = 500;
 /** A second two-finger tap this soon after the first, while zoomed, goes back to 1x. */
@@ -85,6 +105,9 @@ function clampTo(value: number, size: number): number {
 
 type Finger = { x: number; y: number; startX: number; startY: number };
 
+/** The last tap: when it lifted and where it touched down, on the page. */
+type Tap = { at: number; x: number; y: number };
+
 type TwoFingers = {
 	ids: readonly [number, number];
 	from: readonly [Point, Point];
@@ -106,8 +129,10 @@ export class TouchGestures {
 	#most = 0;
 	#moved = false;
 	#startedAt = 0;
-	#lastTapAt = -Infinity;
+	#lastTap: Tap = { at: -Infinity, x: 0, y: 0 };
 	#holding = false;
+	/** A second touch soon after a tap, not yet a tap or a hold: cancels its hold timer. */
+	#secondTouch: (() => void) | undefined;
 	#longPress: (() => void) | undefined;
 	#longPressed = false;
 	#two: TwoFingers | undefined;
@@ -136,26 +161,44 @@ export class TouchGestures {
 			this.#moved = false;
 			this.#startedAt = at;
 			this.#longPressed = false;
-			// The screen may have turned or resized since the last gesture.
-			this.#setZoom(clampZoom(this.#zoom, geometry.box));
+			// The screen may have turned or resized, or the mode changed, since the last gesture.
+			this.#setZoom(
+				this.mode === 'fixed'
+					? centredOn(
+							this.#zoom.scale,
+							this.position,
+							geometry.box,
+							geometry.picture,
+							geometry.display
+						)
+					: clampZoom(this.#zoom, geometry.box)
+			);
 		}
 		this.#fingers.set(id, { x, y, startX: x, startY: y });
 		this.#most = Math.max(this.#most, this.#fingers.size);
 		if (this.#fingers.size === 2) {
 			this.#cancelLongPress();
+			this.#cancelSecondTouch();
 			this.#startTwoFingers();
 		}
 		if (this.#fingers.size !== 1) {
 			return;
 		}
+		const soon = at - this.#lastTap.at < DOUBLE_TAP_MS;
 		if (this.mode === 'touch') {
-			this.position = this.#toDisplay({ x, y }, geometry);
+			// A second tap next to the first clicks the same pixel, so the machine sees a double click.
+			const near = Math.hypot(x - this.#lastTap.x, y - this.#lastTap.y) <= TAP_SLOP;
+			if (!soon || !near) {
+				this.position = this.#toDisplay({ x, y }, geometry);
+			}
 			this.#sink.pointer(this.position.x, this.position.y, 0);
-		} else if (at - this.#lastTapAt < DRAG_AFTER_TAP_MS) {
-			this.#holding = true;
-			this.#sink.pointer(this.position.x, this.position.y, BUTTON_LEFT);
+		} else if (soon) {
+			this.#secondTouch = this.#later(() => {
+				this.#secondTouch = undefined;
+				this.#startHold();
+			}, HOLD_AFTER_TAP_MS);
 		}
-		if (!this.#holding) {
+		if (this.#secondTouch === undefined) {
 			this.#longPress = this.#later(() => {
 				this.#onLongPress();
 			}, LONG_PRESS_MS);
@@ -168,8 +211,8 @@ export class TouchGestures {
 		if (finger === undefined || geometry === undefined) {
 			return;
 		}
-		const dx = x - finger.x;
-		const dy = y - finger.y;
+		let dx = x - finger.x;
+		let dy = y - finger.y;
 		finger.x = x;
 		finger.y = y;
 		if (Math.hypot(x - finger.startX, y - finger.startY) > TAP_SLOP) {
@@ -184,34 +227,55 @@ export class TouchGestures {
 		if (this.#longPressed || this.#most >= 2) {
 			return;
 		}
-		if (this.mode === 'touch') {
+		if (this.#secondTouch !== undefined) {
+			// The second touch stays put until it lifts (a double click) or moves past the slop (a drag).
 			if (!this.#moved) {
 				return;
 			}
-			const next = this.#toDisplay({ x, y }, geometry);
-			if (!this.#holding) {
-				this.#holding = true;
-				this.#sink.pointer(this.position.x, this.position.y, BUTTON_LEFT);
+			this.#cancelSecondTouch();
+			this.#startHold();
+			dx = x - finger.startX;
+			dy = y - finger.startY;
+		}
+		switch (this.mode) {
+			case 'touch': {
+				if (!this.#moved) {
+					return;
+				}
+				const next = this.#toDisplay({ x, y }, geometry);
+				if (!this.#holding) {
+					this.#holding = true;
+					this.#sink.pointer(this.position.x, this.position.y, BUTTON_LEFT);
+				}
+				this.position = next;
+				break;
 			}
-			this.position = next;
-		} else {
-			const ratio = displayPerPage(
-				zoomedBox(geometry.box, this.#zoom),
-				geometry.picture,
-				geometry.display
-			);
-			this.position = {
-				x: clampTo(this.position.x + dx * ratio, geometry.display.width),
-				y: clampTo(this.position.y + dy * ratio, geometry.display.height)
-			};
+			case 'trackpad': {
+				const ratio = displayPerPage(
+					zoomedBox(geometry.box, this.#zoom),
+					geometry.picture,
+					geometry.display
+				);
+				this.position = {
+					x: clampTo(this.position.x + dx * ratio, geometry.display.width),
+					y: clampTo(this.position.y + dy * ratio, geometry.display.height)
+				};
+				break;
+			}
+			case 'fixed':
+				this.#setZoom(dragged(this.#zoom, dx, dy, geometry.box, geometry.picture));
+				this.position = underCentre(this.#zoom, geometry.box, geometry.picture, geometry.display);
+				break;
 		}
 		this.#sink.pointer(this.position.x, this.position.y, this.#holding ? BUTTON_LEFT : 0);
 	}
 
 	up(id: number, at: number): void {
-		if (!this.#fingers.delete(id)) {
+		const finger = this.#fingers.get(id);
+		if (finger === undefined) {
 			return;
 		}
+		this.#fingers.delete(id);
 		if (this.#fingers.size < 2) {
 			this.#two = undefined;
 		}
@@ -225,6 +289,12 @@ export class TouchGestures {
 			this.#sink.pointer(x, y, 0);
 			return;
 		}
+		if (this.#secondTouch !== undefined) {
+			// Lifted before the hold time without moving: the second click of a double click.
+			this.#cancelSecondTouch();
+			this.#tap(finger, at);
+			return;
+		}
 		if (this.#longPressed || this.#moved || at - this.#startedAt > TAP_MS) {
 			return;
 		}
@@ -232,8 +302,50 @@ export class TouchGestures {
 			this.#twoFingerTap(at);
 			return;
 		}
-		this.#click(BUTTON_LEFT);
-		this.#lastTapAt = at;
+		this.#tap(finger, at);
+	}
+
+	/**
+	 * Auto-pan (FA18): called every animation frame while a finger is down;
+	 * zoomed, with the pointer near an edge, moves the picture `elapsedMs`
+	 * worth. True when it moved, so the caller asks for another frame.
+	 */
+	edgePan(elapsedMs: number): boolean {
+		const geometry = this.#geometry();
+		const [finger] = this.#fingers.values();
+		if (
+			geometry === undefined ||
+			finger === undefined ||
+			this.mode === 'fixed' ||
+			this.#fingers.size !== 1 ||
+			this.#most !== 1 ||
+			this.#longPressed ||
+			!this.#moved ||
+			!zoomed(this.#zoom)
+		) {
+			return false;
+		}
+		// In touch mode the pointer is under the finger; in trackpad mode it is where it was moved to.
+		const pointer =
+			this.mode === 'touch'
+				? { x: finger.x, y: finger.y }
+				: toPage(
+						this.position,
+						zoomedBox(geometry.box, this.#zoom),
+						geometry.picture,
+						geometry.display
+					);
+		const next = edgePanned(this.#zoom, geometry.box, pointer, elapsedMs);
+		if (sameZoom(next, this.#zoom)) {
+			return false;
+		}
+		this.#setZoom(next);
+		if (this.mode === 'touch') {
+			// The picture moved under a still finger: the pointer follows what is under it now.
+			this.position = this.#toDisplay(pointer, geometry);
+			this.#sink.pointer(this.position.x, this.position.y, this.#holding ? BUTTON_LEFT : 0);
+		}
+		return true;
 	}
 
 	/** The browser took the touch away (a system gesture): let go of everything. */
@@ -241,6 +353,7 @@ export class TouchGestures {
 		this.#fingers.clear();
 		this.#two = undefined;
 		this.#cancelLongPress();
+		this.#cancelSecondTouch();
 		if (this.#holding) {
 			this.#holding = false;
 			this.#sink.pointer(this.position.x, this.position.y, 0);
@@ -251,14 +364,32 @@ export class TouchGestures {
 		return toDisplay(page, zoomedBox(geometry.box, this.#zoom), geometry.picture, geometry.display);
 	}
 
+	#tap(finger: Finger, at: number): void {
+		this.#click(BUTTON_LEFT);
+		this.#lastTap = { at, x: finger.startX, y: finger.startY };
+	}
+
+	/** Presses the left button where the pointer is, for a drag after a tap. */
+	#startHold(): void {
+		if (this.#fingers.size !== 1 || this.#most !== 1 || this.#holding) {
+			return;
+		}
+		this.#holding = true;
+		this.#sink.pointer(this.position.x, this.position.y, BUTTON_LEFT);
+	}
+
+	#cancelSecondTouch(): void {
+		this.#secondTouch?.();
+		this.#secondTouch = undefined;
+	}
+
 	#click(button: number): void {
 		this.#sink.pointer(this.position.x, this.position.y, button);
 		this.#sink.pointer(this.position.x, this.position.y, 0);
 	}
 
 	#setZoom(zoom: Zoom): void {
-		const before = this.#zoom;
-		if (zoom.scale === before.scale && zoom.x === before.x && zoom.y === before.y) {
+		if (sameZoom(zoom, this.#zoom)) {
 			return;
 		}
 		this.#zoom = zoom;
@@ -316,7 +447,8 @@ export class TouchGestures {
 			return;
 		}
 		if (two.intent === 'undecided') {
-			two.intent = twoFingerIntent(two.from, now, zoomed(two.startZoom));
+			// The fixed cursor pans with one finger, so two fingers scroll there at any zoom.
+			two.intent = twoFingerIntent(two.from, now, this.mode !== 'fixed' && zoomed(two.startZoom));
 		}
 		const pinch = pinchOf(...now);
 		switch (two.intent) {
@@ -332,10 +464,29 @@ export class TouchGestures {
 				break;
 			}
 			case 'zoom':
-				this.#setZoom(pinched(two.startZoom, pinchOf(...two.from), pinch, geometry.box));
+				this.#setZoom(this.#pinchedZoom(two, pinch, geometry));
 				break;
 		}
 		two.lastMid = pinch.mid;
+	}
+
+	/** A pinch: about its midpoint, or about the centre for the fixed cursor (which stays put). */
+	#pinchedZoom(two: TwoFingers, pinch: Pinch, geometry: Geometry): Zoom {
+		const from = pinchOf(...two.from);
+		if (this.mode !== 'fixed') {
+			return pinched(two.startZoom, from, pinch, geometry.box);
+		}
+		const ratio = from.distance > 0 ? pinch.distance / from.distance : 1;
+		const scale = Math.min(Math.max(two.startZoom.scale * ratio, 1), MAX_ZOOM);
+		return centredOn(scale, this.position, geometry.box, geometry.picture, geometry.display);
+	}
+
+	/** Back to 1x; the fixed cursor keeps its pixel under the centre. */
+	#unzoomed(): Zoom {
+		const geometry = this.#geometry();
+		return this.mode === 'fixed' && geometry !== undefined
+			? centredOn(1, this.position, geometry.box, geometry.picture, geometry.display)
+			: NO_ZOOM;
 	}
 
 	#twoFingerTap(at: number): void {
@@ -347,7 +498,7 @@ export class TouchGestures {
 		if (pending !== undefined && at - this.#lastTwoFingerTapAt < DOUBLE_TWO_FINGER_TAP_MS) {
 			pending();
 			this.#pendingRightClick = undefined;
-			this.#setZoom(NO_ZOOM);
+			this.#setZoom(this.#unzoomed());
 			return;
 		}
 		this.#lastTwoFingerTapAt = at;

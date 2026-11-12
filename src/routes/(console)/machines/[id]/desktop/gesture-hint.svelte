@@ -18,7 +18,8 @@
 
 	const GESTURES = [
 		{ id: 'tap', icon: IconHandFinger, gesture: 'Tap', meaning: 'click' },
-		{ id: 'drag', icon: IconHandGrab, gesture: 'Double-tap and drag', meaning: 'drag' },
+		{ id: 'double', icon: IconHandFinger, gesture: 'Double-tap', meaning: 'double-click' },
+		{ id: 'drag', icon: IconHandGrab, gesture: 'Double-tap and hold', meaning: 'drag' },
 		{ id: 'long', icon: IconHandClick, gesture: 'Long press', meaning: 'right click' },
 		{ id: 'pinch', icon: IconZoomIn, gesture: 'Pinch', meaning: 'zoom' },
 		{

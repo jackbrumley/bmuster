@@ -116,7 +116,7 @@ These replace F2's snap, F5, F7 and F9 above; F1, F3, F4, F6, F8 and F10 still h
 | FA8  | Escape closes the sheet, as do the button and a tap outside.                                                                                                                                                    | `floating-controls.svelte.test.ts` "FA8"                                                |
 | FA9  | Show the keyboard focuses the typing area, folds the sheet to the key bar at the top without tabs, and typed text goes to the machine as `text`.                                                                | `floating-controls.svelte.test.ts` "FA9"                                                |
 | FA10 | A long press right-clicks in both modes; one that moves or lifts early does not.                                                                                                                                | `touch-gestures.test.ts` "FA10"                                                         |
-| FA11 | In trackpad mode a touch within 400 ms of a tap drags with the left button; one later does not.                                                                                                                 | `touch-gestures.test.ts` "FA11"                                                         |
+| FA11 | Replaced by FA16 and FA17 (double tap, edge pan and the fixed cursor, below).                                                                                                                                   | FA16, FA17                                                                              |
 | FA12 | Two fingers moving together at 1× scroll; spreading zooms (1×–5×, about the midpoint, inside the picture); zoomed, two fingers pan; a double two-finger tap resets to 1× without a right click.                 | `zoom.test.ts` "FA12", `touch-gestures.test.ts` "FA12"                                  |
 | FA13 | Zoomed, a tap in touch mode clicks the display pixel under the finger, and the picture is drawn enlarged.                                                                                                       | `zoom.test.ts` "FA13", `touch-gestures.test.ts` "FA13", `desktop.svelte.test.ts` "FA13" |
 | FA14 | On a touch device a control session shows the gesture hint once; Got it hides it and it stays hidden next time; blocked storage still lets it be dismissed.                                                     | `gesture-hint.test.ts` "FA14", `desktop.svelte.test.ts` "FA14"                          |
@@ -144,3 +144,71 @@ None.
 - Watch-only sessions get no pinch zoom of their own: their stage keeps the browser's touch handling (`touch-action` is only `none` for control), so the browser's own page zoom applies there.
 - The gestures hint is `gesture-hint.svelte` (a Panel headed "Touch gestures" with Tabler icons and Got it) and `gesture-hint.ts` (storage). It shows in the page flow above the screen, and over the screen (under the controls button) in full screen.
 - Tests: `floating-position.test.ts`, `sheet-layout.test.ts`, `zoom.test.ts`, `touch-gestures.test.ts` (the touch tests moved here from `input.test.ts`), `gesture-hint.test.ts`, `floating-controls.svelte.test.ts` and `desktop.svelte.test.ts` (FA13 pinches on the real stage, then taps). Not yet tried on a real phone after this change.
+
+## Double tap, edge pan and the fixed cursor
+
+**Status:** pending release (not yet versioned) · asked for 2026-11-12 after Jack tested option A on an Android phone: "when you tap on the phone twice and then lift your finger that should be considered double tap; if you double tap and hold that should be considered a click and hold so that you can drag a window", "when you zoom in on the screen and then move the cursor towards the edge of the screen the screen should automatically pan to follow the cursor … once you get within a quarter of the edge or so", one touch input control that looks the same on the page and in full screen, and a third "fixed cursor" mode · **security work:** the gestures send input to another person's computer.
+
+### Problem
+
+- In trackpad mode a second touch within 400 ms of a tap pressed the left button at once and held it until the finger lifted. A quick double tap sent press, release, press, and the second release only on lift; the remote machine did not reliably see a double click.
+- Zoomed in, moving the pointer towards an edge left it off the visible part of the picture; the person had to stop and pan with two fingers.
+- The page showed the touch input as a one-icon toggle, while the full-screen sheet showed a "Control" badge with a mouse-pointer icon beside a "Trackpad / Tap to click" choice: different words and controls for one setting, and the session mode looked like an input mode.
+- Some people prefer the cursor fixed in the middle with the picture moving under it, as in other remote tools.
+
+### Behaviour
+
+These replace behaviour 7's "Trackpad drag" bullet and the hint's "Double-tap and drag" line in option A above.
+
+1. **Double tap and double tap-hold** (trackpad and fixed cursor modes). The timeline, with `t` measured from the first tap's lift:
+   - The first tap (down and up within 300 ms, moving under 10 px) sends left down and up at once. Nothing waits, so a single tap feels as quick as before.
+   - A second touch-down before `t = 400 ms` (`DOUBLE_TAP_MS`) sends nothing yet and starts a 250 ms hold timer (`HOLD_AFTER_TAP_MS`). No long press timer runs for it.
+   - If that finger lifts before the 250 ms are up, having moved under 10 px from where it touched down, it sends a second left down and up at the same pixel, with no movement between: the machine sees a double click. Movement under 10 px during it does not move the pointer.
+   - If it is still down when the 250 ms are up, the left button goes down where the pointer is and stays down: moving drags (a window, a selection), and lifting releases it.
+   - If it moves 10 px or more before then, the left button goes down at once where the pointer was, and the pointer then moves by the whole movement since touch-down, button held, until the finger lifts.
+   - A second finger joining cancels it (a two-finger gesture). A touch-down at or after `t = 400 ms` is a fresh gesture. A third quick tap is another click (a triple click).
+2. **Double tap in tap-to-click mode.** A second tap within 400 ms and within 10 px of the first clicks the same display pixel as the first, so a finger's wobble does not break the double click.
+3. **Edge pan while zoomed** (trackpad and tap to click). While one finger is down and has moved, and the picture is zoomed in, every animation frame checks where the pointer shows on the page (trackpad: the remote pointer's display position mapped through the zoom; tap to click: under the finger). Inside the outer quarter of the visible picture box at an edge (`EDGE_BAND` 0.25), the picture pans to bring more of that side into view, at up to 900 page pixels a second (`EDGE_PAN_SPEED`), in proportion to how deep into the band the pointer is (full speed at the edge or past it). In trackpad mode the pointer keeps its display pixel, so the pan stops once it is back in the inner area; in tap-to-click mode the pointer follows what is now under the still finger (button still held while dragging). It never pans past the picture's edges, and nothing pans at 1×, after a long press or a two-finger gesture, or for a mouse.
+4. **One touch input choice.** One shared component, `touch-input-choice.svelte` (a `SegmentedControl` labelled "Touch input": Trackpad · Tap to click · Fixed cursor, in that order), is used under the screen on the page (with one line of help for the chosen mode) and in the full-screen sheet's Session tab. It replaces the page's toolbar toggle. The session's mode stays a separate badge ("Control" with a desktop icon, or "View only" with an eye), not a pointer icon.
+5. **Remembered.** The choice is saved in `localStorage` (`bmuster.desktop.touchInput`, inside `try`/`catch`), so it is the same in and out of full screen and on the next visit. A bad value or blocked storage gives Trackpad; with storage blocked a change lasts until the page reloads.
+6. **Fixed cursor mode.** The remote pointer stays at the centre of the picture box:
+   - One finger moves the picture under the centre, one page pixel per page pixel, like a map; the pointer is sent as the display pixel now under the centre (button held while dragging).
+   - Tap = click at the pointer; double tap and double tap-hold as in 1; long press = right click; two fingers moving together scroll (wheel) at any zoom; a pinch zooms about the centre, keeping the pointer on its pixel; a double two-finger tap while zoomed goes back to 1× about the centre.
+   - The picture may move past its edges, showing the stage's background beyond, as far as it takes to bring its edge (the picture's own edge, not a letterbox bar) under the centre: for a picture that fills the box, half the box each way, at every zoom including 1×. So every pixel, corners included, can sit under the centre. The other modes keep their clamp (never past the picture's edges).
+   - At the start of every touch the view is centred on the pointer's current pixel, so switching to this mode, turning the phone or resizing never makes the pointer jump. A crosshair marks the centre whenever this mode is chosen in a control session, before the machine's own cursor is drawn there.
+7. **Where the logic lives**, pure and unit tested: the gesture timelines in `touch-gestures.ts`; the edge pan maths (`edgePanned`) in `zoom.ts`; the fixed cursor maths (`clampFixed`, `centredOn`, `underCentre`, `dragged`) in `fixed-cursor.ts`; the choice's names, help and storage in `touch-input.ts`. `screen-input.ts` only runs the animation frames for the edge pan.
+
+### Acceptance criteria
+
+FA16 and FA17 replace FA11.
+
+| #    | Criterion                                                                                                                                                                                                                                   | Named test                                                                                      |
+| :--- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------------------------------- |
+| FA16 | A single tap clicks at once; a second tap within 400 ms that lifts within 250 ms having moved under 10 px sends a second click at the same pixel (a double click); in tap to click a second tap nearby clicks the same pixel.               | `touch-gestures.test.ts` "FA16"                                                                 |
+| FA17 | A second touch held past 250 ms, or moved 10 px, holds the left button and drags by the whole movement until lift; a touch after 400 ms just moves the pointer.                                                                             | `touch-gestures.test.ts` "FA17"                                                                 |
+| FA18 | Zoomed, a pointer in the outer quarter at an edge pans the picture towards that edge in proportion to its depth, never past the picture; nothing pans at 1× or in the inner area; in tap to click the pointer follows the finger.           | `zoom.test.ts` "FA18", `touch-gestures.test.ts` "FA18"                                          |
+| FA19 | A mouse is unaffected: no edge pan, no double-tap timing, and its clicks map exactly as before.                                                                                                                                             | `desktop.svelte.test.ts` "FA15"                                                                 |
+| FA20 | The page and the full-screen sheet show the same "Touch input" choice: Trackpad, Tap to click, Fixed cursor, in that order, each with its help; the session mode is a separate badge.                                                       | `touch-input.test.ts` "FA20", `desktop.svelte.test.ts` "FA20"                                   |
+| FA21 | The choice is remembered in this browser, in and out of full screen and next time; a bad value or blocked storage gives Trackpad.                                                                                                           | `touch-input.test.ts` "FA21", `desktop.svelte.test.ts` "FA21"                                   |
+| FA22 | Fixed cursor: a finger moves the picture and the pointer is the display pixel under the centre; tap, double tap and double tap-hold work as in trackpad; the centre is marked.                                                              | `fixed-cursor.test.ts` "FA22", `touch-gestures.test.ts` "FA22", `desktop.svelte.test.ts` "FA22" |
+| FA23 | Fixed cursor: a pinch zooms about the centre keeping the pointer's pixel; two fingers moving together scroll even when zoomed.                                                                                                              | `fixed-cursor.test.ts` "FA23", `touch-gestures.test.ts` "FA23"                                  |
+| FA24 | Fixed cursor: the picture moves at most until its edge reaches the centre (half the box each way when it fills the box), so every corner can sit under the centre at 1× and at 3×; the view centres on the pointer at the start of a touch. | `fixed-cursor.test.ts` "FA24", `zoom.test.ts` "FA24", `touch-gestures.test.ts` "FA24"           |
+
+### Security notes
+
+- No new message type, permission or agent change: double clicks, drags and the fixed cursor send the same `pointer` messages a mouse does, and the edge pan and the fixed cursor's view are drawn in the browser only.
+- Watch-only still sends nothing: the screen's input drops everything when not controlling, and the server and agent drop input from watch-only tickets.
+- The stored choice is a per-browser convenience with three allowed values, parsed with zod; anything else reads as Trackpad.
+
+### Open questions
+
+None.
+
+### As built
+
+- The hold timer uses the same injected timer as the long press, so the timelines are tested without a browser. `TouchGestures.edgePan(elapsedMs)` returns whether the picture moved; `screen-input.ts` asks for a frame after each touch move and keeps asking while it returns true (each step capped at 50 ms).
+- `zoomTransform` now also draws an offset at 1× (the fixed cursor's picture moved past its edge).
+- `SegmentedControl` has no icons, so the shared choice uses words only; adding icons would change every caller of the shared control. The "Control" badge's icon changed from the pointer to a desktop.
+- The page's touch input choice sits under the screen with its help line (it replaced the toolbar toggle) whenever a control session runs. In the sheet, the Session tab now needs more height: at 667×375 it scrolls inside the sheet with its fade.
+- The gestures hint lists "Double-tap: double-click" and "Double-tap and hold: drag".
+- Not yet tried on a real phone.

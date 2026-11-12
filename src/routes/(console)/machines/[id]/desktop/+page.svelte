@@ -5,10 +5,9 @@
 		IconAdjustmentsHorizontal,
 		IconArrowsMaximize,
 		IconArrowsMinimize,
+		IconCrosshair,
 		IconEye,
-		IconHandFinger,
-		IconKeyboard,
-		IconPointer
+		IconKeyboard
 	} from '@tabler/icons-svelte-runes';
 	import { hasPermission, type Permission } from '#lib/domain/access/access.ts';
 	import type {
@@ -38,6 +37,8 @@
 	import GestureHint from './gesture-hint.svelte';
 	import { attachScreenInput } from './screen-input.ts';
 	import type { Geometry, TouchMode } from './touch-gestures.ts';
+	import TouchInputChoice from './touch-input-choice.svelte';
+	import { readTouchMode, saveTouchMode, touchModeHelp } from './touch-input.ts';
 	import { NO_ZOOM, zoomTransform, type Zoom } from './zoom.ts';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
@@ -229,6 +230,11 @@
 		}
 	});
 
+	function chooseTouchMode(next: TouchMode): void {
+		touchMode = next;
+		saveTouchMode(next);
+	}
+
 	function putHintAway(): void {
 		hintGone = true;
 		dismissHint();
@@ -236,6 +242,7 @@
 
 	onMount(() => {
 		hintGone = hintDismissed();
+		touchMode = readTouchMode();
 		const surface = stage;
 		if (
 			!canWatch ||
@@ -316,22 +323,6 @@
 							switchMode(watchOnly ? 'control' : 'watch');
 						}}>{watchOnly ? 'Take control' : 'Switch to view only'}</Button
 					>
-				{/if}
-				{#if running && !watchOnly}
-					<ToolButton
-						label={touchMode === 'trackpad'
-							? 'Touch input: trackpad. Switch to tapping where to click'
-							: 'Touch input: tap where to click. Switch to trackpad'}
-						pressed={undefined}
-						disabled={false}
-						onclick={() => (touchMode = touchMode === 'trackpad' ? 'touch' : 'trackpad')}
-					>
-						{#if touchMode === 'trackpad'}
-							<IconPointer size={20} />
-						{:else}
-							<IconHandFinger size={20} />
-						{/if}
-					</ToolButton>
 				{/if}
 				{#if running && !watchOnly}
 					<ToolButton
@@ -465,6 +456,10 @@
 					style:transform={zoomTransform(zoom)}
 					aria-hidden="true"
 				></canvas>
+				{#if touchMode === 'fixed' && running && !watchOnly}
+					<!-- The fixed cursor's place, shown before the machine's own cursor gets there. -->
+					<span class="centre-mark" aria-hidden="true"><IconCrosshair size={28} /></span>
+				{/if}
 			</div>
 			{#if showHint && fullScreen}
 				<div class="hint-over">
@@ -507,7 +502,7 @@
 					agentVersion={machine.agentVersion}
 					send={sendInput}
 					{backToScreen}
-					ontouchmode={(next: TouchMode) => (touchMode = next)}
+					ontouchmode={chooseTouchMode}
 					ondisplay={(id: string) => session?.selectDisplay(id)}
 					onsettings={(next: PictureSettings) => session?.changeSettings(next)}
 					onswitch={switchMode}
@@ -554,11 +549,10 @@
 			<div class="phone-keys">
 				<KeyBar osFamily={machine.osFamily} send={sendInput} onkeyboard={undefined} />
 			</div>
-			<p class="mode">
-				{touchMode === 'trackpad'
-					? 'Trackpad: drag to move the pointer, tap to click, long press to right-click, two fingers to scroll, pinch to zoom.'
-					: 'Touch: tap where you want to click, drag to drag, long press to right-click, pinch to zoom.'}
-			</p>
+			<div class="touch-input">
+				<TouchInputChoice value={touchMode} onchange={chooseTouchMode} />
+				<p class="mode">{touchModeHelp(touchMode)}</p>
+			</div>
 		{/if}
 	</div>
 {/if}
@@ -682,6 +676,21 @@
 		object-fit: contain;
 		transform-origin: 0 0;
 		pointer-events: none;
+	}
+
+	.centre-mark {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		display: grid;
+		color: var(--brand);
+		opacity: 0.8;
+		transform: translate(-50%, -50%);
+	}
+
+	.touch-input {
+		display: grid;
+		gap: var(--space-2);
 	}
 
 	/* Over the screen in full screen, under the controls button (z-index 2). */

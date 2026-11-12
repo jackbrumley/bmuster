@@ -315,6 +315,8 @@ describe('the floating controls', () => {
 		// The sheet itself stays inside the screen.
 		expect(sheet.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(375);
 
+		// On a taller screen the Session tab fits, so it has no fade.
+		await page.viewport(667, 600);
 		await sheet.getByRole('tab', { name: 'Session' }).click();
 		await expect.poll(() => [fade('top'), fade('bottom')]).toEqual([null, null]);
 	});

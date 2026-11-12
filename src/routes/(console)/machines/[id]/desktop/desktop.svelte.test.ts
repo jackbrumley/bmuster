@@ -10,7 +10,7 @@ import DesktopTab from './+page.svelte';
 import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.ts';
 
 // SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6;
-// SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10, FA13, FA14, FA15;
+// SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10, FA13, FA14, FA15, FA20, FA21, FA22;
 // SPEC-DESKTOP-ALL-SCREENS A8, A9, A10.
 
 const SESSION = '33333333-3333-4333-8333-333333333333';
@@ -26,6 +26,7 @@ const posted: unknown[] = [];
 beforeEach(async () => {
 	await page.viewport(1280, 900);
 	sessionStorage.clear();
+	localStorage.removeItem('bmuster.desktop.touchInput');
 	posted.length = 0;
 	FakeSocket.last = undefined;
 	vi.stubGlobal('WebSocket', FakeSocket);
@@ -637,7 +638,10 @@ describe('the desktop tab', () => {
 		const { screen, socket } = await open(CONTROL, 'Connect');
 		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
 		await expect.poll(() => socket.messages()).toContainEqual({ type: 'ack', seq: 1 });
-		await screen.getByRole('button', { name: /^Touch input: trackpad/ }).click();
+		await screen
+			.getByRole('group', { name: 'Touch input' })
+			.getByRole('button', { name: 'Tap to click' })
+			.click();
 		const stage = screen.getByRole('application', { name: /Screen of/ }).element();
 		const { left, top } = stage.getBoundingClientRect();
 
@@ -683,6 +687,65 @@ describe('the desktop tab', () => {
 			.element(again.screen.getByRole('region', { name: 'Touch gestures' }))
 			.not.toBeInTheDocument();
 		localStorage.removeItem('bmuster.desktop.gestureHint');
+	});
+
+	it('FA20, FA21, FA22: one touch input choice on the page and in the sheet, remembered, with the centre marked for the fixed cursor', async () => {
+		const { screen } = await fullScreenOnPhone();
+		await document.exitFullscreen();
+		const names = ['Trackpad', 'Tap to click', 'Fixed cursor'];
+		const onPage = screen.getByRole('group', { name: 'Touch input' });
+		await expect
+			.poll(() =>
+				onPage
+					.getByRole('button')
+					.elements()
+					.map((button) => button.textContent.trim())
+			)
+			.toEqual(names);
+		await expect
+			.element(onPage.getByRole('button', { name: 'Trackpad' }))
+			.toHaveAttribute('aria-pressed', 'true');
+		const mark = () => screen.container.querySelector('.centre-mark');
+		expect(mark()).toBeNull();
+		await onPage.getByRole('button', { name: 'Fixed cursor' }).click();
+		expect(localStorage.getItem('bmuster.desktop.touchInput')).toBe('fixed');
+		await expect.poll(mark).not.toBeNull();
+
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+		await screen.getByRole('button', { name: 'Session controls' }).click();
+		const sheet = screen.getByRole('group', { name: 'Session options' });
+		await sheet.getByRole('tab', { name: 'Session' }).click();
+		const inSheet = sheet.getByRole('group', { name: 'Touch input' });
+		await expect
+			.poll(() =>
+				inSheet
+					.getByRole('button')
+					.elements()
+					.map((button) => button.textContent.trim())
+			)
+			.toEqual(names);
+		await expect
+			.element(inSheet.getByRole('button', { name: 'Fixed cursor' }))
+			.toHaveAttribute('aria-pressed', 'true');
+		// The session's mode is its own badge, apart from the touch input.
+		await expect.element(sheet.getByText('Control', { exact: true })).toBeVisible();
+		await inSheet.getByRole('button', { name: 'Trackpad' }).click();
+		expect(localStorage.getItem('bmuster.desktop.touchInput')).toBe('trackpad');
+		await expect.poll(mark).toBeNull();
+		await document.exitFullscreen();
+	});
+
+	it('FA21: a choice remembered from before is the one in use next time', async () => {
+		localStorage.setItem('bmuster.desktop.touchInput', 'touch');
+		const { screen } = await open(CONTROL, 'Connect');
+		await expect
+			.element(
+				screen
+					.getByRole('group', { name: 'Touch input' })
+					.getByRole('button', { name: 'Tap to click' })
+			)
+			.toHaveAttribute('aria-pressed', 'true');
 	});
 
 	it('FA15: a desktop with a mouse sees no gestures hint and draws the picture unzoomed', async () => {

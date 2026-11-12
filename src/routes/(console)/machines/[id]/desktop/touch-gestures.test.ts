@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-	DRAG_AFTER_TAP_MS,
+	DOUBLE_TAP_MS,
+	HOLD_AFTER_TAP_MS,
 	TouchGestures,
 	twoFingerIntent,
 	type Geometry,
@@ -8,7 +9,7 @@ import {
 } from './touch-gestures.ts';
 import type { Zoom } from './zoom.ts';
 
-// SPEC-DESKTOP 5.3; SPEC-DESKTOP-FLOATING FA10, FA11, FA12, FA13.
+// SPEC-DESKTOP 5.3; SPEC-DESKTOP-FLOATING FA10, FA12, FA13, FA16–FA18, FA22–FA24.
 
 /** A 400x300 box showing an 800x600 picture of a 1600x1200 display: 4 display pixels per page pixel. */
 function touches(mode: TouchMode) {
@@ -88,11 +89,37 @@ describe('trackpad mode (5.3)', () => {
 		]);
 	});
 
-	it('FA11: a touch within 400 ms of a tap holds the left button and drags', () => {
+	it('FA16: a single tap clicks at once', () => {
 		const { sent, gestures } = touches('trackpad');
 		gestures.down(1, 100, 100, 0);
+		gestures.up(1, 80);
+		expect(sent).toEqual(['pointer 800,600 1', 'pointer 800,600 0']);
+	});
+
+	it('FA16: a second quick tap soon after a tap is a double click at the same pixel', () => {
+		const { sent, gestures, elapse } = touches('trackpad');
+		gestures.down(1, 100, 100, 0);
+		gestures.up(1, 80);
+		// Lifts 120 ms later, after wobbling 4px: still a tap, so no movement goes between the clicks.
+		gestures.down(1, 102, 101, 80 + DOUBLE_TAP_MS - 10);
+		gestures.move(1, 104, 100);
+		gestures.up(1, 80 + DOUBLE_TAP_MS - 10 + HOLD_AFTER_TAP_MS - 130);
+		elapse();
+		expect(sent).toEqual([
+			'pointer 800,600 1',
+			'pointer 800,600 0',
+			'pointer 800,600 1',
+			'pointer 800,600 0'
+		]);
+	});
+
+	it('FA17: a second touch held past the hold time presses the left button and drags', () => {
+		const { sent, gestures, elapse } = touches('trackpad');
+		gestures.down(1, 100, 100, 0);
 		gestures.up(1, 50);
-		gestures.down(1, 100, 100, 50 + DRAG_AFTER_TAP_MS - 10);
+		gestures.down(1, 100, 100, 200);
+		expect(sent).toEqual(['pointer 800,600 1', 'pointer 800,600 0']);
+		elapse();
 		gestures.move(1, 120, 100);
 		gestures.up(1, 900);
 		expect(sent).toEqual([
@@ -104,11 +131,28 @@ describe('trackpad mode (5.3)', () => {
 		]);
 	});
 
-	it('FA11: a touch later than that just moves the pointer', () => {
+	it('FA17: a second touch that moves past the slop drags at once, by the whole movement', () => {
 		const { sent, gestures } = touches('trackpad');
 		gestures.down(1, 100, 100, 0);
 		gestures.up(1, 50);
-		gestures.down(1, 100, 100, 50 + DRAG_AFTER_TAP_MS + 10);
+		gestures.down(1, 100, 100, 50 + DOUBLE_TAP_MS - 10);
+		gestures.move(1, 105, 100);
+		gestures.move(1, 120, 100);
+		gestures.up(1, 900);
+		expect(sent).toEqual([
+			'pointer 800,600 1',
+			'pointer 800,600 0',
+			'pointer 800,600 1',
+			'pointer 880,600 1',
+			'pointer 880,600 0'
+		]);
+	});
+
+	it('FA17: a touch later than the double-tap time just moves the pointer', () => {
+		const { sent, gestures } = touches('trackpad');
+		gestures.down(1, 100, 100, 0);
+		gestures.up(1, 50);
+		gestures.down(1, 100, 100, 50 + DOUBLE_TAP_MS + 10);
 		gestures.move(1, 120, 100);
 		gestures.up(1, 900);
 		expect(sent).toEqual(['pointer 800,600 1', 'pointer 800,600 0', 'pointer 880,600 0']);
@@ -121,6 +165,136 @@ describe('touch mode (5.3)', () => {
 		gestures.down(1, 200, 150, 0);
 		gestures.up(1, 60);
 		expect(sent).toEqual(['pointer 800,600 0', 'pointer 800,600 1', 'pointer 800,600 0']);
+	});
+
+	it('FA16: a second tap next to the first clicks the same pixel again', () => {
+		const { sent, gestures } = touches('touch');
+		gestures.down(1, 200, 150, 0);
+		gestures.up(1, 60);
+		gestures.down(1, 202, 153, 200);
+		gestures.up(1, 260);
+		expect(sent).toEqual([
+			'pointer 800,600 0',
+			'pointer 800,600 1',
+			'pointer 800,600 0',
+			'pointer 800,600 0',
+			'pointer 800,600 1',
+			'pointer 800,600 0'
+		]);
+	});
+});
+
+describe('auto-pan while zoomed', () => {
+	it('FA18: in trackpad mode a pointer past the edge pans the picture until it is back inside', () => {
+		const { gestures } = touches('trackpad');
+		zoomToTwo(gestures, 0);
+		gestures.down(1, 100, 100, 1000);
+		gestures.move(1, 120, 100);
+		// The pointer (840,600) shows at page (420,300): past the right edge and at the bottom.
+		expect(gestures.edgePan(100)).toBe(true);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -90, y: -90 });
+		// Now at (330,210): 30 of the 100px band deep on the right (30% speed), inside vertically.
+		expect(gestures.edgePan(100)).toBe(true);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -117, y: -90 });
+		gestures.up(1, 1500);
+		expect(gestures.edgePan(100)).toBe(false);
+	});
+
+	it('FA18: nothing pans at 1x, in the inner area, or before the finger moves', () => {
+		const flat = touches('trackpad');
+		flat.gestures.position = { x: 1590, y: 600 };
+		flat.gestures.down(1, 100, 100, 0);
+		flat.gestures.move(1, 120, 100);
+		expect(flat.gestures.edgePan(100)).toBe(false);
+
+		const { gestures } = touches('trackpad');
+		zoomToTwo(gestures, 0);
+		gestures.position = { x: 400, y: 300 };
+		gestures.down(1, 100, 100, 1000);
+		expect(gestures.edgePan(100)).toBe(false);
+		gestures.move(1, 120, 100);
+		expect(gestures.edgePan(100)).toBe(false);
+		expect(gestures.zoom).toEqual({ scale: 2, x: 0, y: 0 });
+	});
+
+	it('FA18: in touch mode a drag held near the edge pans, and the pointer follows what is under the finger', () => {
+		const { sent, gestures } = touches('touch');
+		zoomToTwo(gestures, 0);
+		gestures.down(1, 370, 150, 1000);
+		gestures.move(1, 390, 150);
+		sent.length = 0;
+		expect(gestures.edgePan(100)).toBe(true);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -81, y: 0 });
+		expect(sent).toEqual(['pointer 942,300 1']);
+	});
+});
+
+describe('fixed cursor (FA22–FA24)', () => {
+	it('FA22: a finger moves the picture under the centre, and the pointer is the pixel there', () => {
+		const { sent, zooms, gestures } = touches('fixed');
+		gestures.down(1, 100, 100, 0);
+		gestures.move(1, 120, 100);
+		gestures.up(1, 500);
+		expect(zooms.at(-1)).toEqual({ scale: 1, x: 20, y: 0 });
+		expect(sent).toEqual(['pointer 720,600 0']);
+	});
+
+	it('FA22: a tap clicks at the centre, a double tap double-clicks, and a double tap held drags', () => {
+		const { sent, gestures, elapse } = touches('fixed');
+		gestures.down(1, 100, 100, 0);
+		gestures.up(1, 60);
+		gestures.down(1, 100, 100, 200);
+		gestures.up(1, 260);
+		expect(sent).toEqual([
+			'pointer 800,600 1',
+			'pointer 800,600 0',
+			'pointer 800,600 1',
+			'pointer 800,600 0'
+		]);
+		sent.length = 0;
+		gestures.down(1, 100, 100, 400);
+		elapse();
+		gestures.move(1, 80, 100);
+		gestures.up(1, 1000);
+		expect(sent).toEqual(['pointer 800,600 1', 'pointer 880,600 1', 'pointer 880,600 0']);
+	});
+
+	it('FA23: a pinch zooms about the centre, keeping the pointer on its pixel', () => {
+		const { sent, gestures } = touches('fixed');
+		zoomToTwo(gestures, 0);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -200, y: -150 });
+		expect(sent).toEqual([]);
+	});
+
+	it('FA23: zoomed, two fingers moving together still scroll', () => {
+		const { sent, gestures } = touches('fixed');
+		zoomToTwo(gestures, 0);
+		gestures.down(1, 100, 100, 1000);
+		gestures.down(2, 150, 100, 1000);
+		gestures.move(1, 100, 80);
+		gestures.move(2, 150, 80);
+		gestures.up(1, 1100);
+		gestures.up(2, 1100);
+		expect(sent).toEqual(['wheel 0,40']);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -200, y: -150 });
+	});
+
+	it('FA24: a long drag reaches the corner of the display, the picture moving past its edge', () => {
+		const { sent, gestures } = touches('fixed');
+		gestures.down(1, 0, 0, 0);
+		gestures.move(1, 400, 400);
+		gestures.up(1, 500);
+		expect(gestures.zoom).toEqual({ scale: 1, x: 200, y: 150 });
+		expect(sent).toEqual(['pointer 0,0 0']);
+	});
+
+	it('FA24: switching to the fixed cursor centres the view on the pointer, which does not jump', () => {
+		const { sent, gestures } = touches('fixed');
+		gestures.position = { x: 400, y: 300 };
+		gestures.down(1, 100, 100, 0);
+		expect(gestures.zoom).toEqual({ scale: 1, x: 100, y: 75 });
+		gestures.up(1, 50);
+		expect(sent).toEqual(['pointer 400,300 1', 'pointer 400,300 0']);
 	});
 });
 
