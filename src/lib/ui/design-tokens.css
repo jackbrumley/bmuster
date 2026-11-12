@@ -59,6 +59,8 @@
 	--page-gutter: var(--space-4);
 	/* The one gap between the blocks of a page: header, panels, lists. */
 	--gap-section: var(--space-6);
+	/* The space inside a card (Panel). */
+	--panel-padding: var(--space-4);
 
 	/* Colours: light-dark(light, dark) */
 	/*
@@ -115,11 +117,23 @@
 	--screen-bg: light-dark(#1b2522, #121a17);
 	--shadow-tint: light-dark(rgba(22, 29, 20, 0.08), rgba(0, 0, 0, 0.45));
 
+	/* The opaque end of a fade-out mask (masks use only the alpha, so both themes match). */
+	--mask-solid: light-dark(#000000, #000000);
+
 	/* Shadows (built from the themed tint) */
 	--shadow-card: 0 1px 2px var(--shadow-tint);
 	--shadow-bar: 0 -1px 0 var(--border);
 	--shadow-popover: 0 8px 24px var(--shadow-tint);
 	--shadow-status-online: 0 0 0 3px var(--success-bg);
+}
+
+/* Phones: less space beside and between blocks, so the content gets the screen. */
+@media (max-width: 640px) {
+	:root {
+		--page-gutter: var(--space-3);
+		--gap-section: var(--space-4);
+		--panel-padding: var(--space-3);
+	}
 }
 
 :root[data-theme='light'] {

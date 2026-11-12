@@ -65,7 +65,7 @@
 	}
 
 	.pad-normal {
-		padding: var(--space-4);
+		padding: var(--panel-padding);
 	}
 
 	/*
@@ -95,7 +95,7 @@
 	}
 
 	.pad-none > .head {
-		padding: var(--space-3) var(--space-4);
+		padding: var(--space-3) var(--panel-padding);
 		border-bottom: 1px solid var(--border);
 	}
 
