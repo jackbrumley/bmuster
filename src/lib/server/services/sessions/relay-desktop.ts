@@ -1,9 +1,10 @@
 import { endReasonLabel, type SessionEndReason } from '#lib/domain/sessions/session.ts';
 import {
 	agentClipboardReplySchema,
+	agentClipboardSharedSchema,
 	viewerClipboardRequestSchema
 } from '#lib/schemas/desktop/desktop.ts';
-import type { ClipboardTransfer } from './session-record.ts';
+import type { ClipboardTransfer, SharedClipboard } from './session-record.ts';
 
 /**
  * What the relay reads in a desktop session's text frames (SPEC-DESKTOP):
@@ -31,6 +32,32 @@ export function clipboardTransferOf(json: unknown): ClipboardTransfer | undefine
 		case 'clipboard-sent':
 			return { direction: 'to-machine', bytes: reply.data.bytes, at: Date.now() };
 	}
+}
+
+/** No clipboard sharing yet. */
+export function noSharedClipboard(): SharedClipboard {
+	return {
+		'to-machine': { transfers: 0, bytes: 0 },
+		'from-machine': { transfers: 0, bytes: 0 }
+	};
+}
+
+/**
+ * Adds a clipboard sharing transfer the agent reported to the session's totals (SPEC-DESKTOP
+ * 21.11): its size, never the text. Returns whether the message was one.
+ */
+export function countSharedClipboard(totals: SharedClipboard, json: unknown): boolean {
+	const shared = agentClipboardSharedSchema.safeParse(json);
+	if (!shared.success) {
+		return false;
+	}
+	const [direction, bytes]: [ClipboardTransfer['direction'], number] =
+		shared.data.type === 'clipboard-changed'
+			? ['from-machine', Buffer.byteLength(shared.data.text, 'utf8')]
+			: ['to-machine', shared.data.bytes];
+	totals[direction].transfers += 1;
+	totals[direction].bytes += bytes;
+	return true;
 }
 
 /** What the viewer is told when the agent ends a desktop session. */

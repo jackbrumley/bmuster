@@ -58,6 +58,12 @@ export type ClipboardTransfer = {
 	at: number;
 };
 
+/** Clipboard sharing's transfers in one desktop session, per direction (SPEC-DESKTOP 21.11). */
+export type SharedClipboard = Record<
+	ClipboardTransfer['direction'],
+	{ transfers: number; bytes: number }
+>;
+
 export type EndedSession = SessionRecord & {
 	reason: SessionEndReason;
 	message: string;
@@ -65,4 +71,5 @@ export type EndedSession = SessionRecord & {
 	/** Bytes from the machine to the browser, and typed in the browser. */
 	bytesOut: number;
 	bytesIn: number;
+	sharedClipboard: SharedClipboard;
 };

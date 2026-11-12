@@ -166,6 +166,41 @@ export function auditDesktopClipboard(
 	);
 }
 
+/**
+ * Clipboard sharing in one desktop session (SPEC-DESKTOP 21.11), written when it ends: one entry
+ * per direction that saw any, with the number of transfers and their bytes, never the text.
+ */
+export function auditSharedClipboard(
+	database: AppDatabase,
+	ended: EndedSession,
+	machineName: string
+): void {
+	for (const direction of ['to-machine', 'from-machine'] as const) {
+		const { transfers, bytes } = ended.sharedClipboard[direction];
+		if (transfers === 0) {
+			continue;
+		}
+		recordAudit(
+			database,
+			{
+				actor: actorOf(ended),
+				kind: 'desktop-clipboard',
+				target: machineName,
+				machineId: ended.machineId,
+				detail: {
+					direction: direction === 'to-machine' ? 'to the machine' : 'from the machine',
+					via: 'clipboard sharing',
+					transfers: String(transfers),
+					bytes: String(bytes),
+					...viewerDetail(ended),
+					session: ended.id
+				}
+			},
+			ended.endedAt
+		);
+	}
+}
+
 /** How far back a session left open is looked for, and how many entries one start reads. */
 const OPEN_SESSION_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
 const OPEN_SESSION_SCAN_LIMIT = 20_000;

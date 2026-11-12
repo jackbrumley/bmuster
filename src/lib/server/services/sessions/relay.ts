@@ -6,8 +6,20 @@ import type {
 } from '#lib/domain/sessions/session.ts';
 import { agentSessionEventSchema, browserControlSchema } from '#lib/schemas/sessions/sessions.ts';
 import { OutputRing } from './output-ring.ts';
-import { clipboardTransferOf, desktopEndedMessage, isClipboardRequest } from './relay-desktop.ts';
-import type { ClipboardTransfer, EndedSession, LocalEnd, SessionRecord } from './session-record.ts';
+import {
+	clipboardTransferOf,
+	countSharedClipboard,
+	desktopEndedMessage,
+	isClipboardRequest,
+	noSharedClipboard
+} from './relay-desktop.ts';
+import type {
+	ClipboardTransfer,
+	EndedSession,
+	LocalEnd,
+	SessionRecord,
+	SharedClipboard
+} from './session-record.ts';
 
 /**
  * The session relay (SPEC-SESSIONS T4, T6; AGENTS.md §13): joins one
@@ -108,6 +120,7 @@ type LiveSession = {
 	lastResize: { cols: number; rows: number } | undefined;
 	bytesOut: number;
 	bytesIn: number;
+	sharedClipboard: SharedClipboard;
 	lastInputAt: number;
 	everAttached: boolean;
 	timers: Map<'agent' | 'browser' | 'idle', ReturnType<typeof setTimeout>>;
@@ -201,7 +214,8 @@ export function createRelay(limits: RelayLimits) {
 			message,
 			endedAt: Date.now(),
 			bytesOut: session.bytesOut,
-			bytesIn: session.bytesIn
+			bytesIn: session.bytesIn,
+			sharedClipboard: session.sharedClipboard
 		};
 		ended.set(sessionId, record);
 		const forget = setTimeout(() => ended.delete(sessionId), 10 * 60_000);
@@ -234,6 +248,7 @@ export function createRelay(limits: RelayLimits) {
 			lastResize: undefined,
 			bytesOut: 0,
 			bytesIn: 0,
+			sharedClipboard: noSharedClipboard(),
 			lastInputAt: Date.now(),
 			everAttached: false,
 			timers: new Map()
@@ -409,6 +424,7 @@ export function createRelay(limits: RelayLimits) {
 					if (transfer !== undefined) {
 						session.onClipboard(transfer);
 					}
+					countSharedClipboard(session.sharedClipboard, json);
 					session.browser.peer?.sendText(text);
 				}
 				return;
