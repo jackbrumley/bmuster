@@ -21,7 +21,7 @@ pub mod session;
 pub mod storage;
 mod updates;
 pub use display::{
-    ConsoleSession, DisplayReport, DrmCard, DrmConnector, DxgiOutput, LauncherVersion,
+    ConsoleSession, DisplayReport, DrmCard, DrmConnector, DxgiOutput, DxgiOutputs, LauncherVersion,
     LinuxDisplay, LockedHint, NvidiaModeset, Programs, SasPolicy, SeLinux, SeatSession,
     SecureDesktop, Uinput, WindowsSystem,
 };
@@ -1077,13 +1077,15 @@ mod tests {
                     state: "active".into(),
                 },
                 secure_desktop: SecureDesktop::Known { active: false },
-                outputs: vec![DxgiOutput {
-                    adapter: "Intel(R) UHD Graphics".into(),
-                    name: "\\\\.\\DISPLAY1".into(),
-                    width: 1920,
-                    height: 1080,
-                    rotation: 0,
-                }],
+                outputs: DxgiOutputs::Read {
+                    list: vec![DxgiOutput {
+                        adapter: "Intel(R) UHD Graphics".into(),
+                        name: "\\\\.\\DISPLAY1".into(),
+                        width: 1920,
+                        height: 1080,
+                        rotation: 0,
+                    }],
+                },
                 sas_policy: SasPolicy::Set { value: 3 },
             },
         };
@@ -1096,13 +1098,13 @@ mod tests {
                 "edition": "Professional",
                 "consoleSession": { "kind": "attached", "id": 1, "state": "active" },
                 "secureDesktop": { "kind": "known", "active": false },
-                "outputs": [{
+                "outputs": { "kind": "read", "list": [{
                     "adapter": "Intel(R) UHD Graphics",
                     "name": "\\\\.\\DISPLAY1",
                     "width": 1920,
                     "height": 1080,
                     "rotation": 0
-                }],
+                }] },
                 "sasPolicy": { "kind": "set", "value": 3 }
             })
         );
@@ -1115,6 +1117,23 @@ mod tests {
                 console: SignedInUser::None,
                 system: WindowsSystem::Unreported
             }
+        );
+    }
+
+    /// SPEC-DIAGNOSTICS DW3: the outputs are a list or the reason there is
+    /// none, never a silent empty list.
+    #[test]
+    fn windows_outputs_say_why_they_are_missing() {
+        assert_eq!(
+            serde_json::to_value(DxgiOutputs::Failed {
+                reason: "No session is attached to the console.".into()
+            })
+            .unwrap(),
+            json!({ "kind": "failed", "reason": "No session is attached to the console." })
+        );
+        assert_eq!(
+            serde_json::to_value(DxgiOutputs::Read { list: vec![] }).unwrap(),
+            json!({ "kind": "read", "list": [] })
         );
     }
 

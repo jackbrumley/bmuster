@@ -28,6 +28,23 @@ const cardSchema = z.object({
 
 const size = z.number().int().min(0).max(1_000_000);
 
+const outputList = z
+	.array(z.object({ adapter: word, name: word, width: size, height: size, rotation: size }))
+	.max(32);
+
+/**
+ * The console session's DXGI outputs (SPEC-DIAGNOSTICS, Windows outputs). Agents before 0.4.22
+ * send a bare list read in session 0, where Windows shows none: read as `service-session`.
+ */
+const outputsSchema = z.union([
+	outputList.transform((list) => ({ kind: 'service-session' as const, list })),
+	z.discriminatedUnion('kind', [
+		z.object({ kind: z.literal('read'), list: outputList }),
+		z.object({ kind: z.literal('failed'), reason: z.string().max(500) }),
+		z.object({ kind: z.literal('service-session'), list: outputList })
+	])
+]);
+
 const windowsSystemSchema = z.discriminatedUnion('kind', [
 	z.object({ kind: z.literal('unreported') }),
 	z.object({
@@ -42,9 +59,7 @@ const windowsSystemSchema = z.discriminatedUnion('kind', [
 			z.object({ kind: z.literal('unknown') }),
 			z.object({ kind: z.literal('known'), active: z.boolean() })
 		]),
-		outputs: z
-			.array(z.object({ adapter: word, name: word, width: size, height: size, rotation: size }))
-			.max(32),
+		outputs: outputsSchema,
 		sasPolicy: z.discriminatedUnion('kind', [
 			z.object({ kind: z.literal('not-set') }),
 			z.object({ kind: z.literal('set'), value: size })

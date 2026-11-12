@@ -31,6 +31,13 @@ use anyhow::{bail, Result};
 use std::sync::Arc;
 
 pub fn publish(board: Arc<crate::status::StatusBoard>, port: u16) {
+    // An update or a changed port gets the current shortcut.
+    #[cfg(windows)]
+    if let Err(error) = crate::service_windows::binary_path()
+        .and_then(|binary| windows::refresh_start_menu_shortcut(&binary, port))
+    {
+        log::warn!("Could not refresh the Start menu shortcut: {error:#}");
+    }
     match status::publish(board, port) {
         Ok(()) => serve_disconnect(),
         Err(error) => log::warn!("Tray unavailable: {error:#}"),

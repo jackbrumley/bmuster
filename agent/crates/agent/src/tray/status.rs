@@ -50,6 +50,12 @@ pub struct Snapshot {
     pub url: String,
 }
 
+/// The local page's address on this machine, which the tray and the
+/// Windows Start menu shortcut open.
+pub fn management_url(port: u16) -> String {
+    format!("https://localhost:{port}/")
+}
+
 pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -64,7 +70,7 @@ impl Snapshot {
             published_at_ms: now_ms(),
             process_id: std::process::id(),
             state: Connection::from_board(board),
-            url: format!("https://localhost:{port}/"),
+            url: management_url(port),
         }
     }
 

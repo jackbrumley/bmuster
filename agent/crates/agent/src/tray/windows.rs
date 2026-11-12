@@ -529,17 +529,30 @@ pub fn install(binary: &Path) -> Result<()> {
     }
     // The service's starter is the one way the tray starts.
     remove_sign_in_entry()?;
-    // The shortcut opens management directly, even without a tray host.
-    let programs = bmuster_service::windows::known_folder("ProgramData")?
-        .join(r"Microsoft\Windows\Start Menu\Programs");
-    std::fs::create_dir_all(&programs)?;
-    let script = format!("$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{}');$s.TargetPath='{}';$s.Arguments='tray --open';$s.Save()", programs.join("BMuster.lnk").display().to_string().replace('\'', "''"), binary.display().to_string().replace('\'', "''"));
-    if !std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .status()?
-        .success()
+    // The shortcut opens management directly, even without a tray host. A
+    // fresh install has no local page setting yet, so the default port; the
+    // worker rewrites it at every start if the port differs.
+    refresh_start_menu_shortcut(binary, crate::local_page::DEFAULT_PORT)
+}
+
+fn start_menu_folder() -> Result<PathBuf> {
+    Ok(bmuster_service::windows::known_folder("ProgramData")?
+        .join(r"Microsoft\Windows\Start Menu\Programs"))
+}
+
+/// Writes the Start menu shortcut to the local page on `port`, with the
+/// icon of the rescue copy `binary`, when it is missing or differs, and
+/// removes the console-program shortcut 0.4.21 and earlier wrote
+/// (SPEC-TRAY-SESSIONS, Windows version 3).
+pub fn refresh_start_menu_shortcut(binary: &Path, port: u16) -> Result<()> {
+    let text = super::windows_sessions::shortcut_text(
+        &status::management_url(port),
+        &binary.to_string_lossy(),
+    );
+    if super::windows_sessions::refresh_shortcut(&start_menu_folder()?, &text)
+        .context("Could not write BMuster's Start menu shortcut")?
     {
-        bail!("Could not create BMuster's Start menu shortcut");
+        log::info!("Wrote the Start menu shortcut to the local page on port {port}.");
     }
     Ok(())
 }
@@ -565,10 +578,7 @@ pub fn remove_sign_in_entry() -> Result<()> {
 
 pub fn uninstall() -> Result<()> {
     remove_sign_in_entry()?;
-    let shortcut = bmuster_service::windows::known_folder("ProgramData")?
-        .join(r"Microsoft\Windows\Start Menu\Programs\BMuster.lnk");
-    if shortcut.exists() {
-        std::fs::remove_file(shortcut).context("Could not remove the BMuster shortcut")?;
-    }
+    super::windows_sessions::remove_shortcuts(&start_menu_folder()?)
+        .context("Could not remove the BMuster shortcut")?;
     Ok(())
 }

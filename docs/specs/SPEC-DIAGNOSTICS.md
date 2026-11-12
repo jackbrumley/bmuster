@@ -109,3 +109,51 @@ Every acceptance criterion has a passing test with the name the table gives, exc
 - **Server, console and CLI.** `machine_checks` (migration `0014_machine_checks.sql`, one `CREATE TABLE`). Run checks: 404 unknown machine, 409 offline, 429 with the seconds left (the once-a-minute limit is in memory), audited as `agent-checks-requested`. Session audit entries now carry the session id (`detail.session`), which joins them to timelines; entries from before 0.4.3 cannot be joined. Sessions reads are audited (`agent-sessions-viewed`); checks reads are not, like report reads. The Sessions API defaults to the last 7 days and 20 sessions (at most 200) and keeps each session's last 10 figures. The CLI's `--json` on `--follow` and `watch` prints one JSON line per event.
 - **Rollback.** `docs/server-update-compatibility.json` gives 0.4.3 `rollbackFrom: []`, not 0.4.1 and 0.4.2: the migration is additive, but the two new audit kinds make an older server's audit reads throw (`toRecord` refuses unknown kinds), so its Activity page would break after a rollback. Widening it is Jack's call.
 - **Not natively tested:** every check against real systemd, logind, KMS, EGL, uinput, X11 and the portal (the unit tests cover the list, the statuses, deadlines, schedule, the uinput requests and the KMS `frame-size` exchange; the real checks need a root agent on the Fedora laptop, where `systemd-run-pipe` and `terminal-pty` should reproduce the two failures). All Windows code (checks, helper `--check`, Event Log, helper log, report fields, DXGI outputs) is checked only with `cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings` (C dependencies stubbed, nothing linked) and its pure parts tested on Linux; `checks::windows::tests::results_from_helper` compiles but has not run. macOS: nothing built.
+
+## Windows outputs from the console session
+
+**Status:** `BUILT, NOT YET APPROVED` · asked for 2026-11-12 after the Display card on a Windows 10 PC showed "Outputs: None found" (and "Secure desktop: Unknown") while desktop capture worked.
+
+**This is security work.** It adds a second mode to the desktop helper that the LocalSystem service starts in the console session.
+
+### Problem
+
+`display_report::windows_system()` called `dxgi::outputs()` in the service, which runs in session 0. DXGI lists no outputs there, because the monitors belong to the console session, so the report always said "None found". `.unwrap_or_default()` also turned any DXGI error into the same empty list.
+
+### Behaviour
+
+1. **Read in the console session.** The service starts `bmuster-agent desktop-helper --outputs <file> --data-dir <data>` in the active console session, exactly as the checks start `--check` (same SYSTEM token from the session's `winlogon.exe`, same job, `CREATE_NO_WINDOW`). The helper makes itself DPI aware (so sizes are real pixels), lists every DXGI output of every adapter, writes `{ kind: 'read', list }` or `{ kind: 'failed', reason }` to `<data>\checks\outputs-<pid>.json` and exits. The service waits up to 10 s, reads and deletes the file.
+2. **Never a silent empty list.** No console session, a helper that cannot start, does not answer in 10 s, exits non-zero, or writes something unreadable, and a DXGI error: each is `{ kind: 'failed', reason }` with the reason, logged once as a warning by the service.
+3. **Inventory, not live.** One reading is kept while the console session stays the same, for an hour; a failed reading for five minutes. A new console session (sign-in at the console, fast user switching, a Remote Desktop takeover) reads again at once. A lock held during the read means two callers (the check-in and the local page) never start two helpers.
+4. **Within the server's limits.** At most 32 outputs; adapter and output names cut to 255 characters; reasons to 500.
+5. **Wire shape.** `system.outputs` is `{ kind: 'read', list } | { kind: 'failed', reason }`. Agents before this change send the bare list read in session 0; the server reads it as `{ kind: 'service-session', list }` (and stores that shape).
+6. **Display card.** `read` with outputs: one row per output (unchanged); `read` with none: "Outputs: None found"; `failed`: "Outputs: Could not read: <reason>"; `service-session` with none: "Outputs: Not visible to this agent version; update it" (with outputs: one row each).
+7. **Secure desktop stays `unknown`.** It has the same cause (session 0 cannot see the console's input desktop), but it is live state: a reading kept for an hour would be wrong most of the time, and reading it at every check-in would change the inventory hash, and so resend the whole inventory, at every lock and unlock. The helper's session timeline already records it during a session. Showing it live (presence, not inventory) is an open question below.
+
+### Acceptance criteria
+
+| #   | Criterion                                                                                                                                                  | Named test                                                                                           |
+| :-- | :--------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------- |
+| DW1 | The helper's file becomes the outputs: a list (at most 32, names within 255 characters), its failure reason (within 500), or a failure when it is garbled. | Rust `console_outputs::tests::helper_file_is_parsed`                                                 |
+| DW2 | A reading is kept for an hour in the same console session, a failure for five minutes; a new console session reads again at once.                          | Rust `console_outputs::tests::outputs_are_cached`                                                    |
+| DW3 | The outputs travel as `read` with a list or `failed` with a reason.                                                                                        | Rust protocol `tests::windows_outputs_say_why_they_are_missing`, `windows_report_has_its_new_fields` |
+| DW4 | The server reads `read`, `failed` and an older agent's bare list (as `service-session`), and reads its stored shape back.                                  | `display-report.test.ts` "DW4: …"                                                                    |
+| DW5 | The Display card says "Could not read: <reason>", "None found" or "Not visible to this agent version; update it" instead of an empty list.                 | `display-card.svelte.test.ts` "DW5: …"                                                               |
+
+### Security notes
+
+- The helper runs the same fixed program and token as the `--check` mode; `--outputs` takes only the file path the service chose inside the data folder (readable by SYSTEM and Administrators only). Nothing from the server or the browser reaches it.
+- It reads output names, adapter names, sizes and rotation; it captures nothing.
+
+### Open questions
+
+1. Secure desktop: drop the row from the Display card, or show it live from the presence channel? → recommend **drop it from inventory and leave it to the session timeline**, unless someone needs it outside a session.
+
+### As built
+
+- `agent/crates/agent/src/console_outputs.rs`: the helper's side (`write_outputs`), the service's run (`console_outputs`, `run_helper`) and the pure parsing and cache (DW1, DW2).
+- `agent/crates/agent/src/main.rs`: `desktop-helper --outputs <file>` (conflicts with `--pipe`, `--service-pid` and `--check`).
+- `agent/crates/protocol/src/display.rs`: `DxgiOutputs`.
+- `src/lib/schemas/agents/display-report.ts`, `src/lib/domain/machines/display-report.ts`: the union, the older bare list and the card's rows.
+- **Only linted, not run on Windows.** The Win32 parts pass `cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings`; the pure parts ran on Linux.
+- **Release test on Windows 10:** (a) with someone signed in at the console, the Display card lists each monitor with its size within a check-in of the update; (b) at the sign-in screen the console session still exists, so the outputs still show; when the helper cannot run (for example its program blocked by policy), the card says "Could not read: …" with the reason; (c) plug in a second monitor and sign out and in: the new output shows; (d) the agent log has no more than one "Could not read the display outputs" warning per five minutes.
