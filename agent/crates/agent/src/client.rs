@@ -354,19 +354,66 @@ pub fn parse_reply<T: DeserializeOwned>(status: u16, text: &str) -> Result<Reply
         )),
         400 | 401 | 404 | 409 => match serde_json::from_str::<Refusal>(text) {
             Ok(refusal) => Ok(Reply::Refused(refusal)),
-            Err(_) => bail!("HTTP {status} without a refusal reason: {}", excerpt(text)),
+            Err(_) => bail!("{} without a refusal reason", http_failure(status, text)),
         },
-        _ => bail!("HTTP {status}: {}", excerpt(text)),
+        _ => bail!("{}", http_failure(status, text)),
     }
 }
 
-fn excerpt(text: &str) -> String {
-    let trimmed: String = text.trim().chars().take(200).collect();
+/// The longest error body quoted in a message.
+const MAX_QUOTED_BODY: usize = 200;
+
+#[derive(serde::Deserialize)]
+struct ErrorMessage {
+    message: String,
+}
+
+/// One line for a failed HTTP reply: its status and, when the body is a short
+/// reason (the server's JSON `message` or a short plain-text line), that
+/// reason. An HTML page (a proxy's 502 page) or a long body is never quoted,
+/// so an outage cannot fill the log with markup (SPEC-AGENT-LOGS AL14).
+pub fn http_failure(status: u16, body: &str) -> String {
+    let reason = ureq::http::StatusCode::from_u16(status)
+        .ok()
+        .and_then(|code| code.canonical_reason())
+        .map_or_else(
+            || format!("HTTP {status}"),
+            |text| format!("HTTP {status} {text}"),
+        );
+    let trimmed = body.trim();
     if trimmed.is_empty() {
-        "(empty body)".into()
-    } else {
-        trimmed
+        return format!("{reason} with an empty body");
     }
+    let quoted = match serde_json::from_str::<ErrorMessage>(trimmed) {
+        Ok(json) => Some(json.message),
+        Err(_) if looks_like_html(trimmed) || trimmed.chars().count() > MAX_QUOTED_BODY => None,
+        Err(_) => Some(trimmed.to_string()),
+    };
+    match quoted.map(|text| one_line(&text)) {
+        Some(text) if !text.is_empty() => format!("{reason}: {text}"),
+        _ => format!("{reason} from the server or its proxy"),
+    }
+}
+
+fn looks_like_html(text: &str) -> bool {
+    let start: String = text
+        .chars()
+        .take(64)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    start.starts_with('<') || start.contains("<html") || start.contains("<!doctype")
+}
+
+/// Whitespace runs (newlines included) become one space; at most
+/// [`MAX_QUOTED_BODY`] characters, cut with "…".
+fn one_line(text: &str) -> String {
+    let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if joined.chars().count() <= MAX_QUOTED_BODY {
+        return joined;
+    }
+    let mut cut: String = joined.chars().take(MAX_QUOTED_BODY - 1).collect();
+    cut.push('…');
+    cut
 }
 
 // ---------------------------------------------------------------------------
@@ -566,6 +613,60 @@ mod tests {
         assert!(matches!(refused, Reply::Refused(r) if r.reason == RefusalReason::Revoked));
         assert!(parse_reply::<CheckInReply>(500, "boom").is_err());
         assert!(parse_reply::<CheckInReply>(401, "nope").is_err());
+    }
+
+    #[test]
+    fn http_error_bodies_are_short_and_never_html() {
+        let page = "<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n\
+                    <center><h1>502 Bad Gateway</h1></center>\r\n<hr><center>openresty</center>\r\n\
+                    </body>\r\n</html>\r\n";
+        assert_eq!(
+            http_failure(502, page),
+            "HTTP 502 Bad Gateway from the server or its proxy"
+        );
+        assert_eq!(
+            http_failure(503, "<!DOCTYPE html><p>down</p>"),
+            "HTTP 503 Service Unavailable from the server or its proxy"
+        );
+        assert_eq!(
+            http_failure(500, &"x".repeat(500)),
+            "HTTP 500 Internal Server Error from the server or its proxy",
+            "a long plain body is left out"
+        );
+        assert_eq!(
+            http_failure(500, "  database\nlocked  "),
+            "HTTP 500 Internal Server Error: database locked",
+            "a short plain reason is kept, on one line"
+        );
+        let long_message = format!(r#"{{"message":"{}"}}"#, "y".repeat(300));
+        let quoted = http_failure(429, &long_message);
+        assert!(quoted.starts_with("HTTP 429 Too Many Requests: yyy"));
+        assert!(quoted.ends_with('…'));
+        assert!(quoted.chars().count() < 260, "{quoted}");
+        assert_eq!(
+            http_failure(500, r#"{"message":"No machine\nwith that key"}"#),
+            "HTTP 500 Internal Server Error: No machine with that key"
+        );
+        assert_eq!(
+            http_failure(502, " \n"),
+            "HTTP 502 Bad Gateway with an empty body"
+        );
+        assert_eq!(http_failure(599, "odd"), "HTTP 599: odd");
+
+        let Err(error) = parse_reply::<CheckInReply>(502, page) else {
+            panic!("a 502 is an error");
+        };
+        assert_eq!(
+            format!("{error:#}"),
+            "HTTP 502 Bad Gateway from the server or its proxy"
+        );
+        let Err(refusal) = parse_reply::<CheckInReply>(404, page) else {
+            panic!("a 404 without a refusal is an error");
+        };
+        assert_eq!(
+            refusal.to_string(),
+            "HTTP 404 Not Found from the server or its proxy without a refusal reason"
+        );
     }
 
     fn session() -> Session {

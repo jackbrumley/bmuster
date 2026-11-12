@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import type {
 	AgentLogRecordView,
 	LogLevel,
+	LogOrder,
 	LogPage,
 	LogSource,
 	ServerLogRecordView
@@ -26,6 +27,7 @@ export type Reader = { userId: string; via: string };
 export type LogFilter = {
 	since: string | null;
 	until: string | null;
+	order: LogOrder;
 	level: LogLevel | null;
 	cursor: string | null;
 	limit: number;
@@ -102,6 +104,7 @@ function filterDetail(filter: LogFilter, records: number, reader: Reader): Recor
 		level: filter.level ?? 'all',
 		since: filter.since ?? 'any',
 		until: filter.until ?? 'any',
+		order: filter.order,
 		records: String(records),
 		via: reader.via
 	};
@@ -129,6 +132,7 @@ export function readMachineLogs(
 		...window,
 		level: filter.level,
 		source: filter.source,
+		order: filter.order,
 		limit: filter.limit
 	});
 	if (window.cursor.kind !== 'newer') {
@@ -161,6 +165,7 @@ export function readServerLog(
 		...window,
 		level: filter.level,
 		area: filter.area,
+		order: filter.order,
 		limit: filter.limit
 	});
 	if (window.cursor.kind !== 'newer') {

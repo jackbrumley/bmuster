@@ -14,6 +14,7 @@ mod identity;
 mod inventory;
 mod launcher;
 mod local_page;
+mod log_repeats;
 mod log_spool;
 mod logging;
 #[cfg(target_os = "linux")]

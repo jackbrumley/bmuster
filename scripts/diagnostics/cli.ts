@@ -17,7 +17,12 @@ import {
 	type MachineChecks,
 	type MachineSessionView
 } from '../../src/lib/domain/logs/checks.ts';
-import { agentRecordLine, serverRecordLine, type LogPage } from '../../src/lib/domain/logs/logs.ts';
+import {
+	agentRecordLine,
+	serverRecordLine,
+	type LogOrder,
+	type LogPage
+} from '../../src/lib/domain/logs/logs.ts';
 import { machineChecksSchema, machineSessionsSchema } from '../../src/lib/schemas/logs/checks.ts';
 import { agentLogPageSchema, serverLogPageSchema } from '../../src/lib/schemas/logs/logs.ts';
 
@@ -40,9 +45,9 @@ export const TOKEN_PATH = ['.config', 'bmuster', 'diagnostics-token'] as const;
 const USAGE = `Usage: npm run diagnostics -- <command> [options]
 
   machines                       every machine: name, id, system, agent, online, last seen
-  logs <name-or-id>              a machine's agent log, oldest first
+  logs <name-or-id>              a machine's agent log, printed oldest first
   report <name-or-id>            a machine's latest inventory, display report and status
-  server                         the server's own log, oldest first
+  server                         the server's own log, printed oldest first
   checks <name-or-id>            a machine's latest self-check results
   sessions <name-or-id>          a machine's sessions with their timelines and desktop figures
   watch <name-or-id>             follow a machine's log, check results and online state together
@@ -51,14 +56,15 @@ Every command:
   --json                         raw JSON instead of text (one JSON line per event when following)
 
 Options for logs and server:
-  --since <1h|30m|2d|ISO time>   from this long ago or this time (default: 1h)
+                                 without --since: the newest records, paging back with --cursor
+  --since <1h|30m|2d|ISO time>   the records from this time forward, paging on with --cursor
   --until <ISO time>
   --level <error|warn|info|debug>
   --source <agent|helper|journal>   (logs)
   --area <sessions|agents|…>        (server)
-  --limit <n>                    at most 2000 (default 200)
-  --cursor <cursor>              continue from a "more" line
-  --follow                       keep reading new records every 3 s (logs, server)
+  --limit <n>                    records a page, at most 2000 (default 200)
+  --cursor <cursor>              the next page, from a "more" line (add it to the same command)
+  --follow                       read every page from --since, then new records every 3 s
 
 Options for sessions:
   --since <1h|30m|2d|ISO time>   (default: 7 days)
@@ -206,9 +212,15 @@ type LogOptions = {
 	area?: string | undefined;
 };
 
+/**
+ * The filters of a log read. Without --since it reads the newest records; with it, the records
+ * from that time forward (`order=oldest`), so a busy hour cannot hide the start of the window.
+ * The server keeps 7 days; every page names the cursor of the next.
+ */
 function logQuery(values: LogOptions, extra: 'source' | 'area', now: number): URLSearchParams {
-	const query = new URLSearchParams({ since: sinceTime(values.since ?? '1h', now) });
+	const query = new URLSearchParams();
 	const optional: [string, string | undefined][] = [
+		['since', values.since === undefined ? undefined : sinceTime(values.since, now)],
 		['until', values.until],
 		['level', values.level],
 		['limit', values.limit],
@@ -218,14 +230,40 @@ function logQuery(values: LogOptions, extra: 'source' | 'area', now: number): UR
 	for (const [name, value] of optional) {
 		if (value !== undefined) query.set(name, value);
 	}
+	if (query.has('since')) query.set('order', 'oldest');
 	return query;
 }
 
 type Output = 'text' | 'json';
 
+/** Which way a read pages: a cursor carries its direction, else --since reads forward. */
+function orderOf(query: URLSearchParams): LogOrder {
+	const cursor = query.get('cursor');
+	if (cursor?.startsWith('o-') === true) return 'newest';
+	if (cursor?.startsWith('a-') === true) return 'oldest';
+	return query.get('order') === 'oldest' ? 'oldest' : 'newest';
+}
+
+function moreLine<R>(page: LogPage<R>): string {
+	const count = `${page.records.length} records`;
+	if (page.older.kind === 'cursor') {
+		return `(${count}; more before these: --cursor ${page.older.cursor})`;
+	}
+	if (page.later.kind === 'cursor') {
+		return `(${count}; more after these: --cursor ${page.later.cursor})`;
+	}
+	return `(${count})`;
+}
+
+/** A page's records oldest first, whichever way it was read. */
+function chronological<R>(page: LogPage<R>, order: LogOrder): R[] {
+	return order === 'newest' ? [...page.records].reverse() : page.records;
+}
+
 function printPage<R>(
 	io: CliIo,
 	page: LogPage<R>,
+	order: LogOrder,
 	line: (record: R) => string,
 	output: Output
 ): void {
@@ -233,14 +271,10 @@ function printPage<R>(
 		io.out(JSON.stringify(page));
 		return;
 	}
-	for (const record of [...page.records].reverse()) {
+	for (const record of chronological(page, order)) {
 		io.out(line(record));
 	}
-	io.out(
-		page.older.kind === 'cursor'
-			? `(${page.records.length} records; more before these: --cursor ${page.older.cursor})`
-			: `(${page.records.length} records)`
-	);
+	io.out(moreLine(page));
 }
 
 /** New records after a read, oldest first, one line (or JSON line) each. */
@@ -250,21 +284,36 @@ function printNew<R>(io: CliIo, page: LogPage<R>, line: (record: R) => string, o
 	}
 }
 
-/** Reads a log page, then (with --follow) every 3 s what arrived since, by the `newer` cursor. */
+/**
+ * Reads a log page. With --follow it first reads on through every later page (from --since), then
+ * every 3 s what arrived since, by the `newer` cursor.
+ */
 async function readLog<R>(
 	io: CliIo,
-	read: (cursor: string | undefined) => Promise<LogPage<R>>,
+	query: URLSearchParams,
+	read: (query: URLSearchParams) => Promise<LogPage<R>>,
 	line: (record: R) => string,
 	follow: boolean,
 	output: Output
 ): Promise<void> {
-	const first = await read(undefined);
-	printPage(io, first, line, output);
-	let newer = first.newer;
+	const order = orderOf(query);
+	let page = await read(query);
+	while (follow && page.later.kind === 'cursor') {
+		for (const record of page.records) {
+			io.out(output === 'json' ? JSON.stringify(record) : line(record));
+		}
+		const next = new URLSearchParams(query);
+		next.set('cursor', page.later.cursor);
+		page = await read(next);
+	}
+	printPage(io, page, order, line, output);
+	let newer = page.newer;
 	while (follow && (await io.wait(FOLLOW_EVERY_MS))) {
-		const page = await read(newer);
-		printNew(io, page, line, output);
-		newer = page.newer;
+		const next = new URLSearchParams(query);
+		next.set('cursor', newer);
+		const fresh = await read(next);
+		printNew(io, fresh, line, output);
+		newer = fresh.newer;
 	}
 }
 
@@ -337,7 +386,9 @@ async function watch(io: CliIo, id: string, query: URLSearchParams, output: Outp
 			if (output === 'json') emit('checks', '', checks);
 			else printChecks(io, checks, output);
 		}
+		// Watch starts from the newest records, whatever --since says about where they begin.
 		const logQuery = new URLSearchParams(query);
+		logQuery.delete('order');
 		if (newer !== undefined) logQuery.set('cursor', newer);
 		const page = await get(
 			io,
@@ -400,14 +451,10 @@ export async function runDiagnostics(args: string[], io: CliIo, now: number): Pr
 			}
 			case 'logs': {
 				const id = await machineId(io, target);
-				const query = logQuery(values, 'source', now);
 				await readLog(
 					io,
-					(cursor) => {
-						const next = new URLSearchParams(query);
-						if (cursor !== undefined) next.set('cursor', cursor);
-						return get(io, `/api/diagnostics/machines/${id}/logs`, next, agentLogPageSchema);
-					},
+					logQuery(values, 'source', now),
+					(query) => get(io, `/api/diagnostics/machines/${id}/logs`, query, agentLogPageSchema),
 					agentRecordLine,
 					follow,
 					output
@@ -426,14 +473,10 @@ export async function runDiagnostics(args: string[], io: CliIo, now: number): Pr
 				return 0;
 			}
 			case 'server': {
-				const query = logQuery(values, 'area', now);
 				await readLog(
 					io,
-					(cursor) => {
-						const next = new URLSearchParams(query);
-						if (cursor !== undefined) next.set('cursor', cursor);
-						return get(io, '/api/diagnostics/server/logs', next, serverLogPageSchema);
-					},
+					logQuery(values, 'area', now),
+					(query) => get(io, '/api/diagnostics/server/logs', query, serverLogPageSchema),
 					serverRecordLine,
 					follow,
 					output

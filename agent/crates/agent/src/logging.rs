@@ -13,6 +13,7 @@
 //! deadline; library targets stay at `warn`. The window lives in memory only,
 //! so a restart is back at the normal level.
 
+use crate::log_repeats::Repeats;
 use bmuster_protocol::logs::{
     cut_text, LogLevel, LogSource, VerboseLevel, MAX_RECORD_TARGET_BYTES, MAX_RECORD_TEXT_BYTES,
     MAX_VERBOSE_MS,
@@ -99,6 +100,8 @@ pub struct ShipQueue {
     enabled: AtomicBool,
     records: Mutex<VecDeque<Pending>>,
     dropped: AtomicU64,
+    /// Repeats held back and their summaries (SPEC-AGENT-LOGS AL15).
+    repeats: Mutex<Repeats>,
 }
 
 impl ShipQueue {
@@ -107,6 +110,7 @@ impl ShipQueue {
             enabled: AtomicBool::new(false),
             records: Mutex::new(VecDeque::new()),
             dropped: AtomicU64::new(0),
+            repeats: Mutex::new(Repeats::new()),
         }
     }
 
@@ -119,29 +123,55 @@ impl ShipQueue {
         self.enabled.load(Ordering::SeqCst)
     }
 
-    /// Redacts and queues one record (a no-op until shipping is on).
+    /// Redacts and queues one record (a no-op until shipping is on). A
+    /// record identical to one shipped in the last 30 minutes is counted
+    /// instead and summarised later.
     pub fn push(&self, level: LogLevel, source: LogSource, target: &str, text: &str) {
+        self.push_at(now_ms(), level, source, target, text);
+    }
+
+    fn push_at(&self, at: u64, level: LogLevel, source: LogSource, target: &str, text: &str) {
         if !self.enabled.load(Ordering::SeqCst) {
             return;
         }
         let pending = Pending {
-            at: now_ms(),
+            at,
             level,
             source,
             target: cut_text(target, MAX_RECORD_TARGET_BYTES),
             text: cut_text(&crate::diagnostics::redact(text), MAX_RECORD_TEXT_BYTES),
         };
-        let mut records = lock(&self.records);
-        if records.len() >= SHIP_QUEUE_LIMIT {
-            self.dropped.fetch_add(1, Ordering::SeqCst);
-            return;
-        }
-        records.push_back(pending);
+        // The repeats lock is held until the records are queued, so two
+        // threads cannot put a summary after the record that closed it.
+        let mut repeats = lock(&self.repeats);
+        let admitted = repeats.admit(pending);
+        self.queue(admitted);
     }
 
-    /// Everything queued, oldest first, and how many records were dropped
-    /// because the queue was full.
+    fn queue(&self, admitted: Vec<Pending>) {
+        let mut records = lock(&self.records);
+        for pending in admitted {
+            if records.len() >= SHIP_QUEUE_LIMIT {
+                self.dropped.fetch_add(1, Ordering::SeqCst);
+                continue;
+            }
+            records.push_back(pending);
+        }
+    }
+
+    /// Everything queued, oldest first, with the summaries of repeats whose
+    /// window has ended, and how many records were dropped because the
+    /// queue was full.
     pub fn take(&self) -> (Vec<Pending>, u64) {
+        self.take_at(now_ms())
+    }
+
+    fn take_at(&self, now: u64) -> (Vec<Pending>, u64) {
+        {
+            let mut repeats = lock(&self.repeats);
+            let due = repeats.sweep(now);
+            self.queue(due);
+        }
         let records = lock(&self.records).drain(..).collect();
         (records, self.dropped.swap(0, Ordering::SeqCst))
     }
@@ -149,6 +179,27 @@ impl ShipQueue {
 
 /// The running agent's ship queue.
 pub static SHIP: ShipQueue = ShipQueue::new();
+
+/// For a problem that stays the same for the whole run (a damaged WMI
+/// repository): `warn` the first time, `debug` after (SPEC-AGENT-LOGS AL16).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub struct FirstWarning(AtomicBool);
+
+#[cfg_attr(not(windows), allow(dead_code))]
+impl FirstWarning {
+    pub const fn new() -> Self {
+        Self(AtomicBool::new(false))
+    }
+
+    /// The level for this occurrence.
+    pub fn level(&self) -> Level {
+        if self.0.swap(true, Ordering::SeqCst) {
+            Level::Debug
+        } else {
+            Level::Warn
+        }
+    }
+}
 
 /// The logger's level for the agent's own targets, and the verbose window.
 pub struct Filter {
@@ -666,6 +717,41 @@ mod tests {
         assert!(shown[3].2.len() <= MAX_RECORD_TEXT_BYTES);
         assert!(shown[3].2.ends_with("[cut 9000 bytes]"));
         assert!(records.iter().all(|r| r.source == LogSource::Agent));
+    }
+
+    #[test]
+    fn ship_queue_collapses_repeats() {
+        let queue = leaked(ShipQueue::new());
+        queue.enable();
+        let text = "Check-in failed: HTTP 502 Bad Gateway; retrying in 60 s";
+        for minute in 0..10 {
+            queue.push_at(
+                minute * 60_000,
+                LogLevel::Warn,
+                LogSource::Agent,
+                "bmuster_agent::worker",
+                text,
+            );
+        }
+        assert_eq!(
+            queue.take_at(10 * 60_000).0.len(),
+            1,
+            "repeats are held back"
+        );
+        let (due, _) = queue.take_at(30 * 60_000);
+        assert_eq!(due.len(), 1);
+        assert_eq!(
+            due[0].text,
+            format!("Repeated 9 more times in the last 30 minutes: {text}")
+        );
+    }
+
+    #[test]
+    fn first_warning_then_debug() {
+        let once = FirstWarning::new();
+        assert_eq!(once.level(), Level::Warn);
+        assert_eq!(once.level(), Level::Debug);
+        assert_eq!(once.level(), Level::Debug);
     }
 
     #[test]
