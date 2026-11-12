@@ -240,7 +240,7 @@ As built:
 
 ### Revised after the second phone test (2026-11-12)
 
-**Status:** pending release · approved by Jack 2026-11-12 ("go") after testing v0.4.23's joystick edge pan on an Android phone · **security work:** the gestures send input to another person's computer.
+**Status:** `IMPLEMENTED (v0.4.24)` · approved by Jack 2026-11-12 ("go") after testing v0.4.23's joystick edge pan on an Android phone · **security work:** the gestures send input to another person's computer.
 
 Problems in v0.4.23:
 

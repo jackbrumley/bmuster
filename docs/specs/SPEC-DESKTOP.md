@@ -690,7 +690,7 @@ R9 promised text copy and paste in phase 6. The agent has parsed `clipboard-push
 
 ### 21.10 KMS screens: the clipboard of the person's session (2026-11-12)
 
-**Status:** `IMPLEMENTED (pending release)` (owner request 2026-11-12, with the owner's direction to cover as many distributions and desktops as possible through standard protocols) · **security work**: a new helper that runs in a signed-in person's session, and clipboard text on its channel.
+**Status:** `IMPLEMENTED (v0.4.24)` (owner request 2026-11-12, with the owner's direction to cover as many distributions and desktops as possible through standard protocols) · **security work**: a new helper that runs in a signed-in person's session, and clipboard text on its channel.
 
 **Problem.** On many Wayland desktops (Fedora KDE Plasma among them) desktop sessions, signed-in ones included, use KMS capture and uinput input (SPEC-CONSOLE-CAPTURE), not the portal. Neither reaches the clipboard, so copy and paste answered "not available".
 
@@ -722,7 +722,7 @@ R9 promised text copy and paste in phase 6. The agent has parsed `clipboard-push
 
 ### 21.11 Clipboard sharing: automatic copy and paste both ways (2026-11-13)
 
-**Status:** `IMPLEMENTED (pending release)` (owner approved 2026-11-12, "go") · **security work**: the machine's clipboard now reaches the viewer's device without a button press while sharing is on, and the device's clipboard reaches the machine when the page regains focus.
+**Status:** `IMPLEMENTED (v0.4.24)` (owner approved 2026-11-12, "go") · **security work**: the machine's clipboard now reaches the viewer's device without a button press while sharing is on, and the device's clipboard reaches the machine when the page regains focus.
 
 **Problem.** The Clipboard panel needs a button press each way, and on phones the wording ("Paste into the box with your keys instead") was unclear. Copy at one end and paste at the other should just work.
 

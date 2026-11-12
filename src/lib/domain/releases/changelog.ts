@@ -15,6 +15,27 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.24',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Windows: copy text in Notepad on the machine; it should be on your device’s clipboard (phone: after one tap in BMuster, with “Copied from the machine”)',
+				'Phone to Windows: copy in Notes, open the BMuster keyboard, tap the keyboard’s clipboard suggestion (or long-press, Paste); see “Ready to paste on the machine”, then right-click, Paste in Notepad',
+				'Desktop browser: press Allow clipboard sharing once, copy something on your computer, click back into BMuster, then right-click, Paste on the machine',
+				'Fedora KDE signed in: the same both ways; then lock the screen and check the Clipboard tab says it is not available while locked',
+				'Phone, zoomed Trackpad: with the whole height on screen, moving up or down never pans; pushing the cursor into an edge pans one to one, pulling back stops at once, holding still at the edge creeps',
+				'Updates page: the confirmation is short, the notes show as headings and lists, and the update wait covers the whole screen'
+			]
+		},
+		changes: [
+			'Clipboard shared both ways while you control: copy on the machine and it is on your device; copy on a desktop browser and paste on the machine; on a phone, paste into the BMuster keyboard to send it',
+			'Copy and paste on Linux desktops through the direct screen path (KDE, GNOME, Sway, Hyprland and other Wayland desktops, and X11), refused while the machine is locked',
+			'Phone, zoomed Trackpad: an axis that fits never pans, the picture never slides past its edges, the cursor pushes the view, and a still finger at the edge creeps it along',
+			'The update confirmation says only what the update does, and the release notes show as headings and lists',
+			'While the server updates, the wait screen covers the whole console'
+		]
+	},
+	{
 		version: '0.4.23',
 		testing: {
 			kind: 'steps',
