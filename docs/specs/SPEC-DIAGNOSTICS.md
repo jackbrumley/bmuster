@@ -55,7 +55,7 @@ The agent runs a fixed set of **checks** that each try one capability for real, 
 
 `npm run diagnostics` gains `--since <10m|2h|ISO>`, `--level`, `--source`, `--follow` (poll every 3 s and print new records), `checks <machine>`, `sessions <machine>`, and `watch <machine>`, which follows logs, check results and the machine's online state together. Every command prints plain text, with `--json` for raw output.
 
-Since 2026-11-12 (pending release): `--since` reads from that time forward, oldest first, page by page, and without it the newest records are read, paging back through the server's 7 days; HTTP failures in agent records are one short line and repeated records collapse into summaries. See SPEC-AGENT-LOGS "Quieter logs and reading the whole week" (AL14 to AL18).
+Since v0.4.22: `--since` reads from that time forward, oldest first, page by page, and without it the newest records are read, paging back through the server's 7 days; HTTP failures in agent records are one short line and repeated records collapse into summaries. See SPEC-AGENT-LOGS "Quieter logs and reading the whole week" (AL14 to AL18).
 
 ## Security
 
@@ -114,7 +114,7 @@ Every acceptance criterion has a passing test with the name the table gives, exc
 
 ## Windows outputs from the console session
 
-**Status:** `PENDING RELEASE` · approved 2026-11-12 (Jack: "go"), asked for 2026-11-12 after the Display card on a Windows 10 PC showed "Outputs: None found" (and "Secure desktop: Unknown") while desktop capture worked.
+**Status:** `IMPLEMENTED (v0.4.22)` · approved 2026-11-12 (Jack: "go"), asked for 2026-11-12 after the Display card on a Windows 10 PC showed "Outputs: None found" (and "Secure desktop: Unknown") while desktop capture worked.
 
 **This is security work.** It adds a second mode to the desktop helper that the LocalSystem service starts in the console session.
 

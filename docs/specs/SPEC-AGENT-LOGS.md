@@ -116,7 +116,7 @@ Added after reading the Fedora laptop's first shipped logs (terminal exit 208: s
 - On a failed session start, a second fixed query ships audit denials from the last 15 minutes: `journalctl _TRANSPORT=audit --grep=denied` (100 lines), else the `denied` lines of the last 512 KiB of `/var/log/audit/audit.log`. Tests: Rust `diagnostics::tests::journal_query_is_fixed_and_excludes_arbitrary_commands`, `audit_log_denials_are_recent_denied_lines_only`, `session_failure_ships_audit_denials`.
 - The fixed journal query also covers `bmuster-console-*` and `bmuster-wayland-*` units. The console capture helper's stderr is shipped as `console-helper`, its failure reason is logged, and a helper that fails before its first answer runs the startup diagnostics as a failed desktop session.
 
-## Quieter logs and reading the whole week (pending release)
+## Quieter logs and reading the whole week (v0.4.22)
 
 Added 2026-11-12, after a Windows reboot investigation. `npm run diagnostics -- logs <machine> --since <time>` showed only the last hour, although the server keeps 7 days: the read returned the newest 200 records of the window, and a 45-minute proxy outage had filled them. About once a minute the agent logged `Live socket: HTTP 502: <html>…openresty…</html>` and `Check-in failed: unexpected reply from …/agent/v1/check-in: HTTP 502: <html>…`, each with the proxy's whole HTML page, and every 5 minutes `could not list graphics cards through WMI (HRESULT 0x80041010); found 1 in the registry instead`.
 
@@ -143,7 +143,7 @@ This touches the agent channel only in what the agent writes to its own log; no 
 | AL17 | The log endpoints read oldest first from `since` with a `later` cursor to the end of the window, and newest first pages back through every stored record; bad `order` is a 400. | `diagnostics-api.test.ts` (the two AL17 tests)                                                                                                     |
 | AL18 | The CLI reads the newest records without `--since`, reads forward from `--since` with a "more after these" cursor line, and `--follow` reads every page before following.       | `diagnostics-cli.test.ts` (AL13 and AL18 tests)                                                                                                    |
 
-### As built (pending release)
+### As built (v0.4.22)
 
 - `parse_reply` keeps its shape; only the text of its errors changed. Downloads (`get_bytes`) already reported only `HTTP <status> from <url>`.
 - The collapse lives in `log_repeats.rs`, used by `ShipQueue`; summaries pass the same redaction (they are built from redacted text) and the same 4 KiB cut.

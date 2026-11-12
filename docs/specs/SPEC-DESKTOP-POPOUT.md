@@ -1,6 +1,6 @@
 # SPEC-DESKTOP-POPOUT: Phones open in full screen; the desktop pops out into its own window
 
-**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-12 (Jack approved both changes: "Phones: assume full screen" and "Desktop: Pop out"; and the third page frame for the pop-out window, with its hygiene rule change) · **security work:** the pop-out window is a new page that attaches to a session that controls another person's computer, and the session moves between browser windows.
+**Status:** `IMPLEMENTED (v0.4.22)` · approved 2026-11-12 (Jack approved both changes: "Phones: assume full screen" and "Desktop: Pop out"; and the third page frame for the pop-out window, with its hygiene rule change) · **security work:** the pop-out window is a new page that attaches to a session that controls another person's computer, and the session moves between browser windows.
 
 ## Problem
 

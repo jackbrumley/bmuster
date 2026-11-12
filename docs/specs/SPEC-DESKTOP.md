@@ -506,7 +506,7 @@ The remote cursor disappears over Notepad's text area. Windows' text I-beam is a
 
 ## 20. Settings in full screen, and Auto quality version 2 (2026-11-12)
 
-**Status:** `IMPLEMENTED (pending release)` · the agent and the console change together; a console on an older agent keeps version 1 Auto and shows plain "Auto" · version bump and changelog left for the release step.
+**Status:** `IMPLEMENTED (v0.4.22)` · the agent and the console change together; a console on an older agent keeps version 1 Auto and shows plain "Auto" · version bump and changelog left for the release step.
 
 ### 20.1 Problem
 
@@ -563,7 +563,7 @@ Watch the status line (frames per second and KB/s) and Picture settings, which n
 
 ## 21. Copy and paste (phase 6 clipboard, 2026-11-12)
 
-**Status:** `APPROVED, PENDING RELEASE` (owner approved 2026-11-12) · **security work**: the clipboard can hold passwords and other secrets, and a push changes what the person at the machine pastes next · version bump and changelog left for the release step.
+**Status:** `IMPLEMENTED (v0.4.22)` (owner approved 2026-11-12) · **security work**: the clipboard can hold passwords and other secrets, and a push changes what the person at the machine pastes next · version bump and changelog left for the release step.
 
 ### 21.1 Problem
 
@@ -638,7 +638,7 @@ R9 promised text copy and paste in phase 6. The agent has parsed `clipboard-push
 1. ~~Wayland portal clipboard (section 21.4): build it now or later?~~ Closed 2026-11-12: built (section 21.9).
 2. Automatic sync (R9 "later") stays out: every transfer is a button press or Ctrl+V.
 
-### 21.8 As built (pending release)
+### 21.8 As built (v0.4.22)
 
 - **Agent** (`agent/crates/desktop`): `clipboard/mod.rs` (limits and the shared reasons), `clipboard/x11.rs` (the selection owner thread and the reader, section 21.4), `clipboard/windows.rs` (`arboard`, new Windows-only dependency of the desktop crate, already in the build through the tray). `InputBackend` gained `set_clipboard` and `clipboard`, defaulting to "not available", so uinput needs no change; `XTestInput` makes its `X11Clipboard` on the first push, `SendInputBackend` calls `arboard`, and the Wayland portal input (`agent/src/wayland/capture.rs`) goes through the portal helper (section 21.9). `DesktopSession` answers `clipboard-push` with `clipboard-sent` and `clipboard-pull` with `clipboard`, or `clipboard-failed`; a following session with no screen open says "not available" rather than staying silent. The pull runs on the session thread and can hold frames for up to 3 s while a slow owner answers.
 - **Server** (`relay.ts`): `start` takes an `onClipboard` callback beside `onEnded`; `sessions.ts` writes `desktop-clipboard` (direction, bytes, session) from it. A watch-only desktop's `clipboard-push` and `clipboard-pull` are dropped. New audit kind `desktop-clipboard`, "Copied text to or from a screen", with the clipboard icon on the Activity page.
@@ -648,7 +648,7 @@ R9 promised text copy and paste in phase 6. The agent has parsed `clipboard-push
 
 ### 21.9 Wayland portal sessions (2026-11-12)
 
-**Status:** `APPROVED, PENDING RELEASE` (owner approved 2026-11-12, closing open question 1) · **security work**: a new permission asked for in the desktop's approval, and clipboard text on the helper channel.
+**Status:** `IMPLEMENTED (v0.4.22)` (owner approved 2026-11-12, closing open question 1) · **security work**: a new permission asked for in the desktop's approval, and clipboard text on the helper channel.
 
 **Design.**
 
@@ -675,9 +675,9 @@ R9 promised text copy and paste in phase 6. The agent has parsed `clipboard-push
 8. The agent log and the journal hold no clipboard text: `journalctl -u 'bmuster-wayland-*'` and the agent log show only reasons and byte counts.
 9. GNOME (Fedora Workstation), if one is available: steps 1, 2 and 5.
 
-## 22. The local cursor: remote control without pointer lag (pending release)
+## 22. The local cursor: remote control without pointer lag (v0.4.22)
 
-**Status:** `IMPLEMENTED (pending release)`, approved by the owner 2026-11-12.
+**Status:** `IMPLEMENTED (v0.4.22)`, approved by the owner 2026-11-12.
 
 ### 22.1 Problem
 

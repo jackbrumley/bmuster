@@ -1,6 +1,6 @@
 # SPEC-SHARE-LINKS: Short-lived links to one machine for someone without an account
 
-**Status:** `IMPLEMENTED` except guest Files (section 8); version bump and changelog left for the release step · owner: "build everything", 2026-11-12 · design from `docs/access-and-sign-in.md` section 3 · **Date:** 2026-11-12
+**Status:** `IMPLEMENTED (v0.4.22)` except guest Files (section 8) · owner: "build everything", 2026-11-12 · design from `docs/access-and-sign-in.md` section 3 · **Date:** 2026-11-12
 
 > **Security work** (AGENTS.md, "This tool controls other people's computers"). A share link lets someone with no account reach a machine's screen. It touches access, sessions, the session ticket and a new public page. The link is a narrower grant than its creator's own and the agent enforces the ticket as for any session. **By the owner's decision of 2026-11-12 (D1, D15) a guest connects without a consent prompt**, with the person at the machine always shown who is connected and able to disconnect them; section 7 records the residual risk.
 

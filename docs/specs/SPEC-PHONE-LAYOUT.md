@@ -1,6 +1,6 @@
 # SPEC-PHONE-LAYOUT: No console page scrolls sideways on a phone
 
-**Status:** `IMPLEMENTED` 2026-11-12 (version bump and changelog left for the release step) · cross-cutting UI criterion for every console page · asked for by Jack after three phone bugs of the same kind in one week
+**Status:** `IMPLEMENTED (v0.4.22)` 2026-11-12 · cross-cutting UI criterion for every console page · asked for by Jack after three phone bugs of the same kind in one week
 
 ## Problem
 

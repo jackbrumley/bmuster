@@ -15,6 +15,40 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.22',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Phone: tap Connect on the desktop tab; it should go straight into full screen, and outside full screen only Full screen and Disconnect show',
+				'Phone, trackpad mode: tap twice quickly to open a folder (double click); tap, then tap and hold to drag a window',
+				'Phone: pick Fixed cursor in the sheet’s Session tab; drag to move the picture under the centred cursor and reach every corner',
+				'Phone: pinch in, then move the cursor towards an edge; the picture should pan to follow',
+				'Phone: turn the phone in full screen; the picture should refit and stay sharp; change Quality in the sheet and see it apply at once',
+				'Leave Quality on Auto on a good link; the Picture tab should reach Auto (Extra high) within a few seconds',
+				'Desktop browser: move the mouse over the picture; the cursor should follow with no lag and change shape over text and window edges',
+				'Desktop browser: Pop out the desktop into a window, resize it, then Bring it back',
+				'Copy and paste: send text to Windows and to the signed-in Fedora KDE desktop, then copy text on each and Get from machine (KDE needs Plasma 6.5.3 or later)',
+				'Share link: create one from a machine’s Overview, open it in a private window, enter a name, connect; the machine shows the guest’s name; check Activity, then End now',
+				'Overview on the phone: scroll down and wait 10 seconds; it should stay where you scrolled',
+				'Restart a machine during a session; the badge and tabs should show Reconnecting, then Offline, then reopen by themselves',
+				'Windows: the Overview Display card lists the monitors, and the Start menu BMuster entry opens the local page without a console window'
+			]
+		},
+		changes: [
+			'Share links: give someone without an account time-limited access (15 minutes to 7 days) to one machine; they enter their name, the machine shows who is connected, and every use is recorded with their address',
+			'Copy and paste on the remote desktop (Windows, X11 and signed-in Wayland desktops), from a Clipboard tab or button',
+			'The remote cursor is drawn by your own computer, so it follows the mouse with no lag',
+			'Pop out a desktop into its own resizable window, and keep several open at once',
+			'Phones go straight into full screen when you connect, with a simpler page outside it',
+			'Phone gestures: double tap to double click, double tap and hold to drag, the picture pans to follow the cursor while zoomed, and a new Fixed cursor mode; one Touch input choice everywhere',
+			'Auto quality aims for the best picture the link holds, up to Extra high, and shows the level it picked; quality changes apply at once in full screen and after turning the phone',
+			'The machine Overview no longer jumps back to the top while its figures refresh',
+			'Windows: the Display card lists the monitors, and the Start menu entry opens the local page without a console window',
+			'Quieter agent logs: proxy error pages are no longer copied in, repeats fold into one line, and diagnostics can page back through the whole week',
+			'Release notes list what to test on real machines'
+		]
+	},
+	{
 		version: '0.4.21',
 		testing: { kind: 'none' },
 		changes: [

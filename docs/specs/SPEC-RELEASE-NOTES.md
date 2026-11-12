@@ -1,6 +1,6 @@
 # SPEC-RELEASE-NOTES: What to test on real machines, in every release's notes
 
-**Status:** `IMPLEMENTED` 2026-11-12 (version bump and changelog left for the release step) · asked for by Jack (housekeeping: "Release notes: what to test")
+**Status:** `IMPLEMENTED (v0.4.22)` 2026-11-12 · asked for by Jack (housekeeping: "Release notes: what to test")
 
 ## Problem
 

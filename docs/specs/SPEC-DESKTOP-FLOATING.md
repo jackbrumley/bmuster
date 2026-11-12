@@ -147,7 +147,7 @@ None.
 
 ## Double tap, edge pan and the fixed cursor
 
-**Status:** pending release (not yet versioned) · asked for 2026-11-12 after Jack tested option A on an Android phone: "when you tap on the phone twice and then lift your finger that should be considered double tap; if you double tap and hold that should be considered a click and hold so that you can drag a window", "when you zoom in on the screen and then move the cursor towards the edge of the screen the screen should automatically pan to follow the cursor … once you get within a quarter of the edge or so", one touch input control that looks the same on the page and in full screen, and a third "fixed cursor" mode · **security work:** the gestures send input to another person's computer.
+**Status:** `IMPLEMENTED (v0.4.22)` · asked for 2026-11-12 after Jack tested option A on an Android phone: "when you tap on the phone twice and then lift your finger that should be considered double tap; if you double tap and hold that should be considered a click and hold so that you can drag a window", "when you zoom in on the screen and then move the cursor towards the edge of the screen the screen should automatically pan to follow the cursor … once you get within a quarter of the edge or so", one touch input control that looks the same on the page and in full screen, and a third "fixed cursor" mode · **security work:** the gestures send input to another person's computer.
 
 ### Problem
 
