@@ -22,6 +22,7 @@ export function readerOf(reader: DiagnosticsReader): Reader {
 export function windowParams(url: URL): {
 	since: string | null;
 	until: string | null;
+	order: string | null;
 	level: string | null;
 	cursor: string | null;
 	limit: string | null;
@@ -30,6 +31,7 @@ export function windowParams(url: URL): {
 	return {
 		since: get('since'),
 		until: get('until'),
+		order: get('order'),
 		level: get('level'),
 		cursor: get('cursor'),
 		limit: get('limit')

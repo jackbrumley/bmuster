@@ -27,7 +27,7 @@ function reply(body: unknown, status = 200): Response {
 }
 
 function logPage(records: AgentLogRecordView[], newer: string): LogPage<AgentLogRecordView> {
-	return { records, older: { kind: 'none' }, newer };
+	return { records, older: { kind: 'none' }, later: { kind: 'none' }, newer };
 }
 
 function urlOf(input: string | URL | Request): URL {

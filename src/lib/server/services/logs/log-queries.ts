@@ -3,6 +3,7 @@ import {
 	levelsAtOrAbove,
 	type AgentLogRecordView,
 	type LogLevel,
+	type LogOrder,
 	type LogPage,
 	type LogSource,
 	type ServerLogRecordView
@@ -11,41 +12,59 @@ import type { Queryable } from '../../database/connection.ts';
 import { agentLogRecords, serverLogRecords } from '../../database/schema.ts';
 
 /**
- * Reading stored log records (SPEC-AGENT-LOGS 4), newest first by their own time. A cursor is
- * opaque to callers: `o-<atMs>-<rowid>` pages back in time, `n-<rowid>` follows records stored
- * after an earlier read (by arrival, so a backlog that arrives late is not missed).
+ * Reading stored log records (SPEC-AGENT-LOGS 4) by their own time: newest first, or oldest first
+ * from `since` forward (AL17). A cursor is opaque to callers: `o-<atMs>-<rowid>` pages back in
+ * time, `a-<atMs>-<rowid>` pages forward, `n-<rowid>` follows records stored after an earlier read
+ * (by arrival, so a backlog that arrives late is not missed).
  */
 export type LogCursor =
 	| { kind: 'none' }
 	| { kind: 'older'; atMs: number; rowid: number }
+	| { kind: 'later'; atMs: number; rowid: number }
 	| { kind: 'newer'; rowid: number };
 
-const LOG_CURSOR_PATTERN = /^(o-\d{1,15}-\d{1,15}|n-\d{1,15})$/;
+const LOG_CURSOR_PATTERN = /^([oa]-\d{1,15}-\d{1,15}|n-\d{1,15})$/;
 
 export function parseLogCursor(text: string | null): LogCursor {
 	if (text === null || !LOG_CURSOR_PATTERN.test(text)) {
 		return { kind: 'none' };
 	}
 	const [kind, first, second] = text.split('-');
-	return kind === 'o'
-		? { kind: 'older', atMs: Number(first), rowid: Number(second) }
-		: { kind: 'newer', rowid: Number(first) };
+	if (kind === 'o') return { kind: 'older', atMs: Number(first), rowid: Number(second) };
+	if (kind === 'a') return { kind: 'later', atMs: Number(first), rowid: Number(second) };
+	return { kind: 'newer', rowid: Number(first) };
 }
 
 type Window = { sinceMs: number | null; untilMs: number | null; level: LogLevel | null };
 
-export type AgentLogQuery = Window & {
-	machineId: string;
-	source: LogSource | null;
-	cursor: LogCursor;
-	limit: number;
-};
+type Paging = { order: LogOrder; cursor: LogCursor; limit: number };
 
-export type ServerLogQuery = Window & {
-	area: string | null;
-	cursor: LogCursor;
-	limit: number;
-};
+export type AgentLogQuery = Window &
+	Paging & {
+		machineId: string;
+		source: LogSource | null;
+	};
+
+export type ServerLogQuery = Window &
+	Paging & {
+		area: string | null;
+	};
+
+/** How rows are read: a cursor carries its own direction; a first page follows `order`. */
+type Direction = 'newest' | 'oldest' | 'arrival';
+
+function directionOf(query: Paging): Direction {
+	switch (query.cursor.kind) {
+		case 'newer':
+			return 'arrival';
+		case 'older':
+			return 'newest';
+		case 'later':
+			return 'oldest';
+		case 'none':
+			return query.order;
+	}
+}
 
 type Columns = {
 	at: typeof agentLogRecords.at | typeof serverLogRecords.at;
@@ -70,6 +89,10 @@ function cursorCondition(columns: Columns, cursor: LogCursor): SQL | undefined {
 			const at = new Date(cursor.atMs);
 			return or(lt(columns.at, at), and(eq(columns.at, at), lt(rowid, cursor.rowid)));
 		}
+		case 'later': {
+			const at = new Date(cursor.atMs);
+			return or(gt(columns.at, at), and(eq(columns.at, at), gt(rowid, cursor.rowid)));
+		}
 		case 'newer':
 			return gt(rowid, cursor.rowid);
 	}
@@ -77,34 +100,62 @@ function cursorCondition(columns: Columns, cursor: LogCursor): SQL | undefined {
 
 type Row = { rowid: number; at: Date };
 
-/** Newest first; `older` when there may be more; `newer` follows from here. */
+function orderBy(columns: Columns, direction: Direction): SQL[] {
+	switch (direction) {
+		case 'arrival':
+			return [asc(rowid)];
+		case 'newest':
+			return [desc(columns.at), desc(rowid)];
+		case 'oldest':
+			return [asc(columns.at), asc(rowid)];
+	}
+}
+
+const NONE = { kind: 'none' } as const;
+
+/**
+ * Newest first with `older` when there may be more, or oldest first with `later`; `newer` follows
+ * from here. Rows arrive with one more than the limit, to tell whether there are more.
+ */
 function pageOf<R extends Row, V>(
 	rows: R[],
-	query: { cursor: LogCursor; limit: number },
+	query: Paging,
 	latestRowid: number,
 	view: (row: R) => V
 ): LogPage<V> {
 	const more = rows.length > query.limit;
 	const kept = rows.slice(0, query.limit);
-	if (query.cursor.kind === 'newer') {
-		// Read oldest-arrival first, so a burst larger than the limit is followed in order.
-		const last = kept.at(-1);
-		const sorted = [...kept].sort((a, b) => b.at.getTime() - a.at.getTime() || b.rowid - a.rowid);
-		return {
-			records: sorted.map(view),
-			older: { kind: 'none' },
-			newer: `n-${last === undefined ? query.cursor.rowid : last.rowid}`
-		};
+	const last = kept.at(-1);
+	const direction = directionOf(query);
+	switch (direction) {
+		case 'arrival': {
+			// Read oldest-arrival first, so a burst larger than the limit is followed in order.
+			const sorted = [...kept].sort((a, b) => b.at.getTime() - a.at.getTime() || b.rowid - a.rowid);
+			const from = query.cursor.kind === 'newer' ? query.cursor.rowid : latestRowid;
+			return {
+				records: sorted.map(view),
+				older: NONE,
+				later: NONE,
+				newer: `n-${last === undefined ? from : last.rowid}`
+			};
+		}
+		case 'newest':
+		case 'oldest': {
+			const next =
+				more && last !== undefined
+					? {
+							kind: 'cursor' as const,
+							cursor: `${direction === 'newest' ? 'o' : 'a'}-${last.at.getTime()}-${last.rowid}`
+						}
+					: NONE;
+			return {
+				records: kept.map(view),
+				older: direction === 'newest' ? next : NONE,
+				later: direction === 'oldest' ? next : NONE,
+				newer: `n-${latestRowid}`
+			};
+		}
 	}
-	const oldest = kept.at(-1);
-	return {
-		records: kept.map(view),
-		older:
-			more && oldest !== undefined
-				? { kind: 'cursor', cursor: `o-${oldest.at.getTime()}-${oldest.rowid}` }
-				: { kind: 'none' },
-		newer: `n-${latestRowid}`
-	};
 }
 
 function latest(
@@ -144,9 +195,7 @@ export function readAgentLogs(
 		})
 		.from(agentLogRecords)
 		.where(and(...conditions))
-		.orderBy(
-			...(query.cursor.kind === 'newer' ? [asc(rowid)] : [desc(agentLogRecords.at), desc(rowid)])
-		)
+		.orderBy(...orderBy(agentLogRecords, directionOf(query)))
 		.limit(query.limit + 1)
 		.all();
 	return pageOf(rows, query, latestRowid, (row) => ({
@@ -182,9 +231,7 @@ export function readServerLogs(
 		})
 		.from(serverLogRecords)
 		.where(conditions.length === 0 ? undefined : and(...conditions))
-		.orderBy(
-			...(query.cursor.kind === 'newer' ? [asc(rowid)] : [desc(serverLogRecords.at), desc(rowid)])
-		)
+		.orderBy(...orderBy(serverLogRecords, directionOf(query)))
 		.limit(query.limit + 1)
 		.all();
 	return pageOf(rows, query, latestRowid, (row) => ({

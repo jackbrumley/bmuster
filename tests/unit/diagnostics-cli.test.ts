@@ -89,6 +89,7 @@ const routes = (url: URL): Response => {
 					}
 				],
 				older: { kind: 'cursor', cursor: 'o-1-1' },
+				later: { kind: 'none' },
 				newer: 'n-2'
 			});
 		case `/api/diagnostics/machines/${MACHINE.id}/report`:
@@ -107,6 +108,7 @@ const routes = (url: URL): Response => {
 					}
 				],
 				older: { kind: 'none' },
+				later: { kind: 'none' },
 				newer: 'n-1'
 			});
 		default:
@@ -128,9 +130,7 @@ describe('npm run diagnostics (SPEC-AGENT-LOGS AL13)', () => {
 
 	it('AL13: prints a machine log by name, oldest first, with its filters', async () => {
 		const run = io(home(0o600), routes);
-		expect(
-			await runDiagnostics(['logs', 'Fedora-Desk', '--level', 'warn', '--since', '2h'], run.io, NOW)
-		).toBe(0);
+		expect(await runDiagnostics(['logs', 'Fedora-Desk', '--level', 'warn'], run.io, NOW)).toBe(0);
 		expect(run.out).toEqual([
 			'2026-11-09T11:00:01.000Z INFO  [agent:bmuster_agent::sessions] Session started.',
 			'2026-11-09T11:00:02.000Z WARN  [journal:journal] bmuster-terminal-1.service: exit 208',
@@ -140,7 +140,91 @@ describe('npm run diagnostics (SPEC-AGENT-LOGS AL13)', () => {
 			.map(([input]) => new URL(input instanceof Request ? input.url : input))
 			.find((url) => url.pathname.endsWith('/logs'));
 		expect(logsCall?.searchParams.get('level')).toBe('warn');
-		expect(logsCall?.searchParams.get('since')).toBe(new Date(NOW - 2 * 3_600_000).toISOString());
+		// Without --since: the newest records of everything the server keeps.
+		expect(logsCall?.searchParams.has('since')).toBe(false);
+		expect(logsCall?.searchParams.has('order')).toBe(false);
+	});
+
+	const forward = (url: URL): Response => {
+		if (url.pathname !== `/api/diagnostics/machines/${MACHINE.id}/logs`) return routes(url);
+		const record = (seq: number) => ({
+			instance: 'i',
+			seq,
+			atIso: `2026-11-09T10:00:0${seq}.000Z`,
+			level: 'info',
+			source: 'agent',
+			target: 'bmuster_agent::worker',
+			text: `record ${seq}`
+		});
+		switch (url.searchParams.get('cursor')) {
+			case null:
+				return json({
+					records: [record(1), record(2)],
+					older: { kind: 'none' },
+					later: { kind: 'cursor', cursor: 'a-2-2' },
+					newer: 'n-9'
+				});
+			case 'a-2-2':
+				return json({
+					records: [record(3)],
+					older: { kind: 'none' },
+					later: { kind: 'none' },
+					newer: 'n-9'
+				});
+			default:
+				return json({
+					records: [],
+					older: { kind: 'none' },
+					later: { kind: 'none' },
+					newer: 'n-9'
+				});
+		}
+	};
+
+	it('AL18: --since reads from that time forward, oldest first, and names the next page', async () => {
+		const run = io(home(0o600), forward);
+		expect(await runDiagnostics(['logs', 'fedora-desk', '--since', '2h'], run.io, NOW)).toBe(0);
+		expect(run.out).toEqual([
+			'2026-11-09T10:00:01.000Z INFO  [agent:bmuster_agent::worker] record 1',
+			'2026-11-09T10:00:02.000Z INFO  [agent:bmuster_agent::worker] record 2',
+			'(2 records; more after these: --cursor a-2-2)'
+		]);
+		const call = run.fetch.mock.calls
+			.map(([input]) => new URL(input instanceof Request ? input.url : input))
+			.find((url) => url.pathname.endsWith('/logs'));
+		expect(call?.searchParams.get('since')).toBe(new Date(NOW - 2 * 3_600_000).toISOString());
+		expect(call?.searchParams.get('order')).toBe('oldest');
+
+		const next = io(home(0o600), forward);
+		expect(
+			await runDiagnostics(
+				['logs', 'fedora-desk', '--since', '2h', '--cursor', 'a-2-2'],
+				next.io,
+				NOW
+			)
+		).toBe(0);
+		expect(next.out).toEqual([
+			'2026-11-09T10:00:03.000Z INFO  [agent:bmuster_agent::worker] record 3',
+			'(1 records)'
+		]);
+	});
+
+	it('AL18: --since with --follow reads every page to the end, then follows', async () => {
+		const run = io(home(0o600), forward, 1);
+		expect(
+			await runDiagnostics(['logs', 'fedora-desk', '--since', '2h', '--follow'], run.io, NOW)
+		).toBe(0);
+		expect(run.out).toEqual([
+			'2026-11-09T10:00:01.000Z INFO  [agent:bmuster_agent::worker] record 1',
+			'2026-11-09T10:00:02.000Z INFO  [agent:bmuster_agent::worker] record 2',
+			'2026-11-09T10:00:03.000Z INFO  [agent:bmuster_agent::worker] record 3',
+			'(1 records)'
+		]);
+		const cursors = run.fetch.mock.calls
+			.map(([input]) => new URL(input instanceof Request ? input.url : input))
+			.filter((url) => url.pathname.endsWith('/logs'))
+			.map((url) => url.searchParams.get('cursor'));
+		expect(cursors).toEqual([null, 'a-2-2', 'n-9']);
 	});
 
 	it('AL13: prints a report and the server log', async () => {
@@ -222,6 +306,7 @@ describe('npm run diagnostics (SPEC-AGENT-LOGS AL13)', () => {
 								]
 							: [],
 					older: { kind: 'none' },
+					later: { kind: 'none' },
 					newer: cursor === null ? 'n-1' : 'n-2'
 				});
 			}
@@ -323,7 +408,7 @@ describe('npm run diagnostics (SPEC-AGENT-LOGS AL13)', () => {
 				case `/api/diagnostics/machines/${MACHINE.id}/logs`:
 					return url.searchParams.get('cursor') === null
 						? routes(url)
-						: json({ records: [], older: { kind: 'none' }, newer: 'n-2' });
+						: json({ records: [], older: { kind: 'none' }, later: { kind: 'none' }, newer: 'n-2' });
 				default:
 					return routes(url);
 			}

@@ -155,6 +155,102 @@ describe('diagnostics endpoints (SPEC-AGENT-LOGS AL11)', () => {
 		expect(idle.newer).toBe(followed.newer);
 	});
 
+	it('AL17: reads from since forward, oldest first, paging on with a later cursor', async () => {
+		const { token, machineId } = await setUp();
+		// An outage: 300 identical warnings in the last hour, after the records that matter.
+		storeLogBatch(
+			database,
+			machineId,
+			{
+				type: 'log-batch',
+				instance: '55555555-5555-4555-8555-555555555555',
+				records: Array.from({ length: 300 }, (_, index) => ({
+					seq: index + 1,
+					at: now - 5_000 + index * 10,
+					level: 'warn' as const,
+					source: 'agent' as const,
+					target: 'bmuster_agent::socket',
+					text: 'Live socket: HTTP 502 Bad Gateway from the server or its proxy'
+				}))
+			},
+			now
+		);
+		const since = new Date(now - 60_000).toISOString();
+		const first = await page(token, machineId, `?since=${since}&order=oldest&limit=3`);
+		expect(first.records.map((record) => record.text)).toEqual([
+			'Live socket connected.',
+			'verbose detail',
+			'pipewiresrc: no stream'
+		]);
+		expect(first.older).toEqual({ kind: 'none' });
+		if (first.later.kind !== 'cursor') throw new Error('expected more');
+		expect(first.later.cursor).toMatch(/^a-\d+-\d+$/);
+
+		const texts: string[] = first.records.map((record) => record.text);
+		let cursor: string = first.later.cursor;
+		for (;;) {
+			const next = await page(token, machineId, `?since=${since}&limit=100&cursor=${cursor}`);
+			texts.push(...next.records.map((record) => record.text));
+			if (next.later.kind === 'none') break;
+			cursor = next.later.cursor;
+		}
+		expect(texts).toHaveLength(305);
+		expect(texts[4]).toBe('Session failed: secret detail');
+		expect(texts.filter((text) => text.startsWith('Live socket: HTTP 502'))).toHaveLength(300);
+
+		// Newest first is still the default, and pages back past the outage to the start.
+		const newest = await page(token, machineId, '?limit=200');
+		expect(newest.later).toEqual({ kind: 'none' });
+		if (newest.older.kind !== 'cursor') throw new Error('expected more');
+		const back = await page(token, machineId, `?limit=200&cursor=${newest.older.cursor}`);
+		expect(back.records.map((record) => record.text).slice(-5)).toEqual([
+			'Session failed: secret detail',
+			'bmuster-terminal-1.service: exit 208',
+			'pipewiresrc: no stream',
+			'verbose detail',
+			'Live socket connected.'
+		]);
+		expect(back.older).toEqual({ kind: 'none' });
+		expect((await logs(token, machineId, '?order=sideways')).status).toBe(400);
+	});
+
+	it('AL17: the server log reads oldest first from since too', async () => {
+		const { token } = await setUp();
+		const instance = crypto.randomUUID();
+		database
+			.insert(serverLogRecords)
+			.values(
+				[1, 2, 3].map((seq) => ({
+					instance,
+					seq,
+					at: new Date(now - 10_000 + seq * 1000),
+					level: 'info' as const,
+					area: 'paging',
+					machineId: null,
+					text: `server ${seq}`
+				}))
+			)
+			.run();
+		const read = async (query: string) => {
+			const response = await serverLogsGet(
+				request(
+					`/api/diagnostics/server/logs?area=paging&limit=2${query}`,
+					token,
+					{}
+				) as Parameters<typeof serverLogsGet>[0]
+			);
+			return serverLogPageSchema.parse(await response.json());
+		};
+		const since = new Date(now - 60_000).toISOString();
+		const first = await read(`&since=${since}&order=oldest`);
+		expect(first.records.map((record) => record.text)).toEqual(['server 1', 'server 2']);
+		expect(first.older).toEqual({ kind: 'none' });
+		if (first.later.kind !== 'cursor') throw new Error('expected more');
+		const second = await read(`&since=${since}&cursor=${first.later.cursor}`);
+		expect(second.records.map((record) => record.text)).toEqual(['server 3']);
+		expect(second.later).toEqual({ kind: 'none' });
+	});
+
 	it('AL11: caps the limit at 2000', async () => {
 		const { token, machineId } = await setUp();
 		for (let batch = 0; batch < 5; batch += 1) {
@@ -194,6 +290,7 @@ describe('diagnostics endpoints (SPEC-AGENT-LOGS AL11)', () => {
 			level: 'warn',
 			since: 'any',
 			until: 'any',
+			order: 'newest',
 			records: '1',
 			via: 'token api test'
 		});

@@ -7,8 +7,8 @@ import { noStore, readerOf, windowParams } from '../../diagnostics.server.ts';
 import type { RequestHandler } from './$types';
 
 /**
- * GET /api/diagnostics/server/logs?since&until&level&area&cursor&limit: the server's own log
- * records, newest first (SPEC-AGENT-LOGS 4). Admins and tokens; audited without the contents.
+ * GET /api/diagnostics/server/logs?since&until&order&level&area&cursor&limit: the server's own log
+ * records, newest first, or oldest first from `since` with `order=oldest` (SPEC-AGENT-LOGS 4). Admins and tokens; audited without the contents.
  */
 export const GET: RequestHandler = route.diagnostics(({ url }, { reader }) => {
 	const parsed = serverLogQuerySchema.safeParse({

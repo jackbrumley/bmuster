@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DIAGNOSTICS_TOKEN_DAYS } from '#lib/domain/logs/diagnostics-tokens.ts';
 import {
 	LOG_LEVELS,
+	LOG_ORDERS,
 	LOG_SOURCES,
 	MAX_READ_LIMIT,
 	type AgentLogRecordView,
@@ -11,12 +12,19 @@ import {
 
 /** Request and reply contracts for logs, verbose mode and diagnostics tokens (SPEC-AGENT-LOGS). */
 
-const CURSOR = /^(o-\d{1,15}-\d{1,15}|n-\d{1,15})$/;
+const CURSOR = /^([oa]-\d{1,15}-\d{1,15}|n-\d{1,15})$/;
 const DEFAULT_LIMIT = 200;
 
-/** Query parameters shared by both log reads. Limits above 2000 are capped. */
+/**
+ * Query parameters shared by both log reads. Limits above 2000 are capped. `order` is `newest`
+ * unless given; a cursor carries its own direction.
+ */
 const windowFields = {
 	since: z.iso.datetime().nullable(),
+	order: z
+		.enum(LOG_ORDERS)
+		.nullable()
+		.transform((order) => order ?? 'newest'),
 	until: z.iso.datetime().nullable(),
 	level: z.enum(LOG_LEVELS).nullable(),
 	cursor: z.string().regex(CURSOR, 'That cursor is not one this server gave out.').nullable(),
@@ -44,11 +52,14 @@ export const serverLogQuerySchema = z.object({
 
 const level = z.enum(LOG_LEVELS);
 
+const continuation = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('none') }),
+	z.object({ kind: z.literal('cursor'), cursor: z.string() })
+]);
+
 const pageFields = {
-	older: z.discriminatedUnion('kind', [
-		z.object({ kind: z.literal('none') }),
-		z.object({ kind: z.literal('cursor'), cursor: z.string() })
-	]),
+	older: continuation,
+	later: continuation,
 	newer: z.string()
 };
 

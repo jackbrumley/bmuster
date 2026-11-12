@@ -115,3 +115,37 @@ Added after reading the Fedora laptop's first shipped logs (terminal exit 208: s
 - The machine report's `selinux`: `unreported` (agents before 0.4.2), `absent`, or `present` with `enforcing`, the agent's context (`/proc/self/attr/current`) and systemd's (`/proc/1/attr/current`). Display card rows SELinux, Agent context and systemd context. Tests: Rust `display_report::tests::report_from_fixture_tree`, `display-report.test.ts`, `display-card.svelte.test.ts`.
 - On a failed session start, a second fixed query ships audit denials from the last 15 minutes: `journalctl _TRANSPORT=audit --grep=denied` (100 lines), else the `denied` lines of the last 512 KiB of `/var/log/audit/audit.log`. Tests: Rust `diagnostics::tests::journal_query_is_fixed_and_excludes_arbitrary_commands`, `audit_log_denials_are_recent_denied_lines_only`, `session_failure_ships_audit_denials`.
 - The fixed journal query also covers `bmuster-console-*` and `bmuster-wayland-*` units. The console capture helper's stderr is shipped as `console-helper`, its failure reason is logged, and a helper that fails before its first answer runs the startup diagnostics as a failed desktop session.
+
+## Quieter logs and reading the whole week (pending release)
+
+Added 2026-11-12, after a Windows reboot investigation. `npm run diagnostics -- logs <machine> --since <time>` showed only the last hour, although the server keeps 7 days: the read returned the newest 200 records of the window, and a 45-minute proxy outage had filled them. About once a minute the agent logged `Live socket: HTTP 502: <html>…openresty…</html>` and `Check-in failed: unexpected reply from …/agent/v1/check-in: HTTP 502: <html>…`, each with the proxy's whole HTML page, and every 5 minutes `could not list graphics cards through WMI (HRESULT 0x80041010); found 1 in the registry instead`.
+
+This touches the agent channel only in what the agent writes to its own log; no check, credential or message shape between agent and server changes.
+
+### Behaviour
+
+- **HTTP failures in one short line.** Every failed reply the agent reads through `parse_reply` (enrolment, check-in, the live socket upgrade and its other signed requests) is described by one function, `client::http_failure`: the status and its reason phrase, then the server's JSON `message` or a short plain-text body on one line, cut at 200 characters with "…". An HTML body (a proxy's error page) or any other body over 200 characters is never quoted: the line reads `HTTP 502 Bad Gateway from the server or its proxy`. An empty body reads `… with an empty body`.
+- **Repeats collapse before they ship.** The ship queue remembers each (level, target, text) it shipped. An identical record in the next 30 minutes is counted instead of shipped. One summary record, with the same level and target, says `Repeated N more times in the last M minutes: <text>`:
+  - when the 30 minutes end (checked every time the queue is moved to the spool, every 250 ms), after which the next identical record ships again in full; or
+  - at once, before a new record from the same target, so `Live socket connected.` follows the count of the failures before it.
+  - Records that alternate (a failure, then "Reconnecting the live socket in 60 s.") each collapse on their own. At most 512 kinds of record are remembered; past that every summary ships and the memory starts again. The local log file and the local page still show every line.
+- **The WMI fallback warns once a run.** A damaged WMI repository stays damaged, so the registry fallback logs `warn` the first time in each agent run and `debug` after.
+- **Reading forward from a time.** The log endpoints take `order=newest` (the default: newest first, paging back with the `older` cursor `o-…`) or `order=oldest` (oldest first from `since`, paging forward with the new `later` cursor `a-<at>-<rowid>`). Every page carries `older`, `later` and `newer`; the one that does not apply is `none`. A cursor carries its own direction. Both directions reach every record the server keeps (7 days).
+- **The CLI.** Without `--since`, `logs` and `server` print the newest records (200 by default, `--limit` up to 2000), oldest first on screen, then `(200 records; more before these: --cursor o-…)`. With `--since`, they print the records from that time forward, then `(200 records; more after these: --cursor a-…)`; the cursor is added to the same command. `--follow` with `--since` prints every page to the end, then follows new records. `watch` starts from the newest records as before. The default window of one hour is gone.
+
+### Acceptance criteria
+
+| #    | Criterion                                                                                                                                                                       | Named test                                                                                                                                         |
+| :--- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AL14 | A failed HTTP reply is one line: status and reason, plus a short JSON message or plain-text body cut at 200 characters; HTML and long bodies are never quoted.                  | Rust `client::tests::http_error_bodies_are_short_and_never_html`                                                                                   |
+| AL15 | Identical records within 30 minutes ship once, then as one summary when the window ends or the target logs something new; alternating records collapse; memory is bounded.      | Rust `log_repeats::tests::repeated_records_collapse_into_summaries` (and the module's other tests), `logging::tests::ship_queue_collapses_repeats` |
+| AL16 | The WMI fallback warns once a run, then logs at debug.                                                                                                                          | Rust `logging::tests::first_warning_then_debug`                                                                                                    |
+| AL17 | The log endpoints read oldest first from `since` with a `later` cursor to the end of the window, and newest first pages back through every stored record; bad `order` is a 400. | `diagnostics-api.test.ts` (the two AL17 tests)                                                                                                     |
+| AL18 | The CLI reads the newest records without `--since`, reads forward from `--since` with a "more after these" cursor line, and `--follow` reads every page before following.       | `diagnostics-cli.test.ts` (AL13 and AL18 tests)                                                                                                    |
+
+### As built (pending release)
+
+- `parse_reply` keeps its shape; only the text of its errors changed. Downloads (`get_bytes`) already reported only `HTTP <status> from <url>`.
+- The collapse lives in `log_repeats.rs`, used by `ShipQueue`; summaries pass the same redaction (they are built from redacted text) and the same 4 KiB cut.
+- The read audit entries gain `order` (`newest` or `oldest`).
+- The console's Logs panel is unchanged: it reads newest first and ignores `later`.

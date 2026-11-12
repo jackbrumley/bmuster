@@ -8,8 +8,8 @@ import { noStore, readerOf, windowParams } from '../../../diagnostics.server.ts'
 import type { RequestHandler } from './$types';
 
 /**
- * GET /api/diagnostics/machines/<id>/logs?since&until&level&source&cursor&limit: the machine's
- * agent log records, newest first (SPEC-AGENT-LOGS 4). Admins and tokens; audited without the
+ * GET /api/diagnostics/machines/<id>/logs?since&until&order&level&source&cursor&limit: the machine's
+ * agent log records, newest first, or oldest first from `since` with `order=oldest` (SPEC-AGENT-LOGS 4). Admins and tokens; audited without the
  * contents.
  */
 export const GET: RequestHandler = route.diagnostics(({ params, url }, { reader }) => {

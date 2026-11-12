@@ -505,6 +505,8 @@ mod windows {
         pnp_device_id: Option<String>,
     }
 
+    static WMI_FALLBACK: crate::logging::FirstWarning = crate::logging::FirstWarning::new();
+
     /// AdapterRAM is 32 bits: cards with 4 GB or more report about this much.
     const ADAPTER_RAM_CAPPED: u32 = 0xFFF0_0000;
 
@@ -517,11 +519,14 @@ mod windows {
                 // A damaged WMI repository answers "invalid class"
                 // (0x80041010) for Win32_VideoController, as on a Windows
                 // 10 machine in 0.4.17: the registry still knows the cards.
+                // It stays damaged, and inventory runs every few minutes:
+                // warn once a run, then debug.
                 let found = registry_gpus();
-                log::warn!(
-                        "could not list graphics cards through WMI ({error}); found {} in the registry instead",
-                        found.len()
-                    );
+                log::log!(
+                    WMI_FALLBACK.level(),
+                    "could not list graphics cards through WMI ({error}); found {} in the registry instead",
+                    found.len()
+                );
                 return found;
             }
         };

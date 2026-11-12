@@ -40,13 +40,22 @@ export type ServerLogRecordView = {
 	text: string;
 };
 
+/** Which end of the window a read starts from (SPEC-AGENT-LOGS AL17). */
+export const LOG_ORDERS = ['newest', 'oldest'] as const;
+export type LogOrder = (typeof LOG_ORDERS)[number];
+
+type LogContinuation = { kind: 'none' } | { kind: 'cursor'; cursor: string };
+
 /**
- * A page of records, newest first. `older` continues back in time; `newer` follows records that
- * arrive after this read (the Live toggle), including late ones from an agent's backlog.
+ * A page of records. Read newest first (the default), `older` continues back in time; read oldest
+ * first (`order=oldest`, from `since` forward), `later` continues forward. The other of the two is
+ * always `none`. `newer` follows records that arrive after this read (the Live toggle), including
+ * late ones from an agent's backlog.
  */
 export type LogPage<R> = {
 	records: R[];
-	older: { kind: 'none' } | { kind: 'cursor'; cursor: string };
+	older: LogContinuation;
+	later: LogContinuation;
 	newer: string;
 };
 
