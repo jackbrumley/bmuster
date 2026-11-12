@@ -158,8 +158,9 @@ pub enum WindowsSystem {
         edition: String,
         console_session: ConsoleSession,
         secure_desktop: SecureDesktop,
-        /// Every DXGI output, as the service sees them.
-        outputs: Vec<DxgiOutput>,
+        /// Every DXGI output, as the console session sees them, or why
+        /// they could not be read (SPEC-DIAGNOSTICS, Windows outputs).
+        outputs: DxgiOutputs,
         /// `SoftwareSASGeneration` (0 none, 1 services, 2 apps, 3 both).
         sas_policy: SasPolicy,
     },
@@ -182,6 +183,20 @@ pub enum ConsoleSession {
 pub enum SecureDesktop {
     Unknown,
     Known { active: bool },
+}
+
+/// The console session's DXGI outputs. The service in session 0 sees none,
+/// so a short helper reads them in the console session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum DxgiOutputs {
+    Read {
+        list: Vec<DxgiOutput>,
+    },
+    /// No list: the helper could not run or DXGI failed, and why.
+    Failed {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

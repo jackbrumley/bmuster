@@ -87,15 +87,18 @@ describe('Overview: Display card (SPEC-AGENT-LOGS AL12)', () => {
 					edition: 'Professional',
 					consoleSession: { kind: 'attached', id: 1, state: 'active' },
 					secureDesktop: { kind: 'known', active: true },
-					outputs: [
-						{
-							adapter: 'Intel(R) UHD Graphics',
-							name: '\\\\.\\DISPLAY1',
-							width: 1920,
-							height: 1080,
-							rotation: 90
-						}
-					],
+					outputs: {
+						kind: 'read',
+						list: [
+							{
+								adapter: 'Intel(R) UHD Graphics',
+								name: '\\\\.\\DISPLAY1',
+								width: 1920,
+								height: 1080,
+								rotation: 90
+							}
+						]
+					},
 					sasPolicy: { kind: 'set', value: 3 }
 				}
 			}
@@ -111,6 +114,43 @@ describe('Overview: Display card (SPEC-AGENT-LOGS AL12)', () => {
 			'Intel(R) UHD Graphics · 1920x1080, rotated 90°'
 		);
 		expect(fact('SAS policy')?.textContent).toBe('3 (services and apps)');
+	});
+
+	it('DW5: says why the outputs are missing instead of an empty list', async () => {
+		const outputsShown = async (
+			outputs:
+				| { kind: 'read'; list: [] }
+				| { kind: 'failed'; reason: string }
+				| { kind: 'service-session'; list: [] }
+		) => {
+			const screen = await render(DisplayCard, {
+				report: {
+					kind: 'windows',
+					console: { kind: 'user', name: 'kim' },
+					system: {
+						kind: 'reported',
+						build: '19045.6456',
+						edition: 'Professional',
+						consoleSession: { kind: 'attached', id: 1, state: 'active' },
+						secureDesktop: { kind: 'unknown' },
+						outputs,
+						sasPolicy: { kind: 'not-set' }
+					}
+				}
+			});
+			const shown = [...screen.container.querySelectorAll('.fact')]
+				.find((element) => element.querySelector('dt')?.textContent === 'Outputs')
+				?.querySelector('dd')?.textContent;
+			await screen.unmount();
+			return shown;
+		};
+		expect(
+			await outputsShown({ kind: 'failed', reason: 'The display helper did not answer in 10 s.' })
+		).toBe('Could not read: The display helper did not answer in 10 s.');
+		expect(await outputsShown({ kind: 'read', list: [] })).toBe('None found');
+		expect(await outputsShown({ kind: 'service-session', list: [] })).toBe(
+			'Not visible to this agent version; update it'
+		);
 	});
 
 	it('AL12: at phone width the card does not overflow', async () => {

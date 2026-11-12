@@ -46,13 +46,14 @@ pub fn report() -> DisplayReport {
 }
 
 /// Build, edition, the console session, the DXGI outputs and the SAS policy
-/// (SPEC-DIAGNOSTICS 4). The service cannot see the console's input
-/// desktop from session 0, so whether the secure desktop is up is
-/// `unknown` here (the helper's timeline steps say it).
+/// (SPEC-DIAGNOSTICS 4). The outputs come from a helper in the console
+/// session (`console_outputs`), kept for an hour. Whether the secure desktop
+/// is up is live state, not inventory, so it stays `unknown` here (the
+/// helper's timeline steps say it).
 #[cfg(windows)]
 fn windows_system() -> bmuster_protocol::WindowsSystem {
     use bmuster_desktop::winsession::{console, follow::NO_CONSOLE_SESSION};
-    use bmuster_protocol::{ConsoleSession, DxgiOutput, SasPolicy, SecureDesktop, WindowsSystem};
+    use bmuster_protocol::{ConsoleSession, SasPolicy, SecureDesktop, WindowsSystem};
     let version =
         windows_registry::LOCAL_MACHINE.open(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
     let text = |name: &str| {
@@ -85,17 +86,7 @@ fn windows_system() -> bmuster_protocol::WindowsSystem {
             }
         },
         secure_desktop: SecureDesktop::Unknown,
-        outputs: bmuster_desktop::capture::dxgi::outputs()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|output| DxgiOutput {
-                adapter: output.adapter,
-                name: output.name,
-                width: output.width,
-                height: output.height,
-                rotation: output.rotation,
-            })
-            .collect(),
+        outputs: crate::console_outputs::console_outputs(session),
         sas_policy: match crate::checks::windows::sas_value() {
             Some(value) => SasPolicy::Set { value },
             None => SasPolicy::NotSet,

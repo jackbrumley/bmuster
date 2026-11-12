@@ -39,9 +39,10 @@ describe('display report schema', () => {
 			edition: 'Professional',
 			consoleSession: { kind: 'attached', id: 1, state: 'active' },
 			secureDesktop: { kind: 'unknown' },
-			outputs: [
-				{ adapter: 'GPU', name: '\\\\.\\DISPLAY1', width: 1920, height: 1080, rotation: 0 }
-			],
+			outputs: {
+				kind: 'read',
+				list: [{ adapter: 'GPU', name: '\\\\.\\DISPLAY1', width: 1920, height: 1080, rotation: 0 }]
+			},
 			sasPolicy: { kind: 'not-set' }
 		};
 		const report = displayReportSchema.parse({
@@ -50,5 +51,35 @@ describe('display report schema', () => {
 			system
 		});
 		expect(report.kind === 'windows' ? report.system : undefined).toEqual(system);
+	});
+
+	it('DW4: reads the console outputs, a failure with its reason, and an older bare list', () => {
+		const outputsOf = (outputs: unknown) => {
+			const report = displayReportSchema.parse({
+				kind: 'windows',
+				console: { kind: 'none' },
+				system: {
+					kind: 'reported',
+					build: '19045.6456',
+					edition: 'Professional',
+					consoleSession: { kind: 'attached', id: 1, state: 'active' },
+					secureDesktop: { kind: 'unknown' },
+					outputs,
+					sasPolicy: { kind: 'not-set' }
+				}
+			});
+			return report.kind === 'windows' && report.system.kind === 'reported'
+				? report.system.outputs
+				: undefined;
+		};
+		const failed = { kind: 'failed', reason: 'No session is attached to the console.' };
+		expect(outputsOf(failed)).toEqual(failed);
+		expect(outputsOf([])).toEqual({ kind: 'service-session', list: [] });
+		// What the server stored from an older agent reads back the same.
+		expect(outputsOf({ kind: 'service-session', list: [] })).toEqual({
+			kind: 'service-session',
+			list: []
+		});
+		expect(() => outputsOf({ kind: 'failed', reason: 'x'.repeat(501) })).toThrow();
 	});
 });

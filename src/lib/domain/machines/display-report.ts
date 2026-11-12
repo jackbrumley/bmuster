@@ -59,6 +59,23 @@ function selinuxFacts(selinux: SeLinux): DisplayFact[] {
 	}
 }
 
+type DxgiOutput = {
+	adapter: string;
+	name: string;
+	width: number;
+	height: number;
+	rotation: number;
+};
+
+/**
+ * The console session's DXGI outputs, or why they could not be read (SPEC-DIAGNOSTICS, Windows
+ * outputs). `service-session`: an agent before 0.4.22 listed them from session 0, which sees none.
+ */
+type DxgiOutputs =
+	| { kind: 'read'; list: DxgiOutput[] }
+	| { kind: 'failed'; reason: string }
+	| { kind: 'service-session'; list: DxgiOutput[] };
+
 /** What a Windows desktop session depends on (SPEC-DIAGNOSTICS 4); agents before 0.4.3 leave it out. */
 type WindowsSystem =
 	| { kind: 'unreported' }
@@ -68,7 +85,7 @@ type WindowsSystem =
 			edition: string;
 			consoleSession: { kind: 'none' } | { kind: 'attached'; id: number; state: string };
 			secureDesktop: { kind: 'unknown' } | { kind: 'known'; active: boolean };
-			outputs: { adapter: string; name: string; width: number; height: number; rotation: number }[];
+			outputs: DxgiOutputs;
 			sasPolicy: { kind: 'not-set' } | { kind: 'set'; value: number };
 	  };
 
@@ -157,6 +174,26 @@ function sasLabel(policy: { kind: 'not-set' } | { kind: 'set'; value: number }):
 	}
 }
 
+/** One fact per output, or one saying why there are none. */
+function outputFacts(outputs: DxgiOutputs): DisplayFact[] {
+	if (outputs.kind === 'failed') {
+		return [{ label: 'Outputs', value: `Could not read: ${outputs.reason}` }];
+	}
+	if (outputs.list.length === 0) {
+		return [
+			{
+				label: 'Outputs',
+				value:
+					outputs.kind === 'read' ? 'None found' : 'Not visible to this agent version; update it'
+			}
+		];
+	}
+	return outputs.list.map((output) => ({
+		label: output.name,
+		value: `${output.adapter} · ${output.width}x${output.height}${output.rotation === 0 ? '' : `, rotated ${output.rotation}°`}`
+	}));
+}
+
 /** The Display card's facts for Windows, in display order. */
 function windowsDisplayFacts(report: WindowsDisplay): DisplayFact[] {
 	const consoleUser = {
@@ -191,12 +228,7 @@ function windowsDisplayFacts(report: WindowsDisplay): DisplayFact[] {
 						: 'Not showing'
 					: 'Unknown'
 		},
-		...(system.outputs.length === 0
-			? [{ label: 'Outputs', value: 'None found' }]
-			: system.outputs.map((output) => ({
-					label: output.name,
-					value: `${output.adapter} · ${output.width}x${output.height}${output.rotation === 0 ? '' : `, rotated ${output.rotation}°`}`
-				}))),
+		...outputFacts(system.outputs),
 		{ label: 'SAS policy', value: sasLabel(system.sasPolicy) }
 	];
 }
