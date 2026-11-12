@@ -70,7 +70,7 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 	);
 	let pendingMove: { x: number; y: number; buttons: number } | undefined;
 	// Edge pan while zoomed (SPEC-DESKTOP-FLOATING FA18): every frame while a finger is down,
-	// so a still finger with the pointer in the band keeps panning.
+	// so a still finger with the pointer in the margin creeps the view.
 	let panFrame: number | undefined;
 	let panAt = 0;
 	const panStep = (now: number) => {

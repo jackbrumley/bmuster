@@ -1,15 +1,15 @@
 import { BUTTON_LEFT, BUTTON_RIGHT } from '#lib/domain/desktop/messages.ts';
-import { centredOn, dragged, underCentre } from './fixed-cursor.ts';
+import { centredOn, clampFixed, dragged, underCentre } from './fixed-cursor.ts';
 import { contentBox, toDisplay, type Box, type Point, type Size } from './input.ts';
 import {
-	clampToVisible,
 	clampZoom,
+	crept,
 	edgePanned,
-	joystickPanned,
 	MAX_ZOOM,
 	NO_ZOOM,
 	pinched,
 	pinchOf,
+	pushed,
 	sameZoom,
 	zoomed,
 	zoomedBox,
@@ -33,8 +33,10 @@ import {
  * - All: a long press right-clicks; a two-finger tap right-clicks; two
  *   fingers scroll at 1x, and pinch or pan the picture's zoom (drawn in the
  *   browser only); a double two-finger tap while zoomed goes back to 1x.
- *   Zoomed, a pointer near an edge pans the picture (`edgePan`, FA18): in
- *   trackpad mode as a joystick, the pointer travelling with the view.
+ *   The view never shows past the picture's edges, and an axis where the
+ *   picture fits never pans (FA18). Zoomed, the trackpad pointer pushes the
+ *   view at the margin and, held still there, creeps it (`edgePan`); in tap
+ *   to click a finger near an edge pans it.
  */
 
 /** Phones: a trackpad, tap where to click, or a cursor fixed at the centre. */
@@ -140,8 +142,10 @@ export class TouchGestures {
 	#pendingClick: (() => void) | undefined;
 	/** A second touch soon after a tap, not yet a tap or a hold: cancels its hold timer. */
 	#secondTouch: (() => void) | undefined;
-	/** The edge pan's part-pixel, carried from frame to frame. */
-	#panCarry: Point = { x: 0, y: 0 };
+	/** The creep's part-pixel, carried from frame to frame. */
+	#creepCarry: Point = { x: 0, y: 0 };
+	/** How long the finger has been still, for the creep. */
+	#stillMs = 0;
 	#longPress: (() => void) | undefined;
 	#longPressed = false;
 	#two: TwoFingers | undefined;
@@ -170,7 +174,7 @@ export class TouchGestures {
 			this.#moved = false;
 			this.#startedAt = at;
 			this.#longPressed = false;
-			this.#panCarry = { x: 0, y: 0 };
+			this.#stopCreep();
 			// The screen may have turned or resized, or the mode changed, since the last gesture.
 			this.#setZoom(
 				this.mode === 'fixed'
@@ -181,7 +185,7 @@ export class TouchGestures {
 							geometry.picture,
 							geometry.display
 						)
-					: clampZoom(this.#zoom, geometry.box)
+					: this.#zoom
 			);
 		}
 		this.#fingers.set(id, { x, y, startX: x, startY: y });
@@ -239,6 +243,10 @@ export class TouchGestures {
 		let dy = y - finger.y;
 		finger.x = x;
 		finger.y = y;
+		if (dx !== 0 || dy !== 0) {
+			// Any movement stops the creep and starts its wait again.
+			this.#stopCreep();
+		}
 		if (Math.hypot(x - finger.startX, y - finger.startY) > TAP_SLOP) {
 			this.#moved = true;
 			this.#cancelLongPress();
@@ -275,19 +283,17 @@ export class TouchGestures {
 				break;
 			}
 			case 'trackpad': {
-				const ratio = displayPerPage(
-					zoomedBox(geometry.box, this.#zoom),
-					geometry.picture,
-					geometry.display
-				);
-				// Never off the visible picture, so zoomed in it is always on screen.
-				this.position = clampToVisible(
-					{ x: this.position.x + dx * ratio, y: this.position.y + dy * ratio },
-					geometry.box,
+				// Never off the visible picture; at the margin it pushes the view.
+				const view = pushed(
 					this.#zoom,
+					geometry.box,
 					geometry.picture,
-					geometry.display
+					geometry.display,
+					this.position,
+					{ x: dx, y: dy }
 				);
+				this.#setZoom(view.zoom);
+				this.position = view.pointer;
 				break;
 			}
 			case 'fixed':
@@ -337,12 +343,13 @@ export class TouchGestures {
 
 	/**
 	 * Edge pan (FA18): called every animation frame while a finger is down.
-	 * Zoomed, once the finger has moved, a pointer in the band at an edge
-	 * pans the picture `elapsedMs` worth, even with the finger still. In
-	 * trackpad mode the pointer keeps its place on the screen and so travels
-	 * with the view on the machine; in tap to click it follows what is now
-	 * under the finger. True while a finger is down that may still pan, so
-	 * the caller asks for another frame.
+	 * Zoomed, once the finger has moved: in trackpad mode, a pointer in the
+	 * margin with the finger still for `CREEP_DELAY_MS` creeps the view
+	 * towards that edge, the pointer keeping its place on the screen and so
+	 * travelling with the view on the machine; in tap to click a finger in
+	 * the band at an edge pans the picture `elapsedMs` worth and the pointer
+	 * follows what is now under it. True while a finger is down that may
+	 * still pan, so the caller asks for another frame.
 	 */
 	edgePan(elapsedMs: number): boolean {
 		const geometry = this.#geometry();
@@ -358,6 +365,8 @@ export class TouchGestures {
 		) {
 			return false;
 		}
+		// The hard limit every frame: the screen may have turned or resized under the finger.
+		this.#setZoom(this.#zoom);
 		// A tap, a long press or a second touch still deciding never pans.
 		if (!this.#moved || this.#secondTouch !== undefined) {
 			return true;
@@ -373,16 +382,18 @@ export class TouchGestures {
 			}
 			return true;
 		}
-		const step = joystickPanned(
+		this.#stillMs += elapsedMs;
+		const step = crept(
 			this.#zoom,
 			geometry.box,
 			geometry.picture,
 			geometry.display,
 			this.position,
+			this.#stillMs,
 			elapsedMs,
-			this.#panCarry
+			this.#creepCarry
 		);
-		this.#panCarry = step.carry;
+		this.#creepCarry = step.carry;
 		this.#setZoom(step.zoom);
 		if (step.pointer.x !== this.position.x || step.pointer.y !== this.position.y) {
 			this.position = step.pointer;
@@ -451,12 +462,29 @@ export class TouchGestures {
 		this.#sink.pointer(this.position.x, this.position.y, 0);
 	}
 
+	#stopCreep(): void {
+		this.#stillMs = 0;
+		this.#creepCarry = { x: 0, y: 0 };
+	}
+
+	/**
+	 * Every change of view goes through here, inside the mode's hard limit:
+	 * the fixed cursor's (half the box past the picture's edge) or the
+	 * others' (never past it, centred where it fits).
+	 */
 	#setZoom(zoom: Zoom): void {
-		if (sameZoom(zoom, this.#zoom)) {
+		const geometry = this.#geometry();
+		const next =
+			geometry === undefined
+				? zoom
+				: this.mode === 'fixed'
+					? clampFixed(zoom, geometry.box, geometry.picture)
+					: clampZoom(zoom, geometry.box, geometry.picture);
+		if (sameZoom(next, this.#zoom)) {
 			return;
 		}
-		this.#zoom = zoom;
-		this.#sink.zoom(zoom);
+		this.#zoom = next;
+		this.#sink.zoom(next);
 	}
 
 	#cancelLongPress(): void {
@@ -537,7 +565,7 @@ export class TouchGestures {
 	#pinchedZoom(two: TwoFingers, pinch: Pinch, geometry: Geometry): Zoom {
 		const from = pinchOf(...two.from);
 		if (this.mode !== 'fixed') {
-			return pinched(two.startZoom, from, pinch, geometry.box);
+			return pinched(two.startZoom, from, pinch, geometry.box, geometry.picture);
 		}
 		const ratio = from.distance > 0 ? pinch.distance / from.distance : 1;
 		const scale = Math.min(Math.max(two.startZoom.scale * ratio, 1), MAX_ZOOM);
