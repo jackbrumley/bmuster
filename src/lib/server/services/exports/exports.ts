@@ -6,7 +6,7 @@ import type { MachineUpdateState } from '#lib/domain/machines/agent-updates.ts';
 import { updateBadge } from '#lib/domain/machines/agent-updates.ts';
 import { displayFacts } from '#lib/domain/machines/display-report.ts';
 import { adapterItem, gpuItem, itemText } from '#lib/domain/machines/inventory-items.ts';
-import { gpuLabel, osLabel, type Machine } from '#lib/domain/machines/machine.ts';
+import { gpuLabel, osLabel, statusLabel, type Machine } from '#lib/domain/machines/machine.ts';
 import { powerSourceLabel } from '#lib/domain/machines/power.ts';
 import {
 	machinesInOrder,
@@ -138,7 +138,7 @@ export function exportMachines(
 	const lines = shown.map(({ machine, disk }): CsvCell[] => [
 		machine.name,
 		machine.hostname,
-		machine.status.kind === 'online' ? 'Online' : 'Offline',
+		statusLabel(machine.status),
 		osName(machine),
 		machine.inventory.kind === 'known' ? machine.inventory.osVersion : null,
 		disk === undefined ? null : disk.percent,

@@ -1,5 +1,5 @@
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
-import type { MachineStatusEvent } from '#lib/domain/machines/machine-events.ts';
+import { reconnectingEvent, type MachineStatusEvent } from '#lib/domain/machines/machine-events.ts';
 import type { MachineStatus } from '#lib/domain/machines/machine.ts';
 import { machines } from '../../database/schema.ts';
 import type { AppDatabase } from '../../database/connection.ts';
@@ -7,11 +7,12 @@ import { recordAudit } from '../audit/audit.ts';
 import { raiseNotification } from '../notifications/events.ts';
 
 /**
- * Online and offline from the agent's live socket (SPEC-PRESENCE). An agent
- * that has held a live socket is online while it is connected, and goes
- * offline once the socket has been gone for the grace period, so a quick
- * reconnect never flickers. Going offline and coming back are recorded in
- * Activity and raised as notification events. Agents that never open a
+ * Online, reconnecting and offline from the agent's live socket
+ * (SPEC-PRESENCE). An agent that has held a live socket is online while it is
+ * connected, reconnecting from the moment the socket closes, and offline once
+ * the socket has been gone for the grace period. Only going offline and coming
+ * back are recorded in Activity and raised as notification events, so a quick
+ * reconnect records nothing. Agents that never open a
  * socket (a proxy that blocks WebSockets) keep the check-in rule.
  *
  * Who is connected lives in memory; the database keeps only what a restart
@@ -19,7 +20,7 @@ import { raiseNotification } from '../notifications/events.ts';
  * been offline.
  */
 
-/** How long a socket may be gone before its machine shows offline. */
+/** How long a socket may be gone (reconnecting) before its machine shows offline. */
 export const PRESENCE_GRACE_MS = 60_000;
 
 /**
@@ -84,7 +85,7 @@ type PresenceRow = {
 	socketOfflineSince: Date | null;
 };
 
-/** Online or offline, and since when (SPEC-PRESENCE P1–P4). */
+/** Online, reconnecting or offline, and since when (SPEC-PRESENCE P1–P4, P9). */
 export function presenceOf(machine: PresenceRow, now: number): MachineStatus {
 	const live = presences.get(machine.id);
 	if (live !== undefined) {
@@ -92,7 +93,9 @@ export function presenceOf(machine: PresenceRow, now: number): MachineStatus {
 			case 'connected':
 				return { kind: 'online' };
 			case 'grace':
-				return now < live.deadline ? { kind: 'online' } : offlineSince(live.disconnectedAt);
+				return now < live.deadline
+					? { kind: 'reconnecting', sinceIso: new Date(live.disconnectedAt).toISOString() }
+					: offlineSince(live.disconnectedAt);
 		}
 	}
 	if (machine.socketOfflineSince !== null) {
@@ -168,13 +171,13 @@ export function socketOpened(database: AppDatabase, machineId: string, now: numb
 		);
 		return true;
 	});
-	// A reconnect within the grace changes nothing anyone sees.
-	if (cameBack || previous === undefined) {
+	// A newer connection replacing an open one changes nothing anyone sees.
+	if (cameBack || previous?.kind !== 'connected') {
 		publish({ machineId, status: { kind: 'online' }, atIso: new Date(now).toISOString() });
 	}
 }
 
-/** The agent's live socket closed: still online until the grace runs out. */
+/** The agent's live socket closed: reconnecting at once, offline when the grace runs out (P9). */
 export function socketClosed(database: AppDatabase, machineId: string, now: number): void {
 	database
 		.update(machines)
@@ -182,6 +185,18 @@ export function socketClosed(database: AppDatabase, machineId: string, now: numb
 		.where(eq(machines.id, machineId))
 		.run();
 	startGrace(database, machineId, now, now + PRESENCE_GRACE_MS);
+	publish(reconnectingEvent(machineId, now));
+}
+
+/**
+ * Why a session cannot start on a machine whose agent is not connected: it is
+ * reconnecting (its socket closed less than the grace ago), or it is offline (P9).
+ */
+export function unreachableMessage(machineId: string, now: number): string {
+	const live = presences.get(machineId);
+	return live?.kind === 'grace' && now < live.deadline
+		? 'This machine is reconnecting. Try again in a moment.'
+		: 'This machine is offline.';
 }
 
 /**

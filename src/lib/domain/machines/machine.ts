@@ -9,10 +9,26 @@ import type { LowDisk } from '../storage/storage.ts';
 export type OsFamily = 'windows' | 'linux' | 'macos';
 
 /**
- * Online or offline (SPEC-PRESENCE). `sinceIso` is when it went offline: when its live socket
- * closed, or its last check-in for an agent without one.
+ * Online, reconnecting or offline (SPEC-PRESENCE P9). `sinceIso` is when it was last connected:
+ * when its live socket closed, or its last check-in for an agent without one. A machine is
+ * reconnecting while its socket has been gone for less than the grace, then offline.
  */
-export type MachineStatus = { kind: 'online' } | { kind: 'offline'; sinceIso: string };
+export type MachineStatus =
+	| { kind: 'online' }
+	| { kind: 'reconnecting'; sinceIso: string }
+	| { kind: 'offline'; sinceIso: string };
+
+/** What the badge and the export call a status (P9). */
+export function statusLabel(status: MachineStatus): 'Online' | 'Reconnecting' | 'Offline' {
+	switch (status.kind) {
+		case 'online':
+			return 'Online';
+		case 'reconnecting':
+			return 'Reconnecting';
+		case 'offline':
+			return 'Offline';
+	}
+}
 
 export type SignedInUser = { kind: 'none' } | { kind: 'user'; name: string };
 

@@ -77,6 +77,22 @@ describe('live machine status feed (SPEC-PRESENCE P5)', () => {
 		expect(end).toHaveBeenCalledOnce();
 	});
 
+	it('SPEC-PRESENCE P9: sends reconnecting the moment the socket closes, then offline after the grace', async () => {
+		const { database, seen, memberToken } = await setUp();
+		const sent: MachineStatusEvent[] = [];
+		const stop = machineFeed(database, memberToken, (event) => sent.push(event), vi.fn());
+		socketOpened(database, seen, NOW);
+		socketClosed(database, seen, NOW);
+		vi.advanceTimersByTime(PRESENCE_GRACE_MS);
+		stop();
+		const since = new Date(NOW).toISOString();
+		expect(sent.map((event) => event.status)).toEqual([
+			{ kind: 'online' },
+			{ kind: 'reconnecting', sinceIso: since },
+			{ kind: 'offline', sinceIso: since }
+		]);
+	});
+
 	it('streams server-sent events: a retry delay, then each visible change', async () => {
 		const { database, seen, hidden, memberToken } = await setUp();
 		const reader = machineFeedStream(database, memberToken).getReader();

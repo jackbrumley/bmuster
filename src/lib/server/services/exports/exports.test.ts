@@ -17,6 +17,7 @@ import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { auditEntries } from '../../database/schema.ts';
 import { recordCheckIn } from '../agents/check-in.ts';
+import { socketClosed, socketOpened } from '../agents/presence.ts';
 import { listAudit, recordAudit } from '../audit/audit.ts';
 import { updateMachineDetails } from '../machines/machine-details.ts';
 import { toConsoleUser } from '../users/users.ts';
@@ -343,6 +344,15 @@ describe('Machines export (X5, X6)', () => {
 		expect(offline['Status']).toBe('Offline');
 		expect(offline['Uptime']).toBeNull();
 		expect(offline['Processor']).toBe('Test CPU');
+	});
+
+	it('SPEC-PRESENCE P9: a machine whose socket just closed exports as Reconnecting', async () => {
+		const { database, admin, reception } = await setUp();
+		socketOpened(database, reception, NOW);
+		socketClosed(database, reception, NOW);
+		const result = exportMachines(database, admin, machinesQuery({}), NOW + 1000, NO_RELEASES);
+		const row = result.rows.find((cells) => cells[0] === 'Reception PC');
+		expect(row?.[result.header.indexOf('Status')]).toBe('Reconnecting');
 	});
 
 	it('X13: uptime, power, graphics vendor and driver, and each adapter, as on the Overview', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Machine, MachineInventory } from '#lib/domain/machines/machine.ts';
-import { matchesFilter, toMachineRow } from './machine-row.ts';
+import { machinesInOrder, matchesFilter, toMachineRow } from './machine-row.ts';
 
 const GB = 1024 ** 3;
 
@@ -103,5 +103,29 @@ describe('Machines list rows', () => {
 		expect([online, offline].filter((row) => matchesFilter(row, 'online'))).toEqual([online]);
 		expect([online, offline].filter((row) => matchesFilter(row, 'offline'))).toEqual([offline]);
 		expect([online, offline].filter((row) => matchesFilter(row, 'all'))).toHaveLength(2);
+	});
+
+	it('SPEC-PRESENCE P9: a reconnecting machine is under Offline, not Online, and sorts between them', () => {
+		const online = toMachineRow(machine({ name: 'On' }));
+		const reconnecting = toMachineRow(
+			machine({
+				name: 'Back soon',
+				status: { kind: 'reconnecting', sinceIso: '2026-11-07T11:59:30.000Z' }
+			})
+		);
+		const offline = toMachineRow(
+			machine({ name: 'Off', status: { kind: 'offline', sinceIso: '2026-11-01T00:00:00.000Z' } })
+		);
+		const rows = [online, reconnecting, offline];
+		expect(rows.filter((row) => matchesFilter(row, 'online'))).toEqual([online]);
+		expect(rows.filter((row) => matchesFilter(row, 'offline'))).toEqual([reconnecting, offline]);
+		// No live figures from a machine whose socket has gone.
+		expect(reconnecting.cpuPercent).toBeNull();
+		const byStatus = machinesInOrder(
+			rows,
+			{ kind: 'column', column: 'status', direction: 'asc' },
+			Date.parse('2026-11-07T12:00:00.000Z')
+		);
+		expect(byStatus.map((row) => row.machine.name)).toEqual(['Off', 'Back soon', 'On']);
 	});
 });

@@ -16,7 +16,8 @@ import {
 	PRESENCE_GRACE_MS,
 	restorePresence,
 	socketClosed,
-	socketOpened
+	socketOpened,
+	unreachableMessage
 } from './presence.ts';
 
 beforeEach(() => {
@@ -68,16 +69,22 @@ describe('presence from the live socket (SPEC-PRESENCE)', () => {
 		expect(statusAt(database, machineId, Date.now())).toEqual({ kind: 'online' });
 	});
 
-	it('P2: goes offline once the socket has been gone for the 60 s grace, since it closed', () => {
+	it('P2, P9: shows reconnecting at once, then offline once the socket has been gone for the 60 s grace, since it closed', () => {
 		const database = testDatabase();
 		const { machineId } = enrolFakeAgent(database, NOW);
 		socketOpened(database, machineId, NOW);
 		const closedAt = NOW + 1000;
 		vi.setSystemTime(closedAt);
-		socketClosed(database, machineId, closedAt);
+		const closing = published(() => {
+			socketClosed(database, machineId, closedAt);
+		});
+		const reconnecting = { kind: 'reconnecting', sinceIso: new Date(closedAt).toISOString() };
+		expect(closing).toEqual([
+			{ machineId, status: reconnecting, atIso: new Date(closedAt).toISOString() }
+		]);
 
 		vi.advanceTimersByTime(PRESENCE_GRACE_MS - 1);
-		expect(statusAt(database, machineId, Date.now())).toEqual({ kind: 'online' });
+		expect(statusAt(database, machineId, Date.now())).toEqual(reconnecting);
 		expect(presenceAudit(database, machineId)).toEqual([]);
 
 		const events = published(() => {
@@ -94,7 +101,7 @@ describe('presence from the live socket (SPEC-PRESENCE)', () => {
 		expect(raisedEvents(database)).toContainEqual({ kind: 'machine-offline', machineId });
 	});
 
-	it('P3: a reconnect within the grace is a blip: nothing recorded, nothing published', () => {
+	it('P3, P9: a reconnect within the grace is a blip: reconnecting, then online, and nothing recorded', () => {
 		const database = testDatabase();
 		const { machineId } = enrolFakeAgent(database, NOW);
 		socketOpened(database, machineId, NOW);
@@ -104,7 +111,14 @@ describe('presence from the live socket (SPEC-PRESENCE)', () => {
 			socketOpened(database, machineId, Date.now());
 			vi.advanceTimersByTime(10 * PRESENCE_GRACE_MS);
 		});
-		expect(events).toEqual([]);
+		expect(events).toEqual([
+			{
+				machineId,
+				status: { kind: 'reconnecting', sinceIso: new Date(NOW).toISOString() },
+				atIso: new Date(NOW).toISOString()
+			},
+			{ machineId, status: { kind: 'online' }, atIso: new Date(NOW + 30_000).toISOString() }
+		]);
 		expect(statusAt(database, machineId, Date.now())).toEqual({ kind: 'online' });
 		expect(presenceAudit(database, machineId)).toEqual([]);
 		expect(raisedEvents(database).filter((event) => event.kind !== 'machine-enrolled')).toEqual([]);
@@ -137,7 +151,7 @@ describe('presence from the live socket (SPEC-PRESENCE)', () => {
 		expect(presenceAudit(database, machineId)).toHaveLength(2);
 	});
 
-	it('P7: an agent that never opened a socket keeps the check-in rule, with no entries', () => {
+	it('P7, P9: an agent that never opened a socket keeps the check-in rule, never reconnecting, with no entries', () => {
 		const database = testDatabase();
 		const { machineId } = enrolFakeAgent(database, NOW);
 		expect(statusAt(database, machineId, NOW + 179_000)).toEqual({ kind: 'online' });
@@ -149,7 +163,7 @@ describe('presence from the live socket (SPEC-PRESENCE)', () => {
 		expect(presenceAudit(database, machineId)).toEqual([]);
 	});
 
-	it('P4: after a restart, a machine that was connected stays online for twice the grace, then goes offline since it was last seen', () => {
+	it('P4, P9: after a restart, a machine that was connected shows reconnecting for twice the grace, then goes offline since it was last seen', () => {
 		const database = testDatabase();
 		const { machineId } = enrolFakeAgent(database, NOW);
 		// What the stopped server left behind: the socket open, nobody in memory.
@@ -163,7 +177,10 @@ describe('presence from the live socket (SPEC-PRESENCE)', () => {
 		restorePresence(database, restartedAt);
 
 		vi.advanceTimersByTime(2 * PRESENCE_GRACE_MS - 1);
-		expect(statusAt(database, machineId, Date.now())).toEqual({ kind: 'online' });
+		expect(statusAt(database, machineId, Date.now())).toEqual({
+			kind: 'reconnecting',
+			sinceIso: new Date(NOW).toISOString()
+		});
 		vi.advanceTimersByTime(1);
 		expect(statusAt(database, machineId, Date.now())).toEqual({
 			kind: 'offline',
@@ -214,6 +231,28 @@ describe('presence from the live socket (SPEC-PRESENCE)', () => {
 			kind: 'offline',
 			sinceIso: new Date(NOW).toISOString()
 		});
+	});
+
+	it('P9: a newer connection replacing an open one publishes nothing', () => {
+		const database = testDatabase();
+		const { machineId } = enrolFakeAgent(database, NOW);
+		socketOpened(database, machineId, NOW);
+		const events = published(() => {
+			socketOpened(database, machineId, NOW + 1000);
+		});
+		expect(events).toEqual([]);
+	});
+
+	it('P9: a session refused while the socket is gone says reconnecting during the grace, offline after it', () => {
+		const database = testDatabase();
+		const { machineId } = enrolFakeAgent(database, NOW);
+		socketOpened(database, machineId, NOW);
+		socketClosed(database, machineId, NOW);
+		expect(unreachableMessage(machineId, NOW + PRESENCE_GRACE_MS - 1)).toBe(
+			'This machine is reconnecting. Try again in a moment.'
+		);
+		vi.advanceTimersByTime(PRESENCE_GRACE_MS);
+		expect(unreachableMessage(machineId, Date.now())).toBe('This machine is offline.');
 	});
 
 	it('records nothing for a machine removed during the grace', () => {

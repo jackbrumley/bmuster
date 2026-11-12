@@ -7,6 +7,7 @@ import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import '#lib/ui/design-tokens.css';
 import DesktopTab from './+page.svelte';
+import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.ts';
 
 // SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6;
 // SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10, FA13, FA14, FA15;
@@ -88,18 +89,23 @@ const TWO_DISPLAYS = {
 };
 
 function renderTab(grants: Grant[], machine = TEST_MACHINE) {
-	return render(DesktopTab, {
-		params: { id: machine.id },
-		data: {
-			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
-			localNetworkMode: false,
-			serverUpdate: null,
-			signedIn: true,
-			now: Date.parse('2026-11-07T12:00:00.000Z'),
-			machine,
-			grants
-		}
-	});
+	const now = Date.parse('2026-11-07T12:00:00.000Z');
+	return render(
+		DesktopTab,
+		{
+			params: { id: machine.id },
+			data: {
+				user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
+				localNetworkMode: false,
+				serverUpdate: null,
+				signedIn: true,
+				now,
+				machine,
+				grants
+			}
+		},
+		underMachineLayout(presenceOf(machine, now))
+	);
 }
 
 /** The server's side of a socket that just opened: attached, ready, the displays. */
@@ -777,21 +783,25 @@ describe('the desktop tab', () => {
 	});
 
 	it('does not offer a session whose rules ask the person at the screen first', async () => {
-		const screen = await render(DesktopTab, {
-			params: { id: TEST_MACHINE.id },
-			data: {
-				user: { id: 'p', name: 'Pat', email: 'pat@example.com', role: 'member' as const },
-				localNetworkMode: false,
-				serverUpdate: null,
-				signedIn: true,
-				now: Date.parse('2026-11-07T12:00:00.000Z'),
-				machine: TEST_MACHINE,
-				grants: [
-					{ permission: 'view', consent: 'ask' },
-					{ permission: 'desktop-view', consent: 'ask' }
-				]
-			}
-		});
+		const screen = await render(
+			DesktopTab,
+			{
+				params: { id: TEST_MACHINE.id },
+				data: {
+					user: { id: 'p', name: 'Pat', email: 'pat@example.com', role: 'member' as const },
+					localNetworkMode: false,
+					serverUpdate: null,
+					signedIn: true,
+					now: Date.parse('2026-11-07T12:00:00.000Z'),
+					machine: TEST_MACHINE,
+					grants: [
+						{ permission: 'view', consent: 'ask' },
+						{ permission: 'desktop-view', consent: 'ask' }
+					]
+				}
+			},
+			underMachineLayout(presenceOf(TEST_MACHINE, Date.parse('2026-11-07T12:00:00.000Z')))
+		);
 		await expect.element(screen.getByText(/asks the person at the screen first/)).toBeVisible();
 		expect(screen.container.querySelector('button')?.textContent ?? '').not.toContain('Watch');
 	});

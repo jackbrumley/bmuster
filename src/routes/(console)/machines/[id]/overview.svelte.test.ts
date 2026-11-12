@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-svelte';
 import type { Grant } from '#lib/domain/access/access.ts';
 import type { Machine, MachineInventory } from '#lib/domain/machines/machine.ts';
 import Overview from './+page.svelte';
+import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.ts';
 
 vi.mock('$app/navigation', () => ({ refreshAll: vi.fn() }));
 
@@ -83,18 +84,22 @@ function renderOverview(
 	machine: Machine,
 	grants: Grant[] = [{ permission: 'view', consent: 'unattended' }]
 ) {
-	return render(Overview, {
-		params: { id: MACHINE_ID },
-		data: {
-			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
-			localNetworkMode: false,
-			serverUpdate: null,
-			signedIn: true,
-			now: NOW,
-			machine,
-			grants
-		}
-	});
+	return render(
+		Overview,
+		{
+			params: { id: MACHINE_ID },
+			data: {
+				user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
+				localNetworkMode: false,
+				serverUpdate: null,
+				signedIn: true,
+				now: NOW,
+				machine,
+				grants
+			}
+		},
+		underMachineLayout(presenceOf(machine, NOW))
+	);
 }
 
 function factOf(container: HTMLElement, label: string): string | undefined {

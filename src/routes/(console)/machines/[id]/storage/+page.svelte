@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { IconPlugConnected } from '@tabler/icons-svelte-runes';
 	import { hasPermission } from '#lib/domain/access/access.ts';
-	import EmptyState from '#lib/ui/empty-state.svelte';
+	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
 	import { formatRelative } from '#lib/utils/format.ts';
+	import MachineUnreachable from '../machine-unreachable.svelte';
 	import NoPermission from '../no-permission.svelte';
 	import DriveList from './drive-list.svelte';
 	import StorageBrowser from './storage-browser.svelte';
@@ -16,18 +16,19 @@
 	let { data }: PageProps = $props();
 
 	const machine = $derived(data.machine);
+	// The machine page's one live status (SPEC-PRESENCE P10): the folders open when it comes back.
+	const presence = machinePresence();
+	const status = $derived(presence.status);
 </script>
 
 {#if !hasPermission(data.grants, 'files')}
 	<NoPermission />
-{:else if machine.status.kind === 'offline'}
-	<EmptyState
-		icon={IconPlugConnected}
-		title="This machine is offline."
+{:else if status.kind !== 'online'}
+	<MachineUnreachable
+		{status}
 		detail={data.reported.kind === 'reported'
-			? `Its folders open when it checks in again. Last reported ${formatRelative(data.reported.reportedAt, data.now)}:`
-			: 'Its folders open when it checks in again.'}
-		children={undefined}
+			? `Its folders open when it is back. Last reported ${formatRelative(data.reported.reportedAt, data.now)}:`
+			: 'Its folders open when it is back.'}
 	/>
 	{#if data.reported.kind === 'reported'}
 		<DriveList drives={data.reported.drives} now={data.now} onopen={undefined} />

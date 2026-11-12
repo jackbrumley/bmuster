@@ -11,6 +11,7 @@ import type {
 } from '#lib/domain/storage/storage.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import StorageTab from './+page.svelte';
+import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.ts';
 
 const HOUR = 3_600_000;
 const GB = 1024 ** 3;
@@ -140,20 +141,25 @@ async function openTab(
 	grants: Grant[] = GRANTS,
 	reported: ReportedStorage = { kind: 'none' }
 ) {
-	return render(StorageTab, {
-		params: { id: machine.id },
-		form: undefined,
-		data: {
-			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
-			localNetworkMode: false,
-			serverUpdate: null,
-			signedIn: true,
-			now: Date.now(),
-			machine,
-			grants,
-			reported
-		}
-	});
+	const now = Date.now();
+	return render(
+		StorageTab,
+		{
+			params: { id: machine.id },
+			form: undefined,
+			data: {
+				user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
+				localNetworkMode: false,
+				serverUpdate: null,
+				signedIn: true,
+				now,
+				machine,
+				grants,
+				reported
+			}
+		},
+		underMachineLayout(presenceOf(machine, now))
+	);
 }
 
 describe('the Storage tab (SPEC-STORAGE S10)', () => {

@@ -4,6 +4,7 @@ import { grantAccess } from '#tests/helpers/access.ts';
 import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import { agentConnected, agentDisconnected, type LivePeer } from '../agents/live-agents.ts';
+import { socketClosed, socketOpened } from '../agents/presence.ts';
 import { serverKey } from '../agents/server-keys.ts';
 import { verifySignature } from '../agents/signing.ts';
 import { listAudit } from '../audit/audit.ts';
@@ -129,6 +130,19 @@ describe('who may open a terminal (T2)', () => {
 				NOW
 			)
 		).toMatchObject({ kind: 'refused', status: 400 });
+	});
+
+	it('SPEC-PRESENCE P9: refuses a reconnecting machine, saying so', async () => {
+		const { database, admin, machineId, relay } = await setUp();
+		socketOpened(database, machineId, Date.now());
+		socketClosed(database, machineId, Date.now());
+		expect(
+			openTerminalSession(database, relay, SECRETS_KEY, admin, machineId, TERMINAL, 'ip', NOW)
+		).toMatchObject({
+			kind: 'refused',
+			status: 409,
+			message: 'This machine is reconnecting. Try again in a moment.'
+		});
 	});
 });
 

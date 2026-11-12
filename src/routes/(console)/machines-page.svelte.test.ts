@@ -3,45 +3,12 @@ import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { MachineStatusEvent } from '#lib/domain/machines/machine-events.ts';
 import type { Machine } from '#lib/domain/machines/machine.ts';
+import { FakeEventSource, feed } from '#tests/helpers/fake-event-source.ts';
 import MachinesPage from './+page.svelte';
 import type { PageData } from './$types';
 
 const refreshAll = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock('$app/navigation', () => ({ refreshAll }));
-
-/** Stands in for the browser's EventSource, so a test can push status events. */
-class FakeEventSource extends EventTarget {
-	static readonly CLOSED = 2;
-	static opened: FakeEventSource[] = [];
-	readyState = 1;
-	readonly url: string;
-
-	constructor(url: string) {
-		super();
-		this.url = url;
-		FakeEventSource.opened.push(this);
-	}
-
-	close(): void {
-		this.readyState = FakeEventSource.CLOSED;
-	}
-
-	push(event: MachineStatusEvent): void {
-		this.dispatchEvent(new MessageEvent('status', { data: JSON.stringify(event) }));
-	}
-
-	/** What the browser does when the server refuses the stream. */
-	refuse(): void {
-		this.readyState = FakeEventSource.CLOSED;
-		this.dispatchEvent(new Event('error'));
-	}
-}
-
-function feed(): FakeEventSource {
-	const source = FakeEventSource.opened.at(-1);
-	if (source === undefined) throw new Error('The page opened no live feed');
-	return source;
-}
 
 const NOW = Date.parse('2026-11-07T12:00:00.000Z');
 

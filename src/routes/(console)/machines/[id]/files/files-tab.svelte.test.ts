@@ -8,6 +8,7 @@ import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import { confirmation } from '#lib/ui/confirm-action.svelte.ts';
 import ConfirmDialog from '#lib/ui/confirm-dialog.svelte';
 import FilesTab from './+page.svelte';
+import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.ts';
 
 const LINUX: Machine = TEST_MACHINE;
 
@@ -115,7 +116,7 @@ async function openTab(machine: Machine, grants: Grant[] = GRANTS) {
 			grants
 		}
 	};
-	return render(FilesTab, props);
+	return render(FilesTab, props, underMachineLayout(presenceOf(machine, props.data.now)));
 }
 
 describe('the Files tab (SPEC-FILES F3, F9)', () => {

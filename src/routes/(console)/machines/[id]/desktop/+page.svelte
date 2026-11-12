@@ -8,7 +8,6 @@
 		IconEye,
 		IconHandFinger,
 		IconKeyboard,
-		IconPlugConnected,
 		IconPointer
 	} from '@tabler/icons-svelte-runes';
 	import { hasPermission, type Permission } from '#lib/domain/access/access.ts';
@@ -23,9 +22,10 @@
 	import Button from '#lib/ui/button.svelte';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
-	import EmptyState from '#lib/ui/empty-state.svelte';
 	import Notice from '#lib/ui/notice.svelte';
 	import LoadingVeil from '#lib/ui/loading-veil.svelte';
+	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
+	import MachineUnreachable from '../machine-unreachable.svelte';
 	import NoPermission from '../no-permission.svelte';
 	import { DesktopCanvas } from './desktop-canvas.ts';
 	import { DesktopSession } from './desktop-session.svelte.ts';
@@ -53,6 +53,9 @@
 	let { data }: PageProps = $props();
 
 	const machine = $derived(data.machine);
+	// The machine page's one live status (SPEC-PRESENCE P10); ./+layout.svelte remounts the tab when it changes.
+	const presence = machinePresence();
+	const presenceStatus = $derived(presence.status);
 	const canWatch = $derived(hasPermission(data.grants, 'desktop-view'));
 	const canControl = $derived(hasPermission(data.grants, 'desktop-control'));
 	const user = $derived(signedInUserOf(machine));
@@ -236,7 +239,7 @@
 		const surface = stage;
 		if (
 			!canWatch ||
-			machine.status.kind === 'offline' ||
+			presenceStatus.kind !== 'online' ||
 			surface === undefined ||
 			screenCanvas === undefined ||
 			cursorCanvas === undefined
@@ -273,13 +276,8 @@
 
 {#if !canWatch}
 	<NoPermission />
-{:else if machine.status.kind === 'offline'}
-	<EmptyState
-		icon={IconPlugConnected}
-		title="This machine is offline."
-		detail="The desktop opens when it checks in again."
-		children={undefined}
-	/>
+{:else if presenceStatus.kind !== 'online'}
+	<MachineUnreachable status={presenceStatus} detail="The desktop opens when it is back." />
 {:else}
 	<div class="session">
 		<div class="bar">

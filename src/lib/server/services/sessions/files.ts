@@ -18,6 +18,7 @@ import type { AppDatabase } from '../../database/connection.ts';
 import type { Grant } from '#lib/domain/access/access.ts';
 import { permissionsFor } from '../access/access.ts';
 import { isAgentConnected, sendToAgent } from '../agents/live-agents.ts';
+import { unreachableMessage } from '../agents/presence.ts';
 import { serverKey } from '../agents/server-keys.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { activeMachineBasics } from '../machines/machine-views.ts';
@@ -116,7 +117,7 @@ function allowed(context: FilesContext): FilesOutcome<Allowed> {
 	}
 	if (!isAgentConnected(machineId)) {
 		// 503, not 409 as for terminals: an upload waits for the machine to come back.
-		return refused(503, 'This machine is offline.');
+		return refused(503, unreachableMessage(machineId, Date.now()));
 	}
 	return { kind: 'ok', value: { machine: { id: machineId, ...basics }, grants } };
 }

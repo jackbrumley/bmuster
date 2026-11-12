@@ -57,6 +57,17 @@
 		}
 	}
 
+	function presenceText(status: MachineStatus): string {
+		switch (status.kind) {
+			case 'online':
+				return 'online';
+			case 'reconnecting':
+				return 'reconnecting';
+			case 'offline':
+				return `went offline ${formatRelative(status.sinceIso, now)}`;
+		}
+	}
+
 	function canUpdate(state: MachineUpdateState): boolean {
 		return (
 			(state.kind === 'available' && !state.needsReinstall) ||
@@ -162,10 +173,9 @@
 				<UpdateBadge state={machine.update} />
 			</p>
 			<p class="muted">
-				Version {machine.agentVersion} · {channelLabel(machine.channel)} · {machine.status.kind ===
-				'online'
-					? 'online'
-					: `went offline ${formatRelative(machine.status.sinceIso, now)}`}
+				Version {machine.agentVersion} · {channelLabel(machine.channel)} · {presenceText(
+					machine.status
+				)}
 			</p>
 			{#if machine.update.kind !== 'up-to-date'}
 				<p class="detail">{updateStateText(machine.update)}</p>

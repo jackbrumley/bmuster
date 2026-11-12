@@ -138,7 +138,7 @@
 	<span class="actions">
 		<a
 			class="action"
-			class:disabled={machine.status.kind === 'offline'}
+			class:disabled={machine.status.kind !== 'online'}
 			href={resolve('/(console)/machines/[id]/terminal', { id: machine.id })}
 			aria-label="Terminal on {machine.name}"
 			title="Terminal"
@@ -147,7 +147,7 @@
 		</a>
 		<a
 			class="action"
-			class:disabled={machine.status.kind === 'offline'}
+			class:disabled={machine.status.kind !== 'online'}
 			href={resolve('/(console)/machines/[id]/desktop', { id: machine.id })}
 			aria-label="Desktop on {machine.name}"
 			title="Desktop"
