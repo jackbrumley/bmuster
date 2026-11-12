@@ -8,6 +8,7 @@
 		IconPlugConnectedX
 	} from '@tabler/icons-svelte-runes';
 	import type {
+		AutoLevel,
 		DesktopSettings as PictureSettings,
 		InputMessage
 	} from '#lib/domain/desktop/messages.ts';
@@ -53,6 +54,7 @@
 		displays,
 		display,
 		settings,
+		autoLevel,
 		agentVersion,
 		send,
 		backToScreen,
@@ -73,6 +75,8 @@
 		displays: readonly { value: string; label: string; count: undefined }[];
 		display: string | null;
 		settings: PictureSettings;
+		/** The level Auto picked, when it is on and the agent says. */
+		autoLevel: AutoLevel | undefined;
 		agentVersion: string;
 		send: (message: InputMessage) => void;
 		/** Gives the keyboard back to the screen after an action. */
@@ -364,7 +368,7 @@
 											<KeysMenu {osFamily} {send} afterSend={backToScreen} />
 										{/if}
 									{:else if shown === 'picture' && mode !== undefined}
-										<DesktopSettings {settings} {agentVersion} onchange={onsettings} />
+										<DesktopSettings {settings} {autoLevel} {agentVersion} onchange={onsettings} />
 									{:else if shown === 'screen'}
 										<ChipGroup
 											label="Screen"

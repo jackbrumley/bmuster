@@ -5,6 +5,7 @@
  * ignored, so later phases can add messages.
  */
 import { z } from 'zod';
+import { AUTO_LEVELS } from '#lib/domain/desktop/messages.ts';
 import type { DesktopScreen } from '#lib/domain/desktop/screen.ts';
 
 const displaySchema = z.object({
@@ -61,6 +62,8 @@ export const agentDesktopMessageSchema = z.discriminatedUnion('type', [
 	}),
 	z.object({ type: z.literal('state'), screen: screenSchema }),
 	z.object({ type: z.literal('stalled') }),
+	/** The level Auto picked (SPEC-DESKTOP 20); agents before it never send it. */
+	z.object({ type: z.literal('auto-quality'), level: z.enum(AUTO_LEVELS) }),
 	z.object({
 		type: z.literal('error'),
 		code: z.enum(DESKTOP_ERROR_CODES),

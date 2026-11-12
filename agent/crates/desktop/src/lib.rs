@@ -17,6 +17,7 @@
 //! [`open_console`] says how a session gets this machine's screen: on Linux
 //! it follows seat0, on Windows the input desktop of the helper's session.
 
+pub mod auto_quality;
 pub mod capture;
 pub mod control;
 pub mod encode;

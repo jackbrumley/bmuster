@@ -36,6 +36,7 @@
 	import { dismissHint, hintDismissed } from './gesture-hint.ts';
 	import GestureHint from './gesture-hint.svelte';
 	import { attachScreenInput } from './screen-input.ts';
+	import { watchViewport } from './viewport-watch.ts';
 	import type { Geometry, TouchMode } from './touch-gestures.ts';
 	import TouchInputChoice from './touch-input-choice.svelte';
 	import { readTouchMode, saveTouchMode, touchModeHelp } from './touch-input.ts';
@@ -273,9 +274,13 @@
 			}
 		});
 		const detachFullScreen = screenMode.attach();
+		const detachViewport = watchViewport(surface, () => {
+			current.viewportChanged();
+		});
 		return () => {
 			detachInput();
 			detachFullScreen();
+			detachViewport();
 			current.detach();
 		};
 	});
@@ -414,6 +419,7 @@
 		{#if open === 'settings' && session !== undefined && running && !fullScreen}
 			<DesktopSettings
 				settings={session.settings}
+				autoLevel={session.autoLevel}
 				agentVersion={machine.agentVersion}
 				onchange={(next: PictureSettings) => session?.changeSettings(next)}
 			/>
@@ -499,6 +505,7 @@
 					displays={displayOptions}
 					display={session.current ?? null}
 					settings={session.settings}
+					autoLevel={session.autoLevel}
 					agentVersion={machine.agentVersion}
 					send={sendInput}
 					{backToScreen}
@@ -533,6 +540,7 @@
 						{#if session !== undefined}
 							<DesktopSettings
 								settings={session.settings}
+								autoLevel={session.autoLevel}
 								agentVersion={machine.agentVersion}
 								onchange={(next: PictureSettings) => session?.changeSettings(next)}
 							/>

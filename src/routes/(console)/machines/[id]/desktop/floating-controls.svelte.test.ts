@@ -42,6 +42,7 @@ async function setup(
 		displays,
 		display: null,
 		settings: { quality: 'auto', scale: 'fit', maxFps: 15 },
+		autoLevel: undefined,
 		agentVersion: '0.4.17',
 		send: (message: InputMessage) => {
 			sent.push(message);

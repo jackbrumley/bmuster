@@ -291,12 +291,15 @@ impl DesktopSession {
                 quality,
                 scale,
                 max_fps,
+                auto_start,
             } => {
-                if self.pacer.set_quality(quality, now) {
+                let start = auto_start.unwrap_or(crate::auto_quality::START);
+                if self.pacer.set_quality(quality, start, now) {
                     self.video.refresh();
                 }
                 self.pacer.set_max_fps(max_fps);
                 self.scale = scale;
+                out.extend(self.auto_news());
             }
             ClientMessage::Disconnect => out.extend(self.end(EndReason::Closed)),
             ClientMessage::ClipboardPush { .. } | ClientMessage::ClipboardPull => {
@@ -390,7 +393,9 @@ impl DesktopSession {
             }
         }
 
-        match self.pacer.tick(now) {
+        let decision = self.pacer.tick(now);
+        out.extend(self.auto_news());
+        match decision {
             TickDecision::Stalled { newly } => {
                 self.video.dropped();
                 if newly {
@@ -428,6 +433,13 @@ impl DesktopSession {
                 .update(&mut *self.capturer, stream, rect, seq, pts, &mut out);
         }
         out
+    }
+
+    /// `auto-quality` when Auto's level is news for the viewer.
+    fn auto_news(&mut self) -> Option<Outgoing> {
+        self.pacer
+            .take_auto_news()
+            .map(|level| text(AgentMessage::AutoQuality { level }))
     }
 
     fn capture_failed(&mut self, now: Instant, message: &str) -> Vec<Outgoing> {
