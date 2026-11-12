@@ -1,14 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-	CLOSE_ENDED,
-	CLOSE_REPLACED,
-	createRelay,
-	RELAY_LIMITS,
-	type ClipboardTransfer,
-	type EndedSession,
-	type RelayPeer,
-	type SessionRecord
-} from './relay.ts';
+import { CLOSE_ENDED, CLOSE_REPLACED, createRelay, RELAY_LIMITS, type RelayPeer } from './relay.ts';
+import type { ClipboardTransfer, EndedSession, SessionRecord } from './session-record.ts';
 
 /** A socket end that records what it was sent; bytes count as written when `flush` runs. */
 type FakePeer = RelayPeer & {

@@ -1,7 +1,8 @@
 import type { CleanupItemId } from '#lib/domain/storage/cleanup.ts';
 import type { FileErrorCode } from '#lib/domain/files/files.ts';
 import { agentFilesReplySchema } from '#lib/schemas/files/files.ts';
-import { sessionRelay, type EndedSession, type LocalEnd, type Relay } from './relay.ts';
+import { sessionRelay, type Relay } from './relay.ts';
+import type { EndedSession, LocalEnd } from './session-record.ts';
 
 /**
  * The server's end of a files session (SPEC-FILES): one per person per

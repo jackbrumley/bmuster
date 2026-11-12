@@ -13,7 +13,8 @@ import { unreachableMessage } from '../agents/presence.ts';
 import { serverKey } from '../agents/server-keys.ts';
 import { activeMachineBasics } from '../machines/machine-views.ts';
 import { getSetting } from '../settings/settings.ts';
-import type { Relay, SessionRecord } from './relay.ts';
+import type { Relay } from './relay.ts';
+import type { SessionRecord } from './session-record.ts';
 import { auditDesktopClipboard, auditSessionEnded, auditSessionOpened } from './session-audit.ts';
 import { signTicket, TICKET_LIFETIME_MS, type TicketPurpose } from './session-ticket.ts';
 

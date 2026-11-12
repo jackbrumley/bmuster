@@ -1,19 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import {
-	endReasonLabel,
-	type DesktopMode,
-	type ServerControl,
-	type SessionEndReason,
-	type SessionInUse,
-	type TerminalShell
+import type {
+	ServerControl,
+	SessionEndReason,
+	SessionInUse
 } from '#lib/domain/sessions/session.ts';
-import type { GuestIdentity } from '#lib/domain/share-links/share-links.ts';
-import {
-	agentClipboardReplySchema,
-	viewerClipboardRequestSchema
-} from '#lib/schemas/desktop/desktop.ts';
 import { agentSessionEventSchema, browserControlSchema } from '#lib/schemas/sessions/sessions.ts';
 import { OutputRing } from './output-ring.ts';
+import { clipboardTransferOf, desktopEndedMessage, isClipboardRequest } from './relay-desktop.ts';
+import type { ClipboardTransfer, EndedSession, LocalEnd, SessionRecord } from './session-record.ts';
 
 /**
  * The session relay (SPEC-SESSIONS T4, T6; AGENTS.md §13): joins one
@@ -84,66 +78,6 @@ export type RelayPeer = {
 	pause(): void;
 	resume(): void;
 	close(code: number, reason: string): void;
-};
-
-/**
- * Who a session is for: a console user, or the guest of a share link
- * (SPEC-SHARE-LINKS), who has no account. A guest's name and company are what
- * they typed (self-declared, D17); the browser line is cut to 300 characters.
- */
-type SessionViewer =
-	| { kind: 'user' }
-	| {
-			kind: 'guest';
-			shareLinkId: string;
-			sharedBy: { id: string; name: string };
-			identity: GuestIdentity;
-			userAgent: string;
-	  };
-
-/** What a session is, from the moment it is asked for. */
-export type SessionRecord = {
-	id: string;
-	machineId: string;
-	/**
-	 * Whose session it is, for its browser tickets and the per-person limit:
-	 * the user's id, or for a guest the share link's id (one session per link).
-	 */
-	userId: string;
-	/** The name the machine and Activity show: the user's, or "<recipient> (shared by <name>)". */
-	userName: string;
-	viewer: SessionViewer;
-	ip: string;
-	openedAt: number;
-} & (
-	| { kind: 'terminal'; shell: TerminalShell }
-	| { kind: 'files' }
-	| { kind: 'desktop'; mode: DesktopMode }
-);
-
-/** The server's own end of a session, in the browser's place (file sessions). */
-export type LocalEnd = {
-	/** The agent's socket is open: requests can go. */
-	ready(): void;
-	/** A text frame from the agent that is not its last word. */
-	text(text: string): void;
-	bytes(data: Uint8Array): void;
-};
-
-/** One copy or paste the agent confirmed (SPEC-DESKTOP 21.6). */
-export type ClipboardTransfer = {
-	direction: 'to-machine' | 'from-machine';
-	bytes: number;
-	at: number;
-};
-
-export type EndedSession = SessionRecord & {
-	reason: SessionEndReason;
-	message: string;
-	endedAt: number;
-	/** Bytes from the machine to the browser, and typed in the browser. */
-	bytesOut: number;
-	bytesIn: number;
 };
 
 type Side = {
@@ -273,26 +207,6 @@ export function createRelay(limits: RelayLimits) {
 		const forget = setTimeout(() => ended.delete(sessionId), 10 * 60_000);
 		forget.unref();
 		session.onEnded(record);
-	}
-
-	/** Tells the session's owner of a copy or paste the agent confirmed: its direction and size. */
-	function auditClipboard(session: LiveSession, json: unknown): void {
-		const reply = agentClipboardReplySchema.safeParse(json);
-		if (!reply.success) {
-			return;
-		}
-		switch (reply.data.type) {
-			case 'clipboard':
-				session.onClipboard({
-					direction: 'from-machine',
-					bytes: Buffer.byteLength(reply.data.text, 'utf8'),
-					at: Date.now()
-				});
-				return;
-			case 'clipboard-sent':
-				session.onClipboard({ direction: 'to-machine', bytes: reply.data.bytes, at: Date.now() });
-				return;
-		}
 	}
 
 	function live(sessionId: string): LiveSession | undefined {
@@ -491,7 +405,10 @@ export function createRelay(limits: RelayLimits) {
 					session.local.text(text);
 				} else if (session.record.kind === 'desktop') {
 					session.bytesOut += text.length;
-					auditClipboard(session, json);
+					const transfer = clipboardTransferOf(json);
+					if (transfer !== undefined) {
+						session.onClipboard(transfer);
+					}
 					session.browser.peer?.sendText(text);
 				}
 				return;
@@ -561,10 +478,7 @@ export function createRelay(limits: RelayLimits) {
 			if (!parsed.success) {
 				if (session.record.kind === 'desktop') {
 					// Copy and paste needs control, checked here and by the agent (SPEC-DESKTOP 21.6).
-					if (
-						session.record.mode === 'watch' &&
-						viewerClipboardRequestSchema.safeParse(json).success
-					) {
+					if (session.record.mode === 'watch' && isClipboardRequest(json)) {
 						return;
 					}
 					// The viewer's own messages (hello, acks, input) are the agent's to read.
@@ -640,34 +554,6 @@ export function createRelay(limits: RelayLimits) {
 				.map((session) => session.id);
 		}
 	};
-}
-
-/** What the viewer is told when the agent ends a desktop session. */
-function desktopEndedMessage(reason: SessionEndReason): string {
-	switch (reason) {
-		case 'closed':
-			return 'The session was ended.';
-		case 'disconnected-at-machine':
-			return 'Someone at the machine pressed Disconnect.';
-		case 'too-many-sessions':
-			return 'This machine already has 4 desktop sessions open. Try again when one ends.';
-		case 'agent-lost':
-			return 'The machine stopped sending its screen.';
-		case 'share-link-ended':
-			return 'The share link ended.';
-		case 'declined':
-		case 'timed-out':
-		case 'permission-removed':
-		case 'no-browser':
-		case 'exited':
-		case 'failed':
-		case 'refused':
-		case 'idle':
-		case 'agent-timeout':
-		case 'unused':
-		case 'server-restarted':
-			return `${endReasonLabel(reason)}.`;
-	}
 }
 
 function parseJson(text: string): unknown {

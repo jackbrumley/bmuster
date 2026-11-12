@@ -1,7 +1,7 @@
 import { endReasonLabel } from '#lib/domain/sessions/session.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { listAuditOfKinds, recordAudit, type AuditActor } from '../audit/audit.ts';
-import type { ClipboardTransfer, EndedSession, SessionRecord } from './relay.ts';
+import type { ClipboardTransfer, EndedSession, SessionRecord } from './session-record.ts';
 
 /**
  * Audit entries for every session kind (SPEC-SESSIONS T7, SPEC-FILES F8,

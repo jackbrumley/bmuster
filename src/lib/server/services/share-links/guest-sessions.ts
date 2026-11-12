@@ -6,7 +6,8 @@ import type { AppDatabase } from '../../database/connection.ts';
 import { shareLinks } from '../../database/schema.ts';
 import { isAgentConnected } from '../agents/live-agents.ts';
 import type { SignInClient } from '../auth/client.ts';
-import type { Relay, SessionRecord } from '../sessions/relay.ts';
+import type { Relay } from '../sessions/relay.ts';
+import type { SessionRecord } from '../sessions/session-record.ts';
 import { startSession, type OpenSessionResult, type SessionTerms } from '../sessions/sessions.ts';
 import { sweepShareLinks, type GuestGrant } from './share-links.ts';
 
