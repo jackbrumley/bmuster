@@ -9,11 +9,14 @@ import '#lib/ui/design-tokens.css';
 import DesktopTab from './+page.svelte';
 import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.ts';
 
-// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6;
+// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17, Q1, Q2, Q4, Q5; SPEC-DESKTOP-KEYS K6;
 // SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10, FA13, FA14, FA15;
 // SPEC-DESKTOP-ALL-SCREENS A8, A9, A10.
 
 const SESSION = '33333333-3333-4333-8333-333333333333';
+
+/** An agent that knows Extra high and reports Auto's level. */
+const NEW_AGENT = { ...TEST_MACHINE, agentVersion: '0.4.22' };
 
 const CONTROL: Grant[] = [
 	{ permission: 'view', consent: 'unattended' },
@@ -172,7 +175,7 @@ describe('the desktop tab', () => {
 		const [hello, ...rest] = socket.messages().slice(0, 3);
 		expect(hello).toMatchObject({ type: 'hello', codecs: ['jpeg'] });
 		expect(rest).toEqual([
-			{ type: 'settings', quality: 'auto', scale: 'fit', maxFps: 15 },
+			{ type: 'settings', quality: 'auto', scale: 'fit', maxFps: 15, autoStart: 'high' },
 			{ type: 'keyframe' }
 		]);
 	});
@@ -278,8 +281,65 @@ describe('the desktop tab', () => {
 			type: 'settings',
 			quality: 'auto',
 			scale: 0.5,
-			maxFps: 15
+			maxFps: 15,
+			autoStart: 'high'
 		});
+	});
+
+	it('Q4: Picture settings show the level Auto picked, and a fixed quality hides it', async () => {
+		const { screen, socket } = await open(CONTROL, 'Connect', NEW_AGENT);
+		await screen.getByRole('button', { name: 'Picture settings' }).click();
+		await expect.element(screen.getByRole('button', { name: 'Auto', exact: true })).toBeVisible();
+		socket.receive(JSON.stringify({ type: 'auto-quality', level: 'extra-high' }));
+		await expect.element(screen.getByRole('button', { name: 'Auto (Extra high)' })).toBeVisible();
+		socket.receive(JSON.stringify({ type: 'auto-quality', level: 'high' }));
+		await expect.element(screen.getByRole('button', { name: 'Auto (High)' })).toBeVisible();
+		await screen.getByRole('button', { name: 'Medium' }).click();
+		await expect.element(screen.getByRole('button', { name: 'Auto', exact: true })).toBeVisible();
+	});
+
+	it('Q5: Auto starts at Extra high where the last session on this machine held it for 20 s', async () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		try {
+			const { socket } = await open(CONTROL, 'Connect', NEW_AGENT);
+			socket.receive(JSON.stringify({ type: 'auto-quality', level: 'extra-high' }));
+			vi.setSystemTime(Date.now() + 21_000);
+			// The once-a-second clock notices the level held.
+			await expect
+				.poll(() => localStorage.getItem(`bmuster.desktop.autoStart.${NEW_AGENT.id}`), {
+					timeout: 3000
+				})
+				.toBe('extra-high');
+		} finally {
+			vi.useRealTimers();
+		}
+		const again = await open(CONTROL, 'Connect', NEW_AGENT);
+		expect(again.socket.messages()).toContainEqual(
+			expect.objectContaining({ type: 'settings', autoStart: 'extra-high' })
+		);
+		localStorage.removeItem(`bmuster.desktop.autoStart.${NEW_AGENT.id}`);
+	});
+
+	it('Q2: a new size of the screen box sends the new viewport, so a Fit picture is made for it', async () => {
+		const { socket } = await open(CONTROL, 'Connect');
+		const hellos = () =>
+			socket
+				.messages()
+				.filter(
+					(message): message is { type: 'hello'; viewport: { width: number } } =>
+						typeof message === 'object' &&
+						message !== null &&
+						'type' in message &&
+						message.type === 'hello'
+				);
+		await expect.poll(() => hellos().length).toBe(1);
+		const before = hellos()[0]?.viewport.width;
+		await page.viewport(700, 900);
+		await expect.poll(() => hellos().length, { timeout: 3000 }).toBe(2);
+		expect(hellos()[1]?.viewport.width).toBeLessThan(before ?? 0);
+		// Nothing more while the size stays.
+		await new Promise((done) => setTimeout(done, 600));
+		expect(hellos()).toHaveLength(2);
 	});
 
 	it('shows what the machine screen shows and stays open while it changes', async () => {
@@ -547,6 +607,19 @@ describe('the desktop tab', () => {
 			.not.toBeInTheDocument();
 		await new Promise((done) => setTimeout(done, 50));
 		expect(inputSent()).toBe(before);
+		await document.exitFullscreen();
+	});
+
+	it('Q1: Quality changed in the full-screen sheet goes to the agent at once, in full screen', async () => {
+		const { screen, socket } = await fullScreenOnPhone();
+		await screen.getByRole('button', { name: 'Session controls' }).click();
+		const sheet = screen.getByRole('group', { name: 'Session options' });
+		await sheet.getByRole('tab', { name: 'Picture' }).click();
+		await sheet.getByRole('button', { name: 'High', exact: true }).click();
+		await expect
+			.poll(() => socket.messages().at(-1))
+			.toEqual({ type: 'settings', quality: 'high', scale: 'fit', maxFps: 15, autoStart: 'high' });
+		expect(document.fullscreenElement).not.toBeNull();
 		await document.exitFullscreen();
 	});
 

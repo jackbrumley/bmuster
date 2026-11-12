@@ -90,7 +90,7 @@ Every binary message from the agent starts with a 20-byte header. Integers are l
 - **Window.** The agent keeps at most 2 frames unacknowledged (3 when the measured round trip is above 150 ms). It measures the round trip from send time to ack.
 - **Drop before encoding, never after.** When the window is full, the agent skips that capture tick. Changed areas accumulate (XDamage, DXGI dirty rects), so the next frame carries every change. An encoded H.264 frame is always sent, because dropping one would break the chain until the next keyframe.
 - **Frame rate.** The agent captures at most at the chosen rate (default 30 for H.264, 15 for tiles) and sends nothing when the screen has not changed. The effective rate is the lower of the chosen rate and what the acks allow.
-- **Auto quality.** With quality on Auto, the agent lowers the H.264 bitrate or the JPEG quality one step when frames wait on the window for 2 s, and raises it one step after 10 s with the window never full.
+- **Auto quality.** With quality on Auto, the agent picks the highest level the link sustains, judged from the acknowledgement round trips (section 20). Version 1 lowered the JPEG quality one step after frames waited on the window for 2 s, and raised it after 10 s with the window never full.
 - **Backlog guard.** If no ack arrives for 10 s, the agent stops sending frames (cursor messages continue) and sends `{type: 'stalled'}`. A new ack or a keyframe request resumes it with a keyframe.
 
 ### 4.4 Codecs
@@ -109,36 +109,37 @@ Text frames, JSON, one object with a `type` per frame. Each side ignores unknown
 
 ### 5.1 Browser to agent
 
-| Type             | Fields                                                                                                                      | Needs   |
-| :--------------- | :-------------------------------------------------------------------------------------------------------------------------- | :------ |
-| `hello`          | `codecs: ('h264' \| 'jpeg' \| 'webp')[]`, `viewport: {width, height, pixelRatio}`                                           | view    |
-| `keyframe`       | —                                                                                                                           | view    |
-| `ack`            | `seq`                                                                                                                       | view    |
-| `select-display` | `display` (an id from `displays`, or `all` from phase 4)                                                                    | view    |
-| `settings`       | `quality: 'auto' \| 'low' \| 'medium' \| 'high'`, `scale: 'fit' \| 1 \| 0.75 \| 0.5 \| 0.25`, `maxFps: 5 \| 10 \| 15 \| 30` | view    |
-| `pointer`        | `x`, `y` (display pixels, unscaled), `buttons` (bit mask: left 1, right 2, middle 4, back 8, forward 16)                    | control |
-| `wheel`          | `dx`, `dy`, `mode: 'pixel' \| 'line'`                                                                                       | control |
-| `key`            | `code` (`KeyboardEvent.code`), `key` (`KeyboardEvent.key`), `down: boolean`, `altGr: boolean`                               | control |
-| `text`           | `text` (up to 256 characters), typed as characters                                                                          | control |
-| `special`        | `name: 'ctrl-alt-del' \| 'win' \| 'alt-tab' \| 'print-screen'`                                                              | control |
-| `release-all`    | —                                                                                                                           | control |
-| `clipboard-push` | `text` (up to 1 MB)                                                                                                         | control |
-| `clipboard-pull` | —                                                                                                                           | control |
-| `disconnect`     | —                                                                                                                           | view    |
+| Type             | Fields                                                                                                                                                                                        | Needs   |
+| :--------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------ |
+| `hello`          | `codecs: ('h264' \| 'jpeg' \| 'webp')[]`, `viewport: {width, height, pixelRatio}`                                                                                                             | view    |
+| `keyframe`       | —                                                                                                                                                                                             | view    |
+| `ack`            | `seq`                                                                                                                                                                                         | view    |
+| `select-display` | `display` (an id from `displays`, or `all` from phase 4)                                                                                                                                      | view    |
+| `settings`       | `quality: 'auto' \| 'low' \| 'medium' \| 'high' \| 'extra-high'`, `scale: 'fit' \| 1 \| 0.75 \| 0.5 \| 0.25`, `maxFps: 5 \| 10 \| 15 \| 30`, `autoStart: 'high' \| 'extra-high'` (section 20) | view    |
+| `pointer`        | `x`, `y` (display pixels, unscaled), `buttons` (bit mask: left 1, right 2, middle 4, back 8, forward 16)                                                                                      | control |
+| `wheel`          | `dx`, `dy`, `mode: 'pixel' \| 'line'`                                                                                                                                                         | control |
+| `key`            | `code` (`KeyboardEvent.code`), `key` (`KeyboardEvent.key`), `down: boolean`, `altGr: boolean`                                                                                                 | control |
+| `text`           | `text` (up to 256 characters), typed as characters                                                                                                                                            | control |
+| `special`        | `name: 'ctrl-alt-del' \| 'win' \| 'alt-tab' \| 'print-screen'`                                                                                                                                | control |
+| `release-all`    | —                                                                                                                                                                                             | control |
+| `clipboard-push` | `text` (up to 1 MB)                                                                                                                                                                           | control |
+| `clipboard-pull` | —                                                                                                                                                                                             | control |
+| `disconnect`     | —                                                                                                                                                                                             | view    |
 
 ### 5.2 Agent to browser
 
-| Type        | Fields                                                                                                                                                                           |
-| :---------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `displays`  | `list: [{id, name, x, y, width, height, scale, primary}]`, `current`. Sent at start and whenever the layout changes                                                              |
-| `stream`    | `display`, `codec: 'h264' \| 'jpeg' \| 'webp'`, `codecString` (H.264 only, e.g. `avc1.42E01F`), `width`, `height`, `scale`. Before each keyframe that changes any of these       |
-| `state`     | `screen`: `{kind: 'sign-in'}`, `{kind: 'locked' \| 'desktop', user: string \| null}` or `{kind: 'unavailable', reason}`. Sent after `hello` and whenever it changes (section 16) |
-| `consent`   | `state: 'asking' \| 'allowed' \| 'declined' \| 'timed-out' \| 'not-needed'`                                                                                                      |
-| `wayland`   | `state: 'needs-approval' \| 'pending' \| 'approved' \| 'greeter-unsupported'`                                                                                                    |
-| `clipboard` | `text`, in reply to `clipboard-pull`                                                                                                                                             |
-| `stalled`   | — (section 4.3)                                                                                                                                                                  |
-| `error`     | `code: 'not-allowed' \| 'too-many-sessions' \| 'capture-failed' \| 'encoder-failed' \| 'bad-message'`, `message`                                                                 |
-| `ended`     | `reason` (section 9). The agent closes the socket after it                                                                                                                       |
+| Type           | Fields                                                                                                                                                                           |
+| :------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `displays`     | `list: [{id, name, x, y, width, height, scale, primary}]`, `current`. Sent at start and whenever the layout changes                                                              |
+| `stream`       | `display`, `codec: 'h264' \| 'jpeg' \| 'webp'`, `codecString` (H.264 only, e.g. `avc1.42E01F`), `width`, `height`, `scale`. Before each keyframe that changes any of these       |
+| `state`        | `screen`: `{kind: 'sign-in'}`, `{kind: 'locked' \| 'desktop', user: string \| null}` or `{kind: 'unavailable', reason}`. Sent after `hello` and whenever it changes (section 16) |
+| `consent`      | `state: 'asking' \| 'allowed' \| 'declined' \| 'timed-out' \| 'not-needed'`                                                                                                      |
+| `wayland`      | `state: 'needs-approval' \| 'pending' \| 'approved' \| 'greeter-unsupported'`                                                                                                    |
+| `clipboard`    | `text`, in reply to `clipboard-pull`                                                                                                                                             |
+| `stalled`      | — (section 4.3)                                                                                                                                                                  |
+| `auto-quality` | `level: 'low' \| 'medium' \| 'high' \| 'extra-high'`: the level Auto picked, after `settings` while on Auto and on every change (section 20)                                     |
+| `error`        | `code: 'not-allowed' \| 'too-many-sessions' \| 'capture-failed' \| 'encoder-failed' \| 'bad-message'`, `message`                                                                 |
+| `ended`        | `reason` (section 9). The agent closes the socket after it                                                                                                                       |
 
 ### 5.3 Input rules
 
@@ -502,3 +503,60 @@ The remote cursor disappears over Notepad's text area. Windows' text I-beam is a
 
 - `agent/crates/desktop/src/capture/cursor_pixels.rs` (pure, CU1 and CU2); `capture/windows.rs` renders over black and white as before and hands both to it.
 - **Only linted, not run on Windows.** Release test: in Notepad on Windows 10, the remote I-beam shows black with a white edge over the white text area, and over a dark window; the arrow looks as before.
+
+## 20. Settings in full screen, and Auto quality version 2 (2026-11-12)
+
+**Status:** `IMPLEMENTED (pending release)` · the agent and the console change together; a console on an older agent keeps version 1 Auto and shows plain "Auto" · version bump and changelog left for the release step.
+
+### 20.1 Problem
+
+1. **Picture settings in full screen seemed not to apply** (Jack, phone testing 0.4.21): "when you change quality in full screen mode during the connection the quality doesn't actually apply until you exit full screen and then into full screen mode again."
+2. **Auto aimed too low.** "The vast majority of the time ... I'm putting it on extra high quality every time and that's perfectly usable, so we should try and get the best quality possible." Version 1 Auto started at JPEG 60 and topped out at 85. It lowered only when one frame blocked the window for 2 s straight, which is rare because each ack reopens the window. It showed nobody what it chose.
+
+### 20.2 What was wrong in full screen
+
+- **The quality message was not the problem.** The floating sheet's Picture tab calls the same `changeSettings` as the page's panel and the bar. The relay passes `settings` straight through. The agent sends every tile again at the new quality on the very next frame (tests Q1).
+- **The picture's size was.** With Scale on Fit, the agent makes the picture for the viewport the browser sent in `hello`. The browser sent it only when the session attached, and once, one animation frame after entering or leaving full screen. A phone turned on its side after going full screen (or whose browser bars were still moving at that frame) kept a picture made for the upright screen: about 60% of the size it needed, stretched and soft whatever the quality. Leaving and entering full screen again measured the turned screen, so it looked as if the quality had finally applied.
+- **Fix.** The page watches the screen box (`viewport-watch.ts`: a `ResizeObserver` and the window's `resize`, settled for 300 ms) and greets the agent again when the viewport really changed. `DesktopSession.viewportChanged` sends nothing for the same size.
+
+### 20.3 Auto, version 2
+
+The agent decides (`agent/crates/desktop/src/auto_quality.rs`, pure, the clock passed in). It sees every frame's round trip, so it needs no help from the browser.
+
+- **Levels** are the fixed qualities: Low (JPEG 40), Medium (65), High (90), Extra high (95, full colour). Auto starts at **High**, or at **Extra high** when the browser's `autoStart` says the last session on this machine held it.
+- **Judging the link, once a second.**
+  - _Delay_ is the mean round trip of the frames acknowledged that second, or how long the oldest unacknowledged frame has waited, if that is longer.
+  - _Base_ is the smallest round trip in the last minute: the link's own latency.
+  - _Backlog_ is delay minus base: how long frames queue because they are too big for the link.
+  - A **clear** second delivered frames with under 150 ms of backlog. A **strained** second had over 300 ms (a stalled stream counts). In between resets the clear run. A second with no frames (a still screen) changes nothing.
+- **Up** one level after 3 clear seconds in a row, with a keyframe so a still screen sharpens too. A good link goes from High to Extra high in about 3 s.
+- **Down** one level after 2 strained seconds in a row, with no keyframe: the link is short of room, so tiles take the new level as they change. Below Medium only after 5 strained seconds in a row: a really poor link.
+- **Hysteresis.** Climbing back to a level the link just failed at needs 15 clear seconds, doubling with each further failure up to 60 s. A level held for a minute is trusted again. One slow second (a big keyframe) moves nothing.
+- **Telling the viewer.** The agent sends `{type: 'auto-quality', level}` after every `settings` while on Auto, and whenever the level changes. Auto staying Auto keeps its level: a `settings` that changes only the scale, or a new page's greeting, starts nothing over.
+- **Showing and remembering.** Picture settings (the panel, the full-screen bar and the floating sheet) show "Auto (Extra high)". Once Auto has held a level for 20 s, the browser remembers Extra high, or else High, as the next session's `autoStart`: per machine, in `localStorage` (`bmuster.desktop.autoStart.<machineId>`). Blocked storage means High.
+
+### 20.4 Acceptance criteria
+
+| #   | Criterion                                                                                                                                                                                                               | Test                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| :-- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q1  | A quality chosen in the full-screen sheet goes to the agent at once, in full screen; the agent sends every tile at it on the next frame.                                                                                | `desktop.svelte.test.ts` "Q1"; Rust `session::tests::session_quality_change_mid_stream_resends_every_tile_at_the_new_quality`                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Q2  | A new size of the screen box (a turn, a resize) sends the new viewport within about 300 ms; the same size sends nothing.                                                                                                | `desktop.svelte.test.ts` "Q2"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Q3  | Auto climbs to Extra high on a good link within a few seconds, steps down after 2 strained seconds, goes below Medium only after 5, and climbs back with hysteresis. A still screen or one slow second changes nothing. | Rust `auto_quality::tests::auto_good_link_climbs_to_extra_high_within_a_few_seconds`, `auto_congestion_steps_down_promptly_and_not_below_medium_unless_really_poor`, `auto_recovery_climbs_back_with_hysteresis`, `auto_a_frame_stuck_in_flight_counts_as_backlog`, `auto_one_slow_second_such_as_a_big_keyframe_changes_nothing`, `auto_a_still_screen_changes_nothing`; `pacing::tests::pacing_auto_climbs_on_a_good_link_with_a_keyframe_and_tells_the_viewer`, `pacing_auto_steps_down_when_frames_back_up`, `pacing_auto_starts_where_the_viewer_says_then_staying_auto_keeps_its_level` |
+| Q4  | Picture settings show the level Auto picked ("Auto (Extra high)"); a fixed quality shows plain "Auto" again.                                                                                                            | `desktop.svelte.test.ts` "Q4"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Q5  | Auto starts where the last session on this machine held a level for 20 s (Extra high, or else High), remembered per machine in this browser; blocked storage means High.                                                | `auto-quality.test.ts` "Q5", `desktop.svelte.test.ts` "Q5", Rust `auto_remembered_start_begins_at_extra_high`, `control::tests::control_parse_fields_and_limits`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+### 20.5 Judging it in practice
+
+Watch the status line (frames per second and KB/s) and Picture settings, which now say what Auto picked.
+
+1. **Phone, full screen, turned on its side.** Connect upright, go full screen, turn the phone. Within a second the picture redraws sharp without leaving full screen. Change Quality in the sheet's Picture tab: the whole picture redraws at once.
+2. **Good link** (home Wi-Fi, or 4G with a good signal). On Auto in a fresh browser, Picture settings read "Auto (High)", then "Auto (Extra high)" within about 3–5 s of anything moving on the screen. Text should look as it does on fixed Extra high. After 20 s, the next session on that machine opens at "Auto (Extra high)".
+3. **Congestion.** Play a video or scroll a busy page on a weak link, or throttle the browser's network in its developer tools. Expect pointer lag over about half a second, then within 2–3 s "Auto (High)", then "Auto (Medium)" if it stays bad. It should go to Low only when the link is very poor for 5 s or more.
+4. **Recovery without flapping.** Stop the congestion. Auto climbs one level after 3 clear seconds, but back to the level it just dropped from only after 15 s (then 30 s, then 60 s if it fails again). Over a minute the label should not alternate every few seconds.
+5. **Signs it is wrong:** sitting at High on a link that runs fixed Extra high smoothly for minutes; dropping on a still screen; or lag over a second for more than 5 s while it says Extra high.
+
+### 20.6 As built
+
+- **Agent:** `auto_quality.rs` (the decision). `pacing.rs` feeds it each acknowledged round trip and the oldest frame in flight on every capture tick, asks for a keyframe on a climb, and holds the news for the session. `session/mod.rs` sends `auto-quality`. `control.rs` reads `autoStart` and writes the new message. Version 1's step table and window-blocked timers are gone.
+- **Console:** `auto-quality.ts` (the sustained level and its storage), `viewport-watch.ts`, `desktop-session.svelte.ts` (`autoLevel`, `autoStart` in every `settings`, the same viewport sent once), `desktop-settings.svelte` (the label); `floating-controls.svelte` and `+page.svelte` pass `autoLevel` through.
+- **Not tested here:** a real phone turning in full screen (the test resizes Chromium's frame instead), and the thresholds on real links: 150 ms and 300 ms of backlog are first values, to tune with step 3 above. A link whose every frame is big (a constant video) raises its own base, so the backlog reads low and Auto stays higher than it should; the frame rate drops instead.

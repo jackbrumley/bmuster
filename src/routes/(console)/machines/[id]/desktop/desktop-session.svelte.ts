@@ -7,6 +7,7 @@ import {
 } from '#lib/domain/desktop/frame.ts';
 import {
 	DEFAULT_DESKTOP_SETTINGS,
+	type AutoLevel,
 	type DesktopSettings,
 	type InputMessage,
 	type ViewerMessage
@@ -15,6 +16,7 @@ import type { DesktopScreen } from '#lib/domain/desktop/screen.ts';
 import { DESKTOP_MODES, type DesktopMode } from '#lib/domain/sessions/session.ts';
 import { SessionLink, type Connection } from '#lib/runes/session-link.svelte.ts';
 import { agentDesktopMessageSchema, type DesktopDisplay } from '#lib/schemas/desktop/desktop.ts';
+import { readAutoStart, saveAutoStart, sustainedStart, type AutoStart } from './auto-quality.ts';
 import type { DesktopCanvas } from './desktop-canvas.ts';
 
 /**
@@ -26,6 +28,12 @@ import type { DesktopCanvas } from './desktop-canvas.ts';
 
 /** Frames and bytes over the last second, for the status line. */
 export type Throughput = { fps: number; bytesPerSecond: number };
+
+type Viewport = { width: number; height: number; pixelRatio: number };
+
+function sameViewport(a: Viewport | undefined, b: Viewport): boolean {
+	return a?.width === b.width && a.height === b.height && a.pixelRatio === b.pixelRatio;
+}
 
 function isMode(text: string): text is DesktopMode {
 	return DESKTOP_MODES.some((mode) => mode === text);
@@ -53,10 +61,18 @@ export class DesktopSession {
 	/** The stream's frame size; undefined before the first frame. */
 	frameSize = $state<{ width: number; height: number } | undefined>(undefined);
 	settings = $state<DesktopSettings>({ ...DEFAULT_DESKTOP_SETTINGS });
+	/** The level Auto picked, while quality is on Auto and the agent says (SPEC-DESKTOP 20). */
+	autoLevel = $state<AutoLevel | undefined>(undefined);
 
 	readonly #link: SessionLink;
 	readonly #canvas: DesktopCanvas;
-	readonly #viewport: () => { width: number; height: number; pixelRatio: number };
+	readonly #viewport: () => Viewport;
+	readonly #machineId: string;
+	/** The viewport the agent last heard in `hello`. */
+	#sentViewport: Viewport | undefined;
+	/** Where Auto starts: what the last session on this machine sustained. */
+	#autoStart: AutoStart;
+	#autoSince = 0;
 	/** Batches of the frame being received; drawn when its last part comes. */
 	#parts: { seq: number; tiles: Tile[] } | undefined;
 	#lastDrawn: number | undefined;
@@ -66,13 +82,11 @@ export class DesktopSession {
 	#clock: ReturnType<typeof setInterval> | undefined;
 	#approvalTimer: ReturnType<typeof setTimeout> | undefined;
 
-	constructor(
-		machineId: string,
-		canvas: DesktopCanvas,
-		viewport: () => { width: number; height: number; pixelRatio: number }
-	) {
+	constructor(machineId: string, canvas: DesktopCanvas, viewport: () => Viewport) {
 		this.#canvas = canvas;
 		this.#viewport = viewport;
+		this.#machineId = machineId;
+		this.#autoStart = readAutoStart(machineId);
 		this.#link = new SessionLink('desktop', machineId, {
 			attached: () => undefined,
 			ready: () => {
@@ -180,13 +194,24 @@ export class DesktopSession {
 	}
 
 	changeSettings(settings: DesktopSettings): void {
+		if (settings.quality !== 'auto') {
+			this.autoLevel = undefined;
+		}
 		this.settings = settings;
-		this.#send({ type: 'settings', ...settings });
+		this.#sendSettings();
 	}
 
-	/** The viewer's screen changed size (full screen, rotation): the stream fits it again. */
+	/**
+	 * The viewer's screen may have changed size (full screen, rotation, the
+	 * window resized): when it did, the agent hears the new size so a Fit
+	 * picture is made for it. The same size again sends nothing.
+	 */
 	viewportChanged(): void {
-		if (this.#link.connection.kind === 'live' && this.#link.connection.ready) {
+		if (
+			this.#link.connection.kind === 'live' &&
+			this.#link.connection.ready &&
+			!sameViewport(this.#sentViewport, this.#viewport())
+		) {
 			this.#greet();
 		}
 	}
@@ -218,9 +243,27 @@ export class DesktopSession {
 		this.#parts = undefined;
 		this.#lastDrawn = undefined;
 		this.#canvas.forgetCursor();
-		this.#send({ type: 'hello', codecs: ['jpeg'], viewport: this.#viewport() });
-		this.#send({ type: 'settings', ...this.settings });
+		const viewport = this.#viewport();
+		this.#sentViewport = viewport;
+		this.#send({ type: 'hello', codecs: ['jpeg'], viewport });
+		this.#sendSettings();
 		this.#send({ type: 'keyframe' });
+	}
+
+	#sendSettings(): void {
+		this.#send({ type: 'settings', ...this.settings, autoStart: this.#autoStart });
+	}
+
+	/** Once Auto has held a level long enough, the next session here starts from it. */
+	#rememberAutoLevel(): void {
+		if (this.settings.quality !== 'auto' || this.autoLevel === undefined) {
+			return;
+		}
+		const start = sustainedStart(this.autoLevel, this.#autoSince, Date.now());
+		if (start !== undefined && start !== this.#autoStart) {
+			this.#autoStart = start;
+			saveAutoStart(this.#machineId, start);
+		}
 	}
 
 	#startClock(): void {
@@ -229,6 +272,7 @@ export class DesktopSession {
 			this.throughput = { fps: this.#frames, bytesPerSecond: this.#bytes };
 			this.#frames = 0;
 			this.#bytes = 0;
+			this.#rememberAutoLevel();
 		}, 1000);
 	}
 
@@ -270,6 +314,12 @@ export class DesktopSession {
 				return;
 			case 'stalled':
 				this.stalled = true;
+				return;
+			case 'auto-quality':
+				if (this.settings.quality === 'auto' && message.level !== this.autoLevel) {
+					this.autoLevel = message.level;
+					this.#autoSince = Date.now();
+				}
 				return;
 			case 'error':
 				this.#clearApprovalTimer();

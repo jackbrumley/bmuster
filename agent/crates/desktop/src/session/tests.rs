@@ -483,6 +483,50 @@ fn session_scale_change_on_a_still_screen_sends_the_screen_not_black() {
     }
 }
 
+/// Q1 (SPEC-DESKTOP 20): a quality chosen mid-stream, with nothing changing
+/// on the screen, is on every tile of the very next frame.
+#[test]
+fn session_quality_change_mid_stream_resends_every_tile_at_the_new_quality() {
+    let mut h = harness(Mode::Watch);
+    h.send(HELLO);
+    // A pattern, so the tiles go as JPEG rather than one colour.
+    h.screen.lock().unwrap().paint = (0..128)
+        .step_by(4)
+        .flat_map(|x| {
+            (0..64).step_by(4).map(move |y| {
+                let shade = ((x * 7 + y * 13) % 256) as u8;
+                (Rect::new(x, y, 4, 4), [shade, 255 - shade, shade / 2, 0])
+            })
+        })
+        .collect();
+    let out = h.send(r#"{"type":"settings","quality":"low","scale":1,"maxFps":30}"#);
+    assert!(texts(&out).is_empty(), "a fixed quality says no Auto level");
+    let low: usize = frames(&h.tick()).iter().map(|b| b.len()).sum();
+    h.send(r#"{"type":"ack","seq":1}"#);
+    assert!(frames(&h.tick()).is_empty(), "a still screen sends nothing");
+
+    let out = h.send(r#"{"type":"settings","quality":"extra-high","scale":1,"maxFps":30}"#);
+    assert!(out.is_empty());
+    let out = h.tick();
+    let keyframe = frames(&out);
+    assert_eq!(keyframe[0][2] & FLAG_KEYFRAME, FLAG_KEYFRAME);
+    let extra_high: usize = keyframe.iter().map(|b| b.len()).sum();
+    assert!(
+        extra_high > low * 2,
+        "every tile again, at the new quality ({low} then {extra_high} bytes)"
+    );
+
+    // Auto says where it starts: where the viewer asked.
+    h.send(r#"{"type":"ack","seq":2}"#);
+    let out = h.send(
+        r#"{"type":"settings","quality":"auto","scale":1,"maxFps":30,"autoStart":"extra-high"}"#,
+    );
+    assert_eq!(
+        texts(&out),
+        [serde_json::json!({"type": "auto-quality", "level": "extra-high"})]
+    );
+}
+
 #[test]
 fn session_layout_change_resends_displays_and_a_keyframe() {
     let mut h = harness(Mode::Watch);

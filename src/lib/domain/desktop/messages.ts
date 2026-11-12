@@ -10,6 +10,13 @@ import { compareAgentVersions } from '../machines/agent-version.ts';
 const DESKTOP_QUALITIES = ['auto', 'low', 'medium', 'high', 'extra-high'] as const;
 export type DesktopQuality = (typeof DESKTOP_QUALITIES)[number];
 
+/**
+ * The levels Auto moves between (SPEC-DESKTOP 20): the fixed qualities of
+ * the same name. The agent says which one it picked in `auto-quality`.
+ */
+export const AUTO_LEVELS = ['low', 'medium', 'high', 'extra-high'] as const;
+export type AutoLevel = (typeof AUTO_LEVELS)[number];
+
 /** The first agent that knows `extra-high`; older ones refuse a setting they do not know. */
 const EXTRA_HIGH_FROM = '0.4.17';
 
@@ -63,7 +70,11 @@ export type ViewerMessage =
 	| { type: 'ask-approval' }
 	| { type: 'ack'; seq: number }
 	| { type: 'select-display'; display: string }
-	| ({ type: 'settings' } & DesktopSettings)
+	| ({
+			type: 'settings';
+			/** Where Auto starts: what the last session on this machine sustained. Older agents ignore it. */
+			autoStart: AutoLevel;
+	  } & DesktopSettings)
 	| { type: 'pointer'; x: number; y: number; buttons: number }
 	| { type: 'wheel'; dx: number; dy: number; mode: 'pixel' | 'line' }
 	| { type: 'key'; code: string; key: string; down: boolean; altGr: boolean }

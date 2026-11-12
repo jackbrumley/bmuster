@@ -4,6 +4,7 @@
 //! reported as [`Parsed::Unknown`] so the session can ignore them (logged
 //! once); a known type with bad fields is [`Parsed::Bad`].
 
+use crate::auto_quality::Level;
 use crate::capture::{DesktopState, DisplayInfo};
 use crate::pacing::Quality;
 use serde::{Deserialize, Serialize};
@@ -117,6 +118,9 @@ pub enum ClientMessage {
         quality: Quality,
         scale: Scale,
         max_fps: u32,
+        /// Where Auto starts: the level this viewer's last session on the
+        /// machine sustained (SPEC-DESKTOP 20). Older consoles leave it out.
+        auto_start: Option<Level>,
     },
     Pointer {
         x: f64,
@@ -288,6 +292,11 @@ pub enum AgentMessage {
         screen: DesktopState,
     },
     Stalled,
+    /// The level Auto picked, after `settings` turns Auto on and whenever
+    /// it changes (SPEC-DESKTOP 20).
+    AutoQuality {
+        level: Level,
+    },
     Error {
         code: ErrorCode,
         message: String,
@@ -360,8 +369,27 @@ mod tests {
             Parsed::Message(ClientMessage::Settings {
                 quality: Quality::High,
                 scale: Scale::Factor(0.5),
-                max_fps: 30
+                max_fps: 30,
+                auto_start: None
             })
+        );
+        assert_eq!(
+            parse(
+                r#"{"type":"settings","quality":"auto","scale":"fit","maxFps":15,"autoStart":"extra-high"}"#
+            ),
+            Parsed::Message(ClientMessage::Settings {
+                quality: Quality::Auto,
+                scale: Scale::Fit,
+                max_fps: 15,
+                auto_start: Some(Level::ExtraHigh)
+            })
+        );
+        assert_eq!(
+            AgentMessage::AutoQuality {
+                level: Level::ExtraHigh
+            }
+            .to_json(),
+            r#"{"type":"auto-quality","level":"extra-high"}"#
         );
         assert!(matches!(
             parse(r#"{"type":"settings","quality":"high","scale":0.6,"maxFps":30}"#),

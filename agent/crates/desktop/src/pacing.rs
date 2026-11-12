@@ -1,5 +1,6 @@
 //! Pacing: the ack window, the frame rate, keyframe requests, the stall
-//! guard and auto quality (SPEC-DESKTOP 4.3, R5).
+//! guard, and feeding Auto quality ([`crate::auto_quality`]) its round
+//! trips (SPEC-DESKTOP 4.3, R5, section 20).
 //!
 //! A pure state machine: every method takes the current time, so the tests
 //! drive it with a made-up clock. The session asks [`Pacer::tick`] on each
@@ -7,6 +8,7 @@
 //! dropped before encoding, never after: a skipped tick costs nothing,
 //! because the capturer keeps adding up the damage for the next frame.
 
+use crate::auto_quality::{AutoQuality, Level};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -20,16 +22,6 @@ pub const SLOW_ROUND_TRIP: Duration = Duration::from_millis(150);
 pub const STALL_AFTER: Duration = Duration::from_secs(10);
 /// Keyframe requests closer together than this are ignored.
 pub const KEYFRAME_REPEAT: Duration = Duration::from_millis(500);
-/// Auto quality drops a step after the window blocked capture this long.
-pub const LOWER_AFTER: Duration = Duration::from_secs(2);
-/// Auto quality rises a step after this long without the window filling.
-pub const RAISE_AFTER: Duration = Duration::from_secs(10);
-
-/// JPEG quality for each Auto step, lowest first.
-pub const AUTO_STEPS: [u8; 5] = [30, 45, 60, 75, 85];
-/// The step Auto starts at.
-pub const AUTO_START: usize = 2;
-
 /// The `quality` setting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -43,13 +35,13 @@ pub enum Quality {
 }
 
 impl Quality {
-    fn fixed_jpeg(self) -> Option<u8> {
+    fn fixed(self) -> Option<Level> {
         match self {
             Quality::Auto => None,
-            Quality::Low => Some(40),
-            Quality::Medium => Some(65),
-            Quality::High => Some(90),
-            Quality::ExtraHigh => Some(95),
+            Quality::Low => Some(Level::Low),
+            Quality::Medium => Some(Level::Medium),
+            Quality::High => Some(Level::High),
+            Quality::ExtraHigh => Some(Level::ExtraHigh),
         }
     }
 }
@@ -83,11 +75,11 @@ pub struct Pacer {
     /// A tick was skipped for a full window since the last capture.
     missed_tick: bool,
     quality: Quality,
-    auto_step: usize,
-    /// When the window started blocking captures (continuously).
-    blocked_since: Option<Instant>,
-    /// Last time the window was full, or Auto last changed step.
-    last_pressure: Instant,
+    /// The viewer has sent its first `settings`.
+    quality_set: bool,
+    auto: AutoQuality,
+    /// Auto's level changed (or was set) and the viewer has not been told.
+    auto_untold: bool,
 }
 
 impl Pacer {
@@ -102,9 +94,9 @@ impl Pacer {
             next_capture: now,
             missed_tick: false,
             quality: Quality::Auto,
-            auto_step: AUTO_START,
-            blocked_since: None,
-            last_pressure: now,
+            quality_set: false,
+            auto: AutoQuality::new(crate::auto_quality::START, now),
+            auto_untold: false,
         }
     }
 
@@ -143,21 +135,38 @@ impl Pacer {
 
     /// JPEG quality for the next frame.
     pub fn jpeg_quality(&self) -> u8 {
-        self.quality
-            .fixed_jpeg()
-            .unwrap_or(AUTO_STEPS[self.auto_step])
+        self.quality.fixed().unwrap_or(self.auto.level()).jpeg()
     }
 
-    /// Applies the `quality` setting. Returns true when it changed, which
-    /// calls for a keyframe so every tile shows the new quality.
-    pub fn set_quality(&mut self, quality: Quality, now: Instant) -> bool {
-        if quality == self.quality {
+    /// The level Auto is at, while quality is on Auto.
+    pub fn auto_level(&self) -> Option<Level> {
+        (self.quality == Quality::Auto).then(|| self.auto.level())
+    }
+
+    /// The level Auto is at, once after each change (and after
+    /// [`Pacer::set_quality`] turns Auto on), for the viewer to show.
+    pub fn take_auto_news(&mut self) -> Option<Level> {
+        if !std::mem::take(&mut self.auto_untold) {
+            return None;
+        }
+        self.auto_level()
+    }
+
+    /// Applies the `quality` setting; `auto_start` is where Auto starts
+    /// (the level the viewer's last session sustained). Returns true when
+    /// the quality changed, which calls for a keyframe so every tile shows
+    /// it. The first call always applies, so Auto starts at `auto_start`.
+    /// After that, Auto staying Auto keeps its level: a `settings` message
+    /// that changes only the scale, or a new page's greeting, starts
+    /// nothing over.
+    pub fn set_quality(&mut self, quality: Quality, auto_start: Level, now: Instant) -> bool {
+        self.auto_untold = true;
+        if self.quality_set && quality == self.quality {
             return false;
         }
+        self.quality_set = true;
         self.quality = quality;
-        self.auto_step = AUTO_START;
-        self.blocked_since = None;
-        self.last_pressure = now;
+        self.auto = AutoQuality::new(auto_start, now);
         self.keyframe_wanted = true;
         true
     }
@@ -186,13 +195,25 @@ impl Pacer {
         self.stalled = false;
         self.keyframe_wanted = true;
         self.in_flight.clear();
-        self.blocked_since = None;
         self.next_capture = self.next_capture.min(now);
     }
 
     /// Decides one capture tick. Call it when [`Pacer::next_tick`] is due.
     pub fn tick(&mut self, now: Instant) -> TickDecision {
         self.next_capture = now + self.frame_interval;
+        if self.quality == Quality::Auto {
+            let oldest = self.in_flight.front().map(|&(_, sent)| sent);
+            let before = self.auto.level();
+            if let Some(level) = self.auto.tick(now, oldest) {
+                self.auto_untold = true;
+                // A step up shows on every tile, so a still screen's text
+                // sharpens too; a step down waits for tiles to change,
+                // since the link is short of room.
+                if level > before {
+                    self.keyframe_wanted = true;
+                }
+            }
+        }
 
         if let Some(&(_, oldest)) = self.in_flight.front() {
             if !self.stalled && now.saturating_duration_since(oldest) >= STALL_AFTER {
@@ -206,28 +227,10 @@ impl Pacer {
 
         if self.in_flight.len() >= self.window() {
             self.missed_tick = true;
-            self.last_pressure = now;
-            let since = *self.blocked_since.get_or_insert(now);
-            if self.quality == Quality::Auto
-                && now.saturating_duration_since(since) >= LOWER_AFTER
-                && self.auto_step > 0
-            {
-                self.auto_step -= 1;
-                self.blocked_since = Some(now);
-            }
             return TickDecision::WindowFull;
         }
 
-        self.blocked_since = None;
         self.missed_tick = false;
-        if self.quality == Quality::Auto
-            && now.saturating_duration_since(self.last_pressure) >= RAISE_AFTER
-        {
-            if self.auto_step + 1 < AUTO_STEPS.len() {
-                self.auto_step += 1;
-            }
-            self.last_pressure = now;
-        }
         TickDecision::Capture {
             keyframe: self.keyframe_wanted,
         }
@@ -257,6 +260,7 @@ impl Pacer {
             self.in_flight.pop_front();
         }
         if let Some(sample) = sample {
+            self.auto.frame_acked(sample);
             self.round_trip = Some(match self.round_trip {
                 // Smoothed like TCP's SRTT: 7/8 old, 1/8 new.
                 Some(old) => (old * 7 + sample) / 8,
@@ -433,34 +437,67 @@ mod tests {
     }
 
     #[test]
-    fn pacing_auto_quality_lowers_after_two_seconds_blocked_and_raises_after_ten_clear() {
+    fn pacing_auto_climbs_on_a_good_link_with_a_keyframe_and_tells_the_viewer() {
         let t0 = Instant::now();
         let mut pacer = Pacer::new(t0, 10);
-        let start = pacer.jpeg_quality();
+        // The browser's `settings` after `hello` asks Auto to say its level.
+        pacer.set_quality(Quality::Auto, Level::High, t0);
+        assert_eq!(pacer.take_auto_news(), Some(Level::High));
+        assert_eq!(pacer.take_auto_news(), None);
+        assert_eq!(pacer.jpeg_quality(), 90);
         let mut seq = 0;
-        step(&mut pacer, &mut seq, t0);
-        step(&mut pacer, &mut seq, t0 + ms(100));
-        // Blocked from 200 ms; one step down at 2200 ms, another at 4200 ms.
-        let mut now = t0 + ms(200);
-        while now < t0 + ms(2_200) {
-            assert_eq!(step(&mut pacer, &mut seq, now), TickDecision::WindowFull);
+        let mut now = t0;
+        let mut keyframes = 0;
+        // Every frame comes back in 40 ms.
+        while now < t0 + ms(3_500) {
+            if let TickDecision::Capture { keyframe } = step(&mut pacer, &mut seq, now) {
+                keyframes += u32::from(keyframe);
+            }
+            pacer.ack(seq, now + ms(40));
             now += ms(100);
         }
-        assert_eq!(pacer.jpeg_quality(), start);
-        step(&mut pacer, &mut seq, t0 + ms(2_200));
-        assert_eq!(pacer.jpeg_quality(), AUTO_STEPS[AUTO_START - 1]);
+        assert_eq!(pacer.jpeg_quality(), 95);
+        assert_eq!(pacer.take_auto_news(), Some(Level::ExtraHigh));
+        // The first frame, and the climb so a still screen sharpens too.
+        assert_eq!(keyframes, 2);
+    }
 
-        // Acks keep up from here: 10 s without pressure raises it again.
-        pacer.ack(seq, t0 + ms(2_300));
-        let mut now = t0 + ms(2_300);
-        while now < t0 + ms(12_200) {
+    #[test]
+    fn pacing_auto_steps_down_when_frames_back_up() {
+        let t0 = Instant::now();
+        let mut pacer = Pacer::new(t0, 10);
+        pacer.set_quality(Quality::High, Level::High, t0);
+        assert!(pacer.set_quality(Quality::Auto, Level::ExtraHigh, t0));
+        assert_eq!(pacer.jpeg_quality(), 95);
+        let mut seq = 0;
+        let mut now = t0;
+        // A fast start, then the link stops acknowledging.
+        while now < t0 + ms(1_000) {
             step(&mut pacer, &mut seq, now);
-            pacer.ack(seq, now);
+            pacer.ack(seq, now + ms(40));
             now += ms(100);
         }
-        assert_eq!(pacer.jpeg_quality(), AUTO_STEPS[AUTO_START - 1]);
-        step(&mut pacer, &mut seq, t0 + ms(12_300));
-        assert_eq!(pacer.jpeg_quality(), start);
+        while now < t0 + ms(3_100) {
+            step(&mut pacer, &mut seq, now);
+            now += ms(100);
+        }
+        assert_eq!(pacer.jpeg_quality(), 90);
+    }
+
+    #[test]
+    fn pacing_auto_starts_where_the_viewer_says_then_staying_auto_keeps_its_level() {
+        let t0 = Instant::now();
+        let mut pacer = Pacer::new(t0, 10);
+        // The first `settings` is Auto, as the session already was: it
+        // still starts where the viewer's last session got to.
+        assert!(pacer.set_quality(Quality::Auto, Level::ExtraHigh, t0));
+        assert_eq!(pacer.jpeg_quality(), 95);
+        assert_eq!(pacer.take_auto_news(), Some(Level::ExtraHigh));
+        // A later Auto (a new page, a scale change) keeps the level, and
+        // tells the viewer again.
+        assert!(!pacer.set_quality(Quality::Auto, Level::High, t0));
+        assert_eq!(pacer.jpeg_quality(), 95);
+        assert_eq!(pacer.take_auto_news(), Some(Level::ExtraHigh));
     }
 
     #[test]
@@ -468,9 +505,10 @@ mod tests {
         let t0 = Instant::now();
         let mut pacer = Pacer::new(t0, 10);
         pacer.sent(1, t0, true);
-        assert!(pacer.set_quality(Quality::Low, t0));
-        assert!(!pacer.set_quality(Quality::Low, t0));
+        assert!(pacer.set_quality(Quality::Low, Level::High, t0));
+        assert!(!pacer.set_quality(Quality::Low, Level::High, t0));
         assert_eq!(pacer.jpeg_quality(), 40);
+        assert_eq!(pacer.take_auto_news(), None);
         assert_eq!(pacer.tick(t0), TickDecision::Capture { keyframe: true });
         pacer.sent(2, t0, true);
         for i in 1..40 {

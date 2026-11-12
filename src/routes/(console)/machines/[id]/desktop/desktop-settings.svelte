@@ -1,5 +1,6 @@
 <script lang="ts">
 	import {
+		type AutoLevel,
 		DESKTOP_FRAME_RATES,
 		DESKTOP_SCALES,
 		desktopQualitiesFor,
@@ -12,14 +13,17 @@
 	/**
 	 * Quality, scale and frame rate for the stream (SPEC-DESKTOP R10). Each
 	 * change goes to the agent at once as a `settings` message and applies
-	 * within a frame.
+	 * within a frame. Auto shows the level the agent picked (section 20).
 	 */
 	let {
 		settings,
+		autoLevel,
 		agentVersion,
 		onchange
 	}: {
 		settings: DesktopSettings;
+		/** The level Auto picked, when it is on and the agent says; older agents never do. */
+		autoLevel: AutoLevel | undefined;
 		/** Which qualities the machine's agent accepts. */
 		agentVersion: string;
 		onchange: (settings: DesktopSettings) => void;
@@ -34,7 +38,13 @@
 	} as const;
 
 	const qualities = $derived(
-		desktopQualitiesFor(agentVersion).map((value) => ({ value, label: QUALITY_LABELS[value] }))
+		desktopQualitiesFor(agentVersion).map((value) => ({
+			value,
+			label:
+				value === 'auto' && autoLevel !== undefined
+					? `Auto (${QUALITY_LABELS[autoLevel]})`
+					: QUALITY_LABELS[value]
+		}))
 	);
 	const scales = DESKTOP_SCALES.map((value) => ({
 		value: String(value),
