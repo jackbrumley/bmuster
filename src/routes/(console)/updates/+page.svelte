@@ -23,6 +23,7 @@
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import { formatRelative } from '#lib/utils/format.ts';
+	import ReleaseNotes from './release-notes.svelte';
 	import TestChannelPanel from './test-channel-panel.svelte';
 	import UpdateMachines from './update-machines.svelte';
 	import { startServerRestartMonitor, type RestartProgress } from './server-restart-monitor.ts';
@@ -158,21 +159,14 @@
 	<ServerUpdatePanel view={data.server} onRestarting={onServerRestarting} />
 
 	<Panel heading="Release notes" actions={undefined} tone="normal" padding="normal">
-		{@render releaseNotes(latest)}
+		<ReleaseNotes release={latest} />
 		<details class="earlier">
 			<summary>Earlier versions ({earlier.length})</summary>
 			{#each earlier as release (release.version)}
-				{@render releaseNotes(release)}
+				<ReleaseNotes {release} />
 			{/each}
 		</details>
 	</Panel>
-
-	{#snippet releaseNotes(release: (typeof CHANGELOG)[number])}
-		<h2>BMuster {release.version}</h2>
-		<ul>
-			{#each release.changes as change (change)}<li>{change}</li>{/each}
-		</ul>
-	{/snippet}
 
 	{#if data.rollout.kind === 'rollout' && data.rollout.paused.kind === 'paused'}
 		<Notice
