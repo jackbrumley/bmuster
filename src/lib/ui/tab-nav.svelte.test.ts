@@ -54,6 +54,26 @@ describe('TabNav', () => {
 		expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
 	});
 
+	it('SPEC-MACHINE-DETAILS D15: brings the current tab into view by scrolling the row sideways, never the page', async () => {
+		await page.viewport(390, 400);
+		const spacer = document.createElement('div');
+		spacer.style.height = '2000px';
+		const screen = await render(TabNav, {
+			label: 'Machine',
+			tabs: TABS,
+			current: TABS[0]?.href ?? ''
+		});
+		document.body.append(spacer);
+		window.scrollTo(0, 600);
+		const scrolledTo = window.scrollY;
+		const row = screen.getByRole('navigation').element();
+		expect(row.scrollLeft).toBe(0);
+		await screen.rerender({ current: TABS[6]?.href ?? '' });
+		await expect.poll(() => row.scrollLeft).toBeGreaterThan(0);
+		expect(window.scrollY).toBe(scrolledTo);
+		spacer.remove();
+	});
+
 	it('shows no scroll bar when every tab fits', async () => {
 		await page.viewport(1400, 900);
 		const screen = await render(TabNav, {

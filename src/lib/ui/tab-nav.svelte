@@ -19,20 +19,21 @@
 		current: string;
 	} = $props();
 
-	let nav = $state<HTMLElement | undefined>(undefined);
+	// Svelte sets it back to null when the row goes, and a late scroll event can still arrive.
+	let nav = $state<HTMLElement | null>(null);
 
 	/** How far the row is scrolled and how much shows, as fractions of its full width. */
 	let view = $state({ start: 0, shown: 1 });
 
 	function measure(): void {
-		if (nav === undefined || nav.scrollWidth <= 0) return;
+		if (nav === null || nav.scrollWidth <= 0) return;
 		view = { start: nav.scrollLeft / nav.scrollWidth, shown: nav.clientWidth / nav.scrollWidth };
 	}
 
 	// The thin bar under a row that does not fit says it scrolls (phones).
 	$effect(() => {
 		const element = nav;
-		if (element === undefined) return;
+		if (element === null) return;
 		measure();
 		const observer = new ResizeObserver(measure);
 		observer.observe(element);
@@ -43,12 +44,26 @@
 
 	const scrolls = $derived(view.shown < 0.999);
 
+	// A string, so the effect below runs only when the path really changes: the
+	// layout passes `page.url.pathname`, and every data refresh (Overview's live
+	// figures, every 3 seconds) gives `page.url` a new object.
+	const path = $derived(current);
+
 	// On a phone the row scrolls; keep the current tab in view, also when the
-	// page opens straight on a tab at the far end.
+	// page opens straight on a tab at the far end. Only the row scrolls, sideways:
+	// `scrollIntoView` also scrolls the page, back up to the row.
 	$effect(() => {
-		const path = current;
-		const link = nav?.querySelector(`a[href="${CSS.escape(path)}"]`);
-		link?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+		const element = nav;
+		if (element === null) return;
+		const link = element.querySelector(`a[href="${CSS.escape(path)}"]`);
+		if (link === null) return;
+		const row = element.getBoundingClientRect();
+		const tab = link.getBoundingClientRect();
+		if (tab.left < row.left) {
+			element.scrollLeft += tab.left - row.left;
+		} else if (tab.right > row.right) {
+			element.scrollLeft += tab.right - row.right;
+		}
 	});
 </script>
 

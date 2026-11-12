@@ -24,6 +24,7 @@ A machine's name comes from enrolment and cannot be changed, and there is nowher
 | D12 | **Uptime** in System while the machine is online: how long since it started, counted on from its last check-in ("3 days 4 h", "5 h 12 min", "12 min", "under a minute"). Left out while offline, like the other live figures.                                                                                                                                                                                                     | `overview.svelte.test.ts` ("D12: …"), `format.test.ts`, `exports.test.ts` ("X13: …") |
 | D13 | **Power** in System: the power source and battery level from the latest inventory ("Mains", "Mains, battery 80%", "Battery, 45%", "Unknown", or "Not reported by this agent"). The keep-awake setting and its state stay on Manage (admins only).                                                                                                                                                                                 | `overview.svelte.test.ts` ("D13: …"), `power.test.ts`                                |
 | D14 | A machine with no inventory yet shows neither Power nor the inventory cards' rows: both cards say "Waiting for the first inventory.".                                                                                                                                                                                                                                                                                             | `overview.svelte.test.ts` ("D14: …")                                                 |
+| D15 | Overview stays where the reader scrolled it while it updates: the live figures refreshing, status events, the network returning and the phone's window resizing never move the page back to the top. The tab row keeps the current tab in view by scrolling sideways only, never the page.                                                                                                                                        | `overview-scroll.svelte.test.ts` ("D15: …"), `tab-nav.svelte.test.ts` ("… D15: …")   |
 
 ## 3. Schema (additive)
 
@@ -87,6 +88,8 @@ Built as specified unless listed here. Tested end to end against a scratch dev s
 
 - Version bump and changelog (there is no `src/lib/changelog.ts` yet); left for the release step, as with SPEC-SIGN-IN.
 - The Windows GPU code has not run on Windows.
+
+**Overview jumping back to the top on phones (2026-11-12, D15).** `TabNav` kept the current tab in view with `link.scrollIntoView({ block: 'nearest', inline: 'nearest' })` in an effect that read the `current` prop. The machine layout passes `page.url.pathname`, and SvelteKit gives `page.url` a new object on every refresh whose data changed, so Overview's 3-second live figure refresh re-ran the effect; with the tab row above the screen, `block: 'nearest'` scrolled the whole page back up to it. The effect now follows a derived string (it runs only when the path really changes) and scrolls the row itself sideways (`scrollLeft`), never the page. Tests: `overview-scroll.svelte.test.ts` renders the machine layout with Overview at phone size (`tests/helpers/machine-overview-frame.svelte`, `fake-app-page.svelte.ts`).
 
 **Fixes from Jack's first full export (2026-11-11, for 0.4.18).**
 
