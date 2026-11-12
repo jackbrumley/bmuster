@@ -45,10 +45,10 @@ describe('the clipboard panel', () => {
 	it('C8: an error from the agent shows in the panel', async () => {
 		const { clipboard, panel } = await setup();
 		await panel.getByRole('button', { name: 'Get from machine' }).click();
-		clipboard.failed('Copy and paste is not built for Wayland portal sessions yet.');
+		clipboard.failed('Copy and paste is not available on this screen.');
 		await expect
 			.element(panel.getByRole('alert'))
-			.toHaveTextContent('Copy and paste is not built for Wayland portal sessions yet.');
+			.toHaveTextContent('Copy and paste is not available on this screen.');
 	});
 
 	it('C9: text over 1 MiB is refused with a field error and nothing is sent', async () => {
