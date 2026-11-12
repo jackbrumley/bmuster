@@ -8,7 +8,8 @@ import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import '#lib/ui/design-tokens.css';
 import DesktopTab from './+page.svelte';
 
-// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6; SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10;
+// SPEC-DESKTOP R1, R3, R4, R5, R7, R10, R17; SPEC-DESKTOP-KEYS K6;
+// SPEC-DESKTOP-FLOATING F1, F2, F4, F8, F10, FA13, FA14, FA15;
 // SPEC-DESKTOP-ALL-SCREENS A8, A9, A10.
 
 const SESSION = '33333333-3333-4333-8333-333333333333';
@@ -531,9 +532,10 @@ describe('the desktop tab', () => {
 			.toBeLessThan(stage.getBoundingClientRect().width / 2);
 
 		await screen.getByRole('button', { name: 'Session controls' }).click();
+		// Top right: clear of a bottom sheet and of a side panel on the button's (left) side.
 		await screen
 			.getByRole('button', { name: 'Close the controls' })
-			.click({ position: { x: 300, y: 300 } });
+			.click({ position: { x: stage.getBoundingClientRect().width - 30, y: 30 } });
 		await expect
 			.element(screen.getByRole('group', { name: 'Session options' }))
 			.not.toBeInTheDocument();
@@ -548,6 +550,7 @@ describe('the desktop tab', () => {
 		const sheet = screen.getByRole('group', { name: 'Session options' });
 
 		await fab.click();
+		await sheet.getByRole('tab', { name: 'Session' }).click();
 		await sheet.getByRole('button', { name: 'Leave full screen' }).click();
 		await expect.poll(() => document.fullscreenElement).toBeNull();
 		await expect.element(fab).not.toBeInTheDocument();
@@ -555,6 +558,7 @@ describe('the desktop tab', () => {
 		await screen.getByRole('button', { name: 'Full screen' }).click();
 		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
 		await fab.click();
+		await sheet.getByRole('tab', { name: 'Session' }).click();
 		await sheet.getByRole('button', { name: 'Disconnect' }).click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
 		expect(socket.messages()).not.toContainEqual({ type: 'end' });
@@ -585,10 +589,9 @@ describe('the desktop tab', () => {
 			.not.toBeInTheDocument();
 
 		await fab.click();
-		await screen
-			.getByRole('group', { name: 'Session options' })
-			.getByRole('button', { name: 'Leave full screen' })
-			.click();
+		const sheet = screen.getByRole('group', { name: 'Session options' });
+		await sheet.getByRole('tab', { name: 'Session' }).click();
+		await sheet.getByRole('button', { name: 'Leave full screen' }).click();
 		await expect.element(fab).not.toBeInTheDocument();
 		expect(getComputedStyle(stage).position).toBe('relative');
 		expect(document.body.style.overflow).toBe('');
@@ -606,6 +609,98 @@ describe('the desktop tab', () => {
 		await expect.element(screen.getByRole('button', { name: 'Session controls' })).toBeVisible();
 		const stage = screen.getByRole('application', { name: /Screen of/ }).element();
 		expect(getComputedStyle(stage).position).toBe('fixed');
+	});
+
+	/** A touch on the screen element, as a phone's browser reports it. */
+	function touch(stage: Element, type: string, id: number, x: number, y: number): void {
+		stage.dispatchEvent(
+			new PointerEvent(type, {
+				pointerId: id,
+				pointerType: 'touch',
+				clientX: x,
+				clientY: y,
+				bubbles: true,
+				cancelable: true
+			})
+		);
+	}
+
+	it('FA13: a pinch enlarges the picture, and a tap then clicks the display pixel under the finger', async () => {
+		pretendTouchScreen();
+		await page.viewport(375, 667);
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await expect.poll(() => socket.messages()).toContainEqual({ type: 'ack', seq: 1 });
+		await screen.getByRole('button', { name: /^Touch input: trackpad/ }).click();
+		const stage = screen.getByRole('application', { name: /Screen of/ }).element();
+		const { left, top } = stage.getBoundingClientRect();
+
+		// Two fingers 100 apart spread to 200: 2x about their midpoint, (60,10) inside the stage.
+		touch(stage, 'pointerdown', 1, left + 10, top + 10);
+		touch(stage, 'pointerdown', 2, left + 110, top + 10);
+		touch(stage, 'pointermove', 2, left + 210, top + 10);
+		touch(stage, 'pointerup', 1, left + 10, top + 10);
+		touch(stage, 'pointerup', 2, left + 210, top + 10);
+		const canvas = screen.container.querySelector<HTMLCanvasElement>('canvas.screen');
+		await expect.poll(() => canvas?.style.transform).toBe('translate(-10px, -10px) scale(2)');
+		const before = socket.messages().length;
+
+		// The stage shows a 256x128 display; zoomed, (100,50) is 110/750 across and 60/375 down.
+		touch(stage, 'pointerdown', 3, left + 100, top + 50);
+		touch(stage, 'pointerup', 3, left + 100, top + 50);
+		await expect
+			.poll(() => socket.messages().slice(before))
+			.toEqual([
+				{ type: 'pointer', x: 38, y: 20, buttons: 0 },
+				{ type: 'pointer', x: 38, y: 20, buttons: 1 },
+				{ type: 'pointer', x: 38, y: 20, buttons: 0 }
+			]);
+	});
+
+	it('FA14: a touch device shows the gestures hint once; Got it puts it away for good', async () => {
+		localStorage.removeItem('bmuster.desktop.gestureHint');
+		pretendTouchScreen();
+		await page.viewport(375, 667);
+		const first = await open(CONTROL, 'Connect');
+		const hint = first.screen.getByRole('region', { name: 'Touch gestures' });
+		await expect.element(hint).toBeVisible();
+		await expect.element(hint.getByText('Long press')).toBeVisible();
+		await hint.getByRole('button', { name: 'Got it' }).click();
+		await expect.element(hint).not.toBeInTheDocument();
+		await first.screen.unmount();
+
+		const again = await open(CONTROL, 'Connect');
+		await expect
+			.element(again.screen.getByRole('application', { name: /Screen of/ }))
+			.toBeVisible();
+		await expect
+			.element(again.screen.getByRole('region', { name: 'Touch gestures' }))
+			.not.toBeInTheDocument();
+		localStorage.removeItem('bmuster.desktop.gestureHint');
+	});
+
+	it('FA15: a desktop with a mouse sees no gestures hint and draws the picture unzoomed', async () => {
+		localStorage.removeItem('bmuster.desktop.gestureHint');
+		const { screen, socket } = await open(CONTROL, 'Connect');
+		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
+		await expect.poll(() => socket.messages()).toContainEqual({ type: 'ack', seq: 1 });
+		await expect
+			.element(screen.getByRole('region', { name: 'Touch gestures' }))
+			.not.toBeInTheDocument();
+		const canvas = screen.container.querySelector<HTMLCanvasElement>('canvas.screen');
+		expect(canvas?.style.transform).toBe('');
+		// A click maps straight onto the 256x128 display the picture fills, as before.
+		const stage = screen.getByRole('application', { name: /Screen of/ });
+		const box = stage.element().getBoundingClientRect();
+		await stage.click({ position: { x: 40, y: 20 } });
+		await expect
+			.poll(() => socket.messages())
+			.toContainEqual({
+				type: 'pointer',
+				x: Math.round((40 / box.width) * 256),
+				y: Math.round((20 / box.height) * 128),
+				buttons: 1
+			});
 	});
 
 	it('A8: offers All screens only with two or more displays and an agent that can', async () => {

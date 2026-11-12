@@ -34,8 +34,11 @@
 	import FloatingControls from './floating-controls.svelte';
 	import FullScreenBar from './full-screen-bar.svelte';
 	import { FullScreen } from './full-screen.svelte.ts';
-	import type { Geometry, TouchMode } from './input.ts';
+	import { dismissHint, hintDismissed } from './gesture-hint.ts';
+	import GestureHint from './gesture-hint.svelte';
 	import { attachScreenInput } from './screen-input.ts';
+	import type { Geometry, TouchMode } from './touch-gestures.ts';
+	import { NO_ZOOM, zoomTransform, type Zoom } from './zoom.ts';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
 	import ToolButton from './tool-button.svelte';
@@ -59,6 +62,12 @@
 	let cursorCanvas = $state<HTMLCanvasElement>();
 	let session = $state<DesktopSession>();
 	let touchMode = $state<TouchMode>('trackpad');
+	/** The box the picture is drawn in, before any pinch zoom. */
+	let picture = $state<HTMLElement>();
+	/** The picture's pinch zoom, drawn here only (SPEC-DESKTOP-FLOATING, option A). */
+	let zoom = $state<Zoom>(NO_ZOOM);
+	/** This browser has put the touch gestures hint away; read on mount. */
+	let hintGone = $state(true);
 	/** The block under the bar: picture settings or the Keys menu, never both. */
 	let open = $state<'none' | 'settings' | 'keys'>('none');
 	/** The browser's full screen, or the stage filling the window where there is none. */
@@ -70,6 +79,8 @@
 	 * narrower than the sidebar breakpoint.
 	 */
 	const touchLayout = new MediaQuery('(pointer: coarse), (max-width: 899px)');
+	/** A finger is the main pointer: the gestures hint is for this device. */
+	const touchDevice = new MediaQuery('(pointer: coarse)');
 
 	const connection = $derived(session?.connection ?? { kind: 'idle' as const });
 	const running = $derived(
@@ -81,6 +92,8 @@
 	const watchOnly = $derived(session?.mode === 'watch');
 	/** Only a control session sends keys (SPEC-DESKTOP-KEYS 7). */
 	const keysOpen = $derived(open === 'keys' && running && !watchOnly);
+	/** The first control session on a touch device explains the gestures, once. */
+	const showHint = $derived(touchDevice.current && running && !watchOnly && !hintGone);
 	/**
 	 * Connect and Watch only are offered whenever no session runs: at first,
 	 * after Disconnect and after the session ended. A reload or a dropped
@@ -145,10 +158,11 @@
 	});
 
 	function geometry(): Geometry | undefined {
-		if (screenCanvas === undefined || display === undefined || frame === undefined) {
+		if (picture === undefined || display === undefined || frame === undefined) {
 			return undefined;
 		}
-		const rect = screenCanvas.getBoundingClientRect();
+		// The unzoomed box: the zoom is drawn on the canvases inside it, and the input maps through it.
+		const rect = picture.getBoundingClientRect();
 		return {
 			box: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
 			picture: frame,
@@ -212,7 +226,13 @@
 		}
 	});
 
+	function putHintAway(): void {
+		hintGone = true;
+		dismissHint();
+	}
+
 	onMount(() => {
+		hintGone = hintDismissed();
 		const surface = stage;
 		if (
 			!canWatch ||
@@ -237,7 +257,10 @@
 			},
 			controlling: () => current.controlling,
 			geometry,
-			touchMode: () => touchMode
+			touchMode: () => touchMode,
+			zoom: (next) => {
+				zoom = next;
+			}
 		});
 		const detachFullScreen = screenMode.attach();
 		return () => {
@@ -411,6 +434,10 @@
 			<KeysMenu osFamily={machine.osFamily} send={sendInput} afterSend={backToScreen} />
 		{/if}
 
+		{#if showHint && !fullScreen}
+			<GestureHint ondismiss={putHintAway} />
+		{/if}
+
 		<div
 			class="stage"
 			class:full={fullScreen}
@@ -427,8 +454,25 @@
 			aria-label="Screen of {machine.name}"
 			aria-busy={connectingTitle !== undefined}
 		>
-			<canvas class="screen" bind:this={screenCanvas} aria-hidden="true"></canvas>
-			<canvas class="cursor" bind:this={cursorCanvas} aria-hidden="true"></canvas>
+			<div class="picture" bind:this={picture}>
+				<canvas
+					class="screen"
+					bind:this={screenCanvas}
+					style:transform={zoomTransform(zoom)}
+					aria-hidden="true"
+				></canvas>
+				<canvas
+					class="cursor"
+					bind:this={cursorCanvas}
+					style:transform={zoomTransform(zoom)}
+					aria-hidden="true"
+				></canvas>
+			</div>
+			{#if showHint && fullScreen}
+				<div class="hint-over">
+					<GestureHint ondismiss={putHintAway} />
+				</div>
+			{/if}
 			{#if screenState?.kind === 'approval'}
 				<div class="waiting">
 					<p>{screenLabel(screenState)}</p>
@@ -514,8 +558,8 @@
 			</div>
 			<p class="mode">
 				{touchMode === 'trackpad'
-					? 'Trackpad: drag to move the pointer, tap to click, two fingers to scroll or right-click.'
-					: 'Touch: tap where you want to click, drag to drag.'}
+					? 'Trackpad: drag to move the pointer, tap to click, long press to right-click, two fingers to scroll, pinch to zoom.'
+					: 'Touch: tap where you want to click, drag to drag, long press to right-click, pinch to zoom.'}
 			</p>
 		{/if}
 	</div>
@@ -609,14 +653,11 @@
 	}
 
 	/* The picture keeps clear of the notch and the home bar; the controls do too. */
-	.stage.filling .screen,
-	.stage.filling .cursor {
+	.stage.filling .picture {
 		top: var(--safe-top);
 		right: var(--safe-right);
 		bottom: var(--safe-bottom);
 		left: var(--safe-left);
-		width: auto;
-		height: auto;
 	}
 
 	.stage:not(.watching) {
@@ -627,6 +668,13 @@
 		outline-offset: -2px;
 	}
 
+	/* Where the picture is drawn at 1x; a pinch zoom scales the canvases from its top-left corner. */
+	.picture {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+
 	.screen,
 	.cursor {
 		position: absolute;
@@ -634,7 +682,18 @@
 		width: 100%;
 		height: 100%;
 		object-fit: contain;
+		transform-origin: 0 0;
 		pointer-events: none;
+	}
+
+	/* Over the screen in full screen, under the controls button (z-index 2). */
+	.hint-over {
+		position: absolute;
+		top: calc(var(--space-3) + var(--safe-top));
+		left: 50%;
+		z-index: 1;
+		width: min(340px, calc(100% - var(--space-12) - var(--space-12)));
+		transform: translateX(-50%);
 	}
 
 	.waiting {

@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import {
-		IconAdjustmentsHorizontal,
 		IconArrowsMinimize,
 		IconEye,
-		IconHandFinger,
 		IconMenu2,
 		IconPlugConnectedX,
 		IconPointer
@@ -15,8 +13,11 @@
 	} from '#lib/domain/desktop/messages.ts';
 	import type { OsFamily } from '#lib/domain/machines/machine.ts';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
+	import Button from '#lib/ui/button.svelte';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import Panel from '#lib/ui/panel.svelte';
+	import SegmentedControl from '#lib/ui/segmented-control.svelte';
+	import TabBar from '#lib/ui/tab-bar.svelte';
 	import DesktopSettings from './desktop-settings.svelte';
 	import {
 		clampCorner,
@@ -27,21 +28,22 @@
 		snapped,
 		type FloatingPosition
 	} from './floating-position.ts';
-	import type { TouchMode } from './input.ts';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
-	import ToolButton from './tool-button.svelte';
+	import { scrollEdges, sheetLayout } from './sheet-layout.ts';
+	import type { TouchMode } from './touch-gestures.ts';
 
 	/**
-	 * Full screen on phones and tablets (SPEC-DESKTOP-FLOATING): one round
-	 * button over the screen that a finger can drag anywhere; let go, it
-	 * snaps to the nearer side edge and this browser remembers where. A tap
-	 * opens a compact sheet beside it with the session's controls: the
-	 * actions, the phone keys with the phone's keyboard, the Keys menu and
-	 * the picture settings. The screen's input takes only events aimed at the
-	 * screen itself (`screen-input.ts`), and a drag swallows its pointer's
-	 * events on the way down, so neither the button nor the sheet ever
-	 * clicks on the machine.
+	 * Full screen on phones and tablets (SPEC-DESKTOP-FLOATING, option A):
+	 * one round button over the screen that a finger can drag anywhere; let
+	 * go, it snaps to the nearest edge and this browser remembers where. A
+	 * tap opens the sheet: a bottom sheet on an upright screen, a full-height
+	 * side panel on a screen on its side, with tabs for the keys, the
+	 * picture, the screen picker and the session, each scrolling inside the
+	 * sheet with a fade where there is more. The screen's input takes only
+	 * events aimed at the screen itself (`screen-input.ts`), and a drag
+	 * swallows its pointer's events on the way down, so neither the button
+	 * nor the sheet ever clicks on the machine.
 	 */
 	let {
 		osFamily,
@@ -67,7 +69,7 @@
 		/** The person may control, so they may change mode. */
 		canSwitch: boolean;
 		touchMode: TouchMode;
-		/** The machine's displays; the picker shows when there is more than one. */
+		/** The machine's displays; the Screen tab shows when there is more than one. */
 		displays: readonly { value: string; label: string; count: undefined }[];
 		display: string | null;
 		settings: PictureSettings;
@@ -86,6 +88,13 @@
 	/** The button's size in page pixels (also in the stylesheet). */
 	const SIZE = 48;
 
+	const TOUCH_MODES: readonly { value: TouchMode; label: string }[] = [
+		{ value: 'trackpad', label: 'Trackpad' },
+		{ value: 'touch', label: 'Tap to click' }
+	];
+
+	type Tab = 'keys' | 'picture' | 'screen' | 'session';
+
 	const uid = $props.id();
 	const control = $derived(mode === 'control');
 
@@ -93,11 +102,35 @@
 	/** The button's top-left corner inside the area while a finger drags it. */
 	let drag = $state<{ x: number; y: number }>();
 	let open = $state(false);
-	let settingsOpen = $state(false);
+	/** The tab the person picked; until then, or once it goes away, the opening tab. */
+	let chosen = $state<Tab>();
 	/** The phone's keyboard is open: the sheet folds to the key bar, at the top. */
 	let typing = $state(false);
 	let area = $state<HTMLElement>();
+	let areaWidth = $state(0);
+	let areaHeight = $state(0);
 	let fab = $state<HTMLElement>();
+	let scroller = $state<HTMLElement>();
+	/** More of the tab to see above or below: the fades show. */
+	let edges = $state({ above: false, below: false });
+
+	const tabs = $derived<{ value: Tab; label: string }[]>([
+		...(control ? [{ value: 'keys' as const, label: 'Keys' }] : []),
+		...(mode !== undefined ? [{ value: 'picture' as const, label: 'Picture' }] : []),
+		...(mode !== undefined && displays.length > 1
+			? [{ value: 'screen' as const, label: 'Screen' }]
+			: []),
+		{ value: 'session', label: 'Session' }
+	]);
+	/** A control session opens on its keys; any other on the session's actions. */
+	const shown = $derived<Tab>(
+		chosen !== undefined && tabs.some((tab) => tab.value === chosen)
+			? chosen
+			: control
+				? 'keys'
+				: 'session'
+	);
+	const layout = $derived(sheetLayout({ width: areaWidth, height: areaHeight }, position, SIZE));
 
 	type Press = {
 		id: number;
@@ -114,24 +147,52 @@
 	function close(): void {
 		open = false;
 		typing = false;
-		settingsOpen = false;
 	}
 
-	/** Runs an action from the sheet, then gives the keyboard back to the screen. */
-	function act(action: () => void): () => void {
-		return () => {
-			action();
-			backToScreen();
-		};
+	function pick(tab: Tab): void {
+		chosen = tab;
+		scroller?.scrollTo({ top: 0 });
 	}
 
-	/** Runs an action that ends the sheet's use (leave full screen, disconnect). */
+	/** Runs an action that ends the sheet's use (switch mode, leave full screen, disconnect). */
 	function leave(action: () => void): () => void {
 		return () => {
 			close();
 			action();
 		};
 	}
+
+	function measure(): void {
+		if (scroller instanceof HTMLElement) {
+			edges = scrollEdges(scroller);
+		}
+	}
+
+	/** Escape closes the open sheet, wherever the focus is, and leaves it on the button. */
+	function onWindowKey(event: KeyboardEvent): void {
+		if (open && event.key === 'Escape') {
+			close();
+			fab?.focus();
+		}
+	}
+
+	// The fades follow the tab's content as it changes (More, another tab) and the sheet's size.
+	$effect(() => {
+		const box = scroller;
+		// bind:this sets null, not undefined, when the sheet closes.
+		if (!(box instanceof HTMLElement)) {
+			return;
+		}
+		const observer = new ResizeObserver(measure);
+		observer.observe(box);
+		for (const child of box.children) {
+			observer.observe(child);
+		}
+		measure();
+		return () => {
+			observer.disconnect();
+		};
+	});
 
 	function cornerAt(event: PointerEvent, held: Press, box: DOMRect): { x: number; y: number } {
 		return clampCorner(
@@ -232,6 +293,8 @@
 	});
 </script>
 
+<svelte:window onkeydown={onWindowKey} />
+
 <div class="layer">
 	{#if open}
 		<button
@@ -246,15 +309,15 @@
 	<div
 		class="area"
 		bind:this={area}
+		bind:clientWidth={areaWidth}
+		bind:clientHeight={areaHeight}
 		style:--at={String(position.at)}
-		style:--rest={String(1 - position.at)}
 	>
 		<button
 			bind:this={fab}
 			data-raw-button="icon"
 			type="button"
-			class="fab"
-			class:left={position.side === 'left'}
+			class="fab edge-{position.edge}"
 			class:dragging={drag !== undefined}
 			style:--x={drag === undefined ? undefined : `${drag.x}px`}
 			style:--y={drag === undefined ? undefined : `${drag.y}px`}
@@ -268,111 +331,118 @@
 		{#if open}
 			<div
 				id="{uid}-sheet"
-				class="sheet"
-				class:left={position.side === 'left'}
-				class:above={!typing && position.at >= 0.5}
+				class="sheet {layout.kind}"
+				class:right={layout.kind === 'side' && layout.side === 'right'}
 				class:typing
 				role="group"
 				aria-label="Session options"
 			>
-				{#if !typing}
-					<Panel heading={undefined} actions={undefined} tone="normal" padding="normal">
-						<div class="actions">
-							{#if mode !== undefined}
-								<span class="mode">{control ? 'Control' : 'View only'}</span>
-								{#if control}
-									<ToolButton
-										label={touchMode === 'trackpad'
-											? 'Touch input: trackpad. Switch to tapping where to click'
-											: 'Touch input: tap where to click. Switch to trackpad'}
-										pressed={undefined}
-										disabled={false}
-										onclick={act(() => {
-											ontouchmode(touchMode === 'trackpad' ? 'touch' : 'trackpad');
-										})}
-									>
-										{#if touchMode === 'trackpad'}
-											<IconPointer size={20} />
-										{:else}
-											<IconHandFinger size={20} />
-										{/if}
-									</ToolButton>
-								{/if}
-								<ToolButton
-									label="Picture settings"
-									pressed={settingsOpen}
-									disabled={false}
-									onclick={act(() => (settingsOpen = !settingsOpen))}
-								>
-									<IconAdjustmentsHorizontal size={20} />
-								</ToolButton>
-								{#if canSwitch}
-									<ToolButton
-										label={control
-											? 'Switch to view only (reconnects)'
-											: 'Take control (reconnects)'}
-										pressed={undefined}
-										disabled={false}
-										onclick={leave(() => {
-											onswitch(control ? 'watch' : 'control');
-										})}
-									>
-										{#if control}
-											<IconEye size={20} />
-										{:else}
-											<IconPointer size={20} />
-										{/if}
-									</ToolButton>
-								{/if}
-							{/if}
-							<ToolButton
-								label="Leave full screen"
-								pressed={undefined}
-								disabled={false}
-								onclick={leave(onexit)}
+				<Panel heading={undefined} actions={undefined} tone="normal" padding="none">
+					<div class="inner">
+						{#if !typing}
+							<div class="tabs">
+								<TabBar
+									label="Session options"
+									{tabs}
+									panel="{uid}-tab"
+									bind:value={() => shown, pick}
+								/>
+							</div>
+						{/if}
+						<div class="scroller">
+							<div
+								class="scroll"
+								id="{uid}-tab"
+								role="tabpanel"
+								aria-label={tabs.find((tab) => tab.value === shown)?.label}
+								bind:this={scroller}
+								onscroll={measure}
 							>
-								<IconArrowsMinimize size={20} />
-							</ToolButton>
-							{#if mode !== undefined}
-								<ToolButton
-									label="Disconnect"
-									pressed={undefined}
-									disabled={false}
-									onclick={leave(ondisconnect)}
-								>
-									<IconPlugConnectedX size={20} />
-								</ToolButton>
+								<div class="content">
+									{#if shown === 'keys' && control}
+										<KeyBar
+											{osFamily}
+											{send}
+											onkeyboard={(keyboardOpen: boolean) => (typing = keyboardOpen)}
+										/>
+										{#if !typing}
+											<KeysMenu {osFamily} {send} afterSend={backToScreen} />
+										{/if}
+									{:else if shown === 'picture' && mode !== undefined}
+										<DesktopSettings {settings} {agentVersion} onchange={onsettings} />
+									{:else if shown === 'screen'}
+										<ChipGroup
+											label="Screen"
+											options={displays}
+											bind:value={
+												() => display,
+												(value: string | null) => {
+													if (value !== null) ondisplay(value);
+												}
+											}
+										/>
+									{:else if shown === 'session'}
+										{#if mode !== undefined}
+											<span class="mode">
+												{#if control}
+													<IconPointer size={16} /> Control
+												{:else}
+													<IconEye size={16} /> View only
+												{/if}
+											</span>
+										{/if}
+										{#if control}
+											<SegmentedControl
+												label="Touch input"
+												options={TOUCH_MODES}
+												bind:value={
+													() => touchMode,
+													(value: TouchMode | null) => {
+														if (value !== null) ontouchmode(value);
+													}
+												}
+											/>
+										{/if}
+										<div class="actions">
+											{#if mode !== undefined && canSwitch}
+												<Button
+													variant="secondary"
+													size="compact"
+													type="button"
+													onclick={leave(() => {
+														onswitch(control ? 'watch' : 'control');
+													})}>{control ? 'Switch to view only' : 'Take control'}</Button
+												>
+											{/if}
+											<Button
+												variant="secondary"
+												size="compact"
+												type="button"
+												onclick={leave(onexit)}
+												><IconArrowsMinimize size={18} /> Leave full screen</Button
+											>
+											{#if mode !== undefined}
+												<Button
+													variant="secondary"
+													size="compact"
+													type="button"
+													onclick={leave(ondisconnect)}
+													><IconPlugConnectedX size={18} /> Disconnect</Button
+												>
+											{/if}
+										</div>
+									{/if}
+								</div>
+							</div>
+							{#if edges.above}
+								<div class="fade top" aria-hidden="true"></div>
+							{/if}
+							{#if edges.below}
+								<div class="fade bottom" aria-hidden="true"></div>
 							{/if}
 						</div>
-						{#if mode !== undefined && displays.length > 1}
-							<ChipGroup
-								label="Screen"
-								options={displays}
-								bind:value={
-									() => display,
-									(value: string | null) => {
-										if (value !== null) ondisplay(value);
-									}
-								}
-							/>
-						{/if}
-					</Panel>
-				{/if}
-				{#if control}
-					<Panel heading={undefined} actions={undefined} tone="normal" padding="normal">
-						<KeyBar
-							{osFamily}
-							{send}
-							onkeyboard={(keyboardOpen: boolean) => (typing = keyboardOpen)}
-						/>
-					</Panel>
-				{/if}
-				{#if control && !typing}
-					<KeysMenu {osFamily} {send} afterSend={backToScreen} />
-				{/if}
-				{#if settingsOpen && mode !== undefined && !typing}
-					<DesktopSettings {settings} {agentVersion} onchange={onsettings} />
-				{/if}
+					</div>
+				</Panel>
 			</div>
 		{/if}
 	</div>
@@ -396,12 +466,12 @@
 		cursor: default;
 	}
 
-	/* Where the button may sit: the screen less the safe-area insets and a small gap. */
+	/* Where the button and the sheet may sit: the screen less the safe-area insets and a small gap. */
 	.area {
 		--size: 48px;
-		/* How far the button can travel down; --at and --rest (1 - at) come from the script. */
+		/* The button's place along its edge; --at comes from the script. */
 		--travel: calc(100% - var(--size));
-		--button-top: calc(var(--travel) * var(--at));
+		--along: calc(var(--travel) * var(--at));
 		position: absolute;
 		top: calc(var(--space-3) + var(--safe-top));
 		right: calc(var(--space-3) + var(--safe-right));
@@ -412,8 +482,6 @@
 
 	.fab {
 		position: absolute;
-		top: var(--button-top);
-		right: 0;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -430,64 +498,139 @@
 		cursor: grab;
 	}
 
-	.fab.left {
-		right: auto;
+	.fab.edge-left {
+		top: var(--along);
 		left: 0;
+	}
+
+	.fab.edge-right {
+		top: var(--along);
+		right: 0;
+	}
+
+	.fab.edge-top {
+		top: 0;
+		left: var(--along);
+	}
+
+	.fab.edge-bottom {
+		bottom: 0;
+		left: var(--along);
 	}
 
 	.fab.dragging {
 		top: var(--y);
 		right: auto;
+		bottom: auto;
 		left: var(--x);
 		cursor: grabbing;
 	}
 
-	/* Beside the button, below it in the top half of the screen and above it in the bottom half. */
+	/* An upright screen: a bottom sheet across the width, at most 70% of the height. */
 	.sheet {
 		position: absolute;
-		top: calc(var(--button-top) + var(--size) + var(--space-2));
 		right: 0;
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		align-content: start;
-		gap: var(--space-2);
-		width: min(440px, 100%);
-		max-height: min(50%, calc(var(--travel) * var(--rest) - var(--space-2)));
-		overflow-y: auto;
-		overscroll-behavior: contain;
+		bottom: 0;
+		left: 0;
+		display: flex;
+		flex-direction: column;
+		max-height: 70%;
 		pointer-events: auto;
 	}
 
-	.sheet.left {
+	/* A screen on its side: a full-height panel on the button's side. */
+	.sheet.side {
+		top: 0;
 		right: auto;
-		left: 0;
+		display: grid;
+		grid-template-rows: minmax(0, 1fr);
+		width: min(380px, 50%);
+		max-height: none;
 	}
 
-	.sheet.above {
-		top: auto;
-		bottom: calc(var(--travel) * var(--rest) + var(--size) + var(--space-2));
-		max-height: min(50%, calc(var(--button-top) - var(--space-2)));
+	.sheet.side.right {
+		right: 0;
+		left: auto;
 	}
 
 	/* Above the phone's keyboard, which rises from the bottom. */
 	.sheet.typing {
 		top: 0;
 		bottom: auto;
+		display: flex;
 		max-height: 50%;
+	}
+
+	.inner {
+		display: grid;
+		grid-template-rows: auto minmax(0, 1fr);
+		min-height: 0;
+	}
+
+	.sheet.typing .inner {
+		grid-template-rows: minmax(0, 1fr);
+	}
+
+	.tabs {
+		padding: var(--space-3) var(--space-3) 0;
+	}
+
+	.scroller {
+		position: relative;
+		display: grid;
+		grid-template-rows: minmax(0, 1fr);
+		min-height: 0;
+	}
+
+	.scroll {
+		min-height: 0;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+
+	.content {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		align-content: start;
+		gap: var(--space-3);
+		padding: var(--space-3);
+	}
+
+	/* There is more this way: the content fades out under the edge. */
+	.fade {
+		position: absolute;
+		right: 0;
+		left: 0;
+		height: var(--space-8);
+		pointer-events: none;
+	}
+
+	.fade.top {
+		top: 0;
+		background: linear-gradient(var(--surface-elevated), transparent);
+	}
+
+	.fade.bottom {
+		bottom: 0;
+		background: linear-gradient(transparent, var(--surface-elevated));
+	}
+
+	.mode {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1);
+		justify-self: start;
+		padding: var(--space-1) var(--space-3);
+		border-radius: var(--radius-pill);
+		background: var(--surface-muted);
+		color: var(--text-soft);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
 	}
 
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: center;
 		gap: var(--space-2);
-	}
-
-	.mode {
-		margin-right: auto;
-		color: var(--text-soft);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		white-space: nowrap;
 	}
 </style>
