@@ -110,6 +110,9 @@
 						>· {updates} {updates === 1 ? 'update' : 'updates'}</span
 					>{/if}
 			</span>
+			{#if machine.inUse.length > 0}
+				<span class="in-use phone-only">In use: {inUseLabel(machine.inUse)}</span>
+			{/if}
 		</span>
 	</span>
 {/snippet}
@@ -120,7 +123,7 @@
 		<UpdateBadge state={machine.update} />
 	</span>
 	{#if machine.inUse.length > 0}
-		<span class="in-use">In use: {inUseLabel(machine.inUse)}</span>
+		<span class="in-use wide-only">In use: {inUseLabel(machine.inUse)}</span>
 	{/if}
 	{#if machine.lowDisk.length > 0}
 		<LowDiskTag drives={machine.lowDisk} />
@@ -172,6 +175,24 @@
 		color: var(--brand);
 		font-size: var(--text-xs);
 		white-space: nowrap;
+	}
+
+	/* On a phone the badge has half a line at most, so "In use" goes under the name. */
+	.in-use.phone-only {
+		display: none;
+		overflow: hidden;
+		margin-top: 0;
+		text-overflow: ellipsis;
+	}
+
+	@media (max-width: 640px) {
+		.in-use.phone-only {
+			display: block;
+		}
+
+		.in-use.wide-only {
+			display: none;
+		}
 	}
 
 	/* Names keep room to be read; a table too wide for the screen scrolls sideways. */

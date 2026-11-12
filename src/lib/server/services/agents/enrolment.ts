@@ -75,7 +75,9 @@ function enrolNew(
 			checkInSeconds: DEFAULT_CHECK_IN_SECONDS,
 			enrolledAt: new Date(now),
 			lastSeenAt: new Date(now),
-			joinCodeId: redeemed.joinCodeId
+			joinCodeId: redeemed.joinCodeId,
+			// SPEC-STAY-AWAKE 1: a newly enrolled machine stays reachable on mains power.
+			keepAwakeOnAc: true
 		})
 		.run();
 	const groups = joinGroupsAtEnrolment(tx, machineId, redeemed.machineGroupIds);

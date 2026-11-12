@@ -35,6 +35,18 @@ describe('enrolment (A4)', () => {
 		});
 	});
 
+	it('S13: a newly enrolled machine stays awake on mains power', () => {
+		const database = testDatabase();
+		const { code } = createJoinCode(
+			database,
+			{ maxUses: 1, minutes: 60, machineGroupIds: [], createdBy: null },
+			NOW
+		);
+		enrolMachine(database, { ...REQUEST, code }, SERVER_PUBLIC_KEY, NOW);
+		const rows = database.select().from(machines).all();
+		expect(rows[0]?.keepAwakeOnAc).toBe(true);
+	});
+
 	it('refuses a bad code with a plain reason and creates nothing', () => {
 		const database = testDatabase();
 		const reply = enrolMachine(

@@ -8,7 +8,7 @@ A machine that goes to sleep drops off BMuster: no remote desktop, terminal or f
 
 ## Behaviour
 
-1. **Setting.** Each machine has **Stay awake on mains power** (off by default) on its Manage page, changed by admins only and audited (`machine-power-policy-changed`, with old and new value). The server sends the policy to the agent on the live socket (`power-policy { keepAwakeOnAc }`) when it changes and on every connect; the agent keeps the last policy in its data folder so it applies after a restart before the server is reachable.
+1. **Setting.** Each machine has **Stay awake on mains power** (on for machines enrolled from 0.4.20, off for machines enrolled before; the column default stays 0 and enrolment sets it) on its Manage page, changed by admins only and audited (`machine-power-policy-changed`, with old and new value). The server sends the policy to the agent on the live socket (`power-policy { keepAwakeOnAc }`) when it changes and on every connect; the agent keeps the last policy in its data folder so it applies after a restart before the server is reachable.
 2. **On the machine.** While the policy is on **and** the machine is on mains power (or has no battery, like a desktop), the agent prevents automatic sleep; when the power source becomes battery, or the policy is turned off, it stops preventing it at once. It checks the power source every 30 s and on power-change events where available.
    - **Linux:** hold a logind inhibitor lock (`org.freedesktop.login1.Manager.Inhibit`, what `sleep:idle`, mode `block`, who "BMuster", why "Stay awake on mains power is on for this machine") and release it by closing its file descriptor. Mains power is read from `/sys/class/power_supply/*/type` = `Mains` with `online` = 1; no battery present counts as mains.
    - **Windows:** `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` on a dedicated thread of the service while active, and `ES_CONTINUOUS` to release. Mains power from `GetSystemPowerStatus` (`ACLineStatus = 1`, or no battery).
@@ -33,6 +33,7 @@ This changes the machine's behaviour, so it is admin-only, audited and visible o
 | P6  | Windows: execution state set and cleared on the dedicated thread.                                                       | Rust `power::windows::tests::execution_state` (Windows CI compile) |
 | P7  | Manage shows the switch and the report's power line; phone width has no overflow.                                       | `power-policy.svelte.test.ts`                                      |
 | P8  | The `stay-awake` self-check takes and releases the inhibitor.                                                           | Rust `checks::tests::stay_awake_check`                             |
+| S13 | A newly enrolled machine starts with Stay awake on mains power on (pending release; Jack, 2026-11-12).                  | `enrolment.test.ts` "S13: a newly enrolled machine stays awake…"   |
 
 ## Schema and routes
 

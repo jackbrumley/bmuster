@@ -410,8 +410,10 @@
 </div>
 
 <style>
+	/* minmax(0, 1fr): a long folder name scrolls in the path bar, never widens the page. */
 	.storage {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-4);
 		min-width: 0;
 	}
