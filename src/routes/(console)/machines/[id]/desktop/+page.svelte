@@ -7,6 +7,7 @@
 		IconArrowsMaximize,
 		IconArrowsMinimize,
 		IconCrosshair,
+		IconClipboard,
 		IconEye,
 		IconKeyboard,
 		IconWindowMaximize
@@ -27,6 +28,9 @@
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
 	import MachineUnreachable from '../machine-unreachable.svelte';
+	import { readGranted } from '#lib/utils/clipboard.ts';
+	import { attachPasteShortcut } from './clipboard.svelte.ts';
+	import ClipboardPanel from './clipboard-panel.svelte';
 	import NoPermission from '../no-permission.svelte';
 	import { DesktopCanvas } from './desktop-canvas.ts';
 	import { DesktopSession } from './desktop-session.svelte.ts';
@@ -81,8 +85,8 @@
 	let zoom = $state<Zoom>(NO_ZOOM);
 	/** This browser has put the touch gestures hint away; read on mount. */
 	let hintGone = $state(true);
-	/** The block under the bar: picture settings or the Keys menu, never both. */
-	let open = $state<'none' | 'settings' | 'keys'>('none');
+	/** The block under the bar: picture settings, the Keys menu or the clipboard, one at a time. */
+	let open = $state<'none' | 'settings' | 'keys' | 'clipboard'>('none');
 	/** The browser's full screen, or the stage filling the window where there is none. */
 	const screenMode = new FullScreen(() => session?.viewportChanged());
 	const fullScreen = $derived(screenMode.on);
@@ -181,7 +185,7 @@
 		};
 	}
 
-	function toggle(block: 'settings' | 'keys'): void {
+	function toggle(block: 'settings' | 'keys' | 'clipboard'): void {
 		open = open === block ? 'none' : block;
 	}
 
@@ -316,11 +320,20 @@
 				zoom = next;
 			}
 		});
+		const detachPaste = attachPasteShortcut(surface, {
+			clipboard: current.clipboard,
+			send: (message) => {
+				current.input(message);
+			},
+			controlling: () => current.controlling,
+			readAllowed: readGranted
+		});
 		const detachFullScreen = screenMode.attach();
 		const detachViewport = watchViewport(surface, () => {
 			current.viewportChanged();
 		});
 		return () => {
+			detachPaste();
 			detachInput();
 			detachFullScreen();
 			detachViewport();
@@ -388,6 +401,18 @@
 						}}
 					>
 						<IconKeyboard size={20} />
+					</ToolButton>
+				{/if}
+				{#if running && !watchOnly}
+					<ToolButton
+						label="Clipboard"
+						pressed={open === 'clipboard'}
+						disabled={false}
+						onclick={() => {
+							toggle('clipboard');
+						}}
+					>
+						<IconClipboard size={20} />
 					</ToolButton>
 				{/if}
 				{#if running}
@@ -486,6 +511,10 @@
 			/>
 		{/if}
 
+		{#if open === 'clipboard' && session !== undefined && running && !watchOnly && !fullScreen}
+			<ClipboardPanel clipboard={session.clipboard} />
+		{/if}
+
 		{#if keysOpen && !fullScreen}
 			<KeysMenu osFamily={machine.osFamily} send={sendInput} afterSend={backToScreen} />
 		{/if}
@@ -550,6 +579,7 @@
 					autoLevel={session.autoLevel}
 					agentVersion={machine.agentVersion}
 					send={sendInput}
+					clipboard={session.clipboard}
 					{backToScreen}
 					ontouchmode={chooseTouchMode}
 					ondisplay={(id: string) => session?.selectDisplay(id)}

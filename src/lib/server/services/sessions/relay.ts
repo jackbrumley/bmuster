@@ -7,6 +7,10 @@ import {
 	type SessionInUse,
 	type TerminalShell
 } from '#lib/domain/sessions/session.ts';
+import {
+	agentClipboardReplySchema,
+	viewerClipboardRequestSchema
+} from '#lib/schemas/desktop/desktop.ts';
 import { agentSessionEventSchema, browserControlSchema } from '#lib/schemas/sessions/sessions.ts';
 import { OutputRing } from './output-ring.ts';
 
@@ -29,9 +33,12 @@ import { OutputRing } from './output-ring.ts';
  * The relay still owns their lifetime, their agent socket and "In use".
  *
  * Desktop sessions (SPEC-DESKTOP) talk in text frames both ways (JSON
- * control messages the relay passes on unread) besides the agent's binary
+ * control messages the relay passes on) besides the agent's binary
  * frames. Nothing is replayed to a reattaching browser: it says `hello`
- * again and the agent sends a fresh keyframe.
+ * again and the agent sends a fresh keyframe. Copy and paste (section 21)
+ * is the one thing read: a watch-only browser's clipboard requests are
+ * dropped, and the agent's clipboard replies are counted for the audit
+ * (direction and bytes, never the text).
  */
 
 export type RelayLimits = {
@@ -101,6 +108,13 @@ export type LocalEnd = {
 	bytes(data: Uint8Array): void;
 };
 
+/** One copy or paste the agent confirmed (SPEC-DESKTOP 21.6). */
+export type ClipboardTransfer = {
+	direction: 'to-machine' | 'from-machine';
+	bytes: number;
+	at: number;
+};
+
 export type EndedSession = SessionRecord & {
 	reason: SessionEndReason;
 	message: string;
@@ -125,6 +139,7 @@ type LiveSession = {
 	userId: string;
 	local: LocalEnd | undefined;
 	onEnded: (session: EndedSession) => void;
+	onClipboard: (transfer: ClipboardTransfer) => void;
 	agent: Side;
 	browser: Side;
 	ring: OutputRing;
@@ -238,6 +253,26 @@ export function createRelay(limits: RelayLimits) {
 		session.onEnded(record);
 	}
 
+	/** Tells the session's owner of a copy or paste the agent confirmed: its direction and size. */
+	function auditClipboard(session: LiveSession, json: unknown): void {
+		const reply = agentClipboardReplySchema.safeParse(json);
+		if (!reply.success) {
+			return;
+		}
+		switch (reply.data.type) {
+			case 'clipboard':
+				session.onClipboard({
+					direction: 'from-machine',
+					bytes: Buffer.byteLength(reply.data.text, 'utf8'),
+					at: Date.now()
+				});
+				return;
+			case 'clipboard-sent':
+				session.onClipboard({ direction: 'to-machine', bytes: reply.data.bytes, at: Date.now() });
+				return;
+		}
+	}
+
 	function live(sessionId: string): LiveSession | undefined {
 		return sessions.get(sessionId);
 	}
@@ -245,6 +280,7 @@ export function createRelay(limits: RelayLimits) {
 	function track(
 		record: SessionRecord,
 		onEnded: (session: EndedSession) => void,
+		onClipboard: (transfer: ClipboardTransfer) => void,
 		local: LocalEnd | undefined
 	): LiveSession {
 		const session: LiveSession = {
@@ -254,6 +290,7 @@ export function createRelay(limits: RelayLimits) {
 			userId: record.userId,
 			local,
 			onEnded,
+			onClipboard,
 			agent: { peer: undefined, waiting: 0, paused: false },
 			browser: { peer: undefined, waiting: 0, paused: false },
 			ring: new OutputRing(limits.replayBytes),
@@ -275,10 +312,15 @@ export function createRelay(limits: RelayLimits) {
 	return {
 		/**
 		 * A session was asked for; the agent has `agentWaitMs` to open its
-		 * socket. `onEnded` hears how it ended (for the audit log).
+		 * socket. `onEnded` hears how it ended and `onClipboard` of each copy
+		 * or paste on a desktop (both for the audit log).
 		 */
-		start(record: SessionRecord, onEnded: (session: EndedSession) => void): void {
-			const session = track(record, onEnded, undefined);
+		start(
+			record: SessionRecord,
+			onEnded: (session: EndedSession) => void,
+			onClipboard: (transfer: ClipboardTransfer) => void
+		): void {
+			const session = track(record, onEnded, onClipboard, undefined);
 			later(session, 'browser', limits.noBrowserMs, () => {
 				end(record.id, 'no-browser', 'No browser was connected for 60 seconds.');
 			});
@@ -294,7 +336,8 @@ export function createRelay(limits: RelayLimits) {
 			onEnded: (session: EndedSession) => void,
 			local: LocalEnd
 		): void {
-			track(record, onEnded, local);
+			// The server's own end never copies or pastes.
+			track(record, onEnded, () => undefined, local);
 		},
 
 		/** Sends to a local session's agent; false before it is connected or once it has ended. */
@@ -419,12 +462,14 @@ export function createRelay(limits: RelayLimits) {
 			if (session?.agent.peer !== peer) {
 				return;
 			}
-			const parsed = agentSessionEventSchema.safeParse(parseJson(text));
+			const json = parseJson(text);
+			const parsed = agentSessionEventSchema.safeParse(json);
 			if (!parsed.success) {
 				if (session.local !== undefined) {
 					session.local.text(text);
 				} else if (session.record.kind === 'desktop') {
 					session.bytesOut += text.length;
+					auditClipboard(session, json);
 					session.browser.peer?.sendText(text);
 				}
 				return;
@@ -489,9 +534,17 @@ export function createRelay(limits: RelayLimits) {
 			if (session?.browser.peer !== peer) {
 				return;
 			}
-			const parsed = browserControlSchema.safeParse(parseJson(text));
+			const json = parseJson(text);
+			const parsed = browserControlSchema.safeParse(json);
 			if (!parsed.success) {
 				if (session.record.kind === 'desktop') {
+					// Copy and paste needs control, checked here and by the agent (SPEC-DESKTOP 21.6).
+					if (
+						session.record.mode === 'watch' &&
+						viewerClipboardRequestSchema.safeParse(json).success
+					) {
+						return;
+					}
 					// The viewer's own messages (hello, acks, input) are the agent's to read.
 					session.bytesIn += text.length;
 					session.lastInputAt = Date.now();

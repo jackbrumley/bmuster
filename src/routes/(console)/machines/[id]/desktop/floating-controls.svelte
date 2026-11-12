@@ -29,6 +29,8 @@
 		snapped,
 		type FloatingPosition
 	} from './floating-position.ts';
+	import ClipboardPanel from './clipboard-panel.svelte';
+	import type { DesktopClipboard } from './clipboard.svelte.ts';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
 	import { scrollEdges, sheetLayout } from './sheet-layout.ts';
@@ -58,6 +60,7 @@
 		autoLevel,
 		agentVersion,
 		send,
+		clipboard,
 		backToScreen,
 		ontouchmode,
 		ondisplay,
@@ -81,6 +84,8 @@
 		autoLevel: AutoLevel | undefined;
 		agentVersion: string;
 		send: (message: InputMessage) => void;
+		/** Copy and paste with the machine: the Clipboard tab, in a control session. */
+		clipboard: DesktopClipboard;
 		/** Gives the keyboard back to the screen after an action. */
 		backToScreen: () => void;
 		ontouchmode: (mode: TouchMode) => void;
@@ -96,7 +101,7 @@
 	/** The button's size in page pixels (also in the stylesheet). */
 	const SIZE = 48;
 
-	type Tab = 'keys' | 'picture' | 'screen' | 'session';
+	type Tab = 'keys' | 'clipboard' | 'picture' | 'screen' | 'session';
 
 	const uid = $props.id();
 	const control = $derived(mode === 'control');
@@ -119,6 +124,7 @@
 
 	const tabs = $derived<{ value: Tab; label: string }[]>([
 		...(control ? [{ value: 'keys' as const, label: 'Keys' }] : []),
+		...(control ? [{ value: 'clipboard' as const, label: 'Clipboard' }] : []),
 		...(mode !== undefined ? [{ value: 'picture' as const, label: 'Picture' }] : []),
 		...(mode !== undefined && displays.length > 1
 			? [{ value: 'screen' as const, label: 'Screen' }]
@@ -371,6 +377,8 @@
 										{#if !typing}
 											<KeysMenu {osFamily} {send} afterSend={backToScreen} />
 										{/if}
+									{:else if shown === 'clipboard' && control}
+										<ClipboardPanel {clipboard} />
 									{:else if shown === 'picture' && mode !== undefined}
 										<DesktopSettings {settings} {autoLevel} {agentVersion} onchange={onsettings} />
 									{:else if shown === 'screen'}

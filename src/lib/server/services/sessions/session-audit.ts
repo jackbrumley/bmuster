@@ -1,7 +1,7 @@
 import { endReasonLabel } from '#lib/domain/sessions/session.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { listAuditOfKinds, recordAudit } from '../audit/audit.ts';
-import type { EndedSession, SessionRecord } from './relay.ts';
+import type { ClipboardTransfer, EndedSession, SessionRecord } from './relay.ts';
 
 /**
  * Audit entries for every session kind (SPEC-SESSIONS T7, SPEC-FILES F8,
@@ -98,6 +98,33 @@ export function auditSessionEnded(
 			ended.endedAt
 		);
 	}
+}
+
+/**
+ * One copy or paste on a desktop (SPEC-DESKTOP 21.6): which way and how many bytes, never the
+ * text or a hash of it, which for a short secret could be reversed by trying candidates.
+ */
+export function auditDesktopClipboard(
+	database: AppDatabase,
+	record: SessionRecord,
+	machineName: string,
+	transfer: ClipboardTransfer
+): void {
+	recordAudit(
+		database,
+		{
+			actor: { kind: 'user', userId: record.userId },
+			kind: 'desktop-clipboard',
+			target: machineName,
+			machineId: record.machineId,
+			detail: {
+				direction: transfer.direction === 'to-machine' ? 'to the machine' : 'from the machine',
+				bytes: String(transfer.bytes),
+				session: record.id
+			}
+		},
+		transfer.at
+	);
 }
 
 /** How far back a session left open is looked for, and how many entries one start reads. */

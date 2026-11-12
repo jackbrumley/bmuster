@@ -423,25 +423,50 @@ describe('desktop tickets (SPEC-DESKTOP R2, R3)', () => {
 	});
 });
 
+/** An admin's control session on a connected machine, with its agent socket attached. */
+async function openControlDesktop() {
+	vi.useFakeTimers({ now: NOW });
+	const { database, admin, machineId, relay } = await setUp();
+	connect(machineId);
+	const result = openDesktopSession(
+		database,
+		relay,
+		SECRETS_KEY,
+		admin,
+		machineId,
+		CONTROL,
+		'192.0.2.1',
+		NOW
+	);
+	if (result.kind !== 'opened') throw new Error(result.message);
+	const sessionId = result.reply.sessionId;
+	const agent = quietPeer();
+	relay.attachAgent(sessionId, machineId, agent);
+	return { database, admin, relay, sessionId, agent };
+}
+
+describe('desktop copy and paste audit (SPEC-DESKTOP 21)', () => {
+	it('C7: one entry per confirmed transfer, with its direction and size, never the text', async () => {
+		const { database, admin, relay, sessionId, agent } = await openControlDesktop();
+		relay.agentText(sessionId, agent, '{"type":"clipboard-sent","bytes":17}');
+		relay.agentText(sessionId, agent, '{"type":"clipboard","text":"hunter2-password"}');
+
+		const entries = listAudit(database, 50).filter((entry) => entry.kind === 'desktop-clipboard');
+		expect(entries.map((entry) => entry.detail)).toEqual(
+			expect.arrayContaining([
+				{ direction: 'to the machine', bytes: '17', session: sessionId },
+				{ direction: 'from the machine', bytes: '16', session: sessionId }
+			])
+		);
+		expect(entries).toHaveLength(2);
+		expect(entries[0]).toMatchObject({ actorUserId: admin.id, target: 'Test machine' });
+		expect(JSON.stringify(listAudit(database, 100))).not.toContain('hunter2');
+	});
+});
+
 describe('desktop audit (SPEC-DESKTOP R16)', () => {
 	it('records the mode, how it ended, and a disconnect at the machine', async () => {
-		vi.useFakeTimers({ now: NOW });
-		const { database, admin, machineId, relay } = await setUp();
-		connect(machineId);
-		const result = openDesktopSession(
-			database,
-			relay,
-			SECRETS_KEY,
-			admin,
-			machineId,
-			CONTROL,
-			'192.0.2.1',
-			NOW
-		);
-		if (result.kind !== 'opened') throw new Error(result.message);
-		const sessionId = result.reply.sessionId;
-		const agent = quietPeer();
-		relay.attachAgent(sessionId, machineId, agent);
+		const { database, admin, relay, sessionId, agent } = await openControlDesktop();
 		vi.advanceTimersByTime(42_000);
 		relay.agentText(sessionId, agent, '{"type":"ended","reason":"disconnected-at-machine"}');
 

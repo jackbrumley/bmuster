@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import type { InputMessage } from '#lib/domain/desktop/messages.ts';
+import type { InputMessage, ViewerMessage } from '#lib/domain/desktop/messages.ts';
 import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 import '#lib/ui/design-tokens.css';
+import { DesktopClipboard } from './clipboard.svelte.ts';
 import FloatingControls from './floating-controls.svelte';
 
 // SPEC-DESKTOP-FLOATING F2, F3, F4, F6, FA1, FA4, FA5, FA6, FA7, FA8, FA9.
@@ -34,6 +35,10 @@ async function setup(
 	const backToScreen = vi.fn();
 	const onexit = vi.fn();
 	const ondisconnect = vi.fn();
+	const toAgent: ViewerMessage[] = [];
+	const clipboard = new DesktopClipboard((message) => {
+		toAgent.push(message);
+	});
 	const screen = await render(FloatingControls, {
 		osFamily: 'windows',
 		mode,
@@ -47,6 +52,7 @@ async function setup(
 		send: (message: InputMessage) => {
 			sent.push(message);
 		},
+		clipboard,
 		backToScreen,
 		ontouchmode: vi.fn(),
 		ondisplay: vi.fn(),
@@ -61,7 +67,7 @@ async function setup(
 		'position: fixed; inset: 0; width: 100vw; height: 100vh; background: black;';
 	const button = screen.getByRole('button', { name: 'Session controls' });
 	await expect.element(button).toBeVisible();
-	return { screen, sent, backToScreen, onexit, ondisconnect, button };
+	return { screen, sent, toAgent, backToScreen, onexit, ondisconnect, button };
 }
 
 function pointer(target: Element, type: string, x: number, y: number): void {
@@ -209,6 +215,16 @@ describe('the floating controls', () => {
 		}
 	});
 
+	it('C12: a control session has a Clipboard tab that talks to the machine', async () => {
+		const { screen, button, toAgent } = await setup('control');
+		await button.click();
+		const sheet = screen.getByRole('group', { name: 'Session options' });
+		await sheet.getByRole('tab', { name: 'Clipboard' }).click();
+		await sheet.getByRole('textbox', { name: 'Text' }).fill('from my phone');
+		await sheet.getByRole('button', { name: 'Send to machine' }).click();
+		expect(toAgent).toEqual([{ type: 'clipboard-push', text: 'from my phone' }]);
+	});
+
 	it('FA5: a control session has Keys, Picture and Session tabs and opens on Keys', async () => {
 		const { screen, button, onexit } = await setup('control');
 		await button.click();
@@ -216,7 +232,7 @@ describe('the floating controls', () => {
 		const tabs = sheet.getByRole('tab');
 		await expect
 			.poll(() => tabs.elements().map((tab) => tab.textContent.trim()))
-			.toEqual(['Keys', 'Picture', 'Session']);
+			.toEqual(['Keys', 'Clipboard', 'Picture', 'Session']);
 		await expect
 			.element(sheet.getByRole('tab', { name: 'Keys' }))
 			.toHaveAttribute('aria-selected', 'true');

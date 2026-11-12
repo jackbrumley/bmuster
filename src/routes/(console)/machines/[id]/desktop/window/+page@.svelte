@@ -12,6 +12,8 @@
 	import Button from '#lib/ui/button.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import Notice from '#lib/ui/notice.svelte';
+	import { readGranted } from '#lib/utils/clipboard.ts';
+	import { attachPasteShortcut } from '../clipboard.svelte.ts';
 	import { DesktopCanvas } from '../desktop-canvas.ts';
 	import { DesktopSession } from '../desktop-session.svelte.ts';
 	import DesktopStart from '../desktop-start.svelte';
@@ -131,6 +133,14 @@
 				zoom = next;
 			}
 		});
+		const detachPaste = attachPasteShortcut(surface, {
+			clipboard: current.clipboard,
+			send: (message) => {
+				current.input(message);
+			},
+			controlling: () => current.controlling,
+			readAllowed: readGranted
+		});
 		// The window resized: once it settles, the agent fits the stream to it again.
 		let settle: ReturnType<typeof setTimeout> | undefined;
 		const resized = new ResizeObserver(() => {
@@ -144,6 +154,7 @@
 		return () => {
 			clearTimeout(settle);
 			resized.disconnect();
+			detachPaste();
 			detachInput();
 			current.detach();
 		};
@@ -192,6 +203,7 @@
 				display={session.current ?? null}
 				autoLevel={session.autoLevel}
 				settings={session.settings}
+				clipboard={session.clipboard}
 				agentVersion={machine.agentVersion}
 				send={sendInput}
 				backToScreen={focusScreen}

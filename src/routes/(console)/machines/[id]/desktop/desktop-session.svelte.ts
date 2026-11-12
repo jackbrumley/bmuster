@@ -17,6 +17,7 @@ import { DESKTOP_MODES, type DesktopMode } from '#lib/domain/sessions/session.ts
 import { SessionLink, type Connection } from '#lib/runes/session-link.svelte.ts';
 import { agentDesktopMessageSchema, type DesktopDisplay } from '#lib/schemas/desktop/desktop.ts';
 import { readAutoStart, saveAutoStart, sustainedStart, type AutoStart } from './auto-quality.ts';
+import { DesktopClipboard } from './clipboard.svelte.ts';
 import type { DesktopCanvas } from './desktop-canvas.ts';
 import type { Handover } from './pop-out.ts';
 
@@ -64,6 +65,10 @@ export class DesktopSession {
 	settings = $state<DesktopSettings>({ ...DEFAULT_DESKTOP_SETTINGS });
 	/** The level Auto picked, while quality is on Auto and the agent says (SPEC-DESKTOP 20). */
 	autoLevel = $state<AutoLevel | undefined>(undefined);
+	/** Copy and paste with the machine (SPEC-DESKTOP 21); the agent answers control sessions only. */
+	readonly clipboard = new DesktopClipboard((message) => {
+		this.#send(message);
+	});
 
 	readonly #link: SessionLink;
 	readonly #canvas: DesktopCanvas;
@@ -104,6 +109,7 @@ export class DesktopSession {
 				// The next session is a fresh choice: only a reattach keeps the mode.
 				this.mode = undefined;
 				this.screen = undefined;
+				this.clipboard.stop();
 				this.#stopClock();
 			}
 		});
@@ -250,6 +256,7 @@ export class DesktopSession {
 		this.input({ type: 'release-all' });
 		this.#stopClock();
 		this.#clearApprovalTimer();
+		this.clipboard.stop();
 		this.#link.detach();
 	}
 
@@ -340,7 +347,17 @@ export class DesktopSession {
 					this.#autoSince = Date.now();
 				}
 				return;
+			case 'clipboard':
+				this.clipboard.received(message.text);
+				return;
+			case 'clipboard-sent':
+				this.clipboard.sent();
+				return;
 			case 'error':
+				if (message.code === 'clipboard-failed') {
+					this.clipboard.failed(message.message);
+					return;
+				}
 				this.#clearApprovalTimer();
 				if (this.screen?.kind === 'approval' && this.screen.phase === 'pending') {
 					this.screen = { kind: 'approval', phase: 'declined', message: message.message };
