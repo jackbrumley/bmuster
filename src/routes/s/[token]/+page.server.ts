@@ -22,7 +22,7 @@ import {
 	guestViewOf,
 	resolveShareToken
 } from '#lib/server/services/share-links/share-links.ts';
-import type { PageServerLoad } from './$types';
+import type { PageServerLoad, PageServerLoadEvent } from './$types';
 
 /**
  * A share link's guest page (SPEC-SHARE-LINKS): public, because the token is
@@ -32,7 +32,7 @@ import type { PageServerLoad } from './$types';
  * audited (address and browser). The token never leaves in a Referer, a
  * cache or a search index.
  */
-export const load: PageServerLoad = page.public((event) => {
+export const load: PageServerLoad = page.public((event: PageServerLoadEvent) => {
 	event.setHeaders({
 		'referrer-policy': 'no-referrer',
 		'cache-control': 'no-store',

@@ -25,6 +25,7 @@
 	import Notice from '#lib/ui/notice.svelte';
 	import LoadingVeil from '#lib/ui/loading-veil.svelte';
 	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
+	import { consoleSessionRoute } from '#lib/runes/session-link.svelte.ts';
 	import MachineUnreachable from '../machine-unreachable.svelte';
 	import NoPermission from '../no-permission.svelte';
 	import { DesktopCanvas } from './desktop-canvas.ts';
@@ -249,7 +250,8 @@
 		const current = new DesktopSession(
 			machine.id,
 			new DesktopCanvas(screenCanvas, cursorCanvas),
-			viewport
+			viewport,
+			consoleSessionRoute('desktop', machine.id)
 		);
 		session = current;
 		void current.resume();
