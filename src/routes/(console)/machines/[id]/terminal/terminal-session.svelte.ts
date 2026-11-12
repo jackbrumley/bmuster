@@ -1,5 +1,9 @@
 import { TERMINAL_SHELLS, type TerminalShell } from '#lib/domain/sessions/session.ts';
-import { SessionLink, type Connection } from '#lib/runes/session-link.svelte.ts';
+import {
+	consoleSessionRoute,
+	SessionLink,
+	type Connection
+} from '#lib/runes/session-link.svelte.ts';
 
 /**
  * One terminal session as the page sees it (SPEC-SESSIONS T1, T4, T6): the
@@ -30,7 +34,7 @@ export class TerminalSession {
 
 	constructor(machineId: string, screen: ScreenSink) {
 		this.#screen = screen;
-		this.#link = new SessionLink('terminal', machineId, {
+		this.#link = new SessionLink(consoleSessionRoute('terminal', machineId), machineId, {
 			attached: (resumed) => {
 				if (resumed) {
 					// The server replays recent output next; start from a clean screen.

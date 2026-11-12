@@ -61,6 +61,7 @@ const RECORD: SessionRecord = {
 	machineId: 'machine-1',
 	userId: 'user-1',
 	userName: 'Kim',
+	viewer: { kind: 'user' },
 	kind: 'terminal',
 	shell: 'bash',
 	ip: '192.0.2.10',

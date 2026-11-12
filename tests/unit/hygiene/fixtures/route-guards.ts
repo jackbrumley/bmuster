@@ -11,6 +11,7 @@ const ENDPOINT = 'src/routes/api/users/+server.ts';
 const PAGE_SERVER = 'src/routes/(console)/users/+page.server.ts';
 const UNIVERSAL = 'src/routes/(console)/users/+page.ts';
 const DIAGNOSTICS = 'src/routes/api/diagnostics/machines/+server.ts';
+const GUEST = 'src/routes/s/[token]/session/+server.ts';
 
 export const routeGuardFixtures: readonly RuleFixture[] = [
 	{
@@ -69,6 +70,17 @@ export const routeGuardFixtures: readonly RuleFixture[] = [
 		good: run(
 			ENDPOINT,
 			"import { route } from '#lib/server/guards/route.ts';\nexport const GET = route.admin(() => Response.json({}));"
+		)
+	},
+	{
+		rule: 'route-guard-required',
+		bad: run(
+			ENDPOINT,
+			"import { route } from '#lib/server/guards/route.ts';\nexport const POST = route.guest(() => Response.json({}));"
+		),
+		good: run(
+			GUEST,
+			"import { route } from '#lib/server/guards/route.ts';\nexport const POST = route.guest(() => Response.json({}));"
 		)
 	}
 ];

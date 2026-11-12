@@ -8,6 +8,15 @@ import {
 	authenticateDiagnosticsToken,
 	type TokenCheck
 } from '../services/auth/diagnostics-tokens.ts';
+import { env } from '../env.ts';
+import { GUEST_COOKIE, guestCookieMatches } from '../services/share-links/guest-cookie.ts';
+import {
+	PAUSED_MESSAGE,
+	recordShareLinkFailure,
+	shareLinkPause
+} from '../services/share-links/share-link-limits.ts';
+import { resolveShareToken, type GuestGrant } from '../services/share-links/share-links.ts';
+import { sessionRelay } from '../services/sessions/relay.ts';
 import { apiRefusal, type SessionContext } from './checks.ts';
 
 /**
@@ -30,6 +39,36 @@ export type DiagnosticsReader =
 	| { kind: 'token'; tokenId: string; tokenName: string; user: ConsoleUser };
 
 export type DiagnosticsContext = { reader: DiagnosticsReader };
+
+/** A share link's guest (SPEC-SHARE-LINKS): one link, so one machine, still valid now. */
+export type GuestContext = { grant: GuestGrant };
+
+/** The same plain answer for every wrong, ended or cookie-less request (SL5, SL10). */
+export const LINK_ENDED_MESSAGE = 'This link has ended.';
+
+/**
+ * SPEC-SHARE-LINKS D4, D5: rate limit first (a paused address is refused before the token is
+ * looked at), then the token, then the guest cookie for the same link. The console cookie is
+ * never read: a guest is not a console user. Failures are counted per address.
+ */
+function guestRefusal(
+	event: RequestEvent & { params: { token: string } }
+): Response | GuestContext {
+	const address = event.getClientAddress();
+	const now = Date.now();
+	if (shareLinkPause(database, address, now).kind === 'paused') {
+		return Response.json({ message: PAUSED_MESSAGE }, { status: 429 });
+	}
+	const resolved = resolveShareToken(database, sessionRelay(), event.params.token, now);
+	if (
+		resolved.kind === 'ended' ||
+		!guestCookieMatches(env.secretsKey, event.cookies.get(GUEST_COOKIE), resolved.grant.linkId, now)
+	) {
+		recordShareLinkFailure(database, address, now);
+		return Response.json({ message: LINK_ENDED_MESSAGE }, { status: 404 });
+	}
+	return { grant: resolved.grant };
+}
 
 const BEARER = /^Bearer (\S+)$/i;
 
@@ -107,6 +146,17 @@ export const route = {
 	diagnostics<E extends RequestEvent>(handler: Handler<E, DiagnosticsContext>) {
 		return (event: E): Response | Promise<Response> => {
 			const checked = diagnosticsRefusal(event);
+			return checked instanceof Response ? checked : handler(event, checked);
+		};
+	},
+
+	/**
+	 * A share link's guest (SPEC-SHARE-LINKS): routes under /s/[token]/ only. The token and
+	 * the guest cookie for the same link, both re-checked on every request.
+	 */
+	guest<E extends RequestEvent & { params: { token: string } }>(handler: Handler<E, GuestContext>) {
+		return (event: E): Response | Promise<Response> => {
+			const checked = guestRefusal(event);
 			return checked instanceof Response ? checked : handler(event, checked);
 		};
 	},

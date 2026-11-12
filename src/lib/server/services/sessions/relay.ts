@@ -85,12 +85,25 @@ export type RelayPeer = {
 	close(code: number, reason: string): void;
 };
 
+/**
+ * Who a session is for: a console user, or the guest of a share link
+ * (SPEC-SHARE-LINKS), who has no account.
+ */
+type SessionViewer =
+	{ kind: 'user' } | { kind: 'guest'; shareLinkId: string; sharedByUserId: string };
+
 /** What a session is, from the moment it is asked for. */
 export type SessionRecord = {
 	id: string;
 	machineId: string;
+	/**
+	 * Whose session it is, for its browser tickets and the per-person limit:
+	 * the user's id, or for a guest the share link's id (one session per link).
+	 */
 	userId: string;
+	/** The name the machine and Activity show: the user's, or "<recipient> (shared by <name>)". */
 	userName: string;
+	viewer: SessionViewer;
 	ip: string;
 	openedAt: number;
 } & (
@@ -609,6 +622,13 @@ export function createRelay(limits: RelayLimits) {
 		/** Running sessions this person opened. */
 		countFor(userId: string): number {
 			return [...sessions.values()].filter((session) => session.userId === userId).length;
+		},
+
+		/** The ids of the running sessions this person (or share link) opened. */
+		sessionsOf(userId: string): string[] {
+			return [...sessions.values()]
+				.filter((session) => session.userId === userId)
+				.map((session) => session.id);
 		}
 	};
 }
@@ -624,6 +644,8 @@ function desktopEndedMessage(reason: SessionEndReason): string {
 			return 'This machine already has 4 desktop sessions open. Try again when one ends.';
 		case 'agent-lost':
 			return 'The machine stopped sending its screen.';
+		case 'share-link-ended':
+			return 'The share link ended.';
 		case 'declined':
 		case 'timed-out':
 		case 'permission-removed':

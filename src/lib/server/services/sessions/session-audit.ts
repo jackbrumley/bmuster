@@ -1,6 +1,6 @@
 import { endReasonLabel } from '#lib/domain/sessions/session.ts';
 import type { AppDatabase } from '../../database/connection.ts';
-import { listAuditOfKinds, recordAudit } from '../audit/audit.ts';
+import { listAuditOfKinds, recordAudit, type AuditActor } from '../audit/audit.ts';
 import type { ClipboardTransfer, EndedSession, SessionRecord } from './relay.ts';
 
 /**
@@ -17,7 +17,27 @@ const RUN_AS_LABEL = 'Administrator (root or SYSTEM)';
  * the entry to the agent's timeline of the same session (SPEC-DIAGNOSTICS 3).
  */
 function typeDetail(record: SessionRecord): Record<string, string> {
-	return { ...kindDetail(record), session: record.id };
+	return { ...kindDetail(record), ...viewerDetail(record), session: record.id };
+}
+
+/** A guest has no account: the entry names them and the link (SPEC-SHARE-LINKS D13). */
+function viewerDetail(record: SessionRecord): Record<string, string> {
+	switch (record.viewer.kind) {
+		case 'user':
+			return {};
+		case 'guest':
+			return { guest: record.userName, 'share link': record.viewer.shareLinkId };
+	}
+}
+
+/** The person who opened it; System for a share link's guest, who has no account. */
+function actorOf(record: SessionRecord): AuditActor {
+	switch (record.viewer.kind) {
+		case 'user':
+			return { kind: 'user', userId: record.userId };
+		case 'guest':
+			return { kind: 'system' };
+	}
 }
 
 function kindDetail(record: SessionRecord): Record<string, string> {
@@ -27,8 +47,13 @@ function kindDetail(record: SessionRecord): Record<string, string> {
 		case 'files':
 			return { type: 'files', 'run as': RUN_AS_LABEL };
 		case 'desktop':
-			// Ask sessions are refused until consent prompts exist (SPEC-DESKTOP 13).
-			return { type: 'desktop', mode: record.mode, consent: 'unattended', codec: 'JPEG tiles' };
+			// Ask sessions are refused until consent prompts exist (SPEC-DESKTOP 13); a guest's always asks.
+			return {
+				type: 'desktop',
+				mode: record.mode,
+				consent: record.viewer.kind === 'guest' ? 'ask' : 'unattended',
+				codec: 'JPEG tiles'
+			};
 	}
 }
 
@@ -40,7 +65,7 @@ export function auditSessionOpened(
 	recordAudit(
 		database,
 		{
-			actor: { kind: 'user', userId: record.userId },
+			actor: actorOf(record),
 			kind: 'session-opened',
 			target: machineName,
 			machineId: record.machineId,
@@ -70,7 +95,7 @@ export function auditSessionEnded(
 	recordAudit(
 		database,
 		{
-			actor: { kind: 'user', userId: ended.userId },
+			actor: actorOf(ended),
 			kind: 'session-ended',
 			target: machineName,
 			machineId: ended.machineId,
@@ -113,13 +138,14 @@ export function auditDesktopClipboard(
 	recordAudit(
 		database,
 		{
-			actor: { kind: 'user', userId: record.userId },
+			actor: actorOf(record),
 			kind: 'desktop-clipboard',
 			target: machineName,
 			machineId: record.machineId,
 			detail: {
 				direction: transfer.direction === 'to-machine' ? 'to the machine' : 'from the machine',
 				bytes: String(transfer.bytes),
+				...viewerDetail(record),
 				session: record.id
 			}
 		},

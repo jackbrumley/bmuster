@@ -8,9 +8,11 @@ import { isTestFile } from './source-file.ts';
  * access before it runs.
  *
  * - Every HTTP method a `+server.ts` exports is built by a guard:
- *   `export const GET = route.<public|user|admin|agent|diagnostics>(…)`.
+ *   `export const GET = route.<public|user|admin|agent|diagnostics|guest>(…)`.
  * - `route.diagnostics`, the one guard that takes a read-only diagnostics
  *   token (SPEC-AGENT-LOGS 4), builds only `GET` under src/routes/api/diagnostics/.
+ * - `route.guest`, the one guard that takes a share link's token and guest
+ *   cookie (SPEC-SHARE-LINKS), builds handlers only under src/routes/s/[token]/.
  * - Every `load` and form action in `+page.server.ts` / `+layout.server.ts`
  *   is built by `page.<public|user|admin>(…)`; `actions` is an object of
  *   guarded handlers.
@@ -32,13 +34,14 @@ const HTTP_METHODS: ReadonlySet<string> = new Set([
 	'fallback'
 ]);
 const GUARDS = {
-	route: new Set(['public', 'user', 'admin', 'agent', 'diagnostics']),
+	route: new Set(['public', 'user', 'admin', 'agent', 'diagnostics', 'guest']),
 	page: new Set(['public', 'user', 'admin'])
 } as const;
 type GuardObject = keyof typeof GUARDS;
 
 const GUARDS_DIR = 'src/lib/server/guards/';
 const DIAGNOSTICS_ROUTES = 'src/routes/api/diagnostics/';
+const GUEST_ROUTES = 'src/routes/s/[token]/';
 
 type RouteFileKind = 'endpoint' | 'server-load' | 'universal-load';
 
@@ -197,6 +200,10 @@ export function scanRouteGuards(relPath: string, text: string): string[] {
 		) {
 			issues.push(
 				`line ${lineOf(slot.node)}: \`route.diagnostics\` accepts read-only tokens, so it builds only GET handlers under ${DIAGNOSTICS_ROUTES}; use route.admin here.`
+			);
+		} else if (call.variant === 'guest' && !relPath.startsWith(GUEST_ROUTES)) {
+			issues.push(
+				`line ${lineOf(slot.node)}: \`route.guest\` accepts a share link's token, so it builds handlers only under ${GUEST_ROUTES}; use route.user here.`
 			);
 		}
 	}

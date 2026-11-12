@@ -14,7 +14,7 @@ import {
 } from '#lib/domain/desktop/messages.ts';
 import type { DesktopScreen } from '#lib/domain/desktop/screen.ts';
 import { DESKTOP_MODES, type DesktopMode } from '#lib/domain/sessions/session.ts';
-import { SessionLink, type Connection } from '#lib/runes/session-link.svelte.ts';
+import { SessionLink, type Connection, type SessionRoute } from '#lib/runes/session-link.svelte.ts';
 import { agentDesktopMessageSchema, type DesktopDisplay } from '#lib/schemas/desktop/desktop.ts';
 import { readAutoStart, saveAutoStart, sustainedStart, type AutoStart } from './auto-quality.ts';
 import { DesktopClipboard } from './clipboard.svelte.ts';
@@ -88,12 +88,18 @@ export class DesktopSession {
 	#clock: ReturnType<typeof setInterval> | undefined;
 	#approvalTimer: ReturnType<typeof setTimeout> | undefined;
 
-	constructor(machineId: string, canvas: DesktopCanvas, viewport: () => Viewport) {
+	/** `route`: the console's own endpoints, or a share link's (SPEC-SHARE-LINKS). */
+	constructor(
+		machineId: string,
+		canvas: DesktopCanvas,
+		viewport: () => Viewport,
+		route: SessionRoute
+	) {
 		this.#canvas = canvas;
 		this.#viewport = viewport;
 		this.#machineId = machineId;
 		this.#autoStart = readAutoStart(machineId);
-		this.#link = new SessionLink('desktop', machineId, {
+		this.#link = new SessionLink(route, machineId, {
 			attached: () => undefined,
 			ready: () => {
 				this.#greet();

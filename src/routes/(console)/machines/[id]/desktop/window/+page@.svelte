@@ -12,6 +12,7 @@
 	import Button from '#lib/ui/button.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import Notice from '#lib/ui/notice.svelte';
+	import { consoleSessionRoute } from '#lib/runes/session-link.svelte.ts';
 	import { readGranted } from '#lib/utils/clipboard.ts';
 	import { attachPasteShortcut } from '../clipboard.svelte.ts';
 	import { DesktopCanvas } from '../desktop-canvas.ts';
@@ -101,7 +102,8 @@
 				width: Math.round(surface.clientWidth),
 				height: Math.round(surface.clientHeight),
 				pixelRatio: window.devicePixelRatio
-			})
+			}),
+			consoleSessionRoute('desktop', machine.id)
 		);
 		session = current;
 		const handedOver = handoverFrom(new URLSearchParams(window.location.search));

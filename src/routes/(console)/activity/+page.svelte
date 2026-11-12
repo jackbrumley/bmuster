@@ -30,6 +30,8 @@
 		IconPhoneOff,
 		IconPin,
 		IconPlug,
+		IconLink,
+		IconLinkOff,
 		IconRocket,
 		IconShieldLock,
 		IconShieldX,
@@ -230,6 +232,12 @@
 				return IconShieldX;
 			case 'machine-power-policy-changed':
 				return IconPlug;
+			case 'share-link-created':
+			case 'share-link-opened':
+				return IconLink;
+			case 'share-link-ended':
+			case 'share-link-expired':
+				return IconLinkOff;
 		}
 	}
 </script>

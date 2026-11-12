@@ -394,7 +394,8 @@ The design is in `docs/access-and-sign-in.md`.
   runs without checking who is asking. **Fix:** Export it as
   `route.<public|user|admin|agent>(…)` or `page.<public|user|admin>(…)` from
   src/lib/server/guards/; `route.diagnostics(…)` only for GET under
-  src/routes/api/diagnostics/.
+  src/routes/api/diagnostics/; `route.guest(…)` only under
+  src/routes/s/[token]/.
 - `server-imports-app-modules-forbidden` (violation, §6): src/lib/server/** runs
   outside Vite (scripts, tests), where `$app/*` and `$env/*` do not exist.
   **Fix:** Take what the module needs as a parameter from the route or hook.

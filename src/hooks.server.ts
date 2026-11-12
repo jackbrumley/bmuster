@@ -27,6 +27,7 @@ import {
 } from '#lib/server/services/logs/server-log.ts';
 import { closeSessionsCutByRestart } from '#lib/server/services/sessions/session-audit.ts';
 import { sessionRelay } from '#lib/server/services/sessions/relay.ts';
+import { scheduleShareLinkSweeps } from '#lib/server/services/share-links/share-links.ts';
 import { registerSocketRoutes } from '#lib/server/sockets/socket-registry.ts';
 import { SOCKET_ROUTES } from '#lib/server/sockets/socket-route-table.ts';
 import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts';
@@ -40,7 +41,8 @@ import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts
  * is printed (SPEC-SIGN-IN S17, S18); the email queue starts working
  * (SPEC-EMAIL E3); machines whose live socket was open when the server
  * stopped get a grace period to reconnect (SPEC-PRESENCE P4), and sessions the
- * stop cut off are recorded as ended (SPEC-SESSIONS T9). The server's
+ * stop cut off are recorded as ended (SPEC-SESSIONS T9); share links that
+ * run out end every 10 seconds (SPEC-SHARE-LINKS D7). The server's
  * own log records are kept from the start, and old agent and server log
  * records are pruned now and hourly (SPEC-AGENT-LOGS 2). The dev
  * server registers Vite's own certificate. A built server also schedules the nightly database snapshot (SPEC-HOSTING
@@ -79,6 +81,10 @@ export const init: ServerInit = async () => {
 	startEmailWorker(database, env.secretsKey);
 	restorePresence(database, Date.now());
 	const relay = sessionRelay();
+	// Share links that run out end, with their sessions (SPEC-SHARE-LINKS D7).
+	scheduleShareLinkSweeps(database, relay, (caught) => {
+		serverLog('error', 'sessions', `Share link sweep failed: ${String(caught)}`);
+	});
 	const closed = closeSessionsCutByRestart(
 		database,
 		(sessionId) => relay.isRunning(sessionId),

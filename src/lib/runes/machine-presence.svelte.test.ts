@@ -3,7 +3,7 @@ import type { MachineStatus } from '#lib/domain/machines/machine.ts';
 import { FakeEventSource, feed } from '#tests/helpers/fake-event-source.ts';
 import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { MachinePresence } from './machine-presence.svelte.ts';
-import { SessionLink } from './session-link.svelte.ts';
+import { consoleSessionRoute, SessionLink } from './session-link.svelte.ts';
 
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_ID = '33333333-3333-4333-8333-333333333333';
@@ -42,7 +42,7 @@ afterEach(() => {
 
 /** A terminal session on `machineId` that the server then ends with `reason`. */
 async function sessionEnds(machineId: string, reason: 'agent-lost' | 'exited'): Promise<void> {
-	const link = new SessionLink('terminal', machineId, {
+	const link = new SessionLink(consoleSessionRoute('terminal', machineId), machineId, {
 		attached: () => undefined,
 		ready: () => undefined,
 		binary: () => undefined,

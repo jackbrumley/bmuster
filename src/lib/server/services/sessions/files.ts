@@ -153,6 +153,7 @@ function channelFor(context: FilesContext, access: Allowed): FilesOutcome<FilesC
 			machineId,
 			userId: user.id,
 			userName: user.name,
+			viewer: { kind: 'user' },
 			kind: 'files',
 			ip,
 			openedAt: now

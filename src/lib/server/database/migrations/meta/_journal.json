@@ -134,6 +134,13 @@
       "when": 1794393905346,
       "tag": "0018_absurd_pixie",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1794476861648,
+      "tag": "0019_blue_tattoo",
+      "breakpoints": true
     }
   ]
 }

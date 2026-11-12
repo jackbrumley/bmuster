@@ -4,6 +4,7 @@ import {
 	serverControlSchema,
 	type OpenSessionRequest
 } from '#lib/schemas/sessions/sessions.ts';
+import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 import { apiRequest } from '#lib/utils/api-client.ts';
 import { announceAgentLost } from './machine-presence.svelte.ts';
 
@@ -39,6 +40,31 @@ export type LinkEvents = {
 	/** The session ended (also after a reload finds it gone). */
 	ended(): void;
 };
+
+/**
+ * Where a session is asked for and reattached: the console's own endpoints, or a share
+ * link's guest endpoints (SPEC-SHARE-LINKS). The socket is the same for both.
+ */
+export type SessionRoute = {
+	/** POST here with the open request; the reply is the session and a browser ticket. */
+	openUrl: string;
+	/** The request for a fresh browser ticket for this running session. */
+	ticket(sessionId: string): { url: string; body: unknown };
+	/** Where this tab remembers its running session (sessionStorage). */
+	storageKey: string;
+};
+
+/** The console's endpoints for a person's own sessions on a machine. */
+export function consoleSessionRoute(
+	kind: OpenSessionRequest['kind'],
+	machineId: string
+): SessionRoute {
+	return {
+		openUrl: `/api/machines/${machineId}/sessions`,
+		ticket: (sessionId) => ({ url: `/api/sessions/${sessionId}/browser-ticket`, body: undefined }),
+		storageKey: `bmuster.${kind}.${machineId}`
+	};
+}
 
 /** What is kept per tab: the session, when it started, and the page's own tag (shell or mode). */
 export type SavedSession = { sessionId: string; sinceMs: number; tag: string };
@@ -96,6 +122,7 @@ export class SessionLink {
 	connection = $state<Connection>({ kind: 'idle' });
 
 	readonly #machineId: string;
+	readonly #route: SessionRoute;
 	readonly #storageKey: string;
 	readonly #events: LinkEvents;
 	#socket: WebSocket | undefined;
@@ -105,9 +132,10 @@ export class SessionLink {
 	#retryTimer: ReturnType<typeof setTimeout> | undefined;
 	#detached = false;
 
-	constructor(kind: OpenSessionRequest['kind'], machineId: string, events: LinkEvents) {
+	constructor(route: SessionRoute, machineId: string, events: LinkEvents) {
 		this.#machineId = machineId;
-		this.#storageKey = `bmuster.${kind}.${machineId}`;
+		this.#route = route;
+		this.#storageKey = route.storageKey;
 		this.#events = events;
 	}
 
@@ -141,13 +169,16 @@ export class SessionLink {
 		return saved.tag;
 	}
 
-	/** Asks for a new session; false when the server refused (the reason is in `connection`). */
-	async start(request: OpenSessionRequest, tag: string): Promise<boolean> {
+	/**
+	 * Asks for a new session; false when the server refused (the reason is in `connection`).
+	 * The body is the console's open request, or a guest's `{ mode }`.
+	 */
+	async start(request: OpenSessionRequest | { mode: DesktopMode }, tag: string): Promise<boolean> {
 		this.#closeSocket();
 		this.connection = { kind: 'starting' };
 		const result = await apiRequest({
 			method: 'POST',
-			url: `/api/machines/${this.#machineId}/sessions`,
+			url: this.#route.openUrl,
 			body: request,
 			reply: openSessionReplySchema
 		});
@@ -223,10 +254,11 @@ export class SessionLink {
 		if (sessionId === undefined || this.#isDetached()) {
 			return;
 		}
+		const ticket = this.#route.ticket(sessionId);
 		const result = await apiRequest({
 			method: 'POST',
-			url: `/api/sessions/${sessionId}/browser-ticket`,
-			body: undefined,
+			url: ticket.url,
+			body: ticket.body,
 			reply: browserTicketReplySchema
 		});
 		// The page may have gone while the request was out.

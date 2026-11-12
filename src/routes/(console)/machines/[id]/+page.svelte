@@ -15,6 +15,7 @@
 	import LowDiskNotice from './low-disk-notice.svelte';
 	import InventoryList from './inventory-list.svelte';
 	import SendMessage from './send-message.svelte';
+	import ShareLinks from './share-links.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -172,6 +173,12 @@
 			</dl>
 		</Panel>
 	</div>
+
+	{#if hasPermission(data.grants, 'share-links')}
+		<div class="wide">
+			<ShareLinks machineId={machine.id} machineName={machine.name} />
+		</div>
+	{/if}
 
 	<InventoryList
 		heading="Graphics"

@@ -111,7 +111,12 @@ const AUDIT_KINDS = [
 	'support-code-entered',
 	'support-code-scam-stop',
 	// SPEC-STAY-AWAKE
-	'machine-power-policy-changed'
+	'machine-power-policy-changed',
+	// SPEC-SHARE-LINKS
+	'share-link-created',
+	'share-link-opened',
+	'share-link-ended',
+	'share-link-expired'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -332,5 +337,13 @@ export function activityLabel(kind: AuditKind): string {
 			return 'An enrolment code was stopped by the scam check';
 		case 'machine-power-policy-changed':
 			return 'Changed Stay awake on mains power';
+		case 'share-link-created':
+			return 'Created a share link';
+		case 'share-link-opened':
+			return 'A share link was opened';
+		case 'share-link-ended':
+			return 'Ended a share link';
+		case 'share-link-expired':
+			return 'A share link ran out';
 	}
 }

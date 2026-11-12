@@ -19,6 +19,7 @@
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
+	import ActiveShareLinks from './active-share-links.svelte';
 	import RuleForm from './rule-form.svelte';
 	import { describeRule, groupName } from './rule-names.ts';
 	import type { PageProps } from './$types';
@@ -167,6 +168,8 @@
 	row={ruleRow}
 	empty="No rules yet, so members see no machines. Add a rule to give a group of people access to a group of machines."
 />
+
+<ActiveShareLinks links={data.activeShareLinks} loadedAtMs={data.now} />
 
 <Modal
 	open={panel.kind === 'view' && selected !== undefined}

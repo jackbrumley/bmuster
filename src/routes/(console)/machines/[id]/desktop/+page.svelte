@@ -27,6 +27,7 @@
 	import Notice from '#lib/ui/notice.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
+	import { consoleSessionRoute } from '#lib/runes/session-link.svelte.ts';
 	import MachineUnreachable from '../machine-unreachable.svelte';
 	import { readGranted } from '#lib/utils/clipboard.ts';
 	import { attachPasteShortcut } from './clipboard.svelte.ts';
@@ -50,7 +51,12 @@
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
 	import StageOverlay from './stage-overlay.svelte';
-	import { connectingTitle as connectingTitleFor, isRunning } from './stage-state.ts';
+	import {
+		connectingTitle as connectingTitleFor,
+		isRunning,
+		stageGeometry,
+		stageViewport
+	} from './stage-state.ts';
 	import PhoneToolbar from './phone-toolbar.svelte';
 	import PoppedOutNotice from './popped-out-notice.svelte';
 	import { PHONE_QUERY, popOutFeatures, popOutName, popOutSize, popOutUrl } from './pop-out.ts';
@@ -164,25 +170,11 @@
 	);
 
 	function geometry(): Geometry | undefined {
-		if (picture === undefined || display === undefined || frame === undefined) {
-			return undefined;
-		}
-		// The unzoomed box: the zoom is drawn on the canvases inside it, and the input maps through it.
-		const rect = picture.getBoundingClientRect();
-		return {
-			box: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-			picture: frame,
-			display
-		};
+		return stageGeometry(picture, frame, display);
 	}
 
 	function viewport(): { width: number; height: number; pixelRatio: number } {
-		const rect = stage?.getBoundingClientRect();
-		return {
-			width: Math.round(rect?.width ?? window.innerWidth),
-			height: Math.round(fullScreen ? (rect?.height ?? window.innerHeight) : window.innerHeight),
-			pixelRatio: window.devicePixelRatio
-		};
+		return stageViewport(stage, fullScreen);
 	}
 
 	function toggle(block: 'settings' | 'keys' | 'clipboard'): void {
@@ -304,7 +296,8 @@
 		const current = new DesktopSession(
 			machine.id,
 			new DesktopCanvas(screenCanvas, cursorCanvas),
-			viewport
+			viewport,
+			consoleSessionRoute('desktop', machine.id)
 		);
 		session = current;
 		void current.resume();
