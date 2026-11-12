@@ -8,6 +8,8 @@
 pub mod absolute;
 pub mod keymap;
 #[cfg(target_os = "linux")]
+pub mod typing;
+#[cfg(target_os = "linux")]
 pub mod uinput;
 #[cfg(windows)]
 pub mod windows;

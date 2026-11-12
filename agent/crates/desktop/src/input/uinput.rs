@@ -10,6 +10,10 @@
 //!   [`super::absolute::PointerMap`]; five buttons, and the wheel with its
 //!   high-resolution twin.
 //!
+//! Characters are typed with their US key, Shift in a frame of its own
+//! with a short settle either side, and Caps Lock read from the keyboard
+//! LEDs ([`Typing`], SPEC-CONSOLE-CAPTURE version 3).
+//!
 //! A third, "BMuster wake" ([`wake`]), only nudges the pointer to wake the
 //! screen (SPEC-DESKTOP-WAKE).
 //!
@@ -19,6 +23,7 @@
 
 use super::absolute::SharedPointerMap;
 use super::keymap::{self, KeyPosition};
+use super::typing::{play, Typing};
 use super::{Axis, Button, InputBackend, InputError, InputResult, WHEEL_NOTCH};
 use crate::ioctl;
 use std::fs::File;
@@ -41,6 +46,8 @@ const EV_SYN: u16 = 0;
 const EV_KEY: u16 = 1;
 const EV_REL: u16 = 2;
 const EV_ABS: u16 = 3;
+const EV_LED: u16 = 0x11;
+const LED_CAPSL: u16 = 1;
 const SYN_REPORT: u16 = 0;
 const REL_HWHEEL: u16 = 6;
 const REL_WHEEL: u16 = 8;
@@ -48,7 +55,6 @@ const REL_WHEEL_HI_RES: u16 = 11;
 const REL_HWHEEL_HI_RES: u16 = 12;
 const ABS_X: u16 = 0;
 const ABS_Y: u16 = 1;
-const KEY_LEFTSHIFT: u16 = 42;
 const KEY_RIGHTALT: u16 = 100;
 /// The last key the keyboard device registers (`KEY_MICMUTE`).
 pub const LAST_KEY: u16 = 248;
@@ -107,6 +113,7 @@ const UI_SET_EVBIT: u64 = ioctl::iow::<libc::c_int>(U, 100);
 const UI_SET_KEYBIT: u64 = ioctl::iow::<libc::c_int>(U, 101);
 const UI_SET_RELBIT: u64 = ioctl::iow::<libc::c_int>(U, 102);
 const UI_SET_ABSBIT: u64 = ioctl::iow::<libc::c_int>(U, 103);
+const UI_SET_LEDBIT: u64 = ioctl::iow::<libc::c_int>(U, 105);
 
 /// One event: type, code, value.
 pub type Event = (u16, u16, i32);
@@ -237,8 +244,13 @@ pub const CHECK_REQUESTS: [CheckRequest; 3] = [
 ];
 
 /// The ioctls that give a device capabilities, none of which the check uses.
-pub const CAPABILITY_REQUESTS: [u64; 4] =
-    [UI_SET_EVBIT, UI_SET_KEYBIT, UI_SET_RELBIT, UI_SET_ABSBIT];
+pub const CAPABILITY_REQUESTS: [u64; 5] = [
+    UI_SET_EVBIT,
+    UI_SET_KEYBIT,
+    UI_SET_RELBIT,
+    UI_SET_ABSBIT,
+    UI_SET_LEDBIT,
+];
 
 /// Opens `path` and makes [`CHECK_REQUESTS`]: a device with no capabilities,
 /// created and destroyed at once.
@@ -284,6 +296,12 @@ pub fn check_device(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// The keyboard's event types: keys, and a Caps Lock LED so the compositor
+/// treats it as a full keyboard and keeps its LED (and the kernel's
+/// `/sys/class/leds/inputN::capslock`) in step with the lock state.
+pub const KEYBOARD_EVENT_TYPES: [u16; 2] = [EV_KEY, EV_LED];
+pub const KEYBOARD_LEDS: [u16; 1] = [LED_CAPSL];
+
 /// The two devices.
 pub struct Devices {
     keyboard: Created,
@@ -293,8 +311,9 @@ pub struct Devices {
 impl Devices {
     pub fn create(path: &Path) -> io::Result<Devices> {
         let keyboard = Created::new(path, KEYBOARD_NAME, |fd| {
-            set_bits(fd, UI_SET_EVBIT, [EV_KEY])?;
-            set_bits(fd, UI_SET_KEYBIT, 1..=LAST_KEY)
+            set_bits(fd, UI_SET_EVBIT, KEYBOARD_EVENT_TYPES)?;
+            set_bits(fd, UI_SET_KEYBIT, 1..=LAST_KEY)?;
+            set_bits(fd, UI_SET_LEDBIT, KEYBOARD_LEDS)
         })?;
         let pointer = Created::new(path, POINTER_NAME, |fd| {
             set_bits(fd, UI_SET_EVBIT, [EV_KEY, EV_REL, EV_ABS])?;
@@ -382,6 +401,7 @@ static DEVICES: Shared<Devices> = Shared::new();
 #[derive(Clone)]
 pub struct Opener {
     open: Arc<dyn Fn() -> InputResult<Arc<dyn Sink>> + Send + Sync>,
+    typing: Typing,
 }
 
 impl Opener {
@@ -392,6 +412,7 @@ impl Opener {
 
     pub fn at(path: PathBuf) -> Opener {
         Opener {
+            typing: Typing::system(),
             open: Arc::new(move || {
                 let devices = DEVICES.acquire(|| Devices::create(&path)).map_err(|e| {
                     InputError(format!(
@@ -408,7 +429,13 @@ impl Opener {
     pub fn with(open: impl Fn() -> InputResult<Arc<dyn Sink>> + Send + Sync + 'static) -> Opener {
         Opener {
             open: Arc::new(open),
+            typing: Typing::system(),
         }
+    }
+
+    /// The same opener with its own pacing and Caps Lock (tests).
+    pub fn typing(self, typing: Typing) -> Opener {
+        Opener { typing, ..self }
     }
 
     /// An injector whose pointer goes through `map`, which the capturer
@@ -418,6 +445,7 @@ impl Opener {
             sink: (self.open)()?,
             map,
             wheel: [0; 2],
+            typing: self.typing.clone(),
         }))
     }
 }
@@ -487,6 +515,7 @@ pub struct UinputBackend {
     map: SharedPointerMap,
     /// High-resolution units not yet a whole notch, per axis.
     wheel: [i32; 2],
+    typing: Typing,
 }
 
 impl UinputBackend {
@@ -544,18 +573,16 @@ impl InputBackend for UinputBackend {
     }
 
     fn type_char(&mut self, character: char) -> InputResult<()> {
-        let (key, shift) = us_key(character).ok_or_else(|| InputError(CANNOT_TYPE.to_string()))?;
-        if shift {
-            self.key_code(KEY_LEFTSHIFT, true)?;
-        }
-        let typed = self
-            .key_code(key.evdev, true)
-            .and_then(|()| self.key_code(key.evdev, false));
-        if shift {
-            // Shift comes up even when the key failed.
-            self.key_code(KEY_LEFTSHIFT, false)?;
-        }
-        typed
+        let strokes = self
+            .typing
+            .strokes(character)
+            .ok_or_else(|| InputError(CANNOT_TYPE.to_string()))?;
+        let typing = self.typing.clone();
+        play(
+            &strokes,
+            |code, down| self.key_code(code, down),
+            |pause| typing.pause(pause),
+        )
     }
 
     fn secure_attention(&mut self) -> InputResult<bool> {

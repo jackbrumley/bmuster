@@ -35,7 +35,8 @@ impl Sink for Recording {
 fn backend(map: PointerMap) -> (Arc<Recording>, InputController) {
     let recording = Arc::new(Recording::default());
     let sink = recording.clone();
-    let opener = Opener::with(move || Ok(sink.clone() as Arc<dyn Sink>));
+    let opener = Opener::with(move || Ok(sink.clone() as Arc<dyn Sink>))
+        .typing(Typing::with(|_| {}, || false));
     let backend = opener.backend(Arc::new(Mutex::new(map))).unwrap();
     (recording, InputController::new(backend))
 }
@@ -115,6 +116,84 @@ fn keymap_and_characters() {
         keys(&recording.take()),
         vec![(30, 1), (30, 0), (48, 1), (48, 0)]
     );
+}
+
+/// SPEC-CONSOLE-CAPTURE K5: the keyboard registers a Caps Lock LED, and
+/// typed characters reach the device with Shift in frames of their own,
+/// the pauses between them, and Caps Lock turning letters round.
+#[test]
+fn uinput_typing_paces_shift_and_follows_caps_lock() {
+    use crate::input::typing::{CHARACTER_GAP, SHIFT, SHIFT_SETTLE};
+    use std::sync::atomic::AtomicBool;
+
+    assert_eq!(KEYBOARD_EVENT_TYPES, [EV_KEY, EV_LED]);
+    assert_eq!(KEYBOARD_LEDS, [LED_CAPSL]);
+    assert_eq!((EV_LED, LED_CAPSL), (0x11, 1), "linux/input-event-codes.h");
+    assert!(CAPABILITY_REQUESTS.contains(&UI_SET_LEDBIT));
+    assert_eq!(UI_SET_LEDBIT, 0x4004_5569, "_IOW('U', 105, int)");
+
+    #[derive(Debug, PartialEq)]
+    enum Logged {
+        Frame(Vec<Event>),
+        Pause(Duration),
+    }
+    #[derive(Default)]
+    struct Log(Mutex<Vec<Logged>>);
+    impl Sink for Log {
+        fn emit(&self, device: Device, events: &[Event]) -> io::Result<()> {
+            assert_eq!(device, Device::Keyboard);
+            self.0.lock().unwrap().push(Logged::Frame(events.to_vec()));
+            Ok(())
+        }
+    }
+    let log = Arc::new(Log::default());
+    let caps = Arc::new(AtomicBool::new(false));
+    let typing = {
+        let (log, caps) = (log.clone(), caps.clone());
+        Typing::with(
+            move |length| log.0.lock().unwrap().push(Logged::Pause(length)),
+            move || caps.load(Ordering::SeqCst),
+        )
+    };
+    let sink = log.clone();
+    let opener = Opener::with(move || Ok(sink.clone() as Arc<dyn Sink>)).typing(typing);
+    let map = Arc::new(Mutex::new(PointerMap::identity(&[Rect::new(0, 0, 10, 10)])));
+    let mut input = InputController::new(opener.backend(map).unwrap());
+    let key = |code, down: bool| Logged::Frame(vec![(EV_KEY, code, i32::from(down))]);
+
+    input.text("Aa").unwrap();
+    caps.store(true, Ordering::SeqCst);
+    input.text("Aa!").unwrap();
+    let shifted = |code| {
+        vec![
+            key(SHIFT, true),
+            Logged::Pause(SHIFT_SETTLE),
+            key(code, true),
+            key(code, false),
+            Logged::Pause(SHIFT_SETTLE),
+            key(SHIFT, false),
+            Logged::Pause(CHARACTER_GAP),
+        ]
+    };
+    let plain = |code| {
+        vec![
+            key(code, true),
+            key(code, false),
+            Logged::Pause(CHARACTER_GAP),
+        ]
+    };
+    let expected: Vec<Logged> = [
+        shifted(30),
+        plain(30),
+        // Caps Lock on: 'A' without Shift, 'a' with it, '!' unchanged.
+        plain(30),
+        shifted(30),
+        shifted(2),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    assert_eq!(*log.0.lock().unwrap(), expected);
 }
 
 #[test]

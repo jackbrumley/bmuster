@@ -259,7 +259,11 @@ impl ScreenWatch for Watch {
                         "Watch sessions cannot control Wayland".into(),
                     ));
                 }
-                Ok(Box::new(capture::Input { bridge, physical }))
+                Ok(Box::new(capture::Input {
+                    bridge,
+                    physical,
+                    typing: bmuster_desktop::input::typing::Typing::system(),
+                }))
             }),
             notice_target: bmuster_desktop::notice::Target::Portal,
         })
