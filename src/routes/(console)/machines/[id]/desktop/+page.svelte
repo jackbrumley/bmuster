@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { flushSync, onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { MediaQuery } from 'svelte/reactivity';
 	import {
 		IconAdjustmentsHorizontal,
@@ -7,7 +8,8 @@
 		IconArrowsMinimize,
 		IconCrosshair,
 		IconEye,
-		IconKeyboard
+		IconKeyboard,
+		IconWindowMaximize
 	} from '@tabler/icons-svelte-runes';
 	import { hasPermission, type Permission } from '#lib/domain/access/access.ts';
 	import type {
@@ -22,7 +24,7 @@
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 	import Notice from '#lib/ui/notice.svelte';
-	import LoadingVeil from '#lib/ui/loading-veil.svelte';
+	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
 	import MachineUnreachable from '../machine-unreachable.svelte';
 	import NoPermission from '../no-permission.svelte';
@@ -43,6 +45,12 @@
 	import { NO_ZOOM, zoomTransform, type Zoom } from './zoom.ts';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
+	import StageOverlay from './stage-overlay.svelte';
+	import { connectingTitle as connectingTitleFor, isRunning } from './stage-state.ts';
+	import PhoneToolbar from './phone-toolbar.svelte';
+	import PoppedOutNotice from './popped-out-notice.svelte';
+	import { PHONE_QUERY, popOutFeatures, popOutName, popOutSize, popOutUrl } from './pop-out.ts';
+	import { PopOutWindow } from './pop-out-window.svelte.ts';
 	import ToolButton from './tool-button.svelte';
 	import type { PageProps } from './$types';
 
@@ -86,15 +94,17 @@
 	const touchLayout = new MediaQuery('(pointer: coarse), (max-width: 899px)');
 	/** A finger is the main pointer: the gestures hint is for this device. */
 	const touchDevice = new MediaQuery('(pointer: coarse)');
+	/** A phone: Connect goes full screen, and the page keeps only Full screen and Disconnect (SPEC-DESKTOP-POPOUT 1–3). */
+	const phoneLayout = new MediaQuery(PHONE_QUERY);
+	const phone = $derived(phoneLayout.current);
+	/** The window this tab popped the session out into (SPEC-DESKTOP-POPOUT 8). */
+	const popOut = new PopOutWindow();
 
 	const connection = $derived(session?.connection ?? { kind: 'idle' as const });
-	const running = $derived(
-		connection.kind === 'live' ||
-			connection.kind === 'connecting' ||
-			connection.kind === 'starting' ||
-			connection.kind === 'reconnecting'
-	);
+	const running = $derived(isRunning(connection));
 	const watchOnly = $derived(session?.mode === 'watch');
+	/** The session moved to the window this tab opened: the stage hides behind the notice. */
+	const poppedOut = $derived(connection.kind === 'moved' && popOut.opened);
 	/** Only a control session sends keys (SPEC-DESKTOP-KEYS 7). */
 	const keysOpen = $derived(open === 'keys' && running && !watchOnly);
 	/** The first control session on a touch device explains the gestures, once. */
@@ -145,22 +155,9 @@
 	});
 
 	/** Until the first picture arrives the stage waits under the veil, saying what it waits for. */
-	const connectingTitle = $derived.by(() => {
-		if (frame !== undefined || !running) return undefined;
-		switch (connection.kind) {
-			case 'starting':
-			case 'connecting':
-				return `Connecting to ${machine.name}`;
-			case 'reconnecting':
-				return 'Reconnecting';
-			case 'live':
-				return connection.ready ? 'Waiting for the first picture' : 'Waiting for the machine';
-			case 'idle':
-			case 'moved':
-			case 'ended':
-				return undefined;
-		}
-	});
+	const connectingTitle = $derived(
+		connectingTitleFor(connection, frame !== undefined, machine.name)
+	);
 
 	function geometry(): Geometry | undefined {
 		if (picture === undefined || display === undefined || frame === undefined) {
@@ -199,7 +196,48 @@
 
 	function start(mode: DesktopMode): void {
 		open = 'none';
+		popOut.forget();
 		void session?.start(mode);
+		if (phone && stage !== undefined && !screenMode.on) {
+			// The stage shows now, so full screen opens on it inside this tap (SPEC-DESKTOP-POPOUT 2).
+			flushSync();
+			void screenMode.toggle(stage);
+		}
+	}
+
+	/** Opens the session in a window of its own, or focuses the one already open (SPEC-DESKTOP-POPOUT 6). */
+	function popOutWindow(): void {
+		const handover = session?.handover;
+		if (handover === undefined) {
+			return;
+		}
+		const size = popOutSize(frame ?? display ?? { width: 16, height: 9 }, {
+			width: window.screen.availWidth,
+			height: window.screen.availHeight
+		});
+		const page = resolve('/(console)/machines/[id]/desktop/window', { id: machine.id });
+		if (!popOut.open(popOutUrl(page, handover), popOutName(machine.id), popOutFeatures(size))) {
+			showToast(
+				'The browser blocked the new window. Allow pop-ups for BMuster and try again.',
+				'error'
+			);
+		}
+	}
+
+	/** Focuses the open window; once it is closed, takes the session back here. */
+	function bringBack(): void {
+		if (popOut.closed) {
+			popOut.forget();
+			void session?.takeBack();
+		} else {
+			popOut.focus();
+		}
+	}
+
+	function closePopOut(): void {
+		popOut.close();
+		popOut.forget();
+		void session?.takeBack();
 	}
 
 	function switchMode(mode: DesktopMode): void {
@@ -235,6 +273,11 @@
 		touchMode = next;
 		saveTouchMode(next);
 	}
+
+	// A window left open keeps its own session; this page only stops watching it.
+	onMount(() => () => {
+		popOut.forget();
+	});
 
 	function putHintAway(): void {
 		hintGone = true;
@@ -292,7 +335,13 @@
 	<MachineUnreachable status={presenceStatus} detail="The desktop opens when it is back." />
 {:else}
 	<div class="session">
-		<div class="bar">
+		{#if phone && running}
+			<PhoneToolbar
+				onfullscreen={() => void toggleFullScreen()}
+				ondisconnect={() => void endSession()}
+			/>
+		{/if}
+		<div class="bar" class:hidden={phone}>
 			{#if displayOptions.length > 1}
 				<ChipGroup
 					label="Display"
@@ -368,6 +417,16 @@
 					</ToolButton>
 				{/if}
 				{#if running}
+					<ToolButton
+						label="Pop out into a window"
+						pressed={undefined}
+						disabled={false}
+						onclick={popOutWindow}
+					>
+						<IconWindowMaximize size={20} />
+					</ToolButton>
+				{/if}
+				{#if running}
 					<Button variant="secondary" size="compact" type="button" onclick={() => void endSession()}
 						>Disconnect</Button
 					>
@@ -377,6 +436,8 @@
 
 		{#if connection.kind === 'ended'}
 			<Notice tone="info" title={connection.message} children={undefined} />
+		{:else if poppedOut}
+			<PoppedOutNotice closed={popOut.closed} onbringback={bringBack} onclose={closePopOut} />
 		{:else if connection.kind === 'moved'}
 			<Notice tone="info" title="This session is open in another window or tab.">
 				<div class="actions">
@@ -429,7 +490,7 @@
 			<KeysMenu osFamily={machine.osFamily} send={sendInput} afterSend={backToScreen} />
 		{/if}
 
-		{#if showHint && !fullScreen}
+		{#if showHint && !fullScreen && !phone}
 			<GestureHint ondismiss={putHintAway} />
 		{/if}
 
@@ -437,7 +498,7 @@
 			class="stage"
 			class:full={fullScreen}
 			class:filling={screenMode.filling}
-			class:hidden={choosing}
+			class:hidden={choosing || poppedOut}
 			class:watching={watchOnly}
 			bind:this={stage}
 			style:aspect-ratio={fullScreen
@@ -472,30 +533,11 @@
 					<GestureHint ondismiss={putHintAway} />
 				</div>
 			{/if}
-			{#if screenState?.kind === 'approval'}
-				<div class="waiting">
-					<p>{screenLabel(screenState)}</p>
-					{#if screenState.phase !== 'pending'}
-						<Button
-							type="button"
-							variant="primary"
-							size="compact"
-							onclick={() => session?.askApproval()}>Ask for approval</Button
-						>
-					{/if}
-				</div>
-			{:else if screenState?.kind === 'unavailable'}
-				<p class="waiting unavailable">{screenLabel(screenState)}</p>
-			{:else if connectingTitle !== undefined}
-				<div class="connecting">
-					<LoadingVeil
-						active={true}
-						title={connectingTitle}
-						detail={undefined}
-						children={undefined}
-					/>
-				</div>
-			{/if}
+			<StageOverlay
+				screen={screenState}
+				waiting={connectingTitle}
+				onapprove={() => session?.askApproval()}
+			/>
 			{#if fullScreen && touchLayout.current && session !== undefined}
 				<FloatingControls
 					osFamily={machine.osFamily}
@@ -513,6 +555,7 @@
 					ondisplay={(id: string) => session?.selectDisplay(id)}
 					onsettings={(next: PictureSettings) => session?.changeSettings(next)}
 					onswitch={switchMode}
+					exit="full-screen"
 					onexit={() => void toggleFullScreen()}
 					ondisconnect={() => void endSession()}
 				/>
@@ -553,7 +596,7 @@
 			{/if}
 		</div>
 
-		{#if running && !watchOnly}
+		{#if running && !watchOnly && !phone}
 			<div class="phone-keys">
 				<KeyBar osFamily={machine.osFamily} send={sendInput} onkeyboard={undefined} />
 			</div>
@@ -631,7 +674,8 @@
 		overflow: hidden;
 	}
 
-	.stage.hidden {
+	.stage.hidden,
+	.bar.hidden {
 		display: none;
 	}
 
@@ -709,28 +753,6 @@
 		z-index: 1;
 		width: min(340px, calc(100% - var(--space-12) - var(--space-12)));
 		transform: translateX(-50%);
-	}
-
-	.waiting {
-		position: absolute;
-		inset: 0;
-		display: grid;
-		place-items: center;
-		margin: 0;
-		color: var(--terminal-text);
-		font-size: var(--text-sm);
-	}
-
-	.connecting {
-		position: absolute;
-		inset: 0;
-		display: grid;
-	}
-
-	.waiting.unavailable {
-		padding: var(--space-4);
-		background: var(--screen-bg);
-		text-align: center;
 	}
 
 	.mode {

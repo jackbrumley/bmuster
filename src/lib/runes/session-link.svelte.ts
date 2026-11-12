@@ -41,7 +41,7 @@ export type LinkEvents = {
 };
 
 /** What is kept per tab: the session, when it started, and the page's own tag (shell or mode). */
-type Saved = { sessionId: string; sinceMs: number; tag: string };
+export type SavedSession = { sessionId: string; sinceMs: number; tag: string };
 
 /** How long the server keeps a session with no browser; reconnecting stops a little before. */
 const RECONNECT_FOR_MS = 55_000;
@@ -50,7 +50,7 @@ const RECONNECT_FOR_MS = 55_000;
 const CLOSE_ENDED = 4000;
 const CLOSE_REPLACED = 4001;
 
-function readSaved(key: string): Saved | undefined {
+function readSaved(key: string): SavedSession | undefined {
 	try {
 		const text = sessionStorage.getItem(key);
 		if (text === null) {
@@ -75,7 +75,7 @@ function readSaved(key: string): Saved | undefined {
 	}
 }
 
-function writeSaved(key: string, saved: Saved | undefined): void {
+function writeSaved(key: string, saved: SavedSession | undefined): void {
 	try {
 		if (saved === undefined) {
 			sessionStorage.removeItem(key);
@@ -109,6 +109,23 @@ export class SessionLink {
 		this.#machineId = machineId;
 		this.#storageKey = `bmuster.${kind}.${machineId}`;
 		this.#events = events;
+	}
+
+	/** The running session, to hand to another window of this browser (SPEC-DESKTOP-POPOUT 7). */
+	get handover(): SavedSession | undefined {
+		return readSaved(this.#storageKey);
+	}
+
+	/**
+	 * Takes on a session another window of this browser handed over: `resume`
+	 * then joins it, and a reload of this window comes back to it. A window
+	 * that already has a session of its own (a reload, after it started a
+	 * new one) keeps that one.
+	 */
+	adopt(saved: SavedSession): void {
+		if (readSaved(this.#storageKey) === undefined) {
+			writeSaved(this.#storageKey, saved);
+		}
 	}
 
 	/** Comes back to this tab's running session after a reload: its tag, or undefined when there is none. */

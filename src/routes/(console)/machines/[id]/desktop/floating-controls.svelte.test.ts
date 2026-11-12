@@ -52,6 +52,7 @@ async function setup(
 		ondisplay: vi.fn(),
 		onsettings: vi.fn(),
 		onswitch: vi.fn(),
+		exit: 'full-screen',
 		onexit,
 		ondisconnect
 	});

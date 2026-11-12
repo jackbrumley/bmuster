@@ -25,6 +25,9 @@ const PANEL = 'src/routes/(console)/machines/[id]/machine-panel.svelte';
 const LOGIN_PAGE = 'src/routes/login/+page.svelte';
 const MACHINES_PAGE = 'src/routes/(console)/machines/+page.svelte';
 const CONSOLE_LAYOUT = 'src/routes/(console)/+layout.svelte';
+/** A page that resets to the root layout, out of the console frame (SPEC-DESKTOP-POPOUT 14). */
+const WINDOW_PAGE = 'src/routes/(console)/machines/[id]/desktop/window/+page@.svelte';
+const WINDOW_FRAME = 'src/lib/shell/window-frame.svelte';
 const SCRIPT = 'src/lib/utils/machine-actions.ts';
 
 const TOKENS = file(
@@ -147,6 +150,39 @@ export const projectRuleFixtures: readonly RuleFixture[] = [
 			file(
 				CONSOLE_LAYOUT,
 				'<script lang="ts">\n\timport ShellFrame from \'#lib/shell/shell-frame.svelte\';\n\tlet { children } = $props();\n</script>\n\n<ShellFrame>{@render children()}</ShellFrame>'
+			)
+		])
+	},
+	{
+		// SPEC-DESKTOP-POPOUT PO9: a reset page under the console frame is not framed by it.
+		rule: 'page-frame-required',
+		bad: over(verifyPageFrames, [
+			file(WINDOW_PAGE, '<canvas></canvas>'),
+			file(
+				CONSOLE_LAYOUT,
+				'<script lang="ts">\n\timport ShellFrame from \'#lib/shell/shell-frame.svelte\';\n\tlet { children } = $props();\n</script>\n\n<ShellFrame>{@render children()}</ShellFrame>'
+			)
+		]),
+		good: over(verifyPageFrames, [
+			file(
+				WINDOW_PAGE,
+				'<script lang="ts">\n\timport WindowFrame from \'#lib/shell/window-frame.svelte\';\n</script>\n\n<WindowFrame><canvas></canvas></WindowFrame>'
+			)
+		])
+	},
+	{
+		// SPEC-DESKTOP-POPOUT PO9: WindowFrame is a frame, so it may fill the screen.
+		rule: 'page-root-container-forbidden',
+		bad: over(verifyPageFrames, [
+			file(
+				PANEL,
+				'<div class="window"></div>\n<style>\n\t.window { min-height: 100dvh; }\n</style>'
+			)
+		]),
+		good: over(verifyPageFrames, [
+			file(
+				WINDOW_FRAME,
+				'<div class="window"></div>\n<style>\n\t.window { min-height: 100dvh; }\n</style>'
 			)
 		])
 	},

@@ -152,13 +152,12 @@ function pretendTouchScreen(): void {
 	);
 }
 
-/** Connects at phone size and goes full screen, with the touch layout. */
+/** Connects at phone size, which goes full screen at once (SPEC-DESKTOP-POPOUT PF2), with the touch layout. */
 async function fullScreenOnPhone() {
 	pretendTouchScreen();
 	await page.viewport(375, 667);
 	const opened = await open(CONTROL, 'Connect');
 	opened.socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
-	await opened.screen.getByRole('button', { name: 'Full screen' }).click();
 	await expect.poll(() => document.fullscreenElement !== null).toBe(true);
 	return opened;
 }
@@ -706,7 +705,7 @@ describe('the desktop tab', () => {
 	}
 
 	it('FA13: a pinch enlarges the picture, and a tap then clicks the display pixel under the finger', async () => {
-		pretendTouchScreen();
+		// Touch events on a narrow page with the bar (a phone now opens straight into full screen).
 		await page.viewport(375, 667);
 		const { screen, socket } = await open(CONTROL, 'Connect');
 		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
@@ -762,34 +761,18 @@ describe('the desktop tab', () => {
 		localStorage.removeItem('bmuster.desktop.gestureHint');
 	});
 
-	it('FA20, FA21, FA22: one touch input choice on the page and in the sheet, remembered, with the centre marked for the fixed cursor', async () => {
+	it('FA20, FA21, FA22: one touch input choice in the sheet (phones show none on the page), remembered, with the centre marked for the fixed cursor', async () => {
 		const { screen } = await fullScreenOnPhone();
-		await document.exitFullscreen();
 		const names = ['Trackpad', 'Tap to click', 'Fixed cursor'];
-		const onPage = screen.getByRole('group', { name: 'Touch input' });
-		await expect
-			.poll(() =>
-				onPage
-					.getByRole('button')
-					.elements()
-					.map((button) => button.textContent.trim())
-			)
-			.toEqual(names);
-		await expect
-			.element(onPage.getByRole('button', { name: 'Trackpad' }))
-			.toHaveAttribute('aria-pressed', 'true');
 		const mark = () => screen.container.querySelector('.centre-mark');
-		expect(mark()).toBeNull();
-		await onPage.getByRole('button', { name: 'Fixed cursor' }).click();
-		expect(localStorage.getItem('bmuster.desktop.touchInput')).toBe('fixed');
-		await expect.poll(mark).not.toBeNull();
-
-		await screen.getByRole('button', { name: 'Full screen' }).click();
-		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
-		await screen.getByRole('button', { name: 'Session controls' }).click();
-		const sheet = screen.getByRole('group', { name: 'Session options' });
-		await sheet.getByRole('tab', { name: 'Session' }).click();
-		const inSheet = sheet.getByRole('group', { name: 'Touch input' });
+		const openSession = async () => {
+			await screen.getByRole('button', { name: 'Session controls' }).click();
+			const sheet = screen.getByRole('group', { name: 'Session options' });
+			await sheet.getByRole('tab', { name: 'Session' }).click();
+			return sheet;
+		};
+		let sheet = await openSession();
+		let inSheet = sheet.getByRole('group', { name: 'Touch input' });
 		await expect
 			.poll(() =>
 				inSheet
@@ -799,10 +782,29 @@ describe('the desktop tab', () => {
 			)
 			.toEqual(names);
 		await expect
-			.element(inSheet.getByRole('button', { name: 'Fixed cursor' }))
+			.element(inSheet.getByRole('button', { name: 'Trackpad' }))
 			.toHaveAttribute('aria-pressed', 'true');
 		// The session's mode is its own badge, apart from the touch input.
 		await expect.element(sheet.getByText('Control', { exact: true })).toBeVisible();
+		expect(mark()).toBeNull();
+		await inSheet.getByRole('button', { name: 'Fixed cursor' }).click();
+		expect(localStorage.getItem('bmuster.desktop.touchInput')).toBe('fixed');
+		await expect.poll(mark).not.toBeNull();
+
+		// Out of full screen a phone shows only Full screen and Disconnect (PF2).
+		await document.exitFullscreen();
+		await expect.poll(() => document.fullscreenElement).toBeNull();
+		await expect
+			.element(screen.getByRole('group', { name: 'Touch input' }))
+			.not.toBeInTheDocument();
+
+		await screen.getByRole('button', { name: 'Full screen' }).click();
+		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+		sheet = await openSession();
+		inSheet = sheet.getByRole('group', { name: 'Touch input' });
+		await expect
+			.element(inSheet.getByRole('button', { name: 'Fixed cursor' }))
+			.toHaveAttribute('aria-pressed', 'true');
 		await inSheet.getByRole('button', { name: 'Trackpad' }).click();
 		expect(localStorage.getItem('bmuster.desktop.touchInput')).toBe('trackpad');
 		await expect.poll(mark).toBeNull();
