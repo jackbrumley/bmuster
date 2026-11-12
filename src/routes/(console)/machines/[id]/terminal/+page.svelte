@@ -16,6 +16,7 @@
 	import { keySequence, NO_MODIFIERS, withModifiers, type ExtraKeyId } from './extra-keys.ts';
 	import { createScreen, type Screen } from './terminal-screen.ts';
 	import { TerminalSession } from './terminal-session.svelte.ts';
+	import { windowsPtyFor } from './windows-pty.ts';
 	import type { PageProps } from './$types';
 
 	/**
@@ -184,19 +185,24 @@
 		window.addEventListener('resize', measure);
 		measure();
 
-		void createScreen(host, probe, {
-			onData: (input) => {
-				const typed = withModifiers(input, modifiers);
-				modifiers = NO_MODIFIERS;
-				session?.send(typed);
+		void createScreen(
+			host,
+			probe,
+			{
+				onData: (input) => {
+					const typed = withModifiers(input, modifiers);
+					modifiers = NO_MODIFIERS;
+					session?.send(typed);
+				},
+				onResize: (cols, rows) => {
+					session?.resize(cols, rows);
+				},
+				onCopy: (text) => {
+					void copy(text);
+				}
 			},
-			onResize: (cols, rows) => {
-				session?.resize(cols, rows);
-			},
-			onCopy: (text) => {
-				void copy(text);
-			}
-		}).then(async (created) => {
+			windowsPtyFor(machine)
+		).then(async (created) => {
 			if (disposed) {
 				created.dispose();
 				return;

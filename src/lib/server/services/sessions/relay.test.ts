@@ -117,6 +117,33 @@ describe('the session relay (T4)', () => {
 		expect(Buffer.concat(agent.bytes).toString()).toBe('whoami\r');
 	});
 
+	it('T10: keeps the latest resize sent before the agent connected and gives it to the agent first', () => {
+		const { relay } = started();
+		const browser = fakePeer(true);
+		connectBrowser(relay, browser);
+		relay.browserText(RECORD.id, browser, JSON.stringify({ type: 'resize', cols: 40, rows: 30 }));
+		relay.browserText(RECORD.id, browser, JSON.stringify({ type: 'resize', cols: 96, rows: 20 }));
+		relay.fromBrowser(RECORD.id, browser, Buffer.from('dir\r'));
+		const agent = fakePeer(true);
+		relay.attachAgent(RECORD.id, RECORD.machineId, agent);
+		expect(agent.texts).toEqual([{ type: 'resize', cols: 96, rows: 20 }]);
+		expect(Buffer.concat(agent.bytes).toString()).toBe('dir\r');
+
+		relay.browserText(RECORD.id, browser, JSON.stringify({ type: 'resize', cols: 120, rows: 24 }));
+		expect(agent.texts).toEqual([
+			{ type: 'resize', cols: 96, rows: 20 },
+			{ type: 'resize', cols: 120, rows: 24 }
+		]);
+	});
+
+	it('T10: sends a late agent no resize when the browser never sent one (the open request has the size)', () => {
+		const { relay } = started();
+		connectBrowser(relay, fakePeer(true));
+		const agent = fakePeer(true);
+		relay.attachAgent(RECORD.id, RECORD.machineId, agent);
+		expect(agent.texts).toEqual([]);
+	});
+
 	it('refuses an agent socket for another machine, and a second one for the same session', () => {
 		const { relay } = started();
 		expect(relay.attachAgent(RECORD.id, 'machine-2', fakePeer(true)).kind).toBe('refused');

@@ -1,4 +1,4 @@
-import type { ITheme } from '@xterm/xterm';
+import type { ITheme, IWindowsPty } from '@xterm/xterm';
 import { attachTouchScroll } from './terminal-touch.ts';
 
 /**
@@ -68,7 +68,9 @@ function themeFrom(probe: HTMLElement): ITheme {
 export async function createScreen(
 	host: HTMLElement,
 	probe: HTMLElement,
-	events: ScreenEvents
+	events: ScreenEvents,
+	/** Set for a Windows machine (windows-pty.ts), so xterm.js and ConPTY do not both reflow. */
+	windowsPty: IWindowsPty | undefined
 ): Promise<Screen> {
 	const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { Unicode11Addon }] = await Promise.all([
 		import('@xterm/xterm'),
@@ -83,7 +85,8 @@ export async function createScreen(
 		fontFamily: getComputedStyle(probe).fontFamily,
 		fontSize: savedFontSize(phone ? 12 : 14),
 		scrollback: 5000,
-		theme: themeFrom(probe)
+		theme: themeFrom(probe),
+		...(windowsPty === undefined ? {} : { windowsPty })
 	});
 	const fitAddon = new FitAddon();
 	terminal.loadAddon(fitAddon);
