@@ -69,7 +69,8 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 		later
 	);
 	let pendingMove: { x: number; y: number; buttons: number } | undefined;
-	// Auto-pan while zoomed (SPEC-DESKTOP-FLOATING FA18): one frame at a time while it moves.
+	// Edge pan while zoomed (SPEC-DESKTOP-FLOATING FA18): every frame while a finger is down,
+	// so a still finger with the pointer in the band keeps panning.
 	let panFrame: number | undefined;
 	let panAt = 0;
 	const panStep = (now: number) => {
@@ -141,6 +142,7 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 				gestures.position = shown;
 			}
 			gestures.down(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+			startPan();
 			return;
 		}
 		surface.focus();

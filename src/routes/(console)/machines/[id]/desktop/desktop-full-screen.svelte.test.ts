@@ -271,10 +271,11 @@ describe('the desktop tab', () => {
 		localStorage.removeItem('bmuster.desktop.gestureHint');
 	});
 
-	it('FA20, FA21, FA22: one touch input choice in the sheet (phones show none on the page), remembered, with the centre marked for the fixed cursor', async () => {
+	it('FA20, FA21, FA22: one touch input choice in the sheet (phones show none on the page), remembered, with no centre mark for the fixed cursor (the cursor itself shows there)', async () => {
 		const { screen } = await fullScreenOnPhone();
 		const names = ['Trackpad', 'Tap to click', 'Fixed cursor'];
-		const mark = () => screen.container.querySelector('.centre-mark');
+		// Nothing is drawn over the stage for the fixed cursor: the machine's (or the local) cursor shows there.
+		const mark = () => screen.container.querySelector('.picture > :not(canvas)');
 		const openSession = async () => {
 			await screen.getByRole('button', { name: 'Session controls' }).click();
 			const sheet = screen.getByRole('group', { name: 'Session options' });
@@ -299,7 +300,7 @@ describe('the desktop tab', () => {
 		expect(mark()).toBeNull();
 		await inSheet.getByRole('button', { name: 'Fixed cursor' }).click();
 		expect(localStorage.getItem('bmuster.desktop.touchInput')).toBe('fixed');
-		await expect.poll(mark).not.toBeNull();
+		expect(mark()).toBeNull();
 
 		// Out of full screen a phone shows only Full screen and Disconnect (PF2).
 		await document.exitFullscreen();
@@ -317,7 +318,6 @@ describe('the desktop tab', () => {
 			.toHaveAttribute('aria-pressed', 'true');
 		await inSheet.getByRole('button', { name: 'Trackpad' }).click();
 		expect(localStorage.getItem('bmuster.desktop.touchInput')).toBe('trackpad');
-		await expect.poll(mark).toBeNull();
 		await document.exitFullscreen();
 	});
 

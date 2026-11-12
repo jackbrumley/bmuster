@@ -1,9 +1,11 @@
 import { BUTTON_LEFT, BUTTON_RIGHT } from '#lib/domain/desktop/messages.ts';
 import { centredOn, dragged, underCentre } from './fixed-cursor.ts';
-import { contentBox, toDisplay, toPage, type Box, type Point, type Size } from './input.ts';
+import { contentBox, toDisplay, type Box, type Point, type Size } from './input.ts';
 import {
+	clampToVisible,
 	clampZoom,
 	edgePanned,
+	joystickPanned,
 	MAX_ZOOM,
 	NO_ZOOM,
 	pinched,
@@ -20,9 +22,10 @@ import {
  * SPEC-DESKTOP-FLOATING option A). Pure apart from the timer it is handed,
  * so the rules are tested without a browser.
  *
- * - Trackpad: one finger moves the pointer by its movement; a tap clicks; a
- *   second tap soon after is a second click (a double click), and a second
- *   touch held or moved holds the left button and drags (FA16, FA17).
+ * - Trackpad: one finger moves the pointer by its movement, never off the
+ *   visible picture; a tap clicks once the double-tap time has passed; tap,
+ *   tap is a double click, and tap, then touch and hold (or move) holds the
+ *   left button, with no click before it, until the finger lifts (FA16, FA17).
  * - Touch: a tap moves the pointer there and clicks; a drag holds the button;
  *   a second tap next to the first clicks the same pixel.
  * - Fixed cursor: the pointer stays at the centre of the stage and a finger
@@ -30,7 +33,8 @@ import {
  * - All: a long press right-clicks; a two-finger tap right-clicks; two
  *   fingers scroll at 1x, and pinch or pan the picture's zoom (drawn in the
  *   browser only); a double two-finger tap while zoomed goes back to 1x.
- *   Zoomed, a pointer near an edge pans the picture (`edgePan`, FA18).
+ *   Zoomed, a pointer near an edge pans the picture (`edgePan`, FA18): in
+ *   trackpad mode as a joystick, the pointer travelling with the view.
  */
 
 /** Phones: a trackpad, tap where to click, or a cursor fixed at the centre. */
@@ -53,8 +57,13 @@ export type Later = (run: () => void, ms: number) => () => void;
 const TAP_SLOP = 10;
 /** A tap is shorter than this. */
 const TAP_MS = 300;
-/** A touch this soon after a tap's lift is a second tap: a double click, or a drag. */
-export const DOUBLE_TAP_MS = 400;
+/** Tap to click: a tap this soon after a tap, next to it, clicks the same pixel. */
+const DOUBLE_TAP_MS = 400;
+/**
+ * Trackpad and fixed cursor: a tap's click waits this long after its lift.
+ * A touch in that time is a second tap: a double click, or a press and drag.
+ */
+export const TAP_CLICK_DELAY_MS = 250;
 /** A second touch held this long (or moved past the slop) holds the left button. */
 export const HOLD_AFTER_TAP_MS = 250;
 /** A finger held still this long right-clicks. */
@@ -99,10 +108,6 @@ function displayPerPage(box: Box, picture: Size, display: Size): number {
 	return content.width > 0 ? display.width / content.width : 1;
 }
 
-function clampTo(value: number, size: number): number {
-	return Math.min(Math.max(Math.round(value), 0), size - 1);
-}
-
 type Finger = { x: number; y: number; startX: number; startY: number };
 
 /** The last tap: when it lifted and where it touched down, on the page. */
@@ -131,8 +136,12 @@ export class TouchGestures {
 	#startedAt = 0;
 	#lastTap: Tap = { at: -Infinity, x: 0, y: 0 };
 	#holding = false;
+	/** A trackpad tap's click, waiting to see whether a second touch follows: cancels it. */
+	#pendingClick: (() => void) | undefined;
 	/** A second touch soon after a tap, not yet a tap or a hold: cancels its hold timer. */
 	#secondTouch: (() => void) | undefined;
+	/** The edge pan's part-pixel, carried from frame to frame. */
+	#panCarry: Point = { x: 0, y: 0 };
 	#longPress: (() => void) | undefined;
 	#longPressed = false;
 	#two: TwoFingers | undefined;
@@ -161,6 +170,7 @@ export class TouchGestures {
 			this.#moved = false;
 			this.#startedAt = at;
 			this.#longPressed = false;
+			this.#panCarry = { x: 0, y: 0 };
 			// The screen may have turned or resized, or the mode changed, since the last gesture.
 			this.#setZoom(
 				this.mode === 'fixed'
@@ -178,25 +188,39 @@ export class TouchGestures {
 		this.#most = Math.max(this.#most, this.#fingers.size);
 		if (this.#fingers.size === 2) {
 			this.#cancelLongPress();
-			this.#cancelSecondTouch();
+			if (this.#secondTouch !== undefined) {
+				// A two-finger gesture after a tap: the tap's click still goes.
+				this.#cancelSecondTouch();
+				this.#click(BUTTON_LEFT);
+			}
 			this.#startTwoFingers();
 		}
 		if (this.#fingers.size !== 1) {
 			return;
 		}
-		const soon = at - this.#lastTap.at < DOUBLE_TAP_MS;
+		const second =
+			this.mode !== 'touch' &&
+			this.#pendingClick !== undefined &&
+			at - this.#lastTap.at < TAP_CLICK_DELAY_MS;
+		if (second) {
+			// The first tap's click is not sent: this touch decides between a double click and a drag.
+			this.#pendingClick?.();
+			this.#pendingClick = undefined;
+			this.#secondTouch = this.#later(() => {
+				this.#secondTouch = undefined;
+				this.#startHold();
+			}, HOLD_AFTER_TAP_MS);
+		} else {
+			this.#sendPendingClick();
+		}
 		if (this.mode === 'touch') {
+			const soon = at - this.#lastTap.at < DOUBLE_TAP_MS;
 			// A second tap next to the first clicks the same pixel, so the machine sees a double click.
 			const near = Math.hypot(x - this.#lastTap.x, y - this.#lastTap.y) <= TAP_SLOP;
 			if (!soon || !near) {
 				this.position = this.#toDisplay({ x, y }, geometry);
 			}
 			this.#sink.pointer(this.position.x, this.position.y, 0);
-		} else if (soon) {
-			this.#secondTouch = this.#later(() => {
-				this.#secondTouch = undefined;
-				this.#startHold();
-			}, HOLD_AFTER_TAP_MS);
 		}
 		if (this.#secondTouch === undefined) {
 			this.#longPress = this.#later(() => {
@@ -256,10 +280,14 @@ export class TouchGestures {
 					geometry.picture,
 					geometry.display
 				);
-				this.position = {
-					x: clampTo(this.position.x + dx * ratio, geometry.display.width),
-					y: clampTo(this.position.y + dy * ratio, geometry.display.height)
-				};
+				// Never off the visible picture, so zoomed in it is always on screen.
+				this.position = clampToVisible(
+					{ x: this.position.x + dx * ratio, y: this.position.y + dy * ratio },
+					geometry.box,
+					this.#zoom,
+					geometry.picture,
+					geometry.display
+				);
 				break;
 			}
 			case 'fixed':
@@ -290,9 +318,11 @@ export class TouchGestures {
 			return;
 		}
 		if (this.#secondTouch !== undefined) {
-			// Lifted before the hold time without moving: the second click of a double click.
+			// Lifted before the hold time without moving: a double click, back to back at one pixel.
 			this.#cancelSecondTouch();
-			this.#tap(finger, at);
+			this.#click(BUTTON_LEFT);
+			this.#click(BUTTON_LEFT);
+			this.#lastTap = { at: -Infinity, x: 0, y: 0 };
 			return;
 		}
 		if (this.#longPressed || this.#moved || at - this.#startedAt > TAP_MS) {
@@ -306,9 +336,13 @@ export class TouchGestures {
 	}
 
 	/**
-	 * Auto-pan (FA18): called every animation frame while a finger is down;
-	 * zoomed, with the pointer near an edge, moves the picture `elapsedMs`
-	 * worth. True when it moved, so the caller asks for another frame.
+	 * Edge pan (FA18): called every animation frame while a finger is down.
+	 * Zoomed, once the finger has moved, a pointer in the band at an edge
+	 * pans the picture `elapsedMs` worth, even with the finger still. In
+	 * trackpad mode the pointer keeps its place on the screen and so travels
+	 * with the view on the machine; in tap to click it follows what is now
+	 * under the finger. True while a finger is down that may still pan, so
+	 * the caller asks for another frame.
 	 */
 	edgePan(elapsedMs: number): boolean {
 		const geometry = this.#geometry();
@@ -320,30 +354,39 @@ export class TouchGestures {
 			this.#fingers.size !== 1 ||
 			this.#most !== 1 ||
 			this.#longPressed ||
-			!this.#moved ||
 			!zoomed(this.#zoom)
 		) {
 			return false;
 		}
-		// In touch mode the pointer is under the finger; in trackpad mode it is where it was moved to.
-		const pointer =
-			this.mode === 'touch'
-				? { x: finger.x, y: finger.y }
-				: toPage(
-						this.position,
-						zoomedBox(geometry.box, this.#zoom),
-						geometry.picture,
-						geometry.display
-					);
-		const next = edgePanned(this.#zoom, geometry.box, pointer, elapsedMs);
-		if (sameZoom(next, this.#zoom)) {
-			return false;
+		// A tap, a long press or a second touch still deciding never pans.
+		if (!this.#moved || this.#secondTouch !== undefined) {
+			return true;
 		}
-		this.#setZoom(next);
+		const buttons = this.#holding ? BUTTON_LEFT : 0;
 		if (this.mode === 'touch') {
-			// The picture moved under a still finger: the pointer follows what is under it now.
-			this.position = this.#toDisplay(pointer, geometry);
-			this.#sink.pointer(this.position.x, this.position.y, this.#holding ? BUTTON_LEFT : 0);
+			const pointer = { x: finger.x, y: finger.y };
+			const next = edgePanned(this.#zoom, geometry.box, geometry.picture, pointer, elapsedMs);
+			if (!sameZoom(next, this.#zoom)) {
+				this.#setZoom(next);
+				this.position = this.#toDisplay(pointer, geometry);
+				this.#sink.pointer(this.position.x, this.position.y, buttons);
+			}
+			return true;
+		}
+		const step = joystickPanned(
+			this.#zoom,
+			geometry.box,
+			geometry.picture,
+			geometry.display,
+			this.position,
+			elapsedMs,
+			this.#panCarry
+		);
+		this.#panCarry = step.carry;
+		this.#setZoom(step.zoom);
+		if (step.pointer.x !== this.position.x || step.pointer.y !== this.position.y) {
+			this.position = step.pointer;
+			this.#sink.pointer(this.position.x, this.position.y, buttons);
 		}
 		return true;
 	}
@@ -354,6 +397,8 @@ export class TouchGestures {
 		this.#two = undefined;
 		this.#cancelLongPress();
 		this.#cancelSecondTouch();
+		this.#pendingClick?.();
+		this.#pendingClick = undefined;
 		if (this.#holding) {
 			this.#holding = false;
 			this.#sink.pointer(this.position.x, this.position.y, 0);
@@ -364,9 +409,27 @@ export class TouchGestures {
 		return toDisplay(page, zoomedBox(geometry.box, this.#zoom), geometry.picture, geometry.display);
 	}
 
+	/** Tap to click clicks at once; the others wait to see whether a second touch follows. */
 	#tap(finger: Finger, at: number): void {
-		this.#click(BUTTON_LEFT);
 		this.#lastTap = { at, x: finger.startX, y: finger.startY };
+		if (this.mode === 'touch') {
+			this.#click(BUTTON_LEFT);
+			return;
+		}
+		this.#pendingClick = this.#later(() => {
+			this.#pendingClick = undefined;
+			this.#click(BUTTON_LEFT);
+		}, TAP_CLICK_DELAY_MS);
+	}
+
+	/** A waiting tap's click goes now: its timer was late, or the next touch is not a second tap. */
+	#sendPendingClick(): void {
+		if (this.#pendingClick === undefined) {
+			return;
+		}
+		this.#pendingClick();
+		this.#pendingClick = undefined;
+		this.#click(BUTTON_LEFT);
 	}
 
 	/** Presses the left button where the pointer is, for a drag after a tap. */

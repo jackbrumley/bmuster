@@ -2,7 +2,6 @@
 	import { flushSync, onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { MediaQuery } from 'svelte/reactivity';
-	import { IconCrosshair } from '@tabler/icons-svelte-runes';
 	import { hasPermission, type Permission } from '#lib/domain/access/access.ts';
 	import type {
 		DesktopSettings as PictureSettings,
@@ -407,10 +406,6 @@
 					style:transform={zoomTransform(zoom)}
 					aria-hidden="true"
 				></canvas>
-				{#if touchMode === 'fixed' && running && !watchOnly}
-					<!-- The fixed cursor's place, shown before the machine's own cursor gets there. -->
-					<span class="centre-mark" aria-hidden="true"><IconCrosshair size={28} /></span>
-				{/if}
 			</div>
 			{#if showHint && fullScreen}
 				<div class="hint-over">
@@ -562,16 +557,6 @@
 		object-fit: contain;
 		transform-origin: 0 0;
 		pointer-events: none;
-	}
-
-	.centre-mark {
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		display: grid;
-		color: var(--brand);
-		opacity: 0.8;
-		transform: translate(-50%, -50%);
 	}
 
 	/* Over the screen in full screen, under the controls button (z-index 2). */
