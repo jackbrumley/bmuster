@@ -4,6 +4,8 @@
 
 **Version 2 (every plane on the CRTC):** `IMPLEMENTED (v0.4.10)` 2026-11-10 · approved 2026-11-10 (Jack's bug report: LocalSend shows only its frame on the Fedora 44 GNOME laptop) · see [Version 2](#version-2-every-plane-on-the-crtc-pending-release).
 
+**Version 3 (capitals and Caps Lock when typing by character):** `PENDING RELEASE` 2026-11-12 · Jack's bug report (capital letters from an Android phone came out lowercase on the KDE Plasma lock screen) · see [Version 3](#version-3-capitals-and-caps-lock-pending-release).
+
 ## Problem
 
 BMuster must show and drive whatever is on the machine's physical screen: the sign-in screen, the lock screen, any signed-in user, or a text console. It is not a remote session into one account. The Wayland portal (v0.3.1) works only inside one signed-in session, asks the person at the machine for approval, and cannot see a greeter or lock screen.
@@ -43,7 +45,7 @@ X11 stays as it is: it already covers greeters, has damage tracking and needs no
 
 1. The agent opens `/dev/uinput` only for a session whose ticket carries control, and creates two devices: **"BMuster keyboard"** (all `KEY_*` codes) and **"BMuster pointer"** (`ABS_X`/`ABS_Y` 0–65535, `BTN_LEFT`/`RIGHT`/`MIDDLE`, `REL_WHEEL`/`REL_HWHEEL` with hi-res variants). Watch sessions never open uinput. The devices are destroyed when the last control session ends.
 2. **Keyboard by position:** the browser's `code` maps to the evdev key code; the machine's own layout decides the character, as for a USB keyboard.
-3. **Keyboard by character** (phones): characters on the US layout are typed with their key and Shift. Other characters are not typed and the session reports "This character cannot be typed on this screen yet". Non-printing keys go by position.
+3. **Keyboard by character** (phones): characters on the US layout are typed with their key and Shift. Other characters are not typed and the session reports "This character cannot be typed on this screen yet". Non-printing keys go by position. Shift timing and Caps Lock: [Version 3](#version-3-capitals-and-caps-lock-pending-release).
 4. **Pointer:** absolute coordinates over the bounding box of all displays. With one display this is exact. With several, displays are assumed side by side in connector order; on a GNOME desktop the layout comes from mutter instead, and the pointer maps monitor by monitor (SPEC-DESKTOP-ALL-SCREENS).
 5. **Special keys:** Ctrl+Alt+Del and Ctrl+Alt+F1–F12 are sent as real key chords, so switching consoles works.
 6. **Release-all** on blur, end of session and every screen switch, as now.
@@ -191,3 +193,36 @@ On the Fedora 44 GNOME laptop (Wayland, mutter) the LocalSend window (Flutter on
 - **Deviation:** no re-composition cache (Behaviour 6); per frame the cost is one more `GETPLANE` and property read per plane on the CRTC and one `GETFB2` per drawn plane, and the GPU draws one quad per layer before the single read-back.
 - **Added while building:** a client's framebuffer can be removed between reading the planes and exporting it (the compositor flipped away from it), so a capture reads the planes again, up to three times, before it reports the error.
 - **Not handled:** YUV overlay formats (NV12, P010; video players can put them on overlay planes) on the CPU path are refused with their fourcc as before; through EGL they import if the driver supports them. Colour encoding, range, HDR metadata and the CRTC's background colour are ignored (black is assumed).
+
+## Version 3: capitals and Caps Lock (pending release)
+
+**Status:** `PENDING RELEASE` 2026-11-12 · Jack's bug report · security work only in that the uinput keyboard gains a Caps Lock LED and the agent reads `/sys/class/leds`; no check changes.
+
+### Problem
+
+From an Android phone, a capital letter typed on the KDE Plasma lock screen (Wayland, Fedora) arrived lowercase, so a password with a capital could not be entered. The browser sends the character with its case. The uinput keyboard wrote Shift down, the key down and up, and Shift up as four frames back to back with no gap, and KWin handled the letter before it had taken in Shift. Caps Lock on at the machine would also turn every letter round, because the US mapping ignored it. In a signed-in session the Wayland portal typed every character as a keysym alone, and KWin presses the key that keysym is on without Shift, so case was lost there too.
+
+### Behaviour
+
+1. **Shift in its own frame, with a settle.** A character that needs Shift goes as: Shift down, 8 ms, key down, key up, 8 ms, Shift up. Every character is followed by 5 ms (like ydotool's key delay). Each key change is its own frame with `SYN_REPORT`.
+2. **Cost.** A character takes 5 ms, or 21 ms with Shift. The longest `text` message (256 characters, all capitals) takes about 5.4 s, during which that session's thread is busy. The phone key bar sends a character or a word at a time.
+3. **Caps Lock.** Before each character the agent reads Caps Lock from the keyboard LEDs (`/sys/class/leds/*::capslock/brightness`; any lit one means on). With Caps Lock on, a letter's Shift is turned round; digits and symbols are unchanged (xkb's alphabetic key type).
+4. **Why the LEDs in sysfs, not the uinput file.** The compositor sets every keyboard's LEDs to its lock state, so a physical keyboard's LED is right from the start; events read back from the uinput file only report changes made after the device exists, and only if the compositor writes LEDs to a virtual device. The BMuster keyboard now registers `EV_LED` with `LED_CAPSL`, so the compositor treats it as a full keyboard and it gets an LED of its own in sysfs when it is the only keyboard (a machine with none attached).
+5. **Portal.** A character on the US layout is sent as its evdev key code (`NotifyKeyboardKeycode`, as keys by position already are) with Shift, paced and Caps-Lock-aware as above. Only characters the US layout lacks still go as a keysym.
+6. **Failure.** When a key fails, no further keys go down, Shift still comes up, and the first error is reported.
+
+### Acceptance criteria
+
+| #   | Criterion                                                                                                                                                   | Named test                                                                   |
+| :-- | :---------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------- |
+| K1  | Strokes for `A`, `a`, `!`, `1` with Caps Lock off: Shift in its own step, an 8 ms settle after Shift down and before Shift up, a 5 ms gap after each one.   | Rust `input::typing::tests::strokes_with_caps_lock_off_and_on`               |
+| K2  | With Caps Lock on, `A` goes without Shift and `a` with it; `!`, `1` and `/` are unchanged; the longest message stays under 6 s.                             | Rust `input::typing::tests::strokes_with_caps_lock_off_and_on`               |
+| K3  | After a failed key nothing more goes down, Shift still comes up, and the first error is returned.                                                           | Rust `input::typing::tests::play_releases_after_a_failure`                   |
+| K4  | Caps Lock reads on when any `::capslock` LED is lit; no LEDs reads off; Num Lock is not Caps Lock.                                                          | Rust `input::typing::tests::caps_lock_from_the_leds`                         |
+| K5  | The uinput keyboard registers `EV_LED` and `LED_CAPSL` (`UI_SET_LEDBIT` is `_IOW('U', 105, int)`); typed text reaches it as frames with the pauses between. | Rust `input::uinput::tests::uinput_typing_paces_shift_and_follows_caps_lock` |
+| K6  | The portal types US characters as key codes with Shift (Caps Lock turning letters round) and the rest as a keysym.                                          | Rust `wayland::capture::tests::portal_types_capitals_as_keys_with_shift`     |
+| K7  | Native check on the Fedora KDE laptop: a password with a capital unlocks the lock screen from an Android phone, with Caps Lock off and on.                  | Manual report; not claimed from fakes                                        |
+
+### Open questions
+
+- **Layouts other than US on the portal.** A keysym let KWin find the key on the machine's own layout; a key code assumes the US layout, as the uinput path always has. On, say, a German layout `z` and `y` swap in a signed-in session. Keep the key codes (case right on US and Australian machines) or send Shift with the keysym instead?

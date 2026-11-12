@@ -11,7 +11,9 @@ use bmuster_desktop::capture::{
     DisplayInfo, Frame, View,
 };
 use bmuster_desktop::input::{
-    keymap::KeyPosition, Axis, Button, InputBackend, InputError, InputResult,
+    keymap::KeyPosition,
+    typing::{self, Typing},
+    Axis, Button, InputBackend, InputError, InputResult,
 };
 use std::ffi::OsString;
 use std::io::BufReader;
@@ -385,6 +387,7 @@ impl Capturer for Screen {
 pub struct Input {
     pub bridge: Arc<Bridge>,
     pub physical: (i32, i32),
+    pub typing: Typing,
 }
 impl InputBackend for Input {
     fn move_pointer(&mut self, x: i32, y: i32) -> InputResult<()> {
@@ -434,13 +437,50 @@ impl InputBackend for Input {
         self.bridge.send(Command::Key { code: 100, down })
     }
     fn type_char(&mut self, character: char) -> InputResult<()> {
-        self.bridge.send(Command::Character { character })
+        let bridge = &self.bridge;
+        match self.typing.strokes(character) {
+            Some(strokes) => typing::play(
+                &strokes,
+                |code, down| bridge.send(key_command(code, down)),
+                |pause| self.typing.pause(pause),
+            ),
+            None => bridge.send(Command::Character { character }),
+        }
     }
     fn secure_attention(&mut self) -> InputResult<bool> {
         Ok(false)
     }
     fn flush(&mut self) -> InputResult<()> {
         Ok(())
+    }
+}
+
+/// A typed character's key on the portal: `NotifyKeyboardKeycode` takes
+/// the evdev code, as [`Input::key`] sends it. A keysym alone lost its case
+/// on KDE (KWin pressed the key the keysym is on, without Shift), so
+/// characters on the US layout go as their key with Shift
+/// ([`typing::strokes`]) and only the rest as a keysym
+/// (SPEC-CONSOLE-CAPTURE version 3).
+fn key_command(code: u16, down: bool) -> Command {
+    Command::Key {
+        code: i32::from(code),
+        down,
+    }
+}
+
+/// What the portal is sent for `character` with Caps Lock as given: key
+/// commands and pauses, or one keysym.
+#[cfg(test)]
+fn portal_typing(character: char, caps_lock: bool) -> Vec<Result<Command, std::time::Duration>> {
+    match typing::strokes(character, caps_lock) {
+        Some(strokes) => strokes
+            .into_iter()
+            .map(|stroke| match stroke {
+                typing::Stroke::Key { code, down } => Ok(key_command(code, down)),
+                typing::Stroke::Pause(length) => Err(length),
+            })
+            .collect(),
+        None => vec![Ok(Command::Character { character })],
     }
 }
 
@@ -456,6 +496,38 @@ fn map_pointer(x: i32, y: i32, physical: (i32, i32), geometry: (i32, i32, i32, i
 #[cfg(test)]
 mod tests {
     use super::map_pointer;
+
+    /// SPEC-CONSOLE-CAPTURE K6: the portal types US characters as keys with
+    /// Shift (Caps Lock turning letters round) and the rest as a keysym.
+    #[test]
+    fn portal_types_capitals_as_keys_with_shift() {
+        use super::{portal_typing, Command};
+        use bmuster_desktop::input::typing::{CHARACTER_GAP, SHIFT_SETTLE};
+        let keys = |character, caps| {
+            portal_typing(character, caps)
+                .into_iter()
+                .map(|step| match step {
+                    Ok(Command::Key { code, down }) => {
+                        format!("{code}{}", if down { '+' } else { '-' })
+                    }
+                    Ok(Command::Character { character }) => format!("sym {character}"),
+                    Ok(other) => panic!("unexpected {other:?}"),
+                    Err(pause) if pause == SHIFT_SETTLE => "settle".into(),
+                    Err(pause) if pause == CHARACTER_GAP => "gap".into(),
+                    Err(pause) => panic!("unexpected pause {pause:?}"),
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert_eq!(keys('A', false), "42+ settle 30+ 30- settle 42- gap");
+        assert_eq!(keys('a', false), "30+ 30- gap");
+        assert_eq!(keys('!', false), "42+ settle 2+ 2- settle 42- gap");
+        assert_eq!(keys('A', true), "30+ 30- gap");
+        assert_eq!(keys('a', true), "42+ settle 30+ 30- settle 42- gap");
+        assert_eq!(keys('!', true), "42+ settle 2+ 2- settle 42- gap");
+        assert_eq!(keys('é', false), "sym é");
+        assert_eq!(keys('€', true), "sym €");
+    }
 
     #[test]
     fn pointer_maps_pixels_to_portal_coordinates_and_clamps_edges() {
