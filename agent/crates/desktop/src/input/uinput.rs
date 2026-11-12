@@ -25,6 +25,7 @@ use super::absolute::SharedPointerMap;
 use super::keymap::{self, KeyPosition};
 use super::typing::{play, Typing};
 use super::{Axis, Button, InputBackend, InputError, InputResult, WHEEL_NOTCH};
+use crate::clipboard::ScreenClipboard;
 use crate::ioctl;
 use std::fs::File;
 use std::io::{self, Write as _};
@@ -439,13 +440,19 @@ impl Opener {
     }
 
     /// An injector whose pointer goes through `map`, which the capturer
-    /// keeps up to date with the layout.
-    pub fn backend(&self, map: SharedPointerMap) -> InputResult<Box<dyn InputBackend>> {
+    /// keeps up to date with the layout, and whose copy and paste goes to
+    /// `clipboard` (uinput itself reaches no clipboard).
+    pub fn backend(
+        &self,
+        map: SharedPointerMap,
+        clipboard: Box<dyn ScreenClipboard>,
+    ) -> InputResult<Box<dyn InputBackend>> {
         Ok(Box::new(UinputBackend {
             sink: (self.open)()?,
             map,
             wheel: [0; 2],
             typing: self.typing.clone(),
+            clipboard,
         }))
     }
 }
@@ -516,6 +523,9 @@ pub struct UinputBackend {
     /// High-resolution units not yet a whole notch, per axis.
     wheel: [i32; 2],
     typing: Typing,
+    /// The session's clipboard (SPEC-DESKTOP 21.10); dropped with the
+    /// injector, which ends the agent's helper for it.
+    clipboard: Box<dyn ScreenClipboard>,
 }
 
 impl UinputBackend {
@@ -592,6 +602,14 @@ impl InputBackend for UinputBackend {
 
     fn flush(&mut self) -> InputResult<()> {
         Ok(())
+    }
+
+    fn set_clipboard(&mut self, text: &str) -> InputResult<()> {
+        self.clipboard.set(text)
+    }
+
+    fn clipboard(&mut self) -> InputResult<String> {
+        self.clipboard.get()
     }
 }
 

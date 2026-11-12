@@ -33,6 +33,13 @@ pub const CONSOLE_RETRY: Duration = Duration::from_secs(10);
 /// in its root `console-helper` process).
 pub trait ConsoleOpener: Send {
     fn open(&mut self) -> Result<SharedSource, String>;
+
+    /// The clipboard of logind session `session` (`none` when seat0 shows
+    /// none) for one control session's injector (SPEC-DESKTOP 21.10).
+    fn clipboard(&mut self, session: &str) -> Box<dyn crate::clipboard::ScreenClipboard> {
+        let _ = session;
+        Box::new(crate::clipboard::NoClipboard)
+    }
 }
 
 /// The KMS side of a watch: the opener, the running reader, and the last
@@ -445,10 +452,12 @@ impl ScreenWatch for LogindWatch {
                     Ok(owner) => Box::new(CompositorReader::new(*owner)),
                     Err(reason) => Box::new(NoLayout(reason.clone())),
                 };
+                let clipboard = console.opener.clipboard(session);
                 let opened = crate::kms_platform(
                     source.clone(),
                     crate::input::uinput::Opener::system(),
                     layout,
+                    clipboard,
                 );
                 if let Err(reason) = &opened {
                     console.failure = Some((session.clone(), reason.clone(), Instant::now()));

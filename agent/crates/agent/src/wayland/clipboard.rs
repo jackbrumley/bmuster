@@ -120,6 +120,14 @@ impl Replies {
         }
     }
 
+    /// Whether the helper has gone.
+    pub(crate) fn is_closed(&self) -> bool {
+        self.waiting
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_none()
+    }
+
     /// The helper has gone: waiting calls end now, later ones at once.
     pub(crate) fn close(&self) {
         self.waiting

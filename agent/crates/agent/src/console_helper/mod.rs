@@ -564,6 +564,14 @@ impl ConsoleOpener for Opener {
         let client = HelperClient::start(&program, &self.data_dir).map_err(|e| format!("{e:#}"))?;
         Ok(Arc::new(Mutex::new(Box::new(client))))
     }
+
+    /// Copy and paste through a helper in the person's own session
+    /// (SPEC-DESKTOP 21.10).
+    fn clipboard(&mut self, session: &str) -> Box<dyn bmuster_desktop::clipboard::ScreenClipboard> {
+        Box::new(crate::wayland::session_clipboard::KmsClipboard::system(
+            session,
+        ))
+    }
 }
 
 #[cfg(test)]

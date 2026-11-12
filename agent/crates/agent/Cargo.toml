@@ -52,6 +52,9 @@ ksni = { version = "=0.3.7", features = ["blocking"] }
 zbus = { version = "=5.19.0", default-features = false, features = ["tokio"] }
 # The tray's notification Disconnect waits on a D-Bus signal stream; already in the build through ashpd and ksni.
 futures-util = { version = "=0.3.34", default-features = false }
+# Copy and paste on KMS screens (SPEC-DESKTOP 21.10): Wayland data-control (ext, then wlr) in the
+# person's session. Licence MIT OR Apache-2.0; already in the build through arboard.
+wl-clipboard-rs = "=0.9.5"
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

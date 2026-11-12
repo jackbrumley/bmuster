@@ -431,6 +431,7 @@ mod tests {
             "bmuster-wayland-1-1.service",
             1000,
             Path::new("/opt/bmuster/versions/current/bmuster-agent"),
+            "wayland-helper",
             Path::new(SOCKET),
         ));
         assert!(!wayland.iter().any(forbidden), "{wayland:?}");
