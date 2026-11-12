@@ -1,11 +1,7 @@
 import '../../app.css';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { beforeEach, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { PERMISSIONS, type Grant } from '#lib/domain/access/access.ts';
 import type { SettingKey } from '#lib/domain/settings/settings-definitions.ts';
-import { FakeEventSource } from '#tests/helpers/fake-event-source.ts';
-import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import {
 	ADMIN,
 	LONG_DESCRIPTION,
@@ -17,15 +13,12 @@ import {
 	LONG_WORD,
 	DOWNLOADS,
 	GROUP_NAMES,
-	LINUX_MACHINE,
 	LOCAL_TLS,
-	longDataReply,
 	MACHINE_GROUP_ID,
 	MACHINE_GROUPS,
 	MACHINE,
 	MACHINES,
 	NOW,
-	pastRightEdge,
 	RULES,
 	LONG_RECIPIENT,
 	SHARE_LINK,
@@ -37,13 +30,6 @@ import ActivityPage from './activity/+page.svelte';
 import AddPage from './add/+page.svelte';
 import GroupsPage from './groups/+page.svelte';
 import MachinesPage from './+page.svelte';
-import OverviewTab from './machines/[id]/+page.svelte';
-import DesktopTab from './machines/[id]/desktop/+page.svelte';
-import FilesTab from './machines/[id]/files/+page.svelte';
-import ManageTab from './machines/[id]/manage/+page.svelte';
-import NotesTab from './machines/[id]/notes/+page.svelte';
-import StorageTab from './machines/[id]/storage/+page.svelte';
-import TerminalTab from './machines/[id]/terminal/+page.svelte';
 import MorePage from './more/+page.svelte';
 import DiagnosticsPage from './settings/diagnostics/+page.svelte';
 import EmailPage from './settings/email/+page.svelte';
@@ -52,13 +38,18 @@ import SettingsPage from './settings/+page.svelte';
 import SignInPage from './sign-in/+page.svelte';
 import UpdatesPage from './updates/+page.svelte';
 import UsersPage from './users/+page.svelte';
-import ConsoleFrame from './console-frame.svelte';
 import GuestPage from '../s/[token]/guest-page.svelte';
+import {
+	CONSOLE,
+	checkPhoneWidth,
+	IN_CONSOLE,
+	stubPhoneServer,
+	type PhonePage
+} from './phone-overflow-harness.ts';
 
 /**
- * SPEC-PHONE-LAYOUT U1: no console page scrolls sideways on a 360 px phone, with the longest names,
- * hostnames, folder names and descriptions real fleets have. Each page renders inside the real
- * console frame (and, for a machine tab, the machine layout).
+ * SPEC-PHONE-LAYOUT U1 for the console's own pages (the machine tabs are in
+ * phone-overflow-machine-tabs.svelte.test.ts); the setup is in phone-overflow-harness.ts.
  */
 
 vi.mock('$app/navigation', () => ({ refreshAll: () => Promise.resolve(), goto: vi.fn() }));
@@ -72,22 +63,8 @@ vi.mock('$app/state', () => ({
 	}
 }));
 
-const PHONE = { width: 360, height: 780 };
-
-const CONSOLE = { user: ADMIN, localNetworkMode: true, serverUpdate: null, signedIn: true };
-const GRANTS: Grant[] = PERMISSIONS.map((permission) => ({ permission, consent: 'unattended' }));
-const MACHINE_DATA = { ...CONSOLE, now: NOW, machine: MACHINE, grants: GRANTS };
-const IN_CONSOLE = {
-	wrapper: ConsoleFrame,
-	wrapperProps: { frame: { kind: 'console' as const, data: CONSOLE } }
-};
-const ON_MACHINE = {
-	wrapper: ConsoleFrame,
-	wrapperProps: { frame: { kind: 'machine' as const, data: MACHINE_DATA } }
-};
-
-/** Every page and tab, with the text that shows once it has its data. */
-const PAGES: { name: string; ready: string; open: () => Promise<unknown> }[] = [
+/** Every console page outside the machine tabs. */
+const PAGES: PhonePage[] = [
 	...(['cards', 'table'] as const).map((view) => ({
 		name: `Machines (${view})`,
 		ready: `${LONG_MACHINE_NAME}-1`,
@@ -110,16 +87,6 @@ const PAGES: { name: string; ready: string; open: () => Promise<unknown> }[] = [
 		}
 	})),
 	{
-		name: 'Machine overview',
-		ready: LONG_HOSTNAME,
-		open: () => render(OverviewTab, { params: { id: MACHINE.id }, data: MACHINE_DATA }, ON_MACHINE)
-	},
-	{
-		name: 'Machine overview, share links',
-		ready: LONG_RECIPIENT,
-		open: () => render(OverviewTab, { params: { id: MACHINE.id }, data: MACHINE_DATA }, ON_MACHINE)
-	},
-	{
 		name: 'Share link guest page',
 		ready: SHARE_LINK.machineName,
 		open: () =>
@@ -135,104 +102,6 @@ const PAGES: { name: string; ready: string; open: () => Promise<unknown> }[] = [
 				},
 				loadedAtMs: NOW
 			})
-	},
-	{
-		name: 'Terminal',
-		ready: LONG_HOSTNAME,
-		open: () => render(TerminalTab, { params: { id: MACHINE.id }, data: MACHINE_DATA }, ON_MACHINE)
-	},
-	{
-		name: 'Desktop',
-		ready: LONG_HOSTNAME,
-		open: () => render(DesktopTab, { params: { id: MACHINE.id }, data: MACHINE_DATA }, ON_MACHINE)
-	},
-	{
-		name: 'Files (Windows drives)',
-		ready: LONG_WORD,
-		open: () => render(FilesTab, { params: { id: MACHINE.id }, data: MACHINE_DATA }, ON_MACHINE)
-	},
-	{
-		name: 'Files (a Linux folder two levels down)',
-		ready: `${LONG_WORD}.xlsx`,
-		open: async () => {
-			const data = { ...MACHINE_DATA, machine: LINUX_MACHINE };
-			await render(
-				FilesTab,
-				{ params: { id: LINUX_MACHINE.id }, data },
-				{ wrapper: ConsoleFrame, wrapperProps: { frame: { kind: 'machine' as const, data } } }
-			);
-			for (const _level of [1, 2]) {
-				await page.getByText(LONG_WORD, { exact: true }).first().click();
-			}
-		}
-	},
-	{
-		name: 'Storage (drives)',
-		ready: `/media/${LONG_WORD}`,
-		open: openStorage
-	},
-	{
-		name: 'Storage (a folder two levels down)',
-		ready: `${LONG_WORD}-cache`,
-		open: async () => {
-			await openStorage();
-			await page.getByRole('button', { name: /^Used on / }).click();
-			await page.getByRole('button', { name: new RegExp(`^${LONG_WORD}-cache`) }).click();
-		}
-	},
-	{
-		name: 'Notes',
-		ready: LONG_WORD,
-		open: () =>
-			render(
-				NotesTab,
-				{
-					params: { id: MACHINE.id },
-					form: undefined,
-					data: {
-						...MACHINE_DATA,
-						notes: [
-							{
-								id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-								authorName: LONG_PERSON,
-								body: `Replaced the toner. ${LONG_WORD} ${LONG_HOSTNAME}`,
-								createdIso: '2026-11-11T00:00:00.000Z',
-								edited: { kind: 'yes', editedIso: '2026-11-12T00:00:00.000Z' },
-								canEdit: true,
-								canDelete: true
-							}
-						]
-					}
-				},
-				ON_MACHINE
-			)
-	},
-	{
-		name: 'Manage',
-		ready: LONG_GROUP,
-		open: () =>
-			render(
-				ManageTab,
-				{
-					params: { id: MACHINE.id },
-					form: undefined,
-					data: {
-						...MACHINE_DATA,
-						downloads: DOWNLOADS,
-						localTls: LOCAL_TLS,
-						localPage: {
-							kind: 'reported',
-							address: `https://${LONG_HOSTNAME}:47100/`,
-							fingerprint: 'AB:'.repeat(31) + 'AB',
-							reportedIso: '2026-11-12T00:00:00.000Z'
-						},
-						machineGroups: MACHINE_GROUPS,
-						verboseUntilIso: '2026-11-12T12:00:00.000Z',
-						keepAwakeOnAc: true
-					}
-				},
-				ON_MACHINE
-			)
 	},
 	{
 		name: 'Activity',
@@ -579,40 +448,10 @@ const PAGES: { name: string; ready: string; open: () => Promise<unknown> }[] = [
 	}
 ];
 
-function openStorage() {
-	return render(
-		StorageTab,
-		{
-			params: { id: MACHINE.id },
-			form: undefined,
-			data: { ...MACHINE_DATA, reported: { kind: 'none' } }
-		},
-		ON_MACHINE
-	);
-}
-
 function setting(key: SettingKey, value: string | boolean) {
 	return { key, value, isDefault: false, updated: { kind: 'never' as const } };
 }
 
-beforeEach(async () => {
-	await page.viewport(PHONE.width, PHONE.height);
-	localStorage.clear();
-	sessionStorage.clear();
-	vi.stubGlobal('EventSource', FakeEventSource);
-	vi.stubGlobal('WebSocket', FakeSocket);
-	vi.stubGlobal(
-		'fetch',
-		vi.fn((input: string) => Promise.resolve(longDataReply(new URL(input, location.origin))))
-	);
-});
+beforeEach(stubPhoneServer);
 
-describe('phone width (SPEC-PHONE-LAYOUT U1)', () => {
-	it.each(PAGES)('U1: $name does not scroll sideways at 360 px', async ({ ready, open }) => {
-		await open();
-		await expect.poll(() => document.body.textContent).toContain(ready);
-		expect(document.documentElement.scrollWidth, pastRightEdge(PHONE.width)).toBeLessThanOrEqual(
-			PHONE.width
-		);
-	});
-});
+checkPhoneWidth(PAGES);

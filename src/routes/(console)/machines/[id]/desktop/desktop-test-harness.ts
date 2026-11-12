@@ -41,6 +41,17 @@ export async function stubDesktopServer(): Promise<void> {
 	);
 }
 
+/** The type of every message the tab sent on this socket, oldest first. */
+export function sentTypes(socket: FakeSocket): string[] {
+	return socket
+		.messages()
+		.map((message) =>
+			typeof message === 'object' && message !== null && 'type' in message
+				? String(message.type)
+				: '?'
+		);
+}
+
 /** A tile batch of solid 64x64 tiles, as the agent writes it (SPEC-DESKTOP 4.2). */
 export function batch(
 	seq: number,
