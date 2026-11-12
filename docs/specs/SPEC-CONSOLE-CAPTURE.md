@@ -194,7 +194,7 @@ On the Fedora 44 GNOME laptop (Wayland, mutter) the LocalSend window (Flutter on
 - **Added while building:** a client's framebuffer can be removed between reading the planes and exporting it (the compositor flipped away from it), so a capture reads the planes again, up to three times, before it reports the error.
 - **Not handled:** YUV overlay formats (NV12, P010; video players can put them on overlay planes) on the CPU path are refused with their fourcc as before; through EGL they import if the driver supports them. Colour encoding, range, HDR metadata and the CRTC's background colour are ignored (black is assumed).
 
-## Version 3: capitals and Caps Lock (pending release)
+## Version 3: capitals and Caps Lock (v0.4.20)
 
 **Status:** `PENDING RELEASE` 2026-11-12 · Jack's bug report · security work only in that the uinput keyboard gains a Caps Lock LED and the agent reads `/sys/class/leds`; no check changes.
 

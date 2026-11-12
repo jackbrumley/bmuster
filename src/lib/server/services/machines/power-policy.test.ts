@@ -1,9 +1,11 @@
 import type { RequestEvent } from '@sveltejs/kit';
+import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { activityLabel, isAuditKind } from '#lib/domain/activity/activity.ts';
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
 import { inventorySchema, type ServerSocketMessage } from '#lib/schemas/agents/agent-protocol.ts';
 import { database as appDatabase } from '#lib/server/database/app-database.ts';
+import { machines } from '#lib/server/database/schema.ts';
 import { enrolFakeAgent, SAMPLE_INVENTORY, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import { PUT } from '../../../../routes/api/machines/[id]/power-policy/+server.ts';
@@ -12,6 +14,17 @@ import { agentConnected, agentDisconnected, type LivePeer } from '../agents/live
 import { listAudit } from '../audit/audit.ts';
 import { removeMachine } from './machine-views.ts';
 import { keepAwakeOnAc, powerPolicyOnConnect, setPowerPolicy } from './power-policy.ts';
+
+/** An enrolled machine with the policy off (new machines start with it on, S13). */
+function enrolWithPolicyOff(database: Parameters<typeof enrolFakeAgent>[0]) {
+	const enrolled = enrolFakeAgent(database, NOW);
+	database
+		.update(machines)
+		.set({ keepAwakeOnAc: false })
+		.where(eq(machines.id, enrolled.machineId))
+		.run();
+	return enrolled;
+}
 
 /** Audit entries of the new kind only (enrolment and removal write their own). */
 function policyAudit(database: Parameters<typeof listAudit>[0]) {
@@ -49,7 +62,7 @@ function event(machineId: string, user: ConsoleUser | null, body: unknown): Poli
 describe('Stay awake on mains power (SPEC-STAY-AWAKE P1)', () => {
 	it('P1: a change is saved, audited with the old and new value, and sent to the live agent', async () => {
 		const database = testDatabase();
-		const { machineId } = enrolFakeAgent(database, NOW);
+		const { machineId } = enrolWithPolicyOff(database);
 		const admin = await addTestUser(database, {
 			email: 'admin@example.com',
 			role: 'admin',
@@ -118,7 +131,7 @@ describe('Stay awake on mains power (SPEC-STAY-AWAKE P1)', () => {
 	});
 
 	it('P1: the endpoint is admin-only, takes only a boolean, is origin-checked and reaches the live agent', async () => {
-		const { machineId } = enrolFakeAgent(appDatabase, NOW);
+		const { machineId } = enrolWithPolicyOff(appDatabase);
 		const admin = await addTestUser(appDatabase, {
 			email: `power-${crypto.randomUUID()}@example.com`,
 			role: 'admin',

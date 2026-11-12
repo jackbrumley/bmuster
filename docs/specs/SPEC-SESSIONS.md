@@ -57,7 +57,7 @@ Built from the approved research plan (phases 1–4). Decisions: admin shell onl
 - **Consent** (`ask` rules) is not enforced for terminals yet; it arrives with desktop sessions.
 - **Socket routes** carry binary frames, take `[name]` path parameters and can pause reading. Files will reuse the ticket (a new `files` purpose), both sockets, the relay and the agent's pump.
 
-### T10 as built (pending release, 2026-11-12)
+### T10 as built (v0.4.20, 2026-11-12)
 
 - **Cause.** A resize the browser sent before the agent's session socket was open was dropped by the relay (it forwarded only to a connected agent), so a phone turned while the shell started kept the portrait width. On Windows, xterm.js also reflowed lines that ConPTY redraws itself, leaving stale line breaks.
 - **Relay.** `relay.ts` keeps `lastResize` per session and sends it to the agent first when it attaches, before any early input; later resizes go straight through.

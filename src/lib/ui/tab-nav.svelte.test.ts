@@ -14,31 +14,28 @@ import {
 import TabNav from './tab-nav.svelte';
 
 const params = { id: '11111111-1111-4111-8111-111111111111' };
-const TABS = [
-	{ href: resolve('/(console)/machines/[id]', params), label: 'Overview', icon: IconInfoCircle },
-	{
-		href: resolve('/(console)/machines/[id]/terminal', params),
-		label: 'Terminal',
-		icon: IconTerminal2
-	},
-	{
-		href: resolve('/(console)/machines/[id]/desktop', params),
-		label: 'Desktop',
-		icon: IconDeviceDesktop
-	},
-	{ href: resolve('/(console)/machines/[id]/files', params), label: 'Files', icon: IconFolder },
-	{
-		href: resolve('/(console)/machines/[id]/storage', params),
-		label: 'Storage',
-		icon: IconChartDonut
-	},
-	{ href: resolve('/(console)/machines/[id]/notes', params), label: 'Notes', icon: IconNotes },
-	{
-		href: resolve('/(console)/machines/[id]/manage', params),
-		label: 'Manage',
-		icon: IconSettings
-	}
+const ICONS = [
+	IconInfoCircle,
+	IconTerminal2,
+	IconDeviceDesktop,
+	IconFolder,
+	IconChartDonut,
+	IconNotes
 ];
+/** Seven long tabs: too wide for a phone, room to spare on a wide screen. */
+const TABS = [
+	resolve('/(console)/machines/[id]', params),
+	resolve('/(console)/machines/[id]/terminal', params),
+	resolve('/(console)/machines/[id]/desktop', params),
+	resolve('/(console)/machines/[id]/files', params),
+	resolve('/(console)/machines/[id]/storage', params),
+	resolve('/(console)/machines/[id]/notes', params),
+	resolve('/(console)/machines/[id]/manage', params)
+].map((href, index) => ({
+	href,
+	label: `Section ${index + 1}`,
+	icon: ICONS[index % ICONS.length] ?? IconSettings
+}));
 
 function track(): Element | null {
 	return document.querySelector('.scroll-track');
@@ -52,7 +49,7 @@ describe('TabNav', () => {
 			tabs: TABS,
 			current: TABS[0]?.href ?? ''
 		});
-		await expect.element(screen.getByRole('link', { name: 'Overview' })).toBeVisible();
+		await expect.element(screen.getByRole('link', { name: 'Section 1' })).toBeVisible();
 		await expect.poll(track).not.toBeNull();
 		expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
 	});
@@ -64,7 +61,7 @@ describe('TabNav', () => {
 			tabs: TABS,
 			current: TABS[0]?.href ?? ''
 		});
-		await expect.element(screen.getByRole('link', { name: 'Manage' })).toBeVisible();
+		await expect.element(screen.getByRole('link', { name: 'Section 7' })).toBeVisible();
 		expect(track()).toBeNull();
 	});
 });

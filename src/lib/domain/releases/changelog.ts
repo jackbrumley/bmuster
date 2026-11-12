@@ -1,6 +1,18 @@
 /** Release notes shared by the console and release packaging. */
 export const CHANGELOG = [
 	{
+		version: '0.4.20',
+		changes: [
+			'Windows: no more black console window at sign-in, and the tray icon appears within seconds, waits for the taskbar and always runs the current version',
+			'Windows: the text cursor (I-beam) shows over white areas such as Notepad',
+			'KDE Plasma: capital letters type as capitals, also at the lock screen, and Caps Lock is respected',
+			'Terminal: turning the phone re-wraps the lines to the new width, and Windows consoles no longer leave stale breaks',
+			'Phones: the machine header, Storage and the Table view stay inside the screen; In use sits under the name',
+			'Phones: tab rows show they scroll, and pages use more of the screen',
+			'New machines stay awake on mains power by default'
+		]
+	},
+	{
 		version: '0.4.19',
 		changes: [
 			'On Windows, the BMuster tray icon now appears for everyone already signed in, within about a minute, running as that person and never with administrator rights',

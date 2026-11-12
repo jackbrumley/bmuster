@@ -33,7 +33,7 @@ This changes the machine's behaviour, so it is admin-only, audited and visible o
 | P6  | Windows: execution state set and cleared on the dedicated thread.                                                       | Rust `power::windows::tests::execution_state` (Windows CI compile) |
 | P7  | Manage shows the switch and the report's power line; phone width has no overflow.                                       | `power-policy.svelte.test.ts`                                      |
 | P8  | The `stay-awake` self-check takes and releases the inhibitor.                                                           | Rust `checks::tests::stay_awake_check`                             |
-| S13 | A newly enrolled machine starts with Stay awake on mains power on (pending release; Jack, 2026-11-12).                  | `enrolment.test.ts` "S13: a newly enrolled machine stays awake…"   |
+| S13 | A newly enrolled machine starts with Stay awake on mains power on (v0.4.20; Jack, 2026-11-12).                          | `enrolment.test.ts` "S13: a newly enrolled machine stays awake…"   |
 
 ## Schema and routes
 
