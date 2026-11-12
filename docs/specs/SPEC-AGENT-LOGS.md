@@ -89,7 +89,7 @@ This is security work: it widens the agent channel, stores machine data centrall
 
 An admin-only `POST /api/machines/[id]/logs` asked the live agent for its 200-line buffer and, on Linux, a fixed 15-minute journal query. Nothing was stored. Its redaction rules and the fixed journal query carry over unchanged.
 
-## As built (pending release)
+## As built (v0.4.1)
 
 Every acceptance criterion has a passing test with the name the spec gives: the six Rust tests in `logging`, `log_spool`, `diagnostics` and `display_report`, and `agent-logs.test.ts`, `log-retention.test.ts`, `server-logs.test.ts`, `diagnostics-tokens.test.ts`, `guards.test.ts` (the `diagnostics guard` block), `diagnostics-api.test.ts`, `machine-logs.svelte.test.ts`, `display-card.svelte.test.ts` and `diagnostics-cli.test.ts`. Where the build differs from the text above, or adds to it:
 

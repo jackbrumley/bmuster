@@ -41,7 +41,7 @@ This changes the machine's behaviour, so it is admin-only, audited and visible o
 - `PUT /api/machines/[id]/power-policy` (admin, origin-checked, audited).
 - Live socket `power-policy`; inventory `power` (older agents: `unreported`).
 
-## As built (pending release)
+## As built (v0.4.5)
 
 Every acceptance criterion has a passing test with the name the table gives. P6's test runs on every platform (only the two Win32 calls are Windows code); nothing has run on Windows itself. Where the build differs from the text above, or adds to it:
 

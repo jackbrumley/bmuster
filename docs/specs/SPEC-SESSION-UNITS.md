@@ -1,6 +1,6 @@
 # SPEC-SESSION-UNITS: Sessions outside the agent's sandbox
 
-**Status:** `IMPLEMENTED` (version bump and changelog left for the release step) · decided by Jack 2026-11-07 · Security work (AGENTS.md: this tool controls other people's computers). The terminal's `TTYPath` and the `--pipe` streams in section 4 were replaced by Version 2 (units connect back, v0.4.4), at the end of this spec.
+**Status:** `IMPLEMENTED` (first tagged in v0.3.0; Version 2 in v0.4.4; Version 3 in v0.4.5) · decided by Jack 2026-11-07 · Security work (AGENTS.md: this tool controls other people's computers). The terminal's `TTYPath` and the `--pipe` streams in section 4 were replaced by Version 2 (units connect back, v0.4.4), at the end of this spec.
 
 ## 1. Problem
 
@@ -137,7 +137,7 @@ The SPEC-DIAGNOSTICS checks `systemd-run-pipe` and `terminal-pty` are replaced b
 - **Checks.** `systemd-run-pipe` and `terminal-pty` are gone. `unit-connect-back` runs `/bin/cat` under `stdio-host` in `bmuster-exec-check-<hex>.service`; `pty-host` runs `/bin/true` under `pty-host` in `bmuster-terminal-check-<hex>.service`. Both follow the session mode (`not-applicable` in-process), so a development agent in `systemd-user` mode runs them too.
 - **Not natively tested (CB7):** the system manager path as root inside the installed unit, SELinux on Fedora (whether `init_t` may execute the agent's binary as the unit's program and whether the unit may connect to the agent's socket in `/run/bmuster/connect`), the console helper's connect from inside its sandbox, and the Wayland helper as the signed-in user. Run `npm run diagnostics` against the laptop after installing 0.4.4: `unit-connect-back`, `pty-host` and `kms-capture` should pass and the `audit` check should show no new denials.
 
-## Version 3: everything systemd starts lives under /opt
+## Version 3: everything systemd starts lives under /opt (v0.4.5)
 
 **Status:** `IMPLEMENTED (v0.4.5)` · approved 2026-11-09 (follows from the 0.4.4 native test; Jack: "get what you can done overnight") · security work. O6 (native test on Fedora and Mint) is pending; see As built.
 
@@ -172,7 +172,7 @@ The pty and pipe denials are gone. The units now fail with `203/EXEC`: `avc: den
 | O5  | A check that failed with a permission denial is not repeated within the same version.                               | Rust `checks::tests::denied_checks_run_once_per_version`                 |
 | O6  | Native: Fedora (SELinux enforcing) and Mint: terminal, files, desktop and all checks pass, with no new AVC denials. | Manual, through `npm run diagnostics`                                    |
 
-### As built (pending release)
+### As built (v0.4.5)
 
 | #   | Status  | Test                                                                                                                                                                                                 |
 | :-- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

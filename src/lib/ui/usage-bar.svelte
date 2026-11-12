@@ -25,6 +25,8 @@
 <style>
 	.usage {
 		display: grid;
+		/* A long drive name wraps instead of widening the card (SPEC-PHONE-LAYOUT U1). */
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-1);
 	}
 
@@ -36,11 +38,14 @@
 	}
 
 	.label {
+		min-width: 0;
+		overflow-wrap: anywhere;
 		color: var(--text-soft);
 		font-weight: var(--weight-medium);
 	}
 
 	.detail {
+		flex-shrink: 0;
 		color: var(--muted);
 		font-variant-numeric: tabular-nums;
 	}

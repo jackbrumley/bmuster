@@ -1,7 +1,22 @@
 /** Release notes shared by the console and release packaging. */
+
+/**
+ * What to try on real machines before trusting a release: the checks the
+ * automated tests cannot make (a phone in the hand, a real desktop, SELinux
+ * enforcing). Shown on the Updates page and in the GitHub release notes.
+ */
+type ReleaseTesting = { kind: 'none' } | { kind: 'steps'; steps: readonly [string, ...string[]] };
+
+export type Release = {
+	version: string;
+	testing: ReleaseTesting;
+	changes: readonly [string, ...string[]];
+};
+
 export const CHANGELOG = [
 	{
 		version: '0.4.21',
+		testing: { kind: 'none' },
 		changes: [
 			'Phone desktop: the menu button sits on any edge and opens a larger panel (a bottom sheet in portrait, a side panel in landscape) with Keys, Picture, Screen and Session tabs',
 			'Phone desktop: pinch to zoom and pan the picture, long press for a right click, and an easier double-tap and drag',
@@ -10,6 +25,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.20',
+		testing: { kind: 'none' },
 		changes: [
 			'Windows: no more black console window at sign-in, and the tray icon appears within seconds, waits for the taskbar and always runs the current version',
 			'Windows: the text cursor (I-beam) shows over white areas such as Notepad',
@@ -22,6 +38,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.19',
+		testing: { kind: 'none' },
 		changes: [
 			'On Windows, the BMuster tray icon now appears for everyone already signed in, within about a minute, running as that person and never with administrator rights',
 			'Windows shows the BMuster radar as the tray icon (with a red dot while someone is connected) and as the program icon'
@@ -29,6 +46,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.18',
+		testing: { kind: 'none' },
 		changes: [
 			'Storage clean-up: a fixed list of known-safe items for each system (temp folders, update caches, crash dumps, Recycle Bins, package caches, old journal entries and more), each sized first, ticked, confirmed and recorded in Activity with the space freed',
 			'Low disk alerts: a drive at 90% or more shows on the Machines list (with a Low disk filter) and on the machine, and can send an email',
@@ -40,6 +58,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.17',
+		testing: { kind: 'none' },
 		changes: [
 			'A new Storage tab shows where disk space goes on each machine, from a slow, low-priority background scan that is ready before you need it, even on a full disk',
 			'Desktop picture: High keeps full colour detail, and a new Extra high setting is close to native for text',
@@ -51,6 +70,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.16',
+		testing: { kind: 'none' },
 		changes: [
 			'Fixed: the Windows remote desktop dropped a moment after the first picture, so the screen froze and could not be controlled',
 			'While the server updates, the Updates page says what is happening, counts down the usual minute and says the page reloads by itself',
@@ -60,6 +80,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.15',
+		testing: { kind: 'none' },
 		changes: [
 			'New icon: a round night radar with no tile, the same drawing at every size; the Linux tray draws it sharp at any panel size',
 			'One loading spinner everywhere: the icon come alive, with the beam turning and the contacts lighting up',
@@ -71,18 +92,21 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.14',
+		testing: { kind: 'none' },
 		changes: [
 			'Add a Test channel: a built-in Test machine group gets agent test builds (tags like v0.4.15-test.1) straight away, while every other machine stays on full releases. The Updates page shows the channel of each machine.'
 		]
 	},
 	{
 		version: '0.4.13',
+		testing: { kind: 'none' },
 		changes: [
 			'The Linux tray icon now starts in signed-in desktops on SELinux machines such as Fedora, where 0.4.12 could not start it.'
 		]
 	},
 	{
 		version: '0.4.12',
+		testing: { kind: 'none' },
 		changes: [
 			'A machine with two or more screens offers All screens: every monitor in one wide picture at its real position, so you can drag a window from one screen onto the next.',
 			'On GNOME, clicks now land exactly on stacked or scaled screen layouts, using the desktop’s own arrangement.',
@@ -91,6 +115,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.11',
+		testing: { kind: 'none' },
 		changes: [
 			'On a phone or tablet in full screen, a round floating button replaces the top bar: drag it to either edge and it stays there, and a tap opens the keys, the phone keyboard, touch or trackpad, screens, picture settings and Disconnect.',
 			'Full screen works on iPhone too: where the browser cannot make the page full screen, the desktop fills the window instead.'
@@ -98,12 +123,14 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.10',
+		testing: { kind: 'none' },
 		changes: [
 			'On Linux machines captured directly from the graphics card, windows the desktop draws on a separate hardware layer (as GNOME does for some apps, such as LocalSend) now show in place, instead of missing or stretched across the screen.'
 		]
 	},
 	{
 		version: '0.4.9',
+		testing: { kind: 'none' },
 		changes: [
 			'The console starts in light mode. Choosing System or Dark is remembered in that browser.',
 			'A new BMuster icon: a light radar with a sweeping beam, the same everywhere: the browser tab, phone home screens, the console logo, the agent’s local page and the Linux tray.'
@@ -111,6 +138,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.8',
+		testing: { kind: 'none' },
 		changes: [
 			'On Linux, the BMuster tray icon now appears for everyone already signed in at a desktop, not only after their next sign-in, and its startup entry always points at the current version.',
 			'A new self-check, “Tray icon in each signed-in desktop”, says for each signed-in person whether the startup entry, the tray helper and a tray to show it in are all there.'
@@ -118,6 +146,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.7',
+		testing: { kind: 'none' },
 		changes: [
 			'Connecting to a machine whose screen has gone dark wakes it, and the screen stays on (and does not lock) while you control it. A laptop with its lid closed says so.',
 			'A machine does not idle-sleep while any remote session is open on it; sleep someone asks for at the machine still works.',
@@ -127,6 +156,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.6',
+		testing: { kind: 'none' },
 		changes: [
 			'The remote desktop has a Keys menu at every screen size: Ctrl+Alt+Del, the Windows or Super key, Alt+Tab, Alt+F4, lock, show desktop, Print Screen and more, labelled for the machine’s system, plus any combination you build and Release all keys.',
 			'On Linux, Ctrl+Alt+Del asks first, because at a text console it restarts the machine.',
@@ -135,6 +165,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.5',
+		testing: { kind: 'none' },
 		changes: [
 			'On Linux, the agent’s program files move to /opt/bmuster and its data stays in /var/lib/bmuster, so systemd may start its session helpers on SELinux machines such as Fedora. Installed agents move themselves on their next start.',
 			'A self-check that is refused by the system’s security policy runs once per agent version, so the machine is not shown a security alert every six hours.',
@@ -144,6 +175,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.4',
+		testing: { kind: 'none' },
 		changes: [
 			'On Linux, each terminal, command, file and desktop session’s helper now connects back to the agent over its own private socket. systemd is no longer handed the agent’s terminal or pipes, which SELinux (as on Fedora) refuses and which stopped those sessions from starting.',
 			'The self-checks “Unit connects back to the agent” and “Terminal unit with its own pty” replace the two checks that tested the old way.'
@@ -151,6 +183,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.3',
+		testing: { kind: 'none' },
 		changes: [
 			'Agents check what they can do on their machine a minute after they start, every six hours and after a failed session, and Manage shows each check passing or failing with the reason. Admins can run them again with Run checks.',
 			'When the agent crashes or stops unexpectedly, the reason and its last messages are recorded and sent to the server after it restarts.',
@@ -161,6 +194,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.2',
+		testing: { kind: 'none' },
 		changes: [
 			'Show SELinux’s mode and the agent’s and systemd’s security contexts on the Display card.',
 			'When a session fails to start, also send the SELinux and other audit denials from the last 15 minutes.',
@@ -169,6 +203,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.4.1',
+		testing: { kind: 'none' },
 		changes: [
 			'Agents send their logs to the server all the time, keeping them while offline, so Manage shows a machine’s logs even after a crash or restart.',
 			'Turn on verbose logging for one machine for up to four hours from Manage.',
@@ -182,12 +217,14 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.3.3',
+		testing: { kind: 'none' },
 		changes: [
 			'Keep the Updates page open while the server restarts, and reconnect automatically when it returns or rolls back.'
 		]
 	},
 	{
 		version: '0.3.2',
+		testing: { kind: 'none' },
 		changes: [
 			'Retry temporary server update check failures and make failed checks retry automatically.',
 			'Show an inconclusive update status when GitHub cannot confirm the latest release.'
@@ -195,6 +232,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.3.1',
+		testing: { kind: 'none' },
 		changes: [
 			'Make Quick join the primary path on Add a machine, with manual installation kept below it.',
 			'Add recent agent logs and bounded Linux service diagnostics to each machine’s Manage page.',
@@ -204,6 +242,7 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.3.0',
+		testing: { kind: 'none' },
 		changes: [
 			'Add a user-session tray shortcut to local agent management.',
 			'Add approved screen sharing and remote input for signed-in Wayland desktops.',
@@ -212,16 +251,18 @@ export const CHANGELOG = [
 	},
 	{
 		version: '0.2.1',
+		testing: { kind: 'none' },
 		changes: [
 			'Keep support-code entry compact with grouped digits, and give the following steps more room.'
 		]
 	},
 	{
 		version: '0.2.0',
+		testing: { kind: 'none' },
 		changes: [
 			'Add phone support enrolment at /join with short-lived codes and scam warnings.',
 			'Show themed error pages with recovery actions and server error references.',
 			'Include the remote terminal, files, X11 desktop, access rules and signed agent updates built during initial development.'
 		]
 	}
-] as const;
+] as const satisfies readonly [Release, ...Release[]];

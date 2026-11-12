@@ -67,6 +67,12 @@ jobs:
             echo "kind=release" >> "$GITHUB_OUTPUT"
           fi
 
+      # The publish job writes the release notes from the changelog; a
+      # release with no changelog entry stops here, before anything is built.
+      - name: The changelog has notes for the tag
+        if: github.event_name == 'push' && steps.kind.outputs.kind == 'release'
+        run: node scripts/release-notes.ts "$GITHUB_REF_NAME" > /dev/null
+
   binaries:
     name: Agent and launcher (${{ matrix.target }})
     needs: check
@@ -369,10 +375,22 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
       - uses: actions/download-artifact@v8
         with:
           name: release
           path: release
+
+      # What changed and what to test on real machines, from the changelog
+      # entry for this version (scripts/release/notes.ts); GitHub appends its
+      # own list of commits and pull requests after it.
+      - name: Write the release notes
+        run: node scripts/release-notes.ts "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
 
       - name: Create the GitHub release
         env:
@@ -382,6 +400,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" release/* \
             --verify-tag \
             --title "BMuster $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
             --generate-notes
 
   # A test build (SPEC-TEST-CHANNEL): the signed agents alone, as a GitHub
