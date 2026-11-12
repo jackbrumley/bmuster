@@ -225,6 +225,51 @@ pub fn replaced(started: Option<FileId>, now: Option<FileId>) -> bool {
     matches!((started, now), (Some(started), Some(now)) if started != now)
 }
 
+/// The Start menu shortcut (SPEC-TRAY-SESSIONS, Windows version 3): an
+/// Internet Shortcut to the local page, which the browser opens with no
+/// program of ours and so no console window.
+pub const SHORTCUT_FILE: &str = "BMuster.url";
+/// The shortcut 0.4.21 and earlier wrote: the rescue copy with
+/// `tray --open`, a console program that flashed a console window.
+pub const OLD_SHORTCUT_FILE: &str = "BMuster.lnk";
+
+/// The shortcut's text: the local page's address, and the program's icon
+/// from the rescue copy (`icon`), whose path never changes.
+pub fn shortcut_text(url: &str, icon: &str) -> String {
+    format!("[InternetShortcut]\r\nURL={url}\r\nIconFile={icon}\r\nIconIndex=0\r\n")
+}
+
+/// Puts the shortcut `text` in the Start menu's `folder` and removes the old
+/// one. The file is written only when it is missing or differs, beside its
+/// name and renamed into place. True when anything changed.
+pub fn refresh_shortcut(folder: &std::path::Path, text: &str) -> std::io::Result<bool> {
+    let mut changed = remove_if_present(&folder.join(OLD_SHORTCUT_FILE))?;
+    let path = folder.join(SHORTCUT_FILE);
+    if std::fs::read(&path).ok().as_deref() != Some(text.as_bytes()) {
+        std::fs::create_dir_all(folder)?;
+        let staged = folder.join(format!("{SHORTCUT_FILE}.new"));
+        std::fs::write(&staged, text)?;
+        std::fs::rename(&staged, &path)?;
+        changed = true;
+    }
+    Ok(changed)
+}
+
+/// Removes the shortcut and the old one from the Start menu's `folder`.
+pub fn remove_shortcuts(folder: &std::path::Path) -> std::io::Result<()> {
+    remove_if_present(&folder.join(SHORTCUT_FILE))?;
+    remove_if_present(&folder.join(OLD_SHORTCUT_FILE))?;
+    Ok(())
+}
+
+fn remove_if_present(path: &std::path::Path) -> std::io::Result<bool> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,5 +466,65 @@ mod tests {
     fn the_old_sign_in_entry_is_known() {
         assert_eq!(RUN_KEY, r"Software\Microsoft\Windows\CurrentVersion\Run");
         assert_eq!(RUN_VALUE, "BMusterAgent");
+    }
+
+    /// SPEC-TRAY-SESSIONS TS20.
+    #[test]
+    fn the_start_menu_shortcut_opens_the_local_page() {
+        assert_eq!(SHORTCUT_FILE, "BMuster.url");
+        assert_eq!(OLD_SHORTCUT_FILE, "BMuster.lnk");
+        assert_eq!(
+            shortcut_text(
+                "https://localhost:47500/",
+                r"C:\Program Files\BMuster\bmuster-agent.exe"
+            ),
+            "[InternetShortcut]\r\n\
+             URL=https://localhost:47500/\r\n\
+             IconFile=C:\\Program Files\\BMuster\\bmuster-agent.exe\r\n\
+             IconIndex=0\r\n"
+        );
+    }
+
+    /// SPEC-TRAY-SESSIONS TS21.
+    #[test]
+    fn the_start_menu_shortcut_is_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("Programs");
+        let icon = r"C:\Program Files\BMuster\bmuster-agent.exe";
+        let first = shortcut_text("https://localhost:47500/", icon);
+
+        // An upgrade from 0.4.21: the old .lnk goes, the .url arrives.
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(OLD_SHORTCUT_FILE), b"old link").unwrap();
+        assert!(refresh_shortcut(&folder, &first).unwrap());
+        assert!(!folder.join(OLD_SHORTCUT_FILE).exists());
+        assert_eq!(
+            std::fs::read_to_string(folder.join(SHORTCUT_FILE)).unwrap(),
+            first
+        );
+        assert!(!folder.join("BMuster.url.new").exists());
+
+        // The same text again changes nothing.
+        assert!(!refresh_shortcut(&folder, &first).unwrap());
+
+        // Another port: rewritten.
+        let moved = shortcut_text("https://localhost:47591/", icon);
+        assert!(refresh_shortcut(&folder, &moved).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(folder.join(SHORTCUT_FILE)).unwrap(),
+            moved
+        );
+
+        // Uninstall removes both, and is fine when they are gone.
+        std::fs::write(folder.join(OLD_SHORTCUT_FILE), b"old link").unwrap();
+        remove_shortcuts(&folder).unwrap();
+        assert!(!folder.join(SHORTCUT_FILE).exists());
+        assert!(!folder.join(OLD_SHORTCUT_FILE).exists());
+        remove_shortcuts(&folder).unwrap();
+
+        // A fresh machine: the folder is made.
+        let fresh = dir.path().join("Fresh");
+        assert!(refresh_shortcut(&fresh, &first).unwrap());
+        assert!(fresh.join(SHORTCUT_FILE).exists());
     }
 }

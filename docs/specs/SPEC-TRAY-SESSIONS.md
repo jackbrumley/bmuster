@@ -183,3 +183,41 @@ TS12 changes: the command line is the quoted tray copy and `tray`.
 - `bmuster_desktop::winsession::console::session_processes` lists a session's processes with their names; `processes_in_session` uses it.
 - **Only linted, not run.** Built on Linux; the Windows parts pass `cargo clippy --target x86_64-pc-windows-gnu -- -D warnings` but have not run on Windows.
 - **Release test on Windows 10:** (a) update from 0.4.19 while signed in: within a few seconds the old tray is closed (log "Closed an older tray in session 1."), a new icon appears, `Run` no longer has `BMusterAgent`, and `C:\Program Files\BMuster` holds `bmuster-tray-<version>.exe`; (b) reboot and sign in: no console window, the icon appears within about 10 s; (c) Task Manager shows `bmuster-tray-<version>.exe` as the person, not elevated; (d) restart Explorer: the icon comes back; (e) uninstall with someone signed in removes the folder.
+
+## Windows, version 3: a Start menu shortcut without a console window
+
+**Status:** `BUILT, NOT YET APPROVED` · asked for 2026-11-12. Replaces the Start menu shortcut of "Windows" above.
+
+### Problem
+
+The Start menu shortcut `BMuster.lnk` (in `C:\ProgramData\Microsoft\Windows\Start Menu\Programs`) points at the rescue copy `C:\Program Files\BMuster\bmuster-agent.exe` with `tray --open`. That program is a console program, so Explorer gives it a console window, which flashes up before the browser opens. Since 0.4.20 the tray itself never runs that way (the starter uses `CREATE_NO_WINDOW`), but a shortcut cannot ask for that, and there is no GUI program to point at. Writing the shortcut also needed PowerShell and `WScript.Shell`.
+
+### Behaviour
+
+1. **An Internet Shortcut to the local page.** `tray --open` does one thing: open the local page's address (`https://localhost:<port>/`) in the browser. The shortcut now does the same directly: `BMuster.url`, an Internet Shortcut whose `URL` is that address and whose icon is the rescue copy's (`IconFile=C:\Program Files\BMuster\bmuster-agent.exe`, `IconIndex=0`; that path never changes between versions). The browser opens it; no program of ours runs, so no console window. The agent writes the file itself (no PowerShell).
+2. **Kept current.** On install the shortcut gets the default port (a fresh install has no local page setting). On every start of the installed, launched agent, as the tray status starts, the worker compares the file with what it would write for its actual port: a missing or different file is written beside its name and renamed into place; an identical one is left alone. So an update or a changed local page port fixes it.
+3. **The old shortcut goes.** Install and every start remove `BMuster.lnk` when it is there, so an update from 0.4.21 or earlier replaces it.
+4. **Uninstall** removes `BMuster.url` and `BMuster.lnk`.
+5. **Unchanged:** `bmuster-agent tray --open` still works by hand; the tray's own Open item.
+
+Trade-off: `tray --open` refused to open a stale or missing status file; the shortcut opens the address regardless, so with the agent stopped the browser shows that nothing answers. That says the same thing more plainly.
+
+### Acceptance criteria
+
+| ID   | Behaviour                                                                                                                                                                   | Named test                                                                         |
+| :--- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------- |
+| TS20 | The shortcut is `BMuster.url`: `[InternetShortcut]` with the local page's address, the rescue copy's icon and index 0, in CRLF lines; the old one is `BMuster.lnk`.         | Rust `tray::windows_sessions::tests::the_start_menu_shortcut_opens_the_local_page` |
+| TS21 | Refreshing removes `BMuster.lnk`, writes `BMuster.url` when missing or different (never leaving the staged file) and leaves an identical one alone; uninstall removes both. | Rust `tray::windows_sessions::tests::the_start_menu_shortcut_is_replaced`          |
+
+### Security notes
+
+- The shortcut's address is built from the agent's own port, always `localhost`; nothing from the server or a session changes it. The file is written by SYSTEM into the all-users Start menu, which only administrators may write.
+- One fewer program path: nothing runs the rescue copy from the Start menu any more.
+
+### As built
+
+- `agent/crates/agent/src/tray/windows_sessions.rs`: `shortcut_text`, `refresh_shortcut`, `remove_shortcuts` (TS20, TS21; plain file operations, so they run on Linux).
+- `agent/crates/agent/src/tray/windows.rs`: `refresh_start_menu_shortcut` used by install (default port) and by `tray::publish` at every worker start (actual port); uninstall removes both files. The PowerShell `WScript.Shell` call is gone.
+- `agent/crates/agent/src/tray/status.rs`: `management_url`, shared by the tray status and the shortcut.
+- **Only linted, not run on Windows.**
+- **Release test on Windows 10:** (a) update from 0.4.21: the Start menu's "BMuster" entry opens the local page in the browser with no console window, and `BMuster.lnk` is gone; (b) the entry shows the BMuster mark; (c) uninstall removes it.
