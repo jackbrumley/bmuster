@@ -315,6 +315,10 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 			.not.toBeInTheDocument();
 		await expect.element(screen.getByText('Reconnecting automatically')).not.toBeInTheDocument();
 		await expect.element(screen.getByRole('heading', { name: 'Roll-out' })).not.toBeInTheDocument();
+		// SU14: the wait owns the screen; the page header goes, and the wait covers the console.
+		await expect.element(screen.getByRole('heading', { name: 'Updates' })).not.toBeInTheDocument();
+		const cover = screen.getByRole('status').element().closest('.screen');
+		expect(cover === null ? '' : getComputedStyle(cover).position).toBe('fixed');
 		await vi.waitFor(() => {
 			expect(fetch.mock.calls.some(([url]) => url === '/api/server-updates')).toBe(true);
 		});

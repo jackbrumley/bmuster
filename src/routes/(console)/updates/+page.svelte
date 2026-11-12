@@ -14,7 +14,7 @@
 	import { rolloutReplySchema } from '#lib/schemas/machines/agent-updates.ts';
 	import { serverUpdateViewSchema } from '#lib/schemas/releases/server-updates.ts';
 	import Button from '#lib/ui/button.svelte';
-	import LoadingVeil from '#lib/ui/loading-veil.svelte';
+	import FullScreenWait from '#lib/ui/full-screen-wait.svelte';
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
 	import Notice from '#lib/ui/notice.svelte';
@@ -141,21 +141,20 @@
 	}
 </script>
 
-<PageHeader
-	title="Updates"
-	summary="Keep every agent on the newest signed version: in stages, automatically, with a pause for anything that goes wrong."
-	actions={undefined}
-/>
-
 {#if restart.kind === 'restarting'}
-	<!-- What is happening, what to do and about how long, while the server updates (SU14). -->
-	<LoadingVeil
-		active={true}
+	<!-- What is happening, what to do and about how long, while the server updates (SU14):
+	     the wait owns the screen, since nothing else can be used until BMuster is back. -->
+	<FullScreenWait
 		title={`BMuster is updating to ${restart.version}. Please wait.`}
 		detail={`${updateWaitLine(nowMs - restart.startedMs)}. This page reloads by itself when BMuster is back. ${restart.detail}.`}
-		children={undefined}
 	/>
 {:else}
+	<PageHeader
+		title="Updates"
+		summary="Keep every agent on the newest signed version: in stages, automatically, with a pause for anything that goes wrong."
+		actions={undefined}
+	/>
+
 	<ServerUpdatePanel view={data.server} onRestarting={onServerRestarting} />
 
 	<Panel heading="Release notes" actions={undefined} tone="normal" padding="normal">
