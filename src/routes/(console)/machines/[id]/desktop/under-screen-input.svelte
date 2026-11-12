@@ -14,17 +14,20 @@
 		osFamily,
 		send,
 		touchMode,
-		ontouchmode
+		ontouchmode,
+		onpaste
 	}: {
 		osFamily: OsFamily;
 		send: (message: InputMessage) => void;
 		touchMode: TouchMode;
 		ontouchmode: (mode: TouchMode) => void;
+		/** The phone keyboard's paste, for the machine's clipboard (SPEC-DESKTOP 21.11). */
+		onpaste: (text: string) => void;
 	} = $props();
 </script>
 
 <div class="phone-keys">
-	<KeyBar {osFamily} {send} onkeyboard={undefined} />
+	<KeyBar {osFamily} {send} onkeyboard={undefined} {onpaste} />
 </div>
 <div class="touch-input">
 	<TouchInputChoice value={touchMode} onchange={ontouchmode} />

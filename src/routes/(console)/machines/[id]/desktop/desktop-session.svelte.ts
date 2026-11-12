@@ -284,6 +284,9 @@ export class DesktopSession {
 		this.#send({ type: 'hello', codecs: ['jpeg'], viewport });
 		this.#sendSettings();
 		this.#send({ type: 'keyframe' });
+		if (this.mode === 'control') {
+			this.clipboard.started();
+		}
 	}
 
 	#sendSettings(): void {
@@ -363,9 +366,18 @@ export class DesktopSession {
 			case 'clipboard-sent':
 				this.clipboard.sent();
 				return;
+			case 'clipboard-changed':
+				void this.clipboard.changed(message.text);
+				return;
+			case 'clipboard-synced':
+				return;
 			case 'error':
 				if (message.code === 'clipboard-failed') {
 					this.clipboard.failed(message.message);
+					return;
+				}
+				// A device sync that did not land stays quiet (SPEC-DESKTOP 21.11).
+				if (message.code === 'clipboard-sync-failed') {
 					return;
 				}
 				this.#clearApprovalTimer();
