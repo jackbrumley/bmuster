@@ -28,6 +28,7 @@ export { notificationEvents, notificationRules } from './schema/notifications.ts
 export { passwordLinks } from './schema/password-links.ts';
 export { serverKeys } from './schema/server-keys.ts';
 export { consoleSessions, signInFailures } from './schema/sessions.ts';
+export { shareLinkFailures, shareLinks } from './schema/share-links.ts';
 export { settings } from './schema/settings.ts';
 export { supportCodeFailures, supportCodes } from './schema/support-codes.ts';
 export { userIdentities, users } from './schema/users.ts';

@@ -18,7 +18,7 @@ export function serverErrorHandler(
 	newReference: () => string
 ): HandleServerError {
 	return (caught) => {
-		const where = `${caught.event.request.method} ${caught.event.url.pathname}`;
+		const where = `${caught.event.request.method} ${loggedPath(caught.event.url.pathname)}`;
 		switch (caught.kind) {
 			case 'app':
 			case 'validation':
@@ -38,6 +38,14 @@ export function serverErrorHandler(
 			}
 		}
 	};
+}
+
+/**
+ * The path as the log may keep it: a share link's token is a key to a machine, so
+ * `/s/<token>/…` is written `/s/…/…` (SPEC-SHARE-LINKS D11).
+ */
+export function loggedPath(pathname: string): string {
+	return pathname.replace(/^(.*?\/s\/)[^/]+/, '$1…');
 }
 
 function describe(error: unknown): string {

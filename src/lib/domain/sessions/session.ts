@@ -43,7 +43,9 @@ export const SESSION_END_REASONS = [
 	'timed-out',
 	'disconnected-at-machine',
 	'permission-removed',
-	'too-many-sessions'
+	'too-many-sessions',
+	// SPEC-SHARE-LINKS: the link was ended, expired or its creator lost access.
+	'share-link-ended'
 ] as const;
 
 /** Why a session ended, as the audit log and the console say it. */
@@ -81,6 +83,8 @@ export function endReasonLabel(reason: SessionEndReason): string {
 			return 'The permission was removed';
 		case 'too-many-sessions':
 			return 'The machine already had 4 desktop sessions';
+		case 'share-link-ended':
+			return 'The share link ended';
 	}
 }
 

@@ -77,3 +77,16 @@ describe('server error hook (SPEC-ERROR-PAGES E5)', () => {
 		}
 	});
 });
+
+describe('share link tokens stay out of the log (SPEC-SHARE-LINKS)', () => {
+	it('SL19: redacts the token from /s/<token> paths', () => {
+		const { lines, run } = handler();
+		expect(
+			run(
+				{ kind: 'unknown', error: 'boom' },
+				'/s/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ/session'
+			)
+		).toMatchObject({ reference: 'ab12cd34' });
+		expect(lines).toEqual(['Error ab12cd34: GET /s/…/session: boom']);
+	});
+});

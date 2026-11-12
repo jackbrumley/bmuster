@@ -33,7 +33,16 @@ type TerminalRequest = Extract<OpenSessionRequest, { kind: 'terminal' }>;
 type DesktopRequest = Extract<OpenSessionRequest, { kind: 'desktop' }>;
 
 /** What the ticket carries besides the session, machine and person. */
-type SessionTerms = { permissions: string[]; purpose: TicketPurpose };
+export type SessionTerms = { permissions: string[]; purpose: TicketPurpose };
+
+/**
+ * Whether BMuster can ask the person at the screen yet (SPEC-DESKTOP 8, phase 5). Until it
+ * can, every session that must ask (an `ask` rule, any share link) is refused, never
+ * connected without asking. The one place that changes when consent prompts arrive.
+ */
+export function canAskAtScreen(): boolean {
+	return false;
+}
 
 /** The checks every session kind starts with: the machine is visible, online, and the person has room. */
 function checkMachine(
@@ -62,8 +71,11 @@ function checkMachine(
 	return { kind: 'ok', grants, machine };
 }
 
-/** Signs the ticket, starts the relay's session, audits it and asks the agent. */
-function startSession(
+/**
+ * Signs the ticket, starts the relay's session, audits it and asks the agent. Share links'
+ * guest sessions start here too (SPEC-SHARE-LINKS), with the link's own terms.
+ */
+export function startSession(
 	database: AppDatabase,
 	relay: Relay,
 	secretsKey: Buffer,
@@ -135,6 +147,7 @@ export function openTerminalSession(
 		machineId,
 		userId: user.id,
 		userName: user.name,
+		viewer: { kind: 'user' },
 		kind: 'terminal',
 		shell: request.shell,
 		ip,
@@ -189,7 +202,7 @@ export function openDesktopSession(
 					: "You don't have permission to watch this machine's screen."
 		};
 	}
-	if (grant.consent === 'ask') {
+	if (grant.consent === 'ask' && !canAskAtScreen()) {
 		return {
 			kind: 'refused',
 			status: 409,
@@ -202,6 +215,7 @@ export function openDesktopSession(
 		machineId,
 		userId: user.id,
 		userName: user.name,
+		viewer: { kind: 'user' },
 		kind: 'desktop',
 		mode: request.mode,
 		ip,
