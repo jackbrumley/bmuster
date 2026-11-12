@@ -15,6 +15,7 @@ use std::io::{BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Command as Process, Stdio};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 /// How long the user manager may take to list its environment.
@@ -50,9 +51,20 @@ pub fn run(socket: &Path) -> Result<()> {
     let target = xwayland::target(&environment, &xwayland::xauthority_files(runtime));
     let mut backends = Backends::new(vec![
         Box::new(DataControl) as Box<dyn Backend>,
-        Box::new(XWayland::new(target)),
+        Box::new(XWayland::new(target.clone())),
     ]);
-    serve(BufReader::new(stream.try_clone()?), stream, &mut backends)
+    let input = BufReader::new(stream.try_clone()?);
+    let output = Arc::new(Mutex::new(stream));
+    let telling = Arc::clone(&output);
+    std::thread::Builder::new()
+        .name("clipboard watch".into())
+        .spawn(move || {
+            super::watch::watch(target, || {
+                let mut output = telling.lock().unwrap_or_else(PoisonError::into_inner);
+                wire::json(&mut *output, &Event::ClipboardChanged).is_ok()
+            })
+        })?;
+    serve(input, &output, &mut backends)
 }
 
 /// The person's systemd user manager's environment, where desktops put
@@ -93,7 +105,7 @@ fn session_environment() -> Result<HashMap<String, String>> {
 /// a log.
 pub(crate) fn serve(
     mut input: impl Read,
-    mut output: impl Write,
+    output: &Mutex<impl Write>,
     backends: &mut Backends,
 ) -> Result<()> {
     loop {
@@ -117,14 +129,15 @@ pub(crate) fn serve(
             Command::Stop => return Ok(()),
             _ => bail!("The clipboard helper takes only clipboard commands"),
         };
+        let mut output = output.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(backend) = backends.changed() {
             wire::json(
-                &mut output,
+                &mut *output,
                 &Event::ClipboardBackend {
                     backend: backend.to_string(),
                 },
             )?;
         }
-        wire::json(&mut output, &answer)?;
+        wire::json(&mut *output, &answer)?;
     }
 }

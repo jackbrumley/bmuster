@@ -235,6 +235,10 @@ async fn control_loop(
                 }
                 (Some(clipboard::Signal::OwnerChanged { session_is_owner, mime_types }), Some(live)) => {
                     live.owner_changed(session_is_owner, mime_types);
+                    // Clipboard sharing (SPEC-DESKTOP 21.11): another program copied.
+                    if session_is_owner != Some(true) {
+                        event(output, &Event::ClipboardChanged)?;
+                    }
                 }
                 (Some(_), None) => {}
             },

@@ -929,3 +929,28 @@ fn x11_clipboard_round_trips_text_between_clients() {
     );
     drop(owner);
 }
+
+/// SPEC-DESKTOP C31: the X11 clipboard notices another client taking the
+/// selection (XFixes), says so once, and the first call only starts
+/// watching.
+#[test]
+fn c31_x11_clipboard_notices_a_new_owner() {
+    use bmuster_desktop::clipboard::x11::X11Clipboard;
+    let Some(x) = NestedX::start() else { return };
+    let mut session = X11Clipboard::new(x.target.clone());
+    assert!(
+        !session.changed().unwrap(),
+        "the first call starts watching"
+    );
+    let mut other = X11Clipboard::new(x.target.clone());
+    other.set("copied by another program").unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut seen = false;
+    while !seen && std::time::Instant::now() < deadline {
+        seen = session.changed().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(seen, "the new owner was noticed");
+    assert!(!session.changed().unwrap(), "once");
+    assert_eq!(session.get().unwrap(), "copied by another program");
+}

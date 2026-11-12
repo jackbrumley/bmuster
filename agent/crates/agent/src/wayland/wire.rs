@@ -85,6 +85,9 @@ pub enum Event {
     ClipboardBackend {
         backend: String,
     },
+    /// Another program took the desktop's clipboard (clipboard sharing,
+    /// SPEC-DESKTOP 21.11): the agent reads it on its next look.
+    ClipboardChanged,
 }
 
 pub enum Packet {

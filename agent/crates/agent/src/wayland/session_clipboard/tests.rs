@@ -223,7 +223,7 @@ fn helper_on(stream: UnixStream, answer: Result<(), Failure>) -> std::thread::Jo
         let (route, _) = fake("fake route", answer);
         let mut backends = Backends::new(vec![route]);
         let input = BufReader::new(stream.try_clone().unwrap());
-        helper::serve(input, stream, &mut backends).unwrap();
+        helper::serve(input, &Mutex::new(stream), &mut backends).unwrap();
     })
 }
 
@@ -398,4 +398,57 @@ fn c27_data_control_round_trips_through_the_compositor() {
         std::thread::sleep(Duration::from_millis(100));
         assert_eq!(route.get().unwrap(), text);
     }
+}
+
+/// SPEC-DESKTOP C32: on a KMS screen, clipboard sharing starts the
+/// person's helper, and each change its watch tells of is reported once;
+/// while the session is locked no change is reported and none is kept for
+/// later.
+#[test]
+fn c32_kms_sharing_reports_the_helpers_changes_once_and_none_while_locked() {
+    let properties = Arc::new(Mutex::new(unlocked(1000)));
+    let users = Arc::new(Mutex::new(Vec::new()));
+    let (seen, helpers) = (Arc::clone(&properties), Arc::clone(&users));
+    let mut clipboard = KmsClipboard::with(
+        "2",
+        Box::new(move |_| Ok(seen.lock().unwrap().clone())),
+        Box::new(move |uid| {
+            let (agent, user) = UnixStream::pair().unwrap();
+            helpers.lock().unwrap().push(user);
+            UserHelper::over(uid, agent, Duration::from_secs(5), Box::new(()))
+        }),
+    );
+    assert!(!clipboard.changed().unwrap(), "starting is not a change");
+    assert_eq!(users.lock().unwrap().len(), 1, "sharing started the helper");
+    let tell = |users: &Arc<Mutex<Vec<UnixStream>>>| {
+        let mut users = users.lock().unwrap();
+        wire::json(&mut users[0], &Event::ClipboardChanged).unwrap();
+    };
+    let wait_for_change = |clipboard: &mut KmsClipboard| {
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(2) {
+            if clipboard.changed().unwrap() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        false
+    };
+    tell(&users);
+    assert!(wait_for_change(&mut clipboard));
+    assert!(!clipboard.changed().unwrap(), "once");
+
+    properties
+        .lock()
+        .unwrap()
+        .insert("LockedHint".into(), "yes".into());
+    clipboard.routed = None;
+    tell(&users);
+    assert!(!wait_for_change(&mut clipboard), "nothing while locked");
+    *properties.lock().unwrap() = unlocked(1000);
+    clipboard.routed = None;
+    assert!(
+        !clipboard.changed().unwrap(),
+        "a change seen while locked is not kept"
+    );
 }

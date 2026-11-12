@@ -15,6 +15,8 @@
 pub mod windows;
 #[cfg(target_os = "linux")]
 pub mod x11;
+#[cfg(target_os = "linux")]
+pub mod x11_watch;
 
 mod route;
 pub use route::{route, Route, LOCKED};
@@ -47,6 +49,11 @@ pub trait ScreenClipboard: Send {
     fn set(&mut self, text: &str) -> InputResult<()>;
     /// The clipboard's text; empty when it holds none.
     fn get(&mut self) -> InputResult<String>;
+    /// Whether the clipboard changed since the last call (clipboard
+    /// sharing, SPEC-DESKTOP 21.11). Cheap: called every half second.
+    fn changed(&mut self) -> InputResult<bool> {
+        Ok(false)
+    }
 }
 
 /// A screen with no clipboard BMuster can reach.

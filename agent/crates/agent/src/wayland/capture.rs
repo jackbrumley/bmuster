@@ -38,6 +38,8 @@ pub struct Bridge {
     commands: SyncSender<Command>,
     /// Clipboard calls waiting for the helper (SPEC-DESKTOP 21.9).
     clipboard: Arc<Replies>,
+    /// Another program took the clipboard since the last look (21.11).
+    clipboard_changed: Arc<std::sync::atomic::AtomicBool>,
     child: Mutex<Child>,
     unit: String,
     _reservation: Reservation,
@@ -204,6 +206,8 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
         let reading_state = Arc::clone(&state);
         let clipboard = Arc::new(Replies::default());
         let replies = Arc::clone(&clipboard);
+        let clipboard_changed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let changed = Arc::clone(&clipboard_changed);
         std::thread::Builder::new()
             .name("wayland frames".into())
             .spawn(move || {
@@ -242,6 +246,9 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
                                     Event::ClipboardBackend { .. } => {
                                         bail!("The portal helper sent a clipboard helper event")
                                     }
+                                    Event::ClipboardChanged => {
+                                        changed.store(true, std::sync::atomic::Ordering::Relaxed)
+                                    }
                                     Event::ClipboardSet { id } => replies.deliver(id, Reply::Set),
                                     Event::ClipboardText { id, text } => {
                                         replies.deliver(id, Reply::Text(text))
@@ -274,6 +281,7 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
             state,
             commands: send,
             clipboard,
+            clipboard_changed,
             child: Mutex::new(child.0.take().context("Helper process absent")?),
             stream: stream.try_clone()?,
             unit: unit.clone(),
@@ -513,6 +521,15 @@ impl InputBackend for Input {
             Reply::Failed(message) => Err(InputError(message)),
             Reply::Set => Err(unexpected_reply()),
         }
+    }
+
+    /// Whether another program took the clipboard since the last look,
+    /// as the portal told the helper (SPEC-DESKTOP 21.11).
+    fn clipboard_changed(&mut self) -> InputResult<bool> {
+        Ok(self
+            .bridge
+            .clipboard_changed
+            .swap(false, std::sync::atomic::Ordering::Relaxed))
     }
 }
 

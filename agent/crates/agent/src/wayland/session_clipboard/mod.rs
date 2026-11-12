@@ -27,6 +27,7 @@
 mod data_control;
 pub mod helper;
 mod routes;
+mod watch;
 mod xwayland;
 
 use super::clipboard::{Replies, Reply, AGENT_WAIT};
@@ -40,9 +41,13 @@ use std::collections::HashMap;
 use std::io::BufReader;
 use std::os::unix::net::UnixStream;
 use std::process::{Child, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// How often clipboard sharing reads logind to start the helper.
+const ROUTE_EVERY: Duration = Duration::from_secs(2);
 
 /// Reads the logind properties of a session.
 type Look = Box<dyn FnMut(&str) -> Result<HashMap<String, String>, String> + Send>;
@@ -58,6 +63,9 @@ pub(crate) struct KmsClipboard {
     look: Look,
     start: Start,
     helper: Option<UserHelper>,
+    /// When clipboard sharing last read logind, and whether a helper may
+    /// run then.
+    routed: Option<(Instant, bool)>,
 }
 
 impl KmsClipboard {
@@ -77,6 +85,7 @@ impl KmsClipboard {
             look,
             start,
             helper: None,
+            routed: None,
         }
     }
 
@@ -133,6 +142,28 @@ impl ScreenClipboard for KmsClipboard {
         }
     }
 
+    /// Clipboard sharing (SPEC-DESKTOP 21.11): starts the helper, whose
+    /// watch tells of each change. logind is read at most every two
+    /// seconds here; every read and write still checks it first.
+    fn changed(&mut self) -> InputResult<bool> {
+        let fresh = self
+            .routed
+            .is_some_and(|(at, _)| at.elapsed() < ROUTE_EVERY);
+        if !fresh {
+            let allowed = self.helper().is_ok();
+            self.routed = Some((Instant::now(), allowed));
+        }
+        match (&self.helper, self.routed) {
+            (Some(helper), Some((_, true))) => Ok(helper.changed.swap(false, Ordering::Relaxed)),
+            (Some(helper), _) => {
+                // Locked or another screen: forget changes seen meanwhile.
+                helper.changed.store(false, Ordering::Relaxed);
+                Ok(false)
+            }
+            (None, _) => Ok(false),
+        }
+    }
+
     fn get(&mut self) -> InputResult<String> {
         let helper = self.helper()?;
         match helper.ask(|id| Command::ClipboardGet { id })? {
@@ -158,6 +189,8 @@ pub(crate) struct UserHelper {
     replies: Arc<Replies>,
     /// The route the helper last said it served through.
     backend: Arc<Mutex<String>>,
+    /// Another program took the clipboard since the last look (21.11).
+    changed: Arc<AtomicBool>,
     stream: UnixStream,
     wait: Duration,
     /// The unit and `systemd-run`, stopped after the socket closes.
@@ -256,10 +289,12 @@ impl UserHelper {
         let backend = Arc::new(Mutex::new(String::new()));
         let mut output = BufReader::new(stream.try_clone()?);
         let (reading, named) = (Arc::clone(&replies), Arc::clone(&backend));
+        let changed = Arc::new(AtomicBool::new(false));
+        let noticed = Arc::clone(&changed);
         std::thread::Builder::new()
             .name("clipboard answers".into())
             .spawn(move || {
-                if let Err(error) = read_answers(&mut output, &reading, &named) {
+                if let Err(error) = read_answers(&mut output, &reading, &named, &noticed) {
                     log::warn!("The clipboard helper for uid {uid} stopped: {error:#}");
                 }
                 reading.close();
@@ -269,6 +304,7 @@ impl UserHelper {
             commands,
             replies,
             backend,
+            changed,
             stream,
             wait,
             _process: process,
@@ -303,6 +339,7 @@ fn read_answers(
     output: &mut impl std::io::Read,
     replies: &Replies,
     backend: &Mutex<String>,
+    changed: &AtomicBool,
 ) -> Result<()> {
     loop {
         let bytes = match wire::read(&mut *output) {
@@ -319,6 +356,7 @@ fn read_answers(
                 log::info!("The clipboard helper serves through {named}");
                 *backend.lock().unwrap_or_else(PoisonError::into_inner) = named;
             }
+            Event::ClipboardChanged => changed.store(true, Ordering::Relaxed),
             Event::Token { .. } | Event::Ready { .. } | Event::Failed { .. } => {
                 bail!("The clipboard helper sent a portal event")
             }

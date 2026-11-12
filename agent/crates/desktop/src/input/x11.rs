@@ -394,6 +394,10 @@ impl InputBackend for XTestInput {
     fn clipboard(&mut self) -> InputResult<String> {
         self.clipboard.get()
     }
+
+    fn clipboard_changed(&mut self) -> InputResult<bool> {
+        self.clipboard.changed()
+    }
 }
 
 #[cfg(test)]

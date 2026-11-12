@@ -103,6 +103,13 @@ pub trait InputBackend: Send {
     fn clipboard(&mut self) -> InputResult<String> {
         Err(crate::clipboard::not_available())
     }
+    /// Whether the screen's clipboard changed since the last call; the
+    /// first call may only start watching (clipboard sharing, SPEC-DESKTOP
+    /// 21.11). Cheap and never blocking: the session asks every half
+    /// second. A screen without a clipboard never changes.
+    fn clipboard_changed(&mut self) -> InputResult<bool> {
+        Ok(false)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -258,6 +265,11 @@ impl InputController {
         self.backend.clipboard()
     }
 
+    /// Whether the screen's clipboard changed since the last call.
+    pub fn clipboard_changed(&mut self) -> InputResult<bool> {
+        self.backend.clipboard_changed()
+    }
+
     pub fn release_all(&mut self) -> InputResult<()> {
         let mut first_error = None;
         for held in std::mem::take(&mut self.held).into_iter().rev() {
@@ -321,6 +333,8 @@ pub mod recording {
         pub has_sas: bool,
         /// The screen's clipboard; `None` is a screen without one.
         pub clipboard: Option<Arc<Mutex<String>>>,
+        /// The clipboard as the last `clipboard_changed` saw it.
+        pub watched: Arc<Mutex<Option<String>>>,
     }
 
     impl Recorder {
@@ -376,6 +390,16 @@ pub mod recording {
                 Some(held) => Ok(held.lock().unwrap().clone()),
                 None => Err(crate::clipboard::not_available()),
             }
+        }
+        fn clipboard_changed(&mut self) -> InputResult<bool> {
+            let Some(held) = &self.clipboard else {
+                return Ok(false);
+            };
+            let now = held.lock().unwrap().clone();
+            let mut watched = self.watched.lock().unwrap();
+            let changed = watched.as_ref().is_some_and(|seen| *seen != now);
+            *watched = Some(now);
+            Ok(changed)
         }
     }
 }

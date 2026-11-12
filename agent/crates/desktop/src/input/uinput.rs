@@ -611,6 +611,10 @@ impl InputBackend for UinputBackend {
     fn clipboard(&mut self) -> InputResult<String> {
         self.clipboard.get()
     }
+
+    fn clipboard_changed(&mut self) -> InputResult<bool> {
+        self.clipboard.changed()
+    }
 }
 
 #[path = "uinput_wake.rs"]

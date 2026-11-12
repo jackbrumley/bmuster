@@ -126,6 +126,8 @@ pub struct X11Clipboard {
     target: X11Target,
     /// Made on the first push; answers other clients while it lives.
     owner: Option<Owner>,
+    /// Made on the first [`X11Clipboard::changed`] (clipboard sharing).
+    watch: Option<super::x11_watch::SelectionWatch>,
 }
 
 impl X11Clipboard {
@@ -133,6 +135,19 @@ impl X11Clipboard {
         X11Clipboard {
             target,
             owner: None,
+            watch: None,
+        }
+    }
+
+    /// Whether the selection changed hands since the last call; the first
+    /// call starts watching and says no (SPEC-DESKTOP 21.11).
+    pub fn changed(&mut self) -> InputResult<bool> {
+        match self.watch.as_mut() {
+            Some(watch) => watch.changed(),
+            None => {
+                self.watch = Some(super::x11_watch::SelectionWatch::start(&self.target)?);
+                Ok(false)
+            }
         }
     }
 

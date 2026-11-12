@@ -38,11 +38,16 @@ const XBUTTON2: u32 = 2;
 const ALT_GR_SCANCODE: u16 = 0xE038;
 
 #[derive(Default)]
-pub struct SendInputBackend;
+pub struct SendInputBackend {
+    /// Notices clipboard changes for clipboard sharing (SPEC-DESKTOP 21.11).
+    clipboard_sequence: crate::clipboard::windows::Sequence,
+}
 
 impl SendInputBackend {
     pub fn new() -> Self {
-        SendInputBackend
+        SendInputBackend {
+            clipboard_sequence: crate::clipboard::windows::Sequence::default(),
+        }
     }
 }
 
@@ -208,6 +213,10 @@ impl InputBackend for SendInputBackend {
 
     fn clipboard(&mut self) -> InputResult<String> {
         crate::clipboard::windows::get()
+    }
+
+    fn clipboard_changed(&mut self) -> InputResult<bool> {
+        Ok(self.clipboard_sequence.changed())
     }
 }
 
