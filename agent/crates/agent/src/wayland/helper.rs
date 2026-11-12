@@ -1,5 +1,6 @@
 //! User-session portal owner. No private agent files or network credentials.
 use super::{
+    clipboard::{self, PortalClipboard},
     png_stream,
     wire::{self, Command, Event, Packet},
 };
@@ -7,7 +8,7 @@ use anyhow::{bail, Context as _, Result};
 use ashpd::desktop::{
     remote_desktop::{DeviceType, KeyState, RemoteDesktop},
     screencast::{CursorMode, Screencast, SourceType},
-    PersistMode,
+    PersistMode, Session,
 };
 use std::io::{BufReader, Read};
 use std::os::fd::AsRawFd as _;
@@ -129,7 +130,7 @@ fn configuration(input: &mut impl Read) -> Result<(bool, Option<String>)> {
 fn forward_commands(mut input: impl Read, send: &tokio::sync::mpsc::Sender<Command>) {
     loop {
         let command = match wire::read(&mut input) {
-            Ok(Packet::Json(bytes)) if bytes.len() <= 4096 => {
+            Ok(Packet::Json(bytes)) if bytes.len() <= wire::MAX_JSON => {
                 serde_json::from_slice::<Command>(&bytes)
             }
             _ => break,
@@ -144,6 +145,107 @@ fn forward_commands(mut input: impl Read, send: &tokio::sync::mpsc::Sender<Comma
         }
     }
     let _ = send.blocking_send(Command::Stop);
+}
+
+type Pending<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = Option<Event>> + 'a>>;
+
+/// The agent's commands for a started control session, until `Stop`.
+/// Clipboard work runs beside the input, so a slow paste or a stuck
+/// clipboard owner never holds the pointer and keys (SPEC-DESKTOP 21.9).
+async fn control_loop(
+    remote: &RemoteDesktop<'_>,
+    session: &Session<'_, RemoteDesktop<'_>>,
+    node: u32,
+    clipboard: clipboard::Opened,
+    receive: &mut tokio::sync::mpsc::Receiver<Command>,
+    output: &Output,
+) -> Result<()> {
+    use futures_util::StreamExt as _;
+    let (portal, mut signals, unavailable) = match clipboard {
+        clipboard::Opened::Ready { portal, signals } => {
+            (Some(portal), Some(signals), String::new())
+        }
+        clipboard::Opened::Unavailable(reason) => (None, None, reason),
+    };
+    let live = portal.as_ref().map(|portal| {
+        PortalClipboard::new(clipboard::Live {
+            clipboard: portal,
+            session,
+        })
+    });
+    let live = live.as_ref();
+    let mut pending = futures_util::stream::FuturesUnordered::<Pending<'_>>::new();
+    let failed = |id, error: anyhow::Error| Event::ClipboardFailed {
+        id,
+        message: format!("{error:#}"),
+    };
+    loop {
+        let signal = async {
+            match signals.as_mut() {
+                Some(signals) => signals.next().await,
+                None => std::future::pending().await,
+            }
+        };
+        tokio::select! {
+            command = receive.recv() => {
+                let Some(command) = command else { break };
+                let down = |down| if down { KeyState::Pressed } else { KeyState::Released };
+                match command {
+                    Command::Pointer { x, y } => remote.notify_pointer_motion_absolute(session, node, f64::from(x), f64::from(y)).await?,
+                    Command::Button { code, down: pressed } => remote.notify_pointer_button(session, code, down(pressed)).await?,
+                    Command::Scroll { dx, dy } => remote.notify_pointer_axis(session, dx, dy, false).await?,
+                    Command::Key { code, down: pressed } => remote.notify_keyboard_keycode(session, code, down(pressed)).await?,
+                    Command::Character { character } => {
+                        let code = if character as u32 <= 0xff { character as i32 } else { (character as u32 | 0x01000000) as i32 };
+                        remote.notify_keyboard_keysym(session, code, KeyState::Pressed).await?;
+                        remote.notify_keyboard_keysym(session, code, KeyState::Released).await?;
+                    }
+                    Command::ClipboardSet { id, text } => match live {
+                        Some(live) => pending.push(Box::pin(async move {
+                            Some(match live.set(text).await {
+                                Ok(()) => Event::ClipboardSet { id },
+                                Err(error) => failed(id, error),
+                            })
+                        })),
+                        None => event(output, &Event::ClipboardFailed { id, message: unavailable.clone() })?,
+                    },
+                    Command::ClipboardGet { id } => match live {
+                        Some(live) => pending.push(Box::pin(async move {
+                            Some(match live.read().await {
+                                Ok(text) => Event::ClipboardText { id, text },
+                                Err(error) => failed(id, error),
+                            })
+                        })),
+                        None => event(output, &Event::ClipboardFailed { id, message: unavailable.clone() })?,
+                    },
+                    Command::Stop => break,
+                    Command::Configure { .. } => bail!("Helper cannot be reconfigured"),
+                }
+            }
+            signal = signal => match (signal, live) {
+                // The bus connection has gone: no more pastes.
+                (None, _) => signals = None,
+                (Some(clipboard::Signal::Transfer { mime_type, serial }), Some(live)) => {
+                    pending.push(Box::pin(async move {
+                        if let Err(error) = live.transfer(&mime_type, serial).await {
+                            log::warn!("Wayland clipboard paste failed: {error:#}");
+                        }
+                        None
+                    }));
+                }
+                (Some(clipboard::Signal::OwnerChanged { session_is_owner, mime_types }), Some(live)) => {
+                    live.owner_changed(session_is_owner, mime_types);
+                }
+                (Some(_), None) => {}
+            },
+            Some(answer) = pending.next(), if !pending.is_empty() => {
+                if let Some(answer) = answer {
+                    event(output, &answer)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `bmuster-agent wayland-helper <socket>`: connects back to the agent
@@ -173,6 +275,9 @@ pub fn run(socket: &Path) -> Result<()> {
             let session = remote.create_session().await?;
             remote.select_devices(&session, DeviceType::Keyboard | DeviceType::Pointer, restore_token.as_deref(), PersistMode::ExplicitlyRevoked).await?.response()?;
             cast.select_sources(&session, CursorMode::Embedded, SourceType::Monitor.into(), false, None, PersistMode::DoNot).await?.response()?;
+            // Copy and paste is asked for before Start, so it is part of the
+            // same approval (SPEC-DESKTOP 21.9); without it the session goes on.
+            let clipboard = clipboard::open(&session).await;
             let start = async { remote.start(&session, None).await?.response() };
             let response = tokio::select! { result = tokio::time::timeout(std::time::Duration::from_secs(90), start) => result??, _ = receive.recv() => bail!("Approval cancelled") };
             if !response.devices().contains(DeviceType::Keyboard) || !response.devices().contains(DeviceType::Pointer) { bail!("The desktop did not grant keyboard and pointer access"); }
@@ -192,18 +297,7 @@ pub fn run(socket: &Path) -> Result<()> {
                 width,
                 height,
             })?;
-            while let Some(command) = receive.recv().await {
-                let down = |down| if down { KeyState::Pressed } else { KeyState::Released };
-                match command {
-                    Command::Pointer { x, y } => remote.notify_pointer_motion_absolute(&session, node, f64::from(x), f64::from(y)).await?,
-                    Command::Button { code, down: pressed } => remote.notify_pointer_button(&session, code, down(pressed)).await?,
-                    Command::Scroll { dx, dy } => remote.notify_pointer_axis(&session, dx, dy, false).await?,
-                    Command::Key { code, down: pressed } => remote.notify_keyboard_keycode(&session, code, down(pressed)).await?,
-                    Command::Character { character } => { let code = if character as u32 <= 0xff { character as i32 } else { (character as u32 | 0x01000000) as i32 }; remote.notify_keyboard_keysym(&session, code, KeyState::Pressed).await?; remote.notify_keyboard_keysym(&session, code, KeyState::Released).await?; }
-                    Command::Stop => break,
-                    Command::Configure { .. } => bail!("Helper cannot be reconfigured"),
-                }
-            }
+            control_loop(&remote, &session, node, clipboard, &mut receive, &output).await?;
             session.close().await?;
         } else {
             let session = cast.create_session().await?;
@@ -343,6 +437,43 @@ mod tests {
                 },
                 Command::Stop
             ]
+        ));
+    }
+
+    /// SPEC-DESKTOP C18: clipboard commands, the largest push included,
+    /// reach the helper whole and in order with the input around them.
+    #[test]
+    fn c18_clipboard_commands_cross_the_pipe_with_input() {
+        use super::super::wire::{self, Command};
+        let text = "\u{1}".repeat(bmuster_desktop::control::MAX_CLIPBOARD_BYTES);
+        let mut bytes = Vec::new();
+        for command in [
+            Command::Key {
+                code: 30,
+                down: true,
+            },
+            Command::ClipboardSet {
+                id: 1,
+                text: text.clone(),
+            },
+            Command::ClipboardGet { id: 2 },
+        ] {
+            wire::json(&mut bytes, &command).unwrap();
+        }
+        let (send, mut receive) = tokio::sync::mpsc::channel(32);
+        super::forward_commands(bytes.as_slice(), &send);
+        let mut commands = Vec::new();
+        while let Ok(command) = receive.try_recv() {
+            commands.push(command);
+        }
+        assert!(matches!(
+            commands.as_slice(),
+            [
+                Command::Key { code: 30, .. },
+                Command::ClipboardSet { id: 1, text: pushed },
+                Command::ClipboardGet { id: 2 },
+                Command::Stop,
+            ] if *pushed == text
         ));
     }
 

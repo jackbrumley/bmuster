@@ -4,8 +4,9 @@
 //! The clipboard belongs to the screen's injector ([`crate::input::InputBackend`]),
 //! so it exists only in a control session: a watch-only session has no
 //! injector and so no clipboard (SPEC-DESKTOP 7). X11 has its own selection
-//! code ([`x11`]); Windows goes through `arboard` ([`windows`]); KMS with
-//! uinput reaches no clipboard at all and says so.
+//! code ([`x11`]); Windows goes through `arboard` ([`windows`]); Wayland
+//! portal sessions go through the agent's portal helper (SPEC-DESKTOP 21.9);
+//! KMS with uinput reaches no clipboard at all and says so.
 
 #[cfg(windows)]
 pub mod windows;

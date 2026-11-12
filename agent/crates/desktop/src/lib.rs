@@ -8,8 +8,9 @@
 //!   through KMS (SPEC-CONSOLE-CAPTURE) and Windows (DXGI Desktop
 //!   Duplication, GDI fallback).
 //! - [`input`]: XTest, uinput and `SendInput`, with release-all.
-//! - [`clipboard`]: copy and paste on X11 and Windows, carried by the
-//!   control session's injector.
+//! - [`clipboard`]: copy and paste on X11 and Windows (Wayland portal
+//!   sessions in the agent's helper), carried by the control session's
+//!   injector.
 //! - [`notice`]: the bar at the machine while someone is connected.
 //! - [`follow`]: a session that follows the screen at the machine (the
 //!   sign-in screen, a desktop, a switch between them) without ending.
