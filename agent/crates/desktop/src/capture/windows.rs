@@ -359,7 +359,8 @@ impl Capturer for WindowsCapturer {
 
 /// Renders a cursor on black and on white and works out each pixel's
 /// alpha from the difference, so colour, alpha and monochrome cursors all
-/// come out as straight RGBA. Inverting pixels come out as white.
+/// come out as straight RGBA. Inverting pixels (the text I-beam) come out
+/// black with a white outline (`cursor_pixels`, SPEC-DESKTOP 19).
 fn cursor_rgba(icon: HICON) -> CaptureResult<CursorImage> {
     let mut icon_info = ICONINFO::default();
     // SAFETY: `icon` is the current cursor handle; ICONINFO is plain data.
@@ -394,20 +395,8 @@ fn cursor_rgba(icon: HICON) -> CaptureResult<CursorImage> {
 
     let on_black = render_icon(icon, width, height, 0x00)?;
     let on_white = render_icon(icon, width, height, 0xFF)?;
-    let mut rgba = Vec::with_capacity(on_black.len());
-    for (b, w) in on_black.chunks_exact(4).zip(on_white.chunks_exact(4)) {
-        // Over black a pixel shows c*a; over white c*a + (1-a). So
-        // a = 1 - (white - black), per channel; green is representative.
-        let alpha = 255 - (i32::from(w[1]) - i32::from(b[1])).clamp(0, 255);
-        let channel = |value: u8| {
-            if alpha == 0 {
-                0
-            } else {
-                ((i32::from(value) * 255 + alpha / 2) / alpha).min(255) as u8
-            }
-        };
-        rgba.extend_from_slice(&[channel(b[2]), channel(b[1]), channel(b[0]), alpha as u8]);
-    }
+    let rgba =
+        super::cursor_pixels::cursor_rgba(&on_black, &on_white, width as usize, height as usize);
     Ok(CursorImage {
         width: width as u32,
         height: height as u32,
