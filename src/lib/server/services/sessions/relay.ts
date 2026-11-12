@@ -129,6 +129,12 @@ type LiveSession = {
 	browser: Side;
 	ring: OutputRing;
 	earlyInput: Uint8Array[];
+	/**
+	 * The browser's latest terminal size. A resize that arrives before the
+	 * agent's socket is kept and goes to the agent when it attaches, so a
+	 * phone turned while the shell starts still gets the wider grid.
+	 */
+	lastResize: { cols: number; rows: number } | undefined;
 	bytesOut: number;
 	bytesIn: number;
 	lastInputAt: number;
@@ -252,6 +258,7 @@ export function createRelay(limits: RelayLimits) {
 			browser: { peer: undefined, waiting: 0, paused: false },
 			ring: new OutputRing(limits.replayBytes),
 			earlyInput: [],
+			lastResize: undefined,
 			bytesOut: 0,
 			bytesIn: 0,
 			lastInputAt: Date.now(),
@@ -351,6 +358,9 @@ export function createRelay(limits: RelayLimits) {
 			}
 			session.agent = { peer, waiting: 0, paused: false };
 			cancel(session, 'agent');
+			if (session.lastResize !== undefined) {
+				peer.sendText(JSON.stringify({ type: 'resize', ...session.lastResize }));
+			}
 			for (const input of session.earlyInput) {
 				forward(session.agent, session.browser, input);
 			}
@@ -491,9 +501,8 @@ export function createRelay(limits: RelayLimits) {
 			}
 			switch (parsed.data.type) {
 				case 'resize':
-					session.agent.peer?.sendText(
-						JSON.stringify({ type: 'resize', cols: parsed.data.cols, rows: parsed.data.rows })
-					);
+					session.lastResize = { cols: parsed.data.cols, rows: parsed.data.rows };
+					session.agent.peer?.sendText(JSON.stringify({ type: 'resize', ...session.lastResize }));
 					return;
 				case 'end':
 					end(sessionId, 'closed', 'The session was ended from the console.');

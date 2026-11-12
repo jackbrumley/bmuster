@@ -212,6 +212,28 @@ describe('the terminal on a phone', () => {
 		expect(socket.typed().every((typed) => typed === '\x1b[A')).toBe(true);
 	});
 
+	it('T10: turning the phone to landscape tells the shell the wider size', async () => {
+		const { socket } = await openTerminal(true);
+		const widths = () =>
+			socket
+				.messages()
+				.flatMap((message) =>
+					typeof message === 'object' &&
+					message !== null &&
+					'type' in message &&
+					message.type === 'resize' &&
+					'cols' in message &&
+					typeof message.cols === 'number'
+						? [message.cols]
+						: []
+				);
+		await expect.poll(() => widths().length).toBeGreaterThan(0);
+		const portrait = widths().at(-1) ?? 0;
+
+		await page.viewport(844, 390);
+		await expect.poll(() => widths().at(-1) ?? 0).toBeGreaterThan(portrait * 1.5);
+	});
+
 	it('runs the full width of a 390px screen, without a sideways scroll', async () => {
 		const { screen } = await openTerminal(true);
 		const region = screen.getByRole('region', { name: `Terminal on ${MACHINE.name}` });
