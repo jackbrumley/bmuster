@@ -5,6 +5,8 @@
 //! GDI DIB sections all give, so no platform converts pixels.
 
 pub mod combined;
+#[cfg(any(windows, test))]
+pub mod cursor_pixels;
 #[cfg(target_os = "linux")]
 pub mod kms;
 #[cfg(target_os = "linux")]

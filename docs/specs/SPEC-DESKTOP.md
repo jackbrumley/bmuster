@@ -475,3 +475,30 @@ Approved 2026-11-11. Jack: "even high quality feels a bit grainy ... maybe have 
   3. Press Disconnect in the notification (or the menu): both sessions end; the console says someone at the machine disconnected; Activity shows "Disconnected at the machine". The red dot goes within a second or two.
   4. From an SSH session as another account, `nc -U /run/bmuster/disconnect.sock` prints `refused` and nothing ends.
   5. On an X11 or Windows machine: the bar opens full, folds to the pill after about 6 s, opens when the pointer is over it, folds 3 s after the pointer leaves, and opens full again when another viewer connects. On Windows the pill is not in the picture.
+
+## 19. Windows cursors that invert: the text I-beam (2026-11-12)
+
+**Status:** `APPROVED`, asked for 2026-11-12 after a real test of 0.4.19 on Windows 10.
+
+### 19.1 Problem
+
+The remote cursor disappears over Notepad's text area. Windows' text I-beam is a monochrome cursor whose pixels invert what is under them (AND 1, XOR 1). The agent renders each cursor over black and over white and takes alpha as `1 − (white − black)`; an inverting pixel is white over black and black over white, so it came out opaque white, which vanishes on a white page. The browser draws the cursor as an image and cannot invert the video under it.
+
+### 19.2 Behaviour
+
+1. A pixel is **inverting** when its render over black is at least 128 levels brighter (the mean of its three channels) than its render over white. Ordinary pixels are never brighter over black.
+2. Inverting pixels are drawn opaque black.
+3. Every fully transparent pixel that touches an inverting pixel (in any of the eight directions) is drawn opaque white: a one-pixel outline around the inverting shape, so it shows on light and on dark. Cursors without inverting pixels (the arrow, colour and alpha cursors) are unchanged and get no outline.
+4. The classification is a pure function (`bmuster_desktop::capture::cursor_pixels`), used by `capture/windows.rs`'s `cursor_rgba`.
+
+### 19.3 Acceptance criteria
+
+| ID  | Behaviour                                                                                                                                           | Named test                                                                             |
+| :-- | :-------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------- |
+| CU1 | A pixel is transparent, a colour with its alpha (opaque or partly), or inverting, from its renders over black and white.                            | Rust `capture::cursor_pixels::tests::cursor_pixels_are_classified`                     |
+| CU2 | Inverting pixels come out opaque black, transparent pixels touching them opaque white, other pixels unchanged; no outline without inverting pixels. | Rust `capture::cursor_pixels::tests::inverting_cursors_are_black_with_a_white_outline` |
+
+### 19.4 As built
+
+- `agent/crates/desktop/src/capture/cursor_pixels.rs` (pure, CU1 and CU2); `capture/windows.rs` renders over black and white as before and hands both to it.
+- **Only linted, not run on Windows.** Release test: in Notepad on Windows 10, the remote I-beam shows black with a white edge over the white text area, and over a dark window; the arrow looks as before.

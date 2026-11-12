@@ -119,3 +119,67 @@ On the Fedora laptop, 0.4.12 logged "Could not start the tray for jackbrumley (u
 - Deviations from the task: the helper runs the Program Files copy, not `versions\current` (point 5). The starter looks every 10 s with a 30 s settle (the Linux timing, through the shared `Starter`), so a helper starts 30 to 40 s after a session appears.
 - **Only linted, not run.** This was built on Linux. Every Windows-only part compiles and passes `cargo clippy --workspace --all-targets --target x86_64-pc-windows-gnu -- -D warnings`, but none of it has run on Windows: the session list, `WTSQueryUserToken` and the linked token, `CreateEnvironmentBlock` and `CreateProcessAsUserW`, the running-helper lookup, the mutex, the program watch, the Win32 icon calls and `stop_helpers` at uninstall. The pure decisions (TS3, TS4, TS10 to TS13) ran on Linux.
 - **Release test on Windows 10 and 11** before calling it verified: (a) install while signed in: the icon appears within about 40 s, and the agent log says "Started the tray in session N"; (b) sign out and in: one icon, not two; (c) an administrator account: the tray is not elevated (Task Manager, Details, Elevated column "No") and runs as that person, not SYSTEM; (d) a Remote Desktop session gets its own icon; (e) after a reinstall or the rescue-copy refresh, the old helper exits and a new one appears; (f) uninstall with someone signed in removes `C:\Program Files\BMuster`.
+
+## Windows, version 2: one starter, the current version, no console window
+
+**Status:** `APPROVED`, asked for 2026-11-12 after a real test of 0.4.19 on Windows 10. Replaces points 2, 3, 5, 7 and 8 of "Windows" above where they differ.
+
+**This is security work.** It changes which program a LocalSystem service starts in other people's sessions, and which of their processes it ends.
+
+### Problem
+
+After a reboot and sign-in on a Windows 10 PC with 0.4.19:
+
+1. A black console window titled `C:\Program Files\BMuster\bmuster-agent.exe` appears and stays, and no tray icon shows. The sign-in `Run` entry (`HKLM\Software\Microsoft\Windows\CurrentVersion\Run`, value `BMusterAgent` = `"<program>" tray`) starts the program, which is a console program, so Explorer gives it a console window.
+2. Both the `Run` entry and the starter run the Program Files copy, which is the rescue copy and only catches up after a day of health. After an update the tray is a version behind (0.4.18 had neither `FreeConsole` nor the single-instance mutex). The starter matched helpers by path, so it never replaced that older tray.
+3. When `Shell_NotifyIconW(NIM_ADD)` fails because the taskbar is not ready yet at sign-in, the tray gave up and exited; it only re-added its icon on `TaskbarCreated` after a successful start.
+
+### Behaviour
+
+1. **One way to start the tray: the service's starter.** The agent never writes the `Run` entry. It deletes the `BMusterAgent` value from that key when it is there: on install, on every start of the installed, launched agent (so an update cleans up 0.4.19 and earlier), and on uninstall. The starter starts the helper with `CREATE_NO_WINDOW`, so no console window ever appears.
+2. **Sooner after sign-in.** The Windows starter lists the sessions every 2 s and starts a new session's helper once it has been seen for 5 s, so the icon appears within about 7 s of sign-in (Linux keeps its 10 s and 30 s). A session still gets at most one attempt a minute.
+3. **The icon waits for the taskbar.** When `NIM_ADD` fails, the helper keeps its hidden window and message loop, and tries again every 2 s and on every `TaskbarCreated` until it succeeds. While the icon is not shown it skips the once-a-second `NIM_MODIFY`. After Explorer restarts, `TaskbarCreated` adds the icon again; if that fails, the 2 s retry starts again.
+4. **The tray runs the current version.** Each version has its own tray program in the program folder: `C:\Program Files\BMuster\bmuster-tray-<version>.exe`, a copy of the running version's own program. On every start, the installed, launched agent (as SYSTEM) writes that copy when it is missing or differs: to `bmuster-tray-<version>.exe.new`, then renamed into place, so a half-written program is never started. It then deletes every other `bmuster-tray-*` file in the folder that is not in use (one still running is deleted at a later start). The starter starts only this version's copy, with the one argument `tray`.
+
+   **Why a copy in Program Files, not `versions\current`.** The running version lives in `C:\ProgramData\BMuster\versions\current`, inside the data folder that holds the agent's private key; its ACL gives SYSTEM and Administrators access and nobody else (`restrict_dir`). A person's token can therefore not run it, and loosening that ACL would expose the folder that holds the key. The program folder already gives users read and execute and only Administrators, SYSTEM and TrustedInstaller write (inherited from `C:\Program Files`), so a per-version copy there runs with the person's token without changing any ACL. The rescue copy (`bmuster-agent.exe`) keeps its job and its one-day lag, because the tray no longer depends on it.
+
+5. **Older trays are replaced.** Before it decides whether a session's helper runs, the starter looks at every process in that session (`QueryFullProcessImageNameW`, compared in any case):
+   - this version's tray copy: the current helper;
+   - any other `bmuster-tray-*` program in the program folder: a stale helper (an older or newer version's copy);
+   - the rescue copy `C:\Program Files\BMuster\bmuster-agent.exe`, when the process is not elevated: a helper from 0.4.19 or earlier (the `Run` entry or the old starter). An elevated process there is an administrator's own command and is left alone; when its elevation cannot be read, it is left alone too;
+   - anything else: not a helper.
+
+   It ends each stale helper (`TerminateProcess`, waiting up to 5 s, so the mutex is free), logs "Closed an older tray in session N.", and then starts the current one in the same pass.
+
+6. **Uninstall** ends every current and stale helper in every session (point 5's rules), then removes the program folder, the `Run` value, and the Start menu shortcut.
+7. **Unchanged:** which sessions get a helper, the token rules, the environment and desktop, the mutex `Local\BMusterTray`, and the helper's own program watch (it still exits when another file stands at its program's path).
+
+### Acceptance criteria
+
+| ID   | Behaviour                                                                                                                                                                                   | Named test                                                                  |
+| :--- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :-------------------------------------------------------------------------- |
+| TS14 | A new Windows session gets its first start within 7 s of being seen when polled every 2 s; Linux still waits 30 s.                                                                          | Rust `tray::starts::tests::windows_starts_soon_after_sign_in`               |
+| TS15 | The icon is added at start and on `TaskbarCreated`; while it is not shown the retry timer adds it and the second timer does not modify it; once shown, retry stops.                         | Rust `tray::windows_sessions::tests::the_icon_waits_for_the_taskbar`        |
+| TS16 | The tray program is `bmuster-tray-<version>.exe` in the program folder; other versions' copies and leftovers are recognised for removal, nothing else is.                                   | Rust `tray::windows_sessions::tests::each_version_has_its_own_tray_program` |
+| TS17 | A process running this version's copy is the current helper; another version's copy, or the rescue copy unelevated, is stale; an elevated rescue copy or any other program is not a helper. | Rust `tray::windows_sessions::tests::older_trays_are_recognised`            |
+| TS18 | The starter ends stale helpers in a session before it decides whether to start one, and starts the current one in the same pass.                                                            | Rust `tray::starts::tests::stale_helpers_end_before_a_start`                |
+| TS19 | The `Run` value is named `BMusterAgent` under `Software\Microsoft\Windows\CurrentVersion\Run` (the value removed on install, start and uninstall).                                          | Rust `tray::windows_sessions::tests::the_old_sign_in_entry_is_known`        |
+
+TS12 changes: the command line is the quoted tray copy and `tray`.
+
+### Security notes
+
+- The program started in a person's session is still fixed: this version's own program, copied by SYSTEM into the program folder, which ordinary users can read and run but not write. Nothing from the server, the browser or the session names it. The copy is written beside its final name and renamed into place, so a person can never start a half-written file.
+- The data folder's ACL is not touched; the person's token still cannot read `versions\current` or the key.
+- The starter ends only processes in a signed-in session whose program is a BMuster tray copy in the program folder, or the rescue copy running unelevated. It never ends an elevated process from the rescue copy (an administrator's own command), and when it cannot read a process's elevation it leaves it alone.
+- Removing the `Run` value removes a second start path that ran the rescue copy with a console window; the starter is the only path.
+
+### As built
+
+- `agent/crates/agent/src/tray/windows_sessions.rs`: the pure rules (TS15 to TS17, TS19): the icon retry decisions, the tray program's name, and which processes are current or stale helpers.
+- `agent/crates/agent/src/tray/starts.rs`: the `Starter` takes its settle time (Windows 5 s, Linux 30 s), and `Desktop::end_stale` runs before the running check (TS14, TS18).
+- `agent/crates/agent/src/tray/windows_starter.rs`: the tray copy, its clean-up, stale helpers ended, the `Run` value removed at start, and a 2 s poll.
+- `agent/crates/agent/src/tray/windows.rs`: no `Run` entry; the icon retry; `remove_sign_in_entry` used by install, start and uninstall.
+- `bmuster_desktop::winsession::console::session_processes` lists a session's processes with their names; `processes_in_session` uses it.
+- **Only linted, not run.** Built on Linux; the Windows parts pass `cargo clippy --target x86_64-pc-windows-gnu -- -D warnings` but have not run on Windows.
+- **Release test on Windows 10:** (a) update from 0.4.19 while signed in: within a few seconds the old tray is closed (log "Closed an older tray in session 1."), a new icon appears, `Run` no longer has `BMusterAgent`, and `C:\Program Files\BMuster` holds `bmuster-tray-<version>.exe`; (b) reboot and sign in: no console window, the icon appears within about 10 s; (c) Task Manager shows `bmuster-tray-<version>.exe` as the person, not elevated; (d) restart Explorer: the icon comes back; (e) uninstall with someone signed in removes the folder.

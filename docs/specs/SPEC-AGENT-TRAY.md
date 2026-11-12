@@ -1,6 +1,6 @@
 # SPEC-AGENT-TRAY: Visible installation and local management
 
-**Status:** Implementation built for v0.3.0 candidate, 2026-11-08. Native Linux and Windows validation remains outstanding. On Linux, SPEC-TRAY-SESSIONS now has the agent start the helper in desktops already signed in and keep the shortcuts current at every start, replacing "self-update must not claim to install them" below.
+**Status:** Implementation built for v0.3.0 candidate, 2026-11-08. Native Linux and Windows validation remains outstanding. On Linux, SPEC-TRAY-SESSIONS now has the agent start the helper in desktops already signed in and keep the shortcuts current at every start, replacing "self-update must not claim to install them" below. On Windows, SPEC-TRAY-SESSIONS ("Windows, version 2") removes the logon (`Run`) entry: the agent's service starts the tray in every signed-in session from a per-version copy of the current program, and deletes the `Run` value left by 0.4.19 and earlier. The Start menu shortcut stays.
 
 ## Security decision for review
 

@@ -1,37 +1,42 @@
 //! Starts the tray helper in every signed-in Windows session
 //! (SPEC-TRAY-SESSIONS, Windows).
 //!
-//! The service runs as LocalSystem in session 0. Every [`POLL`] its worker
-//! lists the sessions ([`super::windows_sessions::tray_sessions`]: active or
-//! connected, someone signed in, never session 0). A session whose helper is
-//! not running gets one through the shared [`Starter`]: started as the
-//! session's own person, with the token `WTSQueryUserToken` gives (its
-//! filtered half when it is elevated, never SYSTEM), their own environment
-//! and the `winsta0\default` desktop.
+//! The service runs as LocalSystem in session 0. Every
+//! [`POLL`](rules::POLL) its worker lists the sessions
+//! ([`super::windows_sessions::tray_sessions`]: active or connected, someone
+//! signed in, never session 0). In a session seen for
+//! [`SETTLE`](rules::SETTLE), older helpers are ended, and if this version's
+//! helper is not running it gets one through the shared [`Starter`]: started
+//! as the session's own person, with the token `WTSQueryUserToken` gives
+//! (its filtered half when it is elevated, never SYSTEM), their own
+//! environment and the `winsta0\default` desktop.
 //!
-//! The only program ever started is the installed program in Program Files
-//! (the copy the sign-in `Run` entry starts, which every user may read; the
-//! running version in ProgramData is readable by SYSTEM and Administrators
-//! only) with the one argument `tray`. Nothing from the server or the session
-//! changes it.
+//! The only program ever started is this version's tray copy in Program
+//! Files (`bmuster-tray-<version>.exe`, written here by SYSTEM; every user may
+//! read and run it, only administrators write the folder; the running version
+//! in ProgramData is readable by SYSTEM and Administrators only) with the one
+//! argument `tray`. Nothing from the server or the session changes it
+//! (SPEC-TRAY-SESSIONS, Windows version 2).
 
 use super::starts::{Desktop, Starter};
-use super::windows_sessions::{self as rules, SessionRecord, TokenUse, TraySession};
-use bmuster_desktop::winsession::console::{processes_in_session, session_user};
+use super::windows_sessions::{self as rules, Helper, SessionRecord, TokenUse, TraySession};
+use anyhow::{Context as _, Result};
+use bmuster_desktop::winsession::console::{session_processes, session_user};
 use std::ffi::{c_void, OsStr};
 use std::os::windows::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, LUID};
 use windows::Win32::Security::{
     AdjustTokenPrivileges, DuplicateTokenEx, GetTokenInformation, LookupPrivilegeValueW,
-    SecurityImpersonation, TokenElevationType, TokenLinkedToken, TokenPrimary, TokenSessionId,
-    TokenUser, LUID_AND_ATTRIBUTES, SE_DEBUG_NAME, SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_DEFAULT,
-    TOKEN_ADJUST_PRIVILEGES, TOKEN_ADJUST_SESSIONID, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE,
-    TOKEN_ELEVATION_TYPE, TOKEN_LINKED_TOKEN, TOKEN_PRIVILEGES, TOKEN_QUERY, TOKEN_USER,
+    SecurityImpersonation, TokenElevation, TokenElevationType, TokenLinkedToken, TokenPrimary,
+    TokenSessionId, TokenUser, LUID_AND_ATTRIBUTES, SE_DEBUG_NAME, SE_PRIVILEGE_ENABLED,
+    TOKEN_ADJUST_DEFAULT, TOKEN_ADJUST_PRIVILEGES, TOKEN_ADJUST_SESSIONID, TOKEN_ASSIGN_PRIMARY,
+    TOKEN_DUPLICATE, TOKEN_ELEVATION, TOKEN_ELEVATION_TYPE, TOKEN_LINKED_TOKEN, TOKEN_PRIVILEGES,
+    TOKEN_QUERY, TOKEN_USER,
 };
 use windows::Win32::System::Environment::{CreateEnvironmentBlock, DestroyEnvironmentBlock};
 use windows::Win32::System::RemoteDesktop::{
@@ -44,10 +49,10 @@ use windows::Win32::System::Threading::{
     PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, STARTUPINFOW,
 };
 
-/// How often the sessions are listed.
-pub const POLL: Duration = Duration::from_secs(10);
-/// How long the uninstall waits for each helper it ends.
+/// How long the starter and the uninstall wait for each helper they end.
 const EXIT_WAIT_MS: u32 = 5000;
+/// The rescue copy's file name, which 0.4.19 and earlier ran as the tray.
+const RESCUE_NAME: &str = "bmuster-agent.exe";
 
 /// Closes a handle when dropped.
 struct Owned(HANDLE);
@@ -107,28 +112,141 @@ fn image_path(process: HANDLE) -> Option<PathBuf> {
     Some(PathBuf::from(String::from_utf16_lossy(&buffer)))
 }
 
-/// The ids of the processes in `session` whose program is `program`
-/// (other than this one).
-fn helpers(program: &Path, session: u32) -> Vec<u32> {
-    let Some(name) = program.file_name().and_then(OsStr::to_str) else {
-        return Vec::new();
-    };
-    let wanted = program.to_string_lossy();
+/// Whether `process` runs elevated; `None` when its token cannot be read.
+fn elevated(process: HANDLE) -> Option<bool> {
+    let mut token = HANDLE::default();
+    // SAFETY: an out-parameter, owned at once.
+    unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) }.ok()?;
+    let token = Owned(token);
+    // SAFETY: TOKEN_ELEVATION is what TokenElevation writes.
+    let elevation: TOKEN_ELEVATION = unsafe { token_value(token.0, TokenElevation) }.ok()?;
+    Some(elevation.TokenIsElevated != 0)
+}
+
+/// The programs the starter knows: this version's tray copy, and the
+/// rescue copy (which 0.4.19 and earlier ran as the tray), both in the
+/// program folder.
+#[derive(Clone)]
+struct Programs {
+    tray: PathBuf,
+    rescue: PathBuf,
+}
+
+impl Programs {
+    fn installed() -> Result<Self> {
+        let rescue = crate::service_windows::binary_path()?;
+        let folder = rescue
+            .parent()
+            .context("the installed program has no folder")?;
+        Ok(Self {
+            tray: folder.join(rules::tray_file_name(crate::updates::VERSION)),
+            rescue,
+        })
+    }
+
+    fn folder(&self) -> &Path {
+        self.tray.parent().unwrap_or(&self.tray)
+    }
+}
+
+/// The BMuster tray helpers in `session` (other than this process), each
+/// with what it is to the starter; other programs are left out.
+fn helpers(programs: &Programs, session: u32) -> Vec<(u32, Helper)> {
+    let tray = programs.tray.to_string_lossy();
+    let rescue = programs.rescue.to_string_lossy();
     // SAFETY: no arguments.
     let own = unsafe { GetCurrentProcessId() };
-    processes_in_session(name, session)
-        .into_iter()
-        .filter(|pid| *pid != own)
-        .filter_map(|pid| {
-            // SAFETY: opens a process by id; the handle is owned at once.
-            let process =
-                Owned(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?);
-            let path = image_path(process.0)?;
-            path.to_string_lossy()
-                .eq_ignore_ascii_case(&wanted)
-                .then_some(pid)
-        })
-        .collect()
+    session_processes(session, |name| {
+        name.eq_ignore_ascii_case(RESCUE_NAME) || rules::is_tray_file(name)
+    })
+    .into_iter()
+    .filter(|pid| *pid != own)
+    .filter_map(|pid| {
+        // SAFETY: opens a process by id; the handle is owned at once.
+        let process =
+            Owned(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?);
+        let image = image_path(process.0)?;
+        let image = image.to_string_lossy();
+        // Elevation matters only for the rescue copy; read it only there.
+        let elevation = if image.eq_ignore_ascii_case(&rescue) {
+            elevated(process.0)
+        } else {
+            None
+        };
+        match rules::helper_kind(&image, &tray, &rescue, elevation) {
+            Helper::Other => None,
+            kind => Some((pid, kind)),
+        }
+    })
+    .collect()
+}
+
+/// Ends process `pid` and waits up to [`EXIT_WAIT_MS`] for it to go.
+fn end_process(pid: u32) -> windows::core::Result<()> {
+    // SAFETY: opens the helper to end it and wait for it; the handle is
+    // owned at once.
+    unsafe {
+        let process = Owned(OpenProcess(
+            PROCESS_TERMINATE | PROCESS_SYNCHRONIZE,
+            false,
+            pid,
+        )?);
+        TerminateProcess(process.0, 0)?;
+        WaitForSingleObject(process.0, EXIT_WAIT_MS);
+    }
+    Ok(())
+}
+
+/// Writes this version's tray copy (`programs.tray`) from `own`, the
+/// running version's program, when it is missing or differs: beside its
+/// final name first, so a half-written program is never started.
+fn place_tray_copy(own: &Path, tray: &Path) -> Result<bool> {
+    let bytes = std::fs::read(own).with_context(|| format!("could not read {}", own.display()))?;
+    if std::fs::read(tray).is_ok_and(|placed| placed == bytes) {
+        return Ok(false);
+    }
+    let name = tray
+        .file_name()
+        .and_then(OsStr::to_str)
+        .context("the tray program has no name")?;
+    let staged = tray.with_file_name(format!("{name}.new"));
+    std::fs::write(&staged, &bytes)
+        .with_context(|| format!("could not write {}", staged.display()))?;
+    if tray.exists() {
+        // The same version built again (development): Windows cannot
+        // replace a running program, but can rename it away; the clean-up
+        // removes it once it has stopped.
+        let aside = tray.with_file_name(format!("{name}.{}.old", std::process::id()));
+        std::fs::rename(tray, &aside)
+            .with_context(|| format!("could not move {} aside", tray.display()))?;
+    }
+    std::fs::rename(&staged, tray)
+        .with_context(|| format!("could not move {} into place", tray.display()))?;
+    Ok(true)
+}
+
+/// Deletes the other versions' tray copies and leftovers in the program
+/// folder; one still in use stays until a later try.
+fn remove_other_trays(programs: &Programs) {
+    let Some(current) = programs.tray.file_name().and_then(OsStr::to_str) else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(programs.folder()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !rules::is_other_tray_file(name, current) {
+            continue;
+        }
+        match std::fs::remove_file(entry.path()) {
+            Ok(()) => log::info!("Removed the old tray program {name}."),
+            Err(error) => log::debug!("Could not remove {name} yet: {error}"),
+        }
+    }
 }
 
 /// The token's `TOKEN_INFORMATION_CLASS` value of a fixed size.
@@ -294,7 +412,7 @@ fn start_helper(program: &Path, session: u32) -> Result<(), String> {
 
 /// The machine itself: its sessions, their processes and their tokens.
 struct System {
-    program: PathBuf,
+    programs: Programs,
 }
 
 impl Desktop for System {
@@ -304,41 +422,69 @@ impl Desktop for System {
         rules::tray_sessions(&sessions())
     }
 
+    fn end_stale(&mut self, session: &TraySession) {
+        let mut ended = false;
+        for (pid, kind) in helpers(&self.programs, session.id) {
+            if kind != Helper::Stale {
+                continue;
+            }
+            match end_process(pid) {
+                Ok(()) => {
+                    log::info!("Closed an older tray in session {}.", session.id);
+                    ended = true;
+                }
+                Err(error) => log::warn!(
+                    "Could not close the older tray {pid} in session {}: {error}",
+                    session.id
+                ),
+            }
+        }
+        if ended {
+            remove_other_trays(&self.programs);
+        }
+    }
+
     fn running(&mut self, session: &TraySession) -> bool {
-        !helpers(&self.program, session.id).is_empty()
+        helpers(&self.programs, session.id)
+            .iter()
+            .any(|(_, kind)| *kind == Helper::Current)
     }
 
     fn start(&mut self, session: &TraySession) -> Result<(), String> {
-        start_helper(&self.program, session.id)
+        start_helper(&self.programs.tray, session.id)
     }
 }
 
-/// From the worker's start: on the installed, launched agent, starts the
-/// helper in each signed-in session until `stop`.
+/// From the worker's start: on the installed, launched agent, removes the
+/// old sign-in entry, puts this version's tray copy in place, and starts
+/// the helper in each signed-in session until `stop`.
 pub fn start(data_dir: &Path, launched: bool, stop: Arc<AtomicBool>) {
     let installed = crate::paths::default_data_dir().is_ok_and(|dir| dir == data_dir);
     if !launched || !installed {
         return;
     }
-    let program = match crate::service_windows::binary_path() {
-        Ok(program) if program.is_file() => program,
-        Ok(program) => {
-            log::warn!(
-                "No tray in signed-in sessions: {} is missing.",
-                program.display()
-            );
-            return;
+    if let Err(error) = super::windows::remove_sign_in_entry() {
+        log::warn!("Could not remove the old tray sign-in entry: {error:#}");
+    }
+    let programs = match Programs::installed().and_then(|programs| {
+        let own = std::env::current_exe().context("could not find this program's path")?;
+        if place_tray_copy(&own, &programs.tray)? {
+            log::info!("Put the tray program {} in place.", programs.tray.display());
         }
+        Ok(programs)
+    }) {
+        Ok(programs) => programs,
         Err(error) => {
             log::warn!("No tray in signed-in sessions: {error:#}");
             return;
         }
     };
+    remove_other_trays(&programs);
     let started = std::thread::Builder::new()
         .name("tray sessions".into())
         .spawn(move || {
-            let mut starter = Starter::default();
-            let mut system = System { program };
+            let mut starter = Starter::new(rules::SETTLE);
+            let mut system = System { programs };
             while !stop.load(Ordering::SeqCst) {
                 for attempt in starter.tick(&mut system, Instant::now()) {
                     let who = format!("session {} ({})", attempt.who.id, attempt.who.user);
@@ -352,7 +498,7 @@ pub fn start(data_dir: &Path, launched: bool, stop: Arc<AtomicBool>) {
                         }
                     }
                 }
-                std::thread::sleep(POLL);
+                std::thread::sleep(rules::POLL);
             }
         });
     if let Err(error) = started {
@@ -389,28 +535,23 @@ fn enable_debug_privilege() -> Result<(), String> {
     }
 }
 
-/// Uninstall: ends every tray helper running `program`, in every session,
-/// so its folder can be removed. Returns how many it ended.
-pub fn stop_helpers(program: &Path) -> usize {
+/// Uninstall: ends every tray helper, current or older, in every session,
+/// so the program folder can be removed. Returns how many it ended.
+pub fn stop_helpers() -> usize {
+    let programs = match Programs::installed() {
+        Ok(programs) => programs,
+        Err(error) => {
+            log::warn!("Could not look for tray helpers: {error:#}");
+            return 0;
+        }
+    };
     if let Err(reason) = enable_debug_privilege() {
         log::debug!("Ending tray helpers without the debug privilege: {reason}");
     }
     let mut ended = 0;
     for session in sessions() {
-        for pid in helpers(program, session.id) {
-            // SAFETY: opens the helper to end it and wait for it; the handle
-            // is owned at once.
-            let result = unsafe {
-                OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, false, pid).and_then(
-                    |process| {
-                        let process = Owned(process);
-                        TerminateProcess(process.0, 0)?;
-                        WaitForSingleObject(process.0, EXIT_WAIT_MS);
-                        Ok(())
-                    },
-                )
-            };
-            match result {
+        for (pid, _) in helpers(&programs, session.id) {
+            match end_process(pid) {
                 Ok(()) => ended += 1,
                 Err(error) => log::warn!("Could not end the tray helper {pid}: {error}"),
             }
