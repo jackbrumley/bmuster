@@ -502,3 +502,55 @@ The remote cursor disappears over Notepad's text area. Windows' text I-beam is a
 
 - `agent/crates/desktop/src/capture/cursor_pixels.rs` (pure, CU1 and CU2); `capture/windows.rs` renders over black and white as before and hands both to it.
 - **Only linted, not run on Windows.** Release test: in Notepad on Windows 10, the remote I-beam shows black with a white edge over the white text area, and over a dark window; the arrow looks as before.
+
+## 20. The local cursor: remote control without pointer lag (pending release)
+
+**Status:** `IMPLEMENTED (pending release)`, approved by the owner 2026-11-12.
+
+### 20.1 Problem
+
+The browser drew the remote cursor where the agent last reported it: one round trip behind the viewer's mouse. On a slow link the pointer trails the hand, and every click feels late even when the picture keeps up.
+
+### 20.2 Behaviour
+
+The pure rules are in `cursor-plan.ts`; `local-cursor.ts` draws them (the stage's CSS cursor and the cursor canvas). Positions are in stream pixels, as the agent reports them (4.2).
+
+1. **Mouse, controlling.** While a mouse is over the picture itself, the stage's CSS `cursor` is the remote cursor's shape, so the viewer's own computer draws it at full rate, with no lag, in the remote's shape (arrow, I-beam, resize arrows). The cursor canvas draws nothing while the agent's position agrees with where we sent the pointer, and nothing while our input is less than 500 ms old.
+2. **Moved at the machine.** When we have sent no pointer for 500 ms and the reported position is more than 4 stream pixels from where we last sent it (someone at the machine, or a program moving the pointer), the canvas draws the reported cursor again, beside the viewer's own.
+3. **Size.** The shape is shown as the canvas would draw it: one stream pixel per image pixel, then the picture's scale and the pinch zoom. Transparent padding around the shape is trimmed first (a KMS cursor plane is 64 or 256 pixels square around a small arrow), keeping the hotspot inside. On a high-density screen the picture is made at the device pixel ratio and given through `image-set()`, with a plain `url()` for a browser that refuses it; both fall back to `auto`. A shape over 32 CSS pixels (browsers cap cursors, and Chromium drops one over 32 pixels where it crosses the browser's own frame) is not used as a CSS cursor: the CSS cursor is `none` and the canvas draws the shape where we sent the pointer.
+4. **Touch.** The canvas draws the cursor where we sent the pointer, at once (trackpad and tap-to-click both send it). When the fingers have rested for 500 ms and the agent reports the cursor more than 4 stream pixels away, the canvas snaps to the reported position, and the next trackpad gesture carries on from there.
+5. **Hidden.** When the agent reports the cursor hidden (a game, a full-screen video), the canvas draws nothing and a mouse over the picture gets `cursor: none`. Controls laid over the picture keep their own cursor.
+6. **No cursor reports.** An agent that has sent no cursor shape since `hello` puts the cursor in the picture or has none to send; the viewer's cursor is left alone.
+7. **View only.** A watch-only session never changes the CSS cursor and always draws the reported cursor.
+8. **The machine.** Only the browser changes. The agent never hides, moves or replaces the machine's own cursor for this.
+
+### 20.3 Cursors in the picture, per capture path (checked 2026-11-12)
+
+| Path                        | Cursor in the picture?                                                                                                                                                                                                                                                                                                         |
+| :-------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows DXGI duplication    | No: the duplicated frame never contains the pointer; its shape comes from `GetCursorInfo`, not the frame's pointer metadata.                                                                                                                                                                                                   |
+| Windows GDI (`BitBlt`)      | No: `SRCCOPY \| CAPTUREBLT` copies no cursor. `DrawIconEx` draws only into the agent's own bitmap to render the shape (section 19).                                                                                                                                                                                            |
+| Linux X11 (`GetImage`, SHM) | No: the X server leaves the cursor out of images; the shape comes from XFixes.                                                                                                                                                                                                                                                 |
+| Linux KMS (console capture) | No: version 2 composes every plane except the cursor plane (SPEC-CONSOLE-CAPTURE P2, `kms::compose::tests::layers_in_zpos_order`); the legacy path copies the primary framebuffer only. A compositor that draws its own cursor into the frame (no cursor plane) shows it in the picture and lights no cursor plane, so rule 6. |
+| Wayland portal (PipeWire)   | **Yes:** the ScreenCast session asks for `CursorMode::Embedded`, and the capturer reports no cursor. Rule 6 leaves the viewer's own cursor alone, so this path keeps its old look (the viewer's arrow plus the picture's cursor). Metadata mode would need the PipeWire cursor metadata, which `gst-launch` does not pass on.  |
+
+### 20.4 Acceptance criteria
+
+| ID  | Behaviour                                                                                                                                                                    | Named test                                                                                                                         |
+| :-- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------- |
+| LC1 | A mouse controlling wears the remote shape; no canvas cursor while moving or agreeing. CSS values: `image-set` then `url()`, then `auto`.                                    | `cursor-plan.test.ts` "LC1: a mouse controlling the machine wears the remote shape…", "LC1: builds image-set for a sharp picture…" |
+| LC2 | The reported cursor is drawn again after 500 ms without our input, when more than 4 stream pixels away.                                                                      | `cursor-plan.test.ts` "LC2: the reported cursor is drawn again…"                                                                   |
+| LC3 | View only: CSS cursor untouched, reported cursor drawn.                                                                                                                      | `cursor-plan.test.ts` "LC3: view only never changes the CSS cursor…"                                                               |
+| LC4 | Touch: drawn at the sent position at once, snapped to the reported one once input rests; display and stream pixels map both ways.                                            | `cursor-plan.test.ts` "LC4: touch draws at the predicted position…", "LC4: map both ways…"                                         |
+| LC5 | A hidden remote cursor hides the local one, except over controls laid on the picture.                                                                                        | `cursor-plan.test.ts` "LC5: a hidden remote cursor hides the local one too…"                                                       |
+| LC6 | No cursor shapes from the agent: the viewer's cursor is left alone.                                                                                                          | `cursor-plan.test.ts` "LC6: an agent that sends no cursor shapes…"                                                                 |
+| LC7 | Size at the picture's scale and zoom, padding trimmed, over 32 CSS pixels drawn on the canvas instead.                                                                       | `cursor-plan.test.ts` "LC7: a shape too big…", "LC7: is sized at the picture scale…", "LC7: trims the padding…"                    |
+| LC8 | In the page: a mouse over the picture gets the CSS cursor from a cursor message; the canvas draws none while they agree; moved at the machine draws it; hidden gives `none`. | `desktop.svelte.test.ts` "LC8: a mouse wears the remote cursor as its CSS cursor…"                                                 |
+| LC9 | In the page, view only: the stage's CSS cursor stays unset and the canvas draws the agent's cursor.                                                                          | `desktop.svelte.test.ts` "LC9: view only keeps the viewer cursor…"                                                                 |
+
+### 20.5 As built
+
+- `cursor-plan.ts` (pure: the plan, sizes, CSS values, crop, pixel mapping) and `local-cursor.ts` (shapes, reports, the stage's CSS cursor, the cursor canvas). `desktop-canvas.ts` draws tiles only and resizes the cursor canvas through `LocalCursor.resize`; `desktop-session.svelte.ts` hands cursor messages to the `LocalCursor`; `screen-input.ts` tells it every pointer it sends and asks it where the trackpad carries on from.
+- No agent change: no capture path but the portal puts the cursor in the picture (20.3), and the portal cannot send it separately through the current pipeline.
+- **Still to try by hand:** the feel on a real slow link; the CSS cursor size on a 4K remote with a 125% or 150% console screen; Firefox and Safari accepting `image-set()` for `cursor` (the plain `url()` covers a refusal); a KMS machine whose cursor plane is 256 pixels square (trimmed, LC7). Near the top edge of the page Chromium may show its own arrow instead of a CSS cursor over 32 pixels; such cursors are drawn on the canvas instead (rule 3).
+- **Known limit:** a KMS cursor partly off the top or left edge is reported hidden (SPEC-CONSOLE-CAPTURE), so for those few pixels a mouse over the picture shows no cursor.

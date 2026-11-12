@@ -1,14 +1,12 @@
 import type { FrameHeader, Tile } from '#lib/domain/desktop/frame.ts';
+import type { LocalCursor } from './local-cursor.ts';
 
 /**
  * Drawing the remote screen (SPEC-DESKTOP R1, R6): JPEG tiles decoded with
  * `createImageBitmap` and drawn where they belong, solid tiles filled. The
- * cursor is drawn on its own canvas above, from the shape the agent sent
- * once and the position it sends as the pointer moves, so pointer movement
- * costs no video.
+ * cursor is the local cursor's (local-cursor.ts, SPEC-DESKTOP 20), so
+ * pointer movement costs no video; its canvas follows the picture's size.
  */
-
-type Shape = { image: ImageBitmap; hotspotX: number; hotspotY: number };
 
 function blobOf(bytes: Uint8Array, type: string): Blob {
 	return new Blob([new Uint8Array(bytes)], { type });
@@ -40,11 +38,9 @@ function solid(tile: Tile): ImageData {
 
 export class DesktopCanvas {
 	readonly #screen: HTMLCanvasElement;
-	readonly #cursor: HTMLCanvasElement;
-	readonly #shapes = new Map<number, Shape>();
-	#pointer: { id: number; x: number; y: number; visible: boolean } | undefined;
+	readonly #cursor: LocalCursor;
 
-	constructor(screen: HTMLCanvasElement, cursor: HTMLCanvasElement) {
+	constructor(screen: HTMLCanvasElement, cursor: LocalCursor) {
 		this.#screen = screen;
 		this.#cursor = cursor;
 	}
@@ -60,9 +56,7 @@ export class DesktopCanvas {
 		if (this.#screen.width !== header.width || this.#screen.height !== header.height) {
 			this.#screen.width = header.width;
 			this.#screen.height = header.height;
-			this.#cursor.width = header.width;
-			this.#cursor.height = header.height;
-			this.#drawCursor();
+			this.#cursor.resize(header.width, header.height);
 		}
 		const context = this.#screen.getContext('2d', { alpha: false });
 		if (context === null) {
@@ -77,45 +71,5 @@ export class DesktopCanvas {
 				context.putImageData(solid(tile), tile.x, tile.y);
 			}
 		});
-	}
-
-	async cursorShape(
-		id: number,
-		hotspotX: number,
-		hotspotY: number,
-		png: Uint8Array
-	): Promise<void> {
-		const image = await createImageBitmap(blobOf(png, 'image/png'));
-		this.#shapes.get(id)?.image.close();
-		this.#shapes.set(id, { image, hotspotX, hotspotY });
-		this.#drawCursor();
-	}
-
-	cursorPosition(id: number, x: number, y: number, visible: boolean): void {
-		this.#pointer = { id, x, y, visible };
-		this.#drawCursor();
-	}
-
-	/** A new page or display: shapes are sent again. */
-	forgetCursor(): void {
-		for (const shape of this.#shapes.values()) {
-			shape.image.close();
-		}
-		this.#shapes.clear();
-		this.#pointer = undefined;
-		this.#drawCursor();
-	}
-
-	#drawCursor(): void {
-		const context = this.#cursor.getContext('2d');
-		if (context === null) {
-			return;
-		}
-		context.clearRect(0, 0, this.#cursor.width, this.#cursor.height);
-		const pointer = this.#pointer;
-		const shape = pointer === undefined ? undefined : this.#shapes.get(pointer.id);
-		if (pointer?.visible === true && shape !== undefined) {
-			context.drawImage(shape.image, pointer.x - shape.hotspotX, pointer.y - shape.hotspotY);
-		}
 	}
 }

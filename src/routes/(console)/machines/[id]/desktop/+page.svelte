@@ -33,6 +33,7 @@
 	import DesktopStart from './desktop-start.svelte';
 	import FloatingControls from './floating-controls.svelte';
 	import FullScreenBar from './full-screen-bar.svelte';
+	import { LocalCursor } from './local-cursor.ts';
 	import { FullScreen } from './full-screen.svelte.ts';
 	import { dismissHint, hintDismissed } from './gesture-hint.ts';
 	import GestureHint from './gesture-hint.svelte';
@@ -246,9 +247,15 @@
 		) {
 			return;
 		}
+		const cursor = new LocalCursor(surface, cursorCanvas, {
+			geometry,
+			zoom: () => zoom,
+			controlling: () => session?.controlling === true
+		});
 		const current = new DesktopSession(
 			machine.id,
-			new DesktopCanvas(screenCanvas, cursorCanvas),
+			new DesktopCanvas(screenCanvas, cursor),
+			cursor,
 			viewport
 		);
 		session = current;
@@ -263,13 +270,15 @@
 			touchMode: () => touchMode,
 			zoom: (next) => {
 				zoom = next;
-			}
+			},
+			cursor
 		});
 		const detachFullScreen = screenMode.attach();
 		return () => {
 			detachInput();
 			detachFullScreen();
 			current.detach();
+			cursor.detach();
 		};
 	});
 </script>

@@ -1,5 +1,7 @@
 import type { InputMessage } from '#lib/domain/desktop/messages.ts';
+import type { InputKind } from './cursor-plan.ts';
 import { KeyFilter, toDisplay } from './input.ts';
+import type { CursorFeed } from './local-cursor.ts';
 import { TouchGestures, type Geometry, type Later, type TouchMode } from './touch-gestures.ts';
 import { zoomedBox, type Zoom } from './zoom.ts';
 
@@ -27,6 +29,8 @@ export type ScreenInputHost = {
 	touchMode(): TouchMode;
 	/** Draws the picture at this zoom. */
 	zoom(zoom: Zoom): void;
+	/** The local cursor (SPEC-DESKTOP 20): told where each pointer message went. */
+	cursor: CursorFeed;
 };
 
 /** Attaches the input; returns the function that takes it off again. */
@@ -34,6 +38,12 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 	const send = (message: InputMessage) => {
 		if (host.controlling()) {
 			host.send(message);
+		}
+	};
+	const pointer = (x: number, y: number, buttons: number, kind: InputKind) => {
+		if (host.controlling()) {
+			host.send({ type: 'pointer', x, y, buttons });
+			host.cursor.sent(x, y, kind);
 		}
 	};
 	const later: Later = (run, ms) => {
@@ -46,7 +56,7 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 	const gestures = new TouchGestures(
 		{
 			pointer: (x, y, buttons) => {
-				send({ type: 'pointer', x, y, buttons });
+				pointer(x, y, buttons, 'touch');
 			},
 			wheel: (dx, dy) => {
 				send({ type: 'wheel', dx, dy, mode: 'pixel' });
@@ -76,7 +86,7 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 		const at = mouseAt(event);
 		if (at !== undefined) {
 			pendingMove = undefined;
-			send({ type: 'pointer', ...at, buttons: event.buttons });
+			pointer(at.x, at.y, event.buttons, 'mouse');
 		}
 	};
 	const releaseAll = () => {
@@ -110,6 +120,11 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 	on('pointerdown', (event) => {
 		if (event.pointerType === 'touch') {
 			gestures.mode = host.touchMode();
+			// The trackpad carries on from where the cursor is shown.
+			const shown = host.cursor.adoptable();
+			if (shown !== undefined) {
+				gestures.position = shown;
+			}
 			gestures.down(event.pointerId, event.clientX, event.clientY, event.timeStamp);
 			return;
 		}
@@ -132,7 +147,7 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 			requestAnimationFrame(() => {
 				moveScheduled = false;
 				if (pendingMove !== undefined) {
-					send({ type: 'pointer', ...pendingMove });
+					pointer(pendingMove.x, pendingMove.y, pendingMove.buttons, 'mouse');
 					pendingMove = undefined;
 				}
 			});

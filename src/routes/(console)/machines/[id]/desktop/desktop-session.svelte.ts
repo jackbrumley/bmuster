@@ -16,6 +16,7 @@ import { DESKTOP_MODES, type DesktopMode } from '#lib/domain/sessions/session.ts
 import { SessionLink, type Connection } from '#lib/runes/session-link.svelte.ts';
 import { agentDesktopMessageSchema, type DesktopDisplay } from '#lib/schemas/desktop/desktop.ts';
 import type { DesktopCanvas } from './desktop-canvas.ts';
+import type { LocalCursor } from './local-cursor.ts';
 
 /**
  * One desktop session as the page sees it (SPEC-DESKTOP): the shared session
@@ -56,6 +57,7 @@ export class DesktopSession {
 
 	readonly #link: SessionLink;
 	readonly #canvas: DesktopCanvas;
+	readonly #cursor: LocalCursor;
 	readonly #viewport: () => { width: number; height: number; pixelRatio: number };
 	/** Batches of the frame being received; drawn when its last part comes. */
 	#parts: { seq: number; tiles: Tile[] } | undefined;
@@ -69,9 +71,11 @@ export class DesktopSession {
 	constructor(
 		machineId: string,
 		canvas: DesktopCanvas,
+		cursor: LocalCursor,
 		viewport: () => { width: number; height: number; pixelRatio: number }
 	) {
 		this.#canvas = canvas;
+		this.#cursor = cursor;
 		this.#viewport = viewport;
 		this.#link = new SessionLink('desktop', machineId, {
 			attached: () => undefined,
@@ -217,7 +221,7 @@ export class DesktopSession {
 	#greet(): void {
 		this.#parts = undefined;
 		this.#lastDrawn = undefined;
-		this.#canvas.forgetCursor();
+		this.#cursor.forget();
 		this.#send({ type: 'hello', codecs: ['jpeg'], viewport: this.#viewport() });
 		this.#send({ type: 'settings', ...this.settings });
 		this.#send({ type: 'keyframe' });
@@ -297,10 +301,10 @@ export class DesktopSession {
 				// Phase 2; this console offers JPEG only, so none should come.
 				return;
 			case 'cursor-shape':
-				void this.#canvas.cursorShape(frame.id, frame.hotspotX, frame.hotspotY, frame.png);
+				void this.#cursor.shape(frame.id, frame.hotspotX, frame.hotspotY, frame.png);
 				return;
 			case 'cursor-position':
-				this.#canvas.cursorPosition(frame.id, frame.x, frame.y, frame.visible);
+				this.#cursor.position(frame.id, frame.x, frame.y, frame.visible);
 				return;
 			case 'tiles':
 				this.#onTiles(frame.header, frame.tiles);
