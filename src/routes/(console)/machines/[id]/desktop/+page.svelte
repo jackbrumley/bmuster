@@ -16,6 +16,7 @@
 	import { consoleSessionRoute } from '#lib/runes/session-link.svelte.ts';
 	import MachineUnreachable from '../machine-unreachable.svelte';
 	import ClipboardPanel from './clipboard-panel.svelte';
+	import { attachClipboardSharing } from './clipboard.svelte.ts';
 	import NoPermission from '../no-permission.svelte';
 	import { DesktopCanvas } from './desktop-canvas.ts';
 	import { DesktopSession } from './desktop-session.svelte.ts';
@@ -232,6 +233,14 @@
 	}
 
 	// A window left open keeps its own session; this page only stops watching it.
+	/** Clipboard sharing follows focus, taps and keys anywhere in the page (SPEC-DESKTOP 21.11). */
+	$effect(() => {
+		if (session === undefined) {
+			return;
+		}
+		return attachClipboardSharing(session.clipboard);
+	});
+
 	onMount(() => () => {
 		popOut.forget();
 	});
@@ -482,6 +491,9 @@
 				send={sendInput}
 				{touchMode}
 				ontouchmode={chooseTouchMode}
+				onpaste={(text: string) => {
+					session?.clipboard.pasteFromKeyboard(text);
+				}}
 			/>
 		{/if}
 	</div>

@@ -9,6 +9,7 @@
 //! [`DesktopSession::following`] follows the screen at the machine
 //! ([`following`]).
 
+mod clipboard;
 mod cursor;
 mod following;
 mod video;
@@ -101,6 +102,8 @@ pub struct DesktopSession {
     /// The viewer chose all screens: a screen the session follows to
     /// opens that way too, when it can.
     wants_all: bool,
+    /// Clipboard sharing (SPEC-DESKTOP 21.11).
+    sharing: clipboard::Sharing,
 }
 
 impl DesktopSession {
@@ -142,6 +145,7 @@ impl DesktopSession {
             ended: None,
             follow: None,
             wants_all: false,
+            sharing: clipboard::Sharing::default(),
         }
     }
 
@@ -304,6 +308,8 @@ impl DesktopSession {
             ClientMessage::Disconnect => out.extend(self.end(EndReason::Closed)),
             ClientMessage::ClipboardPush { text } => self.clipboard_push(&text, out),
             ClientMessage::ClipboardPull => self.clipboard_pull(out),
+            ClientMessage::ClipboardShare { on } => self.sharing.turn(on, now),
+            ClientMessage::ClipboardSync { text } => self.clipboard_sync(&text, out),
             message => self.inject(message, now, out),
         }
     }
@@ -340,39 +346,6 @@ impl DesktopSession {
         }
     }
 
-    /// Puts the viewer's text on the screen's clipboard (SPEC-DESKTOP 21).
-    /// Only a control session has an injector, and so a clipboard; a
-    /// following session has none while the screen shows nothing it can
-    /// open. Neither this nor [`DesktopSession::clipboard_pull`] ever logs
-    /// the text.
-    fn clipboard_push(&mut self, text: &str, out: &mut Vec<Outgoing>) {
-        let Some(input) = self.input.as_mut() else {
-            clipboard_failed(&crate::clipboard::not_available().0, out);
-            return;
-        };
-        match input.set_clipboard(text) {
-            Ok(()) => out.push(self::text(AgentMessage::ClipboardSent {
-                bytes: text.len(),
-            })),
-            Err(err) => clipboard_failed(&err.0, out),
-        }
-    }
-
-    /// Sends the screen's clipboard text to the viewer.
-    fn clipboard_pull(&mut self, out: &mut Vec<Outgoing>) {
-        let Some(input) = self.input.as_mut() else {
-            clipboard_failed(&crate::clipboard::not_available().0, out);
-            return;
-        };
-        match input.clipboard() {
-            Ok(text) if text.len() > control::MAX_CLIPBOARD_BYTES => {
-                clipboard_failed(&crate::clipboard::too_large().0, out);
-            }
-            Ok(text) => out.push(self::text(AgentMessage::Clipboard { text })),
-            Err(err) => clipboard_failed(&err.0, out),
-        }
-    }
-
     fn release_all(&mut self) {
         if let Some(input) = self.input.as_mut() {
             if let Err(err) = input.release_all() {
@@ -406,6 +379,7 @@ impl DesktopSession {
             return out;
         }
         self.keep_awake(now);
+        self.watch_clipboard(now, &mut out);
         match self.capturer.poll_layout() {
             Ok(true) => {
                 self.release_all();
@@ -506,11 +480,6 @@ fn scale_factor(scale: Scale, viewport: Option<Viewport>, width: u32, height: u3
         }
         (Scale::Fit, _) => 1.0,
     }
-}
-
-fn clipboard_failed(reason: &str, out: &mut Vec<Outgoing>) {
-    log::warn!("Desktop clipboard: {reason}");
-    out.push(error(ErrorCode::ClipboardFailed, reason));
 }
 
 fn text(message: AgentMessage) -> Outgoing {

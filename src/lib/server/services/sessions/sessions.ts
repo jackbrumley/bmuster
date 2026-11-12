@@ -15,7 +15,12 @@ import { activeMachineBasics } from '../machines/machine-views.ts';
 import { getSetting } from '../settings/settings.ts';
 import type { Relay } from './relay.ts';
 import type { SessionRecord } from './session-record.ts';
-import { auditDesktopClipboard, auditSessionEnded, auditSessionOpened } from './session-audit.ts';
+import {
+	auditDesktopClipboard,
+	auditSessionEnded,
+	auditSessionOpened,
+	auditSharedClipboard
+} from './session-audit.ts';
 import { signTicket, TICKET_LIFETIME_MS, type TicketPurpose } from './session-ticket.ts';
 
 /**
@@ -104,6 +109,7 @@ export function startSession(
 		record,
 		(ended) => {
 			auditSessionEnded(database, ended, machineName);
+			auditSharedClipboard(database, ended, machineName);
 		},
 		(transfer) => {
 			auditDesktopClipboard(database, record, machineName, transfer);

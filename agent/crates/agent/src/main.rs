@@ -105,6 +105,13 @@ enum Command {
         /// The agent's connect-back socket for this unit
         socket: PathBuf,
     },
+    /// The clipboard helper a KMS desktop session starts as the user's unit
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    ClipboardHelper {
+        /// The agent's connect-back socket for this unit
+        socket: PathBuf,
+    },
     /// The KMS screen reader a desktop session starts as a root unit
     #[cfg(target_os = "linux")]
     #[command(hide = true)]
@@ -354,6 +361,11 @@ fn dispatch(command: Command) -> Result<ExitCode> {
         #[cfg(target_os = "linux")]
         Command::WaylandHelper { socket } => {
             wayland::helper::run(&socket)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        #[cfg(target_os = "linux")]
+        Command::ClipboardHelper { socket } => {
+            wayland::session_clipboard::helper::run(&socket)?;
             Ok(ExitCode::SUCCESS)
         }
         #[cfg(target_os = "linux")]

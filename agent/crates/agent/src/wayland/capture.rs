@@ -38,6 +38,8 @@ pub struct Bridge {
     commands: SyncSender<Command>,
     /// Clipboard calls waiting for the helper (SPEC-DESKTOP 21.9).
     clipboard: Arc<Replies>,
+    /// Another program took the clipboard since the last look (21.11).
+    clipboard_changed: Arc<std::sync::atomic::AtomicBool>,
     child: Mutex<Child>,
     unit: String,
     _reservation: Reservation,
@@ -94,11 +96,19 @@ pub fn token_path(dir: &Path, uid: u32, control: bool) -> PathBuf {
     ))
 }
 
-/// `systemd-run`'s arguments for the helper unit `unit`, run as `uid`. Its
-/// standard streams are systemd's own (`/dev/null`, the journal): the
+/// `systemd-run`'s arguments for the helper unit `unit`, run as `uid`:
+/// `program` with the hidden `subcommand` (`wayland-helper`, or
+/// `clipboard-helper` for a KMS screen's clipboard, SPEC-DESKTOP 21.10).
+/// Its standard streams are systemd's own (`/dev/null`, the journal): the
 /// helper connects back to `socket`, its one argument (SPEC-SESSION-UNITS,
 /// Version 2).
-pub fn unit_arguments(unit: &str, uid: u32, program: &Path, socket: &Path) -> Vec<OsString> {
+pub fn unit_arguments(
+    unit: &str,
+    uid: u32,
+    program: &Path,
+    subcommand: &str,
+    socket: &Path,
+) -> Vec<OsString> {
     let mut args: Vec<OsString> = [
         "--quiet".to_string(),
         "--wait".to_string(),
@@ -120,7 +130,7 @@ pub fn unit_arguments(unit: &str, uid: u32, program: &Path, socket: &Path) -> Ve
     .map(OsString::from)
     .to_vec();
     args.push(program.into());
-    args.push("wayland-helper".into());
+    args.push(subcommand.into());
     args.push(socket.into());
     args
 }
@@ -139,7 +149,13 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
     // The socket is the user's: the helper runs as them.
     let socket = ConnectSocket::create(&Folder::system(), uid)?;
     let mut command = std::process::Command::new("systemd-run");
-    command.args(unit_arguments(&unit, uid, &program, socket.path()));
+    command.args(unit_arguments(
+        &unit,
+        uid,
+        &program,
+        "wayland-helper",
+        socket.path(),
+    ));
     // systemd-run's own errors are shipped (SPEC-AGENT-LOGS 1); the
     // helper's and gst-launch's go to the journal.
     let connected = connect::start(
@@ -190,6 +206,8 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
         let reading_state = Arc::clone(&state);
         let clipboard = Arc::new(Replies::default());
         let replies = Arc::clone(&clipboard);
+        let clipboard_changed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let changed = Arc::clone(&clipboard_changed);
         std::thread::Builder::new()
             .name("wayland frames".into())
             .spawn(move || {
@@ -225,6 +243,12 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
                                         state.ready = true;
                                     }
                                     Event::Failed { message } => bail!("{message}"),
+                                    Event::ClipboardBackend { .. } => {
+                                        bail!("The portal helper sent a clipboard helper event")
+                                    }
+                                    Event::ClipboardChanged => {
+                                        changed.store(true, std::sync::atomic::Ordering::Relaxed)
+                                    }
                                     Event::ClipboardSet { id } => replies.deliver(id, Reply::Set),
                                     Event::ClipboardText { id, text } => {
                                         replies.deliver(id, Reply::Text(text))
@@ -257,6 +281,7 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
             state,
             commands: send,
             clipboard,
+            clipboard_changed,
             child: Mutex::new(child.0.take().context("Helper process absent")?),
             stream: stream.try_clone()?,
             unit: unit.clone(),
@@ -496,6 +521,15 @@ impl InputBackend for Input {
             Reply::Failed(message) => Err(InputError(message)),
             Reply::Set => Err(unexpected_reply()),
         }
+    }
+
+    /// Whether another program took the clipboard since the last look,
+    /// as the portal told the helper (SPEC-DESKTOP 21.11).
+    fn clipboard_changed(&mut self) -> InputResult<bool> {
+        Ok(self
+            .bridge
+            .clipboard_changed
+            .swap(false, std::sync::atomic::Ordering::Relaxed))
     }
 }
 

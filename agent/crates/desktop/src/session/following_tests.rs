@@ -558,6 +558,7 @@ mod kms {
                 self.source.clone(),
                 Opener::with(|| panic!("a watch session builds no injector")),
                 Box::new(NoLayout("the sign-in screen".into())),
+                Box::new(crate::clipboard::NoClipboard),
             )
         }
     }
@@ -581,6 +582,7 @@ mod kms {
                 self.source.clone(),
                 Opener::with(|| panic!("a watch session builds no injector")),
                 Box::new(NoLayout("a test".into())),
+                Box::new(crate::clipboard::NoClipboard),
             )
         }
     }

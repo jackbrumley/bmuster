@@ -746,3 +746,100 @@ fn session_all_screens_needs_two_displays() {
     let out = h.tick();
     assert_eq!(texts(&out)[0]["display"], "A");
 }
+
+/// The clipboard messages among a tick's or a message's output.
+fn clipboard_news(out: &[Outgoing]) -> Vec<serde_json::Value> {
+    texts(out)
+        .into_iter()
+        .filter(|m| {
+            m["type"]
+                .as_str()
+                .is_some_and(|kind| kind.starts_with("clipboard"))
+                || m["code"]
+                    .as_str()
+                    .is_some_and(|code| code.starts_with("clipboard"))
+        })
+        .collect()
+}
+
+/// Half a second on, then a tick.
+fn later(h: &mut Harness) -> Vec<serde_json::Value> {
+    h.now += Duration::from_millis(600);
+    let out = h.session.tick(h.now);
+    clipboard_news(&out)
+}
+
+/// SPEC-DESKTOP C28: with sharing on, new text on the machine's clipboard
+/// goes to the viewer once by itself; the viewer's own push or sync is
+/// never echoed back; empty and over-1-MiB text is not sent; off stops it.
+#[test]
+fn c28_sharing_sends_new_machine_text_once_and_never_echoes() {
+    let (mut h, clipboard) = clipboard_harness("there before");
+    assert!(
+        later(&mut h).is_empty(),
+        "sharing is off until the viewer turns it on"
+    );
+    h.send(r#"{"type":"clipboard-share","on":true}"#);
+    assert!(
+        later(&mut h).is_empty(),
+        "what was there before is not news"
+    );
+    *clipboard.lock().unwrap() = "copied at the machine".into();
+    assert_eq!(
+        later(&mut h),
+        vec![serde_json::json!({"type": "clipboard-changed", "text": "copied at the machine"})]
+    );
+    assert!(later(&mut h).is_empty(), "sent once");
+
+    let synced = clipboard_news(&h.send(r#"{"type":"clipboard-sync","text":"from my laptop"}"#));
+    assert_eq!(
+        synced,
+        vec![serde_json::json!({"type": "clipboard-synced", "bytes": 14})]
+    );
+    assert_eq!(*clipboard.lock().unwrap(), "from my laptop");
+    assert!(
+        later(&mut h).is_empty(),
+        "the viewer's own text is not echoed"
+    );
+    h.send(r#"{"type":"clipboard-push","text":"pushed by hand"}"#);
+    assert!(later(&mut h).is_empty(), "nor a push");
+
+    *clipboard.lock().unwrap() = String::new();
+    assert!(later(&mut h).is_empty(), "an empty clipboard is not news");
+    *clipboard.lock().unwrap() = "x".repeat(control::MAX_CLIPBOARD_BYTES + 1);
+    assert!(later(&mut h).is_empty(), "over 1 MiB is not shared");
+
+    h.send(r#"{"type":"clipboard-share","on":false}"#);
+    *clipboard.lock().unwrap() = "after sharing stopped".into();
+    assert!(later(&mut h).is_empty());
+    assert!(
+        h.send(r#"{"type":"clipboard-sync","text":"ignored"}"#)
+            .is_empty(),
+        "no sync while sharing is off"
+    );
+    assert_eq!(*clipboard.lock().unwrap(), "after sharing stopped");
+}
+
+/// SPEC-DESKTOP C29: a watch-only session drops `clipboard-share` and
+/// `clipboard-sync` like any control message, and a sync the screen
+/// cannot take is `clipboard-sync-failed` with the session going on.
+#[test]
+fn c29_sharing_needs_control_and_a_failed_sync_is_quiet() {
+    let mut h = harness(Mode::Watch);
+    h.send(HELLO);
+    let first = h.send(r#"{"type":"clipboard-share","on":true}"#);
+    assert_eq!(texts(&first)[0]["code"], "not-allowed");
+    assert!(h.send(r#"{"type":"clipboard-sync","text":"x"}"#).is_empty());
+    assert!(later(&mut h).is_empty());
+
+    let mut h = harness(Mode::Control);
+    h.send(HELLO);
+    h.send(r#"{"type":"clipboard-share","on":true}"#);
+    let out = clipboard_news(&h.send(r#"{"type":"clipboard-sync","text":"x"}"#));
+    assert_eq!(out[0]["code"], "clipboard-sync-failed");
+    assert!(
+        later(&mut h).is_empty(),
+        "a screen without a clipboard never changes"
+    );
+    assert!(h.session.ended.is_none());
+}

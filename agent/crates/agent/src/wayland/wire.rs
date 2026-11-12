@@ -79,6 +79,15 @@ pub enum Event {
         id: u64,
         message: String,
     },
+    /// The clipboard helper of a KMS screen now serves through `backend`
+    /// (SPEC-DESKTOP 21.10); sent before the first answer it served and
+    /// again whenever it changes. The portal helper never sends it.
+    ClipboardBackend {
+        backend: String,
+    },
+    /// Another program took the desktop's clipboard (clipboard sharing,
+    /// SPEC-DESKTOP 21.11): the agent reads it on its next look.
+    ClipboardChanged,
 }
 
 pub enum Packet {

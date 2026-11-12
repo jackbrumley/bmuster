@@ -365,6 +365,9 @@
 											{osFamily}
 											{send}
 											onkeyboard={(keyboardOpen: boolean) => (typing = keyboardOpen)}
+											onpaste={(text: string) => {
+												clipboard.pasteFromKeyboard(text);
+											}}
 										/>
 										{#if !typing}
 											<KeysMenu {osFamily} {send} afterSend={backToScreen} />

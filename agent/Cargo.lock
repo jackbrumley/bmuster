@@ -230,6 +230,7 @@ dependencies = [
  "windows-registry",
  "windows-service",
  "windows-sys 0.61.2",
+ "wl-clipboard-rs",
  "wmi",
  "zbus",
 ]

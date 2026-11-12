@@ -472,6 +472,45 @@ describe('copy and paste in the relay (SPEC-DESKTOP 21)', () => {
 		]);
 	});
 
+	it('C33: drops clipboard sharing from a watch-only browser, passes it on in control', () => {
+		const watch = desktop('watch');
+		watch.relay.browserText(RECORD.id, watch.browser, '{"type":"clipboard-share","on":true}');
+		watch.relay.browserText(RECORD.id, watch.browser, '{"type":"clipboard-sync","text":"secret"}');
+		expect(watch.agent.texts).toEqual([]);
+		const control = desktop('control');
+		control.relay.browserText(RECORD.id, control.browser, '{"type":"clipboard-share","on":true}');
+		control.relay.browserText(RECORD.id, control.browser, '{"type":"clipboard-sync","text":"hi"}');
+		expect(control.agent.texts).toEqual([
+			{ type: 'clipboard-share', on: true },
+			{ type: 'clipboard-sync', text: 'hi' }
+		]);
+	});
+
+	it('C33: totals clipboard sharing per direction for the end of the session, not per transfer', () => {
+		const relay = createRelay(RELAY_LIMITS);
+		const transfers: ClipboardTransfer[] = [];
+		const ended: EndedSession[] = [];
+		relay.start(
+			{ ...RECORD, kind: 'desktop', mode: 'control', openedAt: Date.now() },
+			(session) => ended.push(session),
+			(transfer) => transfers.push(transfer)
+		);
+		const agent = fakePeer(true);
+		const browser = fakePeer(true);
+		connectBrowser(relay, browser);
+		relay.attachAgent(RECORD.id, RECORD.machineId, agent);
+		relay.agentText(RECORD.id, agent, '{"type":"clipboard-changed","text":"Grüße"}');
+		relay.agentText(RECORD.id, agent, '{"type":"clipboard-changed","text":"ab"}');
+		relay.agentText(RECORD.id, agent, '{"type":"clipboard-synced","bytes":10}');
+		expect(transfers).toEqual([]);
+		expect(browser.texts).toContainEqual({ type: 'clipboard-changed', text: 'Grüße' });
+		relay.browserText(RECORD.id, browser, '{"type":"end"}');
+		expect(ended[0]?.sharedClipboard).toEqual({
+			'from-machine': { transfers: 2, bytes: 9 },
+			'to-machine': { transfers: 1, bytes: 10 }
+		});
+	});
+
 	it('C7: counts each transfer the agent confirms, in UTF-8 bytes, and passes the reply on', () => {
 		const { relay, transfers, agent, browser } = desktop('control');
 		relay.browserText(RECORD.id, browser, '{"type":"clipboard-push","text":"héllo"}');

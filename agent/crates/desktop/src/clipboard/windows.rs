@@ -28,3 +28,22 @@ pub fn get() -> InputResult<String> {
         Err(error) => Err(failed("reading the text")(error)),
     }
 }
+
+/// The window station's clipboard sequence number, which Windows bumps on
+/// every change to the clipboard (SPEC-DESKTOP 21.11). Read twice a second
+/// it tells the session what `WM_CLIPBOARDUPDATE` would, with no window
+/// to keep.
+#[derive(Default)]
+pub struct Sequence(Option<u32>);
+
+impl Sequence {
+    /// Whether the clipboard changed since the last call; the first call
+    /// only notes where it stands.
+    pub fn changed(&mut self) -> bool {
+        // SAFETY: no arguments; reads a counter of the window station.
+        let now = unsafe { windows::Win32::System::DataExchange::GetClipboardSequenceNumber() };
+        let changed = self.0.is_some_and(|last| last != now);
+        self.0 = Some(now);
+        changed
+    }
+}

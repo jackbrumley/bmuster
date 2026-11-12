@@ -105,13 +105,14 @@ pub fn kms_platform(
     source: capture::kms::capturer::SharedSource,
     uinput: input::uinput::Opener,
     layout: Box<dyn capture::kms::compositor::LayoutReader>,
+    clipboard: Box<dyn clipboard::ScreenClipboard>,
 ) -> Result<Platform, String> {
     let pointer = capture::kms::capturer::unset_pointer();
     let capturer = capture::kms::capturer::KmsCapturer::new(source, pointer.clone(), layout)
         .map_err(|e| e.0)?;
     Ok(Platform {
         capturer: Box::new(capturer),
-        make_input: Box::new(move || uinput.backend(pointer)),
+        make_input: Box::new(move || uinput.backend(pointer, clipboard)),
         notice_target: notice::Target::Console,
     })
 }

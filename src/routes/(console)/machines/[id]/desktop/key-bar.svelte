@@ -8,7 +8,14 @@
 	} from '@tabler/icons-svelte-runes';
 	import type { InputMessage } from '#lib/domain/desktop/messages.ts';
 	import type { OsFamily } from '#lib/domain/machines/machine.ts';
-	import { characterKeys, chordMessages, keyBarFor, type BarKey, type Modifier } from './keys.ts';
+	import {
+		characterKeys,
+		chordMessages,
+		keyBarFor,
+		textParts,
+		type BarKey,
+		type Modifier
+	} from './keys.ts';
 
 	/**
 	 * The phone's keys for the remote screen (SPEC-DESKTOP 5.3): Esc, Tab,
@@ -19,16 +26,22 @@
 	 * area, so the phone's keyboard stays open. Ctrl+Alt+Del and other
 	 * combinations are on the Keys menu (SPEC-DESKTOP-KEYS). `onkeyboard`
 	 * hears when the phone's keyboard opens and closes, so the full-screen
-	 * sheet can fold around it (SPEC-DESKTOP-FLOATING).
+	 * sheet can fold around it (SPEC-DESKTOP-FLOATING). A paste from the
+	 * phone's keyboard (its clipboard suggestion, or long-press Paste) is not
+	 * typed: it goes to `onpaste`, which puts it on the machine's clipboard
+	 * (SPEC-DESKTOP 21.11). Words a keyboard composes are typed when the
+	 * composition ends.
 	 */
 	let {
 		osFamily,
 		send,
-		onkeyboard
+		onkeyboard,
+		onpaste
 	}: {
 		osFamily: OsFamily;
 		send: (message: InputMessage) => void;
 		onkeyboard: ((open: boolean) => void) | undefined;
+		onpaste: (text: string) => void;
 	} = $props();
 
 	const keys = $derived(keyBarFor(osFamily));
@@ -37,6 +50,8 @@
 	let alt = $state(false);
 	let typing = $state<HTMLElement>();
 	let open = $state(false);
+	/** What a keyboard composes in the box until the word is done; emptied after. */
+	let typed = $state('');
 
 	const ICONS = {
 		up: IconArrowUp,
@@ -80,21 +95,39 @@
 		typing?.focus();
 	}
 
+	/** Typed text: as `text` messages, or as a key with Ctrl or Alt latched. */
+	function typeText(text: string): void {
+		const keys = ctrl || alt ? characterKeys(text) : undefined;
+		if (keys !== undefined) {
+			tap(keys.code, keys.key);
+			return;
+		}
+		for (const part of textParts(text)) {
+			send({ type: 'text', text: part });
+		}
+	}
+
+	/** A composed word: typed once the keyboard finishes it, then the box is emptied. */
+	function onCompositionEnd(event: CompositionEvent): void {
+		typeText(event.data);
+		typed = '';
+	}
+
 	/** The phone keyboard's input: characters go as text, except with Ctrl or Alt latched. */
 	function onBeforeInput(event: InputEvent): void {
+		// A composition in progress cannot be cancelled; its word is typed at compositionend.
+		if (event.inputType === 'insertCompositionText') {
+			return;
+		}
 		event.preventDefault();
 		switch (event.inputType) {
 			case 'insertText':
-			case 'insertReplacementText': {
-				const text = event.data ?? '';
-				const keys = ctrl || alt ? characterKeys(text) : undefined;
-				if (keys !== undefined) {
-					tap(keys.code, keys.key);
-				} else if (text !== '') {
-					send({ type: 'text', text });
-				}
+			case 'insertReplacementText':
+				typeText(event.data ?? '');
 				return;
-			}
+			case 'insertFromPaste':
+				onpaste(event.data ?? event.dataTransfer?.getData('text/plain') ?? '');
+				return;
 			case 'insertParagraph':
 			case 'insertLineBreak':
 				tap('Enter', 'Enter');
@@ -154,7 +187,9 @@
 		aria-label="Type on the machine"
 		autocapitalize="off"
 		spellcheck="false"
+		bind:textContent={typed}
 		onbeforeinput={onBeforeInput}
+		oncompositionend={onCompositionEnd}
 		onfocus={() => {
 			open = true;
 			onkeyboard?.(true);

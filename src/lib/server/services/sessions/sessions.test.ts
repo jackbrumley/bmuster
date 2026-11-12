@@ -462,6 +462,37 @@ describe('desktop copy and paste audit (SPEC-DESKTOP 21)', () => {
 		expect(entries[0]).toMatchObject({ actorUserId: admin.id, target: 'Test machine' });
 		expect(JSON.stringify(listAudit(database, 100))).not.toContain('hunter2');
 	});
+
+	it('C34: clipboard sharing is one entry per direction at the end, with counts, never the text', async () => {
+		const { database, relay, sessionId, agent } = await openControlDesktop();
+		relay.agentText(sessionId, agent, '{"type":"clipboard-changed","text":"hunter2-password"}');
+		relay.agentText(sessionId, agent, '{"type":"clipboard-changed","text":"ab"}');
+		relay.agentText(sessionId, agent, '{"type":"clipboard-synced","bytes":5}');
+		const clipboard = () =>
+			listAudit(database, 50).filter((entry) => entry.kind === 'desktop-clipboard');
+		expect(clipboard()).toEqual([]);
+		relay.agentText(sessionId, agent, '{"type":"ended","reason":"closed"}');
+		expect(clipboard().map((entry) => entry.detail)).toEqual(
+			expect.arrayContaining([
+				{
+					direction: 'from the machine',
+					via: 'clipboard sharing',
+					transfers: '2',
+					bytes: '18',
+					session: sessionId
+				},
+				{
+					direction: 'to the machine',
+					via: 'clipboard sharing',
+					transfers: '1',
+					bytes: '5',
+					session: sessionId
+				}
+			])
+		);
+		expect(clipboard()).toHaveLength(2);
+		expect(JSON.stringify(listAudit(database, 100))).not.toContain('hunter2');
+	});
 });
 
 describe('desktop audit (SPEC-DESKTOP R16)', () => {

@@ -28,7 +28,8 @@ const DESKTOP_ERROR_CODES = [
 	'encoder-failed',
 	'bad-message',
 	'input-failed',
-	'clipboard-failed'
+	'clipboard-failed',
+	'clipboard-sync-failed'
 ] as const;
 
 /** What the screen at the machine shows (`state`). */
@@ -54,9 +55,22 @@ export const agentClipboardReplySchema = z.discriminatedUnion('type', [
 	clipboardSentSchema
 ]);
 
+/** Clipboard sharing (SPEC-DESKTOP 21.11): new text at the machine, and a device sync confirmed. */
+const clipboardChangedSchema = z.object({ type: z.literal('clipboard-changed'), text: z.string() });
+const clipboardSyncedSchema = z.object({
+	type: z.literal('clipboard-synced'),
+	bytes: z.int().min(0)
+});
+
+/** Clipboard sharing's transfers, which the relay totals for one audit entry per direction. */
+export const agentClipboardSharedSchema = z.discriminatedUnion('type', [
+	clipboardChangedSchema,
+	clipboardSyncedSchema
+]);
+
 /** The viewer's clipboard requests, which a watch-only session may not send (SPEC-DESKTOP 7). */
 export const viewerClipboardRequestSchema = z.object({
-	type: z.enum(['clipboard-push', 'clipboard-pull'])
+	type: z.enum(['clipboard-push', 'clipboard-pull', 'clipboard-share', 'clipboard-sync'])
 });
 
 export const agentDesktopMessageSchema = z.discriminatedUnion('type', [
@@ -82,6 +96,8 @@ export const agentDesktopMessageSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('auto-quality'), level: z.enum(AUTO_LEVELS) }),
 	clipboardTextSchema,
 	clipboardSentSchema,
+	clipboardChangedSchema,
+	clipboardSyncedSchema,
 	z.object({
 		type: z.literal('error'),
 		code: z.enum(DESKTOP_ERROR_CODES),

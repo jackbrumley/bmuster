@@ -3,6 +3,7 @@ pub(crate) mod capture;
 mod clipboard;
 pub mod helper;
 mod png_stream;
+pub(crate) mod session_clipboard;
 pub(crate) mod wire;
 
 use anyhow::{bail, Context as _, Result};

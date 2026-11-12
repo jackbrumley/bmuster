@@ -83,6 +83,10 @@ export type ViewerMessage =
 	| { type: 'release-all' }
 	| { type: 'clipboard-push'; text: string }
 	| { type: 'clipboard-pull' }
+	/** Clipboard sharing on or off for the session (SPEC-DESKTOP 21.11). */
+	| { type: 'clipboard-share'; on: boolean }
+	/** This device's clipboard, sent by itself while sharing is on (SPEC-DESKTOP 21.11). */
+	| { type: 'clipboard-sync'; text: string }
 	| { type: 'disconnect' };
 
 /** The most text one clipboard transfer carries, in UTF-8 bytes (SPEC-DESKTOP 21.2). */

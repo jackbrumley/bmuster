@@ -83,3 +83,51 @@ describe('the clipboard panel', () => {
 		await expect.element(box).toHaveValue('from my laptop');
 	});
 });
+
+describe('the clipboard panel with clipboard sharing (SPEC-DESKTOP 21.11)', () => {
+	it('C40: on a desktop, the switch, Allow clipboard sharing, and the box as the fallback', async () => {
+		const { clipboard, panel, box } = await setup();
+		const share = panel.getByRole('checkbox', { name: 'Share clipboard' });
+		await expect.element(share).toBeChecked();
+		await expect
+			.element(panel.getByRole('button', { name: 'Allow clipboard sharing' }))
+			.toBeVisible();
+		await expect.element(box).toBeVisible();
+		await share.click();
+		expect(clipboard.sharing).toBe(false);
+		await expect
+			.element(panel.getByRole('button', { name: 'Allow clipboard sharing' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('C40: on a phone, plain steps and the latest machine copy instead of the box', async () => {
+		const real = window.matchMedia.bind(window);
+		vi.stubGlobal('matchMedia', (query: string): MediaQueryList =>
+			real(query.includes('pointer: coarse') ? 'all' : query)
+		);
+		const sent: ViewerMessage[] = [];
+		const clipboard = new DesktopClipboard((message) => {
+			sent.push(message);
+		});
+		vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+		await clipboard.changed('copied at the machine');
+		const screen = await render(ClipboardPanel, { clipboard });
+		const panel = screen.getByRole('region', { name: 'Clipboard' });
+		await expect
+			.element(panel.getByRole('heading', { name: 'To paste on the machine' }))
+			.toBeVisible();
+		await expect.element(panel.getByText(/open the keyboard \(Keys tab\)/)).toBeVisible();
+		await expect.element(panel.getByText('Arrives on your phone automatically.')).toBeVisible();
+		await expect.element(panel.getByRole('textbox', { name: 'Text' })).not.toBeInTheDocument();
+		await expect
+			.element(panel.getByRole('button', { name: 'Paste from this device' }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(panel.getByLabelText('Latest from the machine'))
+			.toHaveTextContent('copied at the machine');
+		const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+		await panel.getByRole('button', { name: 'Copy to phone' }).click();
+		expect(write).toHaveBeenCalledWith('copied at the machine');
+		vi.unstubAllGlobals();
+	});
+});

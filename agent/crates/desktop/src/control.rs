@@ -149,10 +149,19 @@ pub enum ClientMessage {
         text: String,
     },
     ClipboardPull,
+    /// Clipboard sharing on or off for this session (SPEC-DESKTOP 21.11).
+    ClipboardShare {
+        on: bool,
+    },
+    /// The viewer's device clipboard, sent by itself while sharing is on;
+    /// answered `clipboard-synced` (SPEC-DESKTOP 21.11).
+    ClipboardSync {
+        text: String,
+    },
     Disconnect,
 }
 
-const KNOWN_TYPES: [&str; 15] = [
+const KNOWN_TYPES: [&str; 17] = [
     "hello",
     "keyframe",
     "ask-approval",
@@ -167,6 +176,8 @@ const KNOWN_TYPES: [&str; 15] = [
     "release-all",
     "clipboard-push",
     "clipboard-pull",
+    "clipboard-share",
+    "clipboard-sync",
     "disconnect",
 ];
 
@@ -183,6 +194,8 @@ impl ClientMessage {
                 | ClientMessage::ReleaseAll
                 | ClientMessage::ClipboardPush { .. }
                 | ClientMessage::ClipboardPull
+                | ClientMessage::ClipboardShare { .. }
+                | ClientMessage::ClipboardSync { .. }
         )
     }
 
@@ -191,7 +204,9 @@ impl ClientMessage {
             ClientMessage::Text { text } if text.chars().count() > MAX_TEXT_CHARS => {
                 Err(format!("text is over {MAX_TEXT_CHARS} characters"))
             }
-            ClientMessage::ClipboardPush { text } if text.len() > MAX_CLIPBOARD_BYTES => {
+            ClientMessage::ClipboardPush { text } | ClientMessage::ClipboardSync { text }
+                if text.len() > MAX_CLIPBOARD_BYTES =>
+            {
                 Err("clipboard text is over 1 MB".to_string())
             }
             ClientMessage::Settings { max_fps, .. } if ![5, 10, 15, 30].contains(max_fps) => {
@@ -249,6 +264,9 @@ pub enum ErrorCode {
     /// The screen has no clipboard BMuster can reach, or reading or setting
     /// it failed (SPEC-DESKTOP 21.3). The message never holds the text.
     ClipboardFailed,
+    /// A `clipboard-sync` did not reach the machine's clipboard
+    /// (SPEC-DESKTOP 21.11); the browser stays quiet about it.
+    ClipboardSyncFailed,
 }
 
 /// Why a session ended (SPEC-DESKTOP 9).
@@ -306,6 +324,15 @@ pub enum AgentMessage {
     },
     /// A `clipboard-push` is on the machine's clipboard; its UTF-8 length.
     ClipboardSent {
+        bytes: usize,
+    },
+    /// Clipboard sharing: new text on the machine's clipboard
+    /// (SPEC-DESKTOP 21.11).
+    ClipboardChanged {
+        text: String,
+    },
+    /// A `clipboard-sync` is on the machine's clipboard; its UTF-8 length.
+    ClipboardSynced {
         bytes: usize,
     },
     Error {
@@ -520,6 +547,52 @@ mod tests {
             }
             .to_json(),
             r#"{"type":"error","code":"input-failed","message":"no key"}"#
+        );
+    }
+
+    /// SPEC-DESKTOP C30: the sharing messages parse, need control, keep the
+    /// 1 MiB limit, and serialise as section 21.11 says.
+    #[test]
+    fn c30_sharing_messages_serialise_and_limit() {
+        let share = parse(r#"{"type":"clipboard-share","on":true}"#);
+        assert_eq!(
+            share,
+            Parsed::Message(ClientMessage::ClipboardShare { on: true })
+        );
+        let most = "a".repeat(MAX_CLIPBOARD_BYTES);
+        let sync = parse(&format!(r#"{{"type":"clipboard-sync","text":"{most}"}}"#));
+        assert_eq!(
+            sync,
+            Parsed::Message(ClientMessage::ClipboardSync { text: most.clone() })
+        );
+        assert!(matches!(
+            parse(&format!(r#"{{"type":"clipboard-sync","text":"{most}a"}}"#)),
+            Parsed::Bad(_)
+        ));
+        for message in [
+            ClientMessage::ClipboardShare { on: false },
+            ClientMessage::ClipboardSync { text: "x".into() },
+        ] {
+            assert!(message.needs_control());
+        }
+        assert_eq!(
+            AgentMessage::ClipboardChanged {
+                text: "héllo".into()
+            }
+            .to_json(),
+            r#"{"type":"clipboard-changed","text":"héllo"}"#
+        );
+        assert_eq!(
+            AgentMessage::ClipboardSynced { bytes: 6 }.to_json(),
+            r#"{"type":"clipboard-synced","bytes":6}"#
+        );
+        assert_eq!(
+            AgentMessage::Error {
+                code: ErrorCode::ClipboardSyncFailed,
+                message: "no".into()
+            }
+            .to_json(),
+            r#"{"type":"error","code":"clipboard-sync-failed","message":"no"}"#
         );
     }
 }

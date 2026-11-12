@@ -251,3 +251,16 @@ export function characterKeys(text: string): { code: string; key: string } | und
 	const upper = text.toUpperCase();
 	return { code: /\d/.test(text) ? `Digit${text}` : `Key${upper}`, key: text.toLowerCase() };
 }
+
+/** The longest `text` message the agent takes, in characters (SPEC-DESKTOP 5). */
+const MAX_TEXT_CHARS = 256;
+
+/** `text` in pieces the agent takes, split between characters, never inside one. */
+export function textParts(text: string): string[] {
+	const characters = Array.from(text);
+	const parts: string[] = [];
+	for (let start = 0; start < characters.length; start += MAX_TEXT_CHARS) {
+		parts.push(characters.slice(start, start + MAX_TEXT_CHARS).join(''));
+	}
+	return parts;
+}

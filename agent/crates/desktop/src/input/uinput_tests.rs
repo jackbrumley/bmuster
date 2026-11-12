@@ -37,7 +37,12 @@ fn backend(map: PointerMap) -> (Arc<Recording>, InputController) {
     let sink = recording.clone();
     let opener = Opener::with(move || Ok(sink.clone() as Arc<dyn Sink>))
         .typing(Typing::with(|_| {}, || false));
-    let backend = opener.backend(Arc::new(Mutex::new(map))).unwrap();
+    let backend = opener
+        .backend(
+            Arc::new(Mutex::new(map)),
+            Box::new(crate::clipboard::NoClipboard),
+        )
+        .unwrap();
     (recording, InputController::new(backend))
 }
 
@@ -158,7 +163,11 @@ fn uinput_typing_paces_shift_and_follows_caps_lock() {
     let sink = log.clone();
     let opener = Opener::with(move || Ok(sink.clone() as Arc<dyn Sink>)).typing(typing);
     let map = Arc::new(Mutex::new(PointerMap::identity(&[Rect::new(0, 0, 10, 10)])));
-    let mut input = InputController::new(opener.backend(map).unwrap());
+    let mut input = InputController::new(
+        opener
+            .backend(map, Box::new(crate::clipboard::NoClipboard))
+            .unwrap(),
+    );
     let key = |code, down: bool| Logged::Frame(vec![(EV_KEY, code, i32::from(down))]);
 
     input.text("Aa").unwrap();
@@ -304,6 +313,7 @@ impl ScreenWatch for KmsSeat {
             self.source.clone(),
             self.opener.clone(),
             Box::new(crate::capture::kms::compositor::NoLayout("a test".into())),
+            Box::new(crate::clipboard::NoClipboard),
         )
     }
 }
@@ -459,7 +469,7 @@ fn uinput_reaches_x11_window() {
     let sink = devices.clone();
     let mut input = InputController::new(
         Opener::with(move || Ok(sink.clone() as Arc<dyn Sink>))
-            .backend(map)
+            .backend(map, Box::new(crate::clipboard::NoClipboard))
             .unwrap(),
     );
     let centre = Rect::new(0, 0, u32::from(root_width), u32::from(root_height));
@@ -548,4 +558,67 @@ fn wake_device_capabilities_and_events() {
             "only the axes it registers"
         );
     }
+}
+
+/// A clipboard that records what the injector hands it, and says when it
+/// is dropped.
+struct HeldClipboard {
+    text: Arc<Mutex<String>>,
+    dropped: Arc<Mutex<bool>>,
+}
+
+impl crate::clipboard::ScreenClipboard for HeldClipboard {
+    fn set(&mut self, text: &str) -> InputResult<()> {
+        *self.text.lock().unwrap() = text.to_string();
+        Ok(())
+    }
+    fn get(&mut self) -> InputResult<String> {
+        Ok(self.text.lock().unwrap().clone())
+    }
+}
+
+impl Drop for HeldClipboard {
+    fn drop(&mut self) {
+        *self.dropped.lock().unwrap() = true;
+    }
+}
+
+/// SPEC-DESKTOP C19: on a KMS screen the uinput injector's copy and paste
+/// goes to the session clipboard the agent supplied, and that clipboard
+/// (and with it the agent's helper) goes when the injector goes; without
+/// one the screen says copy and paste is not available.
+#[test]
+fn c19_uinput_copy_and_paste_goes_to_the_session_clipboard() {
+    let text = Arc::new(Mutex::new(String::new()));
+    let dropped = Arc::new(Mutex::new(false));
+    let recording = Arc::new(Recording::default());
+    let sink = recording.clone();
+    let opener = Opener::with(move || Ok(sink.clone() as Arc<dyn Sink>));
+    let map = Arc::new(Mutex::new(PointerMap::identity(&[Rect::new(0, 0, 10, 10)])));
+    let mut input = InputController::new(
+        opener
+            .backend(
+                Arc::clone(&map),
+                Box::new(HeldClipboard {
+                    text: Arc::clone(&text),
+                    dropped: Arc::clone(&dropped),
+                }),
+            )
+            .unwrap(),
+    );
+    input.set_clipboard("Grüße").unwrap();
+    assert_eq!(*text.lock().unwrap(), "Grüße");
+    assert_eq!(input.clipboard().unwrap(), "Grüße");
+    assert!(recording.take().is_empty(), "nothing is typed");
+    drop(input);
+    assert!(*dropped.lock().unwrap());
+    let mut without = InputController::new(
+        opener
+            .backend(map, Box::new(crate::clipboard::NoClipboard))
+            .unwrap(),
+    );
+    assert_eq!(
+        without.clipboard().unwrap_err().0,
+        crate::clipboard::not_available().0
+    );
 }

@@ -235,6 +235,10 @@ async fn control_loop(
                 }
                 (Some(clipboard::Signal::OwnerChanged { session_is_owner, mime_types }), Some(live)) => {
                     live.owner_changed(session_is_owner, mime_types);
+                    // Clipboard sharing (SPEC-DESKTOP 21.11): another program copied.
+                    if session_is_owner != Some(true) {
+                        event(output, &Event::ClipboardChanged)?;
+                    }
                 }
                 (Some(_), None) => {}
             },
@@ -346,7 +350,7 @@ fn set_wayland_display() -> Result<()> {
     Ok(())
 }
 
-fn find_wayland_display(runtime: &std::path::Path) -> Result<String> {
+pub(crate) fn find_wayland_display(runtime: &std::path::Path) -> Result<String> {
     use std::os::unix::fs::FileTypeExt as _;
     let mut sockets = std::fs::read_dir(runtime)?
         .filter_map(std::result::Result::ok)

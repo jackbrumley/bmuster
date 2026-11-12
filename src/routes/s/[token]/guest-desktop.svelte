@@ -19,6 +19,7 @@
 	import TextField from '#lib/ui/text-field.svelte';
 	import { guestIdentitySchema } from '#lib/schemas/share-links/share-links.ts';
 	import ClipboardPanel from '../../(console)/machines/[id]/desktop/clipboard-panel.svelte';
+	import { attachClipboardSharing } from '../../(console)/machines/[id]/desktop/clipboard.svelte.ts';
 	import { DesktopCanvas } from '../../(console)/machines/[id]/desktop/desktop-canvas.ts';
 	import { DesktopSession } from '../../(console)/machines/[id]/desktop/desktop-session.svelte.ts';
 	import { FullScreen } from '../../(console)/machines/[id]/desktop/full-screen.svelte.ts';
@@ -127,6 +128,14 @@
 			await screenMode.toggle(stage);
 		}
 	}
+
+	/** Clipboard sharing follows focus, taps and keys anywhere in the page (SPEC-DESKTOP 21.11). */
+	$effect(() => {
+		if (session === undefined) {
+			return;
+		}
+		return attachClipboardSharing(session.clipboard);
+	});
 
 	onMount(() => {
 		const surface = stage;
@@ -299,6 +308,9 @@
 					session?.input(message);
 				}}
 				onkeyboard={undefined}
+				onpaste={(text: string) => {
+					session?.clipboard.pasteFromKeyboard(text);
+				}}
 			/>
 		</div>
 	{/if}
