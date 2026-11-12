@@ -63,7 +63,47 @@ export function pinched(start: Zoom, from: Pinch, to: Pinch, base: Box): Zoom {
 	);
 }
 
-/** The CSS transform that draws the picture under `zoom`; none at 1x. */
+/** The CSS transform that draws the picture under `zoom`; none at 1x with no offset. */
 export function zoomTransform(zoom: Zoom): string | undefined {
-	return zoomed(zoom) ? `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})` : undefined;
+	return zoomed(zoom) || zoom.x !== 0 || zoom.y !== 0
+		? `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`
+		: undefined;
+}
+
+export function sameZoom(a: Zoom, b: Zoom): boolean {
+	return a.scale === b.scale && a.x === b.x && a.y === b.y;
+}
+
+/** The share of the visible box, at each edge, where the pointer pans a zoomed picture. */
+const EDGE_BAND = 0.25;
+/** How fast the picture pans with the pointer at the very edge, in page pixels a second. */
+export const EDGE_PAN_SPEED = 900;
+
+/**
+ * Auto-pan (SPEC-DESKTOP-FLOATING FA18): the zoom after `elapsedMs` with
+ * the pointer at `pointer` on the page. Inside the outer quarter of the
+ * visible box at an edge, the picture moves to bring more of that side into
+ * view, faster the deeper the pointer is (full speed at the edge and past
+ * it). Nothing moves at 1x, in the inner area, or past the picture's edges.
+ */
+export function edgePanned(zoom: Zoom, base: Box, pointer: Point, elapsedMs: number): Zoom {
+	if (!zoomed(zoom)) {
+		return zoom;
+	}
+	const step = (at: number, start: number, size: number) => {
+		const band = size * EDGE_BAND;
+		const low = (start + band - at) / band;
+		const high = (at - (start + size - band)) / band;
+		// Near the left (top) edge the picture moves right (down), and the other way round.
+		const depth = low > 0 ? Math.min(low, 1) : high > 0 ? -Math.min(high, 1) : 0;
+		return (depth * EDGE_PAN_SPEED * elapsedMs) / 1000;
+	};
+	return clampZoom(
+		{
+			scale: zoom.scale,
+			x: zoom.x + step(pointer.x, base.left, base.width),
+			y: zoom.y + step(pointer.y, base.top, base.height)
+		},
+		base
+	);
 }

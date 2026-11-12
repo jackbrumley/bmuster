@@ -2,10 +2,10 @@
 	import { onMount } from 'svelte';
 	import {
 		IconArrowsMinimize,
+		IconDeviceDesktop,
 		IconEye,
 		IconMenu2,
-		IconPlugConnectedX,
-		IconPointer
+		IconPlugConnectedX
 	} from '@tabler/icons-svelte-runes';
 	import type {
 		DesktopSettings as PictureSettings,
@@ -16,7 +16,6 @@
 	import Button from '#lib/ui/button.svelte';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import Panel from '#lib/ui/panel.svelte';
-	import SegmentedControl from '#lib/ui/segmented-control.svelte';
 	import TabBar from '#lib/ui/tab-bar.svelte';
 	import DesktopSettings from './desktop-settings.svelte';
 	import {
@@ -32,6 +31,7 @@
 	import KeysMenu from './keys-menu.svelte';
 	import { scrollEdges, sheetLayout } from './sheet-layout.ts';
 	import type { TouchMode } from './touch-gestures.ts';
+	import TouchInputChoice from './touch-input-choice.svelte';
 
 	/**
 	 * Full screen on phones and tablets (SPEC-DESKTOP-FLOATING, option A):
@@ -87,11 +87,6 @@
 
 	/** The button's size in page pixels (also in the stylesheet). */
 	const SIZE = 48;
-
-	const TOUCH_MODES: readonly { value: TouchMode; label: string }[] = [
-		{ value: 'trackpad', label: 'Trackpad' },
-		{ value: 'touch', label: 'Tap to click' }
-	];
 
 	type Tab = 'keys' | 'picture' | 'screen' | 'session';
 
@@ -385,23 +380,14 @@
 										{#if mode !== undefined}
 											<span class="mode">
 												{#if control}
-													<IconPointer size={16} /> Control
+													<IconDeviceDesktop size={16} /> Control
 												{:else}
 													<IconEye size={16} /> View only
 												{/if}
 											</span>
 										{/if}
 										{#if control}
-											<SegmentedControl
-												label="Touch input"
-												options={TOUCH_MODES}
-												bind:value={
-													() => touchMode,
-													(value: TouchMode | null) => {
-														if (value !== null) ontouchmode(value);
-													}
-												}
-											/>
+											<TouchInputChoice value={touchMode} onchange={ontouchmode} />
 										{/if}
 										<div class="actions">
 											{#if mode !== undefined && canSwitch}

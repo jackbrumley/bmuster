@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { toDisplay } from './input.ts';
 import {
 	clampZoom,
+	EDGE_PAN_SPEED,
+	edgePanned,
 	MAX_ZOOM,
 	NO_ZOOM,
 	pinched,
@@ -10,7 +12,7 @@ import {
 	zoomTransform
 } from './zoom.ts';
 
-// SPEC-DESKTOP-FLOATING FA12, FA13.
+// SPEC-DESKTOP-FLOATING FA12, FA13, FA18, FA24.
 
 const base = { left: 20, top: 10, width: 400, height: 300 };
 
@@ -53,5 +55,45 @@ describe('the picture zoom', () => {
 		});
 		expect(zoomTransform(zoom)).toBe('translate(-400px, -300px) scale(2)');
 		expect(zoomTransform(NO_ZOOM)).toBeUndefined();
+	});
+
+	it('FA24: a picture moved off its corner at 1x is still drawn with its offset', () => {
+		expect(zoomTransform({ scale: 1, x: 20, y: -5 })).toBe('translate(20px, -5px) scale(1)');
+	});
+});
+
+describe('auto-pan at the edges', () => {
+	// The box is 400x300 at (20,10): the band is 100px at the sides and 75px at the top and bottom.
+	const zoom = { scale: 2, x: -200, y: -150 };
+
+	it('FA18: nothing moves at 1x or with the pointer in the inner area', () => {
+		expect(edgePanned(NO_ZOOM, base, { x: 21, y: 11 }, 100)).toEqual(NO_ZOOM);
+		expect(edgePanned(zoom, base, { x: 220, y: 160 }, 100)).toEqual(zoom);
+		expect(edgePanned(zoom, base, { x: 120, y: 85 }, 100)).toEqual(zoom);
+	});
+
+	it('FA18: pans towards the edge the pointer is near, faster the deeper it is', () => {
+		const step = EDGE_PAN_SPEED / 10;
+		// Half way into the left band: half speed, the picture moving right.
+		expect(edgePanned(zoom, base, { x: 70, y: 160 }, 100)).toEqual({ ...zoom, x: -200 + step / 2 });
+		// At the right edge, and past the bottom: full speed both ways.
+		expect(edgePanned(zoom, base, { x: 420, y: 400 }, 100)).toEqual({
+			scale: 2,
+			x: -200 - step,
+			y: -150 - step
+		});
+	});
+
+	it('FA18: never pans past the picture', () => {
+		expect(edgePanned({ scale: 2, x: -5, y: 0 }, base, { x: 20, y: 10 }, 1000)).toEqual({
+			scale: 2,
+			x: 0,
+			y: 0
+		});
+		expect(edgePanned({ scale: 2, x: -400, y: -300 }, base, { x: 420, y: 310 }, 1000)).toEqual({
+			scale: 2,
+			x: -400,
+			y: -300
+		});
 	});
 });

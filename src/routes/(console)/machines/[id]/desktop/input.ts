@@ -41,6 +41,15 @@ export function toDisplay(page: Point, box: Box, picture: Size, display: Size): 
 	return { x: clamp(fx, display.width), y: clamp(fy, display.height) };
 }
 
+/** A display pixel back to where it shows on the page: the reverse of `toDisplay`. */
+export function toPage(point: Point, box: Box, picture: Size, display: Size): Point {
+	const content = contentBox(box, picture);
+	return {
+		x: content.left + (point.x / display.width) * content.width,
+		y: content.top + (point.y / display.height) * content.height
+	};
+}
+
 type KeyMessage = Extract<InputMessage, { type: 'key' }>;
 
 /** How long a left Ctrl waits to see whether it is the start of AltGr. */
