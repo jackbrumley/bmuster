@@ -1,5 +1,6 @@
 //! Root-side capture/input adapters for the private user-session bridge.
 use super::{
+    clipboard::{Replies, Reply, AGENT_WAIT},
     png_stream,
     wire::{self, Command, Event, Packet},
 };
@@ -35,6 +36,8 @@ pub struct State {
 pub struct Bridge {
     pub state: Arc<Mutex<State>>,
     commands: SyncSender<Command>,
+    /// Clipboard calls waiting for the helper (SPEC-DESKTOP 21.9).
+    clipboard: Arc<Replies>,
     child: Mutex<Child>,
     unit: String,
     _reservation: Reservation,
@@ -185,13 +188,15 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
                 }
             })?;
         let reading_state = Arc::clone(&state);
+        let clipboard = Arc::new(Replies::default());
+        let replies = Arc::clone(&clipboard);
         std::thread::Builder::new()
             .name("wayland frames".into())
             .spawn(move || {
                 let result = (|| -> Result<()> {
                     loop {
                         match wire::read(&mut output)? {
-                            Packet::Json(bytes) if bytes.len() <= 8192 => {
+                            Packet::Json(bytes) if bytes.len() <= wire::MAX_JSON => {
                                 match serde_json::from_slice::<Event>(&bytes)? {
                                     Event::Token { token: Some(token) } => {
                                         crate::identity::write_private(
@@ -220,6 +225,13 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
                                         state.ready = true;
                                     }
                                     Event::Failed { message } => bail!("{message}"),
+                                    Event::ClipboardSet { id } => replies.deliver(id, Reply::Set),
+                                    Event::ClipboardText { id, text } => {
+                                        replies.deliver(id, Reply::Text(text))
+                                    }
+                                    Event::ClipboardFailed { id, message } => {
+                                        replies.deliver(id, Reply::Failed(message))
+                                    }
                                 }
                             }
                             Packet::Png(bytes) => {
@@ -233,6 +245,7 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
                         }
                     }
                 })();
+                replies.close();
                 if let Err(error) = result {
                     reading_state
                         .lock()
@@ -243,6 +256,7 @@ pub fn start(uid: u32, control: bool, dir: &Path) -> Result<Arc<Bridge>> {
         Ok(Arc::new(Bridge {
             state,
             commands: send,
+            clipboard,
             child: Mutex::new(child.0.take().context("Helper process absent")?),
             stream: stream.try_clone()?,
             unit: unit.clone(),
@@ -274,6 +288,13 @@ impl Bridge {
         self.commands
             .try_send(command)
             .map_err(|_| InputError("The Wayland input queue is busy or closed".into()))
+    }
+
+    /// Sends the clipboard command `command` builds and waits for the
+    /// helper's answer. It holds the session thread, as an X11 read does,
+    /// for at most [`AGENT_WAIT`].
+    fn ask_clipboard(&self, command: impl FnOnce(u64) -> Command) -> InputResult<Reply> {
+        self.clipboard.ask(AGENT_WAIT, |id| self.send(command(id)))
     }
 }
 
@@ -454,20 +475,32 @@ impl InputBackend for Input {
         Ok(())
     }
 
-    fn set_clipboard(&mut self, _text: &str) -> InputResult<()> {
-        Err(no_portal_clipboard())
+    /// Through the helper's Clipboard portal (SPEC-DESKTOP 21.9).
+    fn set_clipboard(&mut self, text: &str) -> InputResult<()> {
+        match self.bridge.ask_clipboard(|id| Command::ClipboardSet {
+            id,
+            text: text.to_owned(),
+        })? {
+            Reply::Set => Ok(()),
+            Reply::Failed(message) => Err(InputError(message)),
+            Reply::Text(_) => Err(unexpected_reply()),
+        }
     }
 
     fn clipboard(&mut self) -> InputResult<String> {
-        Err(no_portal_clipboard())
+        match self
+            .bridge
+            .ask_clipboard(|id| Command::ClipboardGet { id })?
+        {
+            Reply::Text(text) => Ok(text),
+            Reply::Failed(message) => Err(InputError(message)),
+            Reply::Set => Err(unexpected_reply()),
+        }
     }
 }
 
-/// The portal's Clipboard interface is not wired up yet (SPEC-DESKTOP 21.4).
-fn no_portal_clipboard() -> bmuster_desktop::input::InputError {
-    bmuster_desktop::input::InputError(
-        "Copy and paste is not built for Wayland portal sessions yet.".into(),
-    )
+fn unexpected_reply() -> InputError {
+    InputError("The Wayland helper answered the clipboard call wrongly".into())
 }
 
 /// A typed character's key on the portal: `NotifyKeyboardKeycode` takes

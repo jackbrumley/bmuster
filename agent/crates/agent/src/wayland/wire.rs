@@ -8,6 +8,10 @@ use std::io::{Read, Write};
 pub const MAX_PACKET: usize = 32 * 1024 * 1024;
 /// Raw pixels (the console helper's BGRX frames): an 8K screen with room.
 pub const MAX_RAW: usize = 256 * 1024 * 1024;
+/// Longest JSON packet: one carrying the largest clipboard text, every
+/// byte of it escaped (`\u0000` is six bytes for one), with room for the
+/// rest (SPEC-DESKTOP 21.9). Every other packet is far smaller.
+pub const MAX_JSON: usize = 6 * bmuster_desktop::control::MAX_CLIPBOARD_BYTES + 4096;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Command {
@@ -34,6 +38,17 @@ pub enum Command {
     Character {
         character: char,
     },
+    /// Put `text` on the desktop's clipboard; answered by
+    /// [`Event::ClipboardSet`] or [`Event::ClipboardFailed`] with `id`.
+    ClipboardSet {
+        id: u64,
+        text: String,
+    },
+    /// Read the desktop's clipboard; answered by [`Event::ClipboardText`]
+    /// or [`Event::ClipboardFailed`] with `id`.
+    ClipboardGet {
+        id: u64,
+    },
     Stop,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,6 +64,19 @@ pub enum Event {
         height: i32,
     },
     Failed {
+        message: String,
+    },
+    ClipboardSet {
+        id: u64,
+    },
+    ClipboardText {
+        id: u64,
+        text: String,
+    },
+    /// Why the clipboard command `id` failed, for the person to read.
+    /// Never the text.
+    ClipboardFailed {
+        id: u64,
         message: String,
     },
 }
@@ -132,5 +160,26 @@ mod tests {
             serde_json::from_slice::<Command>(&body).unwrap(),
             Command::Configure { control: false, .. }
         ));
+    }
+
+    /// SPEC-DESKTOP C18: the largest clipboard text, every byte of it
+    /// escaped, fits one JSON packet either way.
+    #[test]
+    fn c18_largest_clipboard_text_fits_a_packet() {
+        let text = "\u{1}".repeat(bmuster_desktop::control::MAX_CLIPBOARD_BYTES);
+        for body in [
+            serde_json::to_vec(&Command::ClipboardSet {
+                id: u64::MAX,
+                text: text.clone(),
+            })
+            .unwrap(),
+            serde_json::to_vec(&Event::ClipboardText {
+                id: u64::MAX,
+                text: text.clone(),
+            })
+            .unwrap(),
+        ] {
+            assert!(body.len() <= MAX_JSON, "{} bytes", body.len());
+        }
     }
 }

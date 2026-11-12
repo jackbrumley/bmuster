@@ -1,5 +1,6 @@
 //! Wayland sessions through an unprivileged portal helper.
 pub(crate) mod capture;
+mod clipboard;
 pub mod helper;
 mod png_stream;
 pub(crate) mod wire;

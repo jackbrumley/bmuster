@@ -56,6 +56,9 @@ After approval: write failing named tests, implement helper and capture, run ful
   short-lived helper as that user through a transient systemd unit. The helper
   creates the ScreenCast portal session; control mode also requests Remote
   Desktop keyboard and pointer devices. Watch mode requests no input devices.
+  Control mode also asks for clipboard access before Start (SPEC-DESKTOP
+  21.9); restore tokens are handled as before, and a portal that refuses the
+  clipboard leaves the session without copy and paste, never without a screen.
 - The helper receives only its user/scope restore token over its private
   process pipe. Replacement tokens are persisted under the agent data directory
   with private permissions. A system-installed helper copy under `/run/bmuster`
