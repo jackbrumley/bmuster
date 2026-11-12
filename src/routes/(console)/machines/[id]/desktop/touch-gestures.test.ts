@@ -13,16 +13,24 @@ import { zoomedBox, type Zoom } from './zoom.ts';
 // SPEC-DESKTOP 5.3; SPEC-DESKTOP-FLOATING FA10, FA12, FA13, FA16–FA18, FA22–FA24.
 
 /** A 400x300 box showing an 800x600 picture of a 1600x1200 display: 4 display pixels per page pixel. */
-function touches(mode: TouchMode) {
+const LANDSCAPE: Geometry = {
+	box: { left: 0, top: 0, width: 400, height: 300 },
+	picture: { width: 800, height: 600 },
+	display: { width: 1600, height: 1200 }
+};
+
+/** A portrait 300x400 box showing a landscape 1600x900 display: 168.75px of picture between bars. */
+const PORTRAIT: Geometry = {
+	box: { left: 0, top: 0, width: 300, height: 400 },
+	picture: { width: 800, height: 450 },
+	display: { width: 1600, height: 900 }
+};
+
+function touches(mode: TouchMode, geometry: Geometry = LANDSCAPE) {
 	const sent: string[] = [];
 	const zooms: Zoom[] = [];
 	const timers: (() => void)[] = [];
 	const delays: number[] = [];
-	const geometry: Geometry = {
-		box: { left: 0, top: 0, width: 400, height: 300 },
-		picture: { width: 800, height: 600 },
-		display: { width: 1600, height: 1200 }
-	};
 	const gestures = new TouchGestures(
 		{
 			pointer: (x, y, buttons) => sent.push(`pointer ${x},${y} ${buttons}`),
@@ -219,69 +227,108 @@ describe('touch mode (5.3)', () => {
 });
 
 describe('edge pan while zoomed', () => {
-	it('FA18: in trackpad mode the pointer never leaves the visible picture', () => {
-		const { sent, gestures } = touches('trackpad');
-		zoomToTwo(gestures, 0);
-		// At 2x from the corner the view shows display x 0–799 and y 0–599.
-		gestures.down(1, 100, 100, 1000);
-		gestures.move(1, 120, 110);
-		expect(sent).toEqual(['pointer 799,599 0']);
-	});
+	// At 2x a display pixel p shows at page offset + p / 2 on both axes; the push margin is
+	// 40px at the sides and 30px at the top and bottom, so its inner lines are x 40 and 360.
 
-	it('FA18: with the finger still in the band, the view keeps panning and the pointer travels with it', () => {
+	it('FA18: in trackpad mode the pointer never leaves the visible picture', () => {
 		const { sent, gestures, shown } = touches('trackpad');
 		zoomToTwo(gestures, 0);
-		gestures.position = { x: 700, y: 300 };
+		// At 2x from the corner the view shows display x 0–799 and y 0–599: the pointer starts past it.
 		gestures.down(1, 100, 100, 1000);
-		gestures.move(1, 115, 100);
-		// The pointer shows at page (365,150): 65% into the right band, 585 page pixels a second.
-		expect(shown()).toEqual({ x: 365, y: 150 });
+		gestures.move(1, 120, 110);
+		expect(sent).toEqual(['pointer 839,619 0']);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -20, y: -10 });
+		expect(shown().x).toBeLessThan(400);
+		expect(shown().y).toBeLessThan(300);
+	});
+
+	it('FA18: a push past the margin line pans by the overflow, and pulling back stops it at once', () => {
+		const { sent, gestures, shown } = touches('trackpad');
+		zoomToTwo(gestures, 0);
+		gestures.position = { x: 600, y: 200 };
+		gestures.down(1, 100, 100, 1000);
+		gestures.move(1, 120, 100);
+		gestures.move(1, 150, 100);
+		expect(gestures.zoom).toEqual({ scale: 2, x: 0, y: 0 });
+		gestures.move(1, 170, 100);
+		// 10px past the line at 360: the view moves 10px and the pointer stays on the line.
+		expect(sent).toEqual(['pointer 640,200 0', 'pointer 700,200 0', 'pointer 740,200 0']);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -10, y: 0 });
+		expect(shown()).toEqual({ x: 360, y: 100 });
+		gestures.move(1, 165, 100);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -10, y: 0 });
+		expect(shown()).toEqual({ x: 355, y: 100 });
+	});
+
+	it('FA18: a still finger on the margin creeps the view after 300 ms, and moving cancels it', () => {
+		const { sent, gestures, shown } = touches('trackpad');
+		zoomToTwo(gestures, 0);
+		gestures.position = { x: 600, y: 200 };
+		gestures.down(1, 100, 100, 1000);
+		gestures.move(1, 170, 100);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -10, y: 0 });
 		sent.length = 0;
-		expect(gestures.edgePan(100)).toBe(true);
-		expect(gestures.zoom).toEqual({ scale: 2, x: -58.5, y: 0 });
-		expect(gestures.edgePan(100)).toBe(true);
-		expect(gestures.zoom).toEqual({ scale: 2, x: -117, y: 0 });
-		// The remote pointer moved the view's 117 display pixels and still shows in the same place.
-		expect(sent).toEqual(['pointer 847,300 0', 'pointer 964,300 0']);
-		expect(shown()).toEqual({ x: 365, y: 150 });
-		// Back in the dead zone the view stops, though the frames keep coming while the finger is down.
-		gestures.move(1, 50, 100);
-		expect(shown()).toEqual({ x: 300, y: 150 });
-		sent.length = 0;
-		expect(gestures.edgePan(100)).toBe(true);
-		expect(gestures.zoom).toEqual({ scale: 2, x: -117, y: 0 });
+		expect(gestures.edgePan(250)).toBe(true);
 		expect(sent).toEqual([]);
-		gestures.up(1, 1500);
+		// 350 ms still: 136 page pixels a second, 13.6 page pixels, 27 whole display pixels.
+		expect(gestures.edgePan(100)).toBe(true);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -23.5, y: 0 });
+		expect(sent).toEqual(['pointer 767,200 0']);
+		expect(shown()).toEqual({ x: 360, y: 100 });
+		// A movement stops the creep and starts the 300 ms again.
+		gestures.move(1, 171, 100);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -24.5, y: 0 });
+		sent.length = 0;
+		expect(gestures.edgePan(100)).toBe(true);
+		expect(gestures.zoom).toEqual({ scale: 2, x: -24.5, y: 0 });
+		expect(sent).toEqual([]);
+		gestures.up(1, 2000);
 		expect(gestures.edgePan(100)).toBe(false);
 	});
 
 	it('FA18: it stops at the picture edge, the pointer at the edge of the screen', () => {
 		const { gestures, shown } = touches('trackpad');
 		zoomToTwo(gestures, 0);
-		gestures.position = { x: 700, y: 300 };
+		gestures.position = { x: 600, y: 200 };
 		gestures.down(1, 100, 100, 1000);
 		gestures.move(1, 400, 100);
+		gestures.move(1, 700, 100);
 		for (let frame = 0; frame < 100; frame += 1) {
 			gestures.edgePan(50);
 		}
 		expect(gestures.zoom).toEqual({ scale: 2, x: -400, y: 0 });
-		expect(gestures.position).toEqual({ x: 1599, y: 300 });
+		expect(gestures.position).toEqual({ x: 1599, y: 200 });
 		expect(shown().x).toBeLessThan(400);
 	});
 
-	it('FA18: a held drag pans too, with the button still down', () => {
+	it('FA18: a held drag pushes and creeps too, with the button still down', () => {
 		const { sent, gestures, elapse } = touches('trackpad');
 		zoomToTwo(gestures, 0);
-		gestures.position = { x: 700, y: 300 };
+		gestures.position = { x: 600, y: 200 };
 		gestures.down(1, 100, 100, 1000);
 		gestures.up(1, 1050);
 		gestures.down(1, 100, 100, 1100);
 		elapse();
-		gestures.move(1, 115, 100);
 		sent.length = 0;
-		expect(gestures.edgePan(100)).toBe(true);
-		gestures.up(1, 1500);
-		expect(sent).toEqual(['pointer 847,300 1', 'pointer 847,300 0']);
+		gestures.move(1, 170, 100);
+		expect(gestures.edgePan(400)).toBe(true);
+		gestures.up(1, 1600);
+		expect(sent).toEqual(['pointer 740,200 1', 'pointer 861,200 1', 'pointer 861,200 0']);
+	});
+
+	it('FA18: an axis where the picture fits never pans: a portrait phone pans across, not up and down', () => {
+		const { gestures } = touches('trackpad', PORTRAIT);
+		zoomToTwo(gestures, 0);
+		// 337.5px of picture in a 400px box: centred, and locked there.
+		expect(gestures.zoom).toEqual({ scale: 2, x: 0, y: -200 });
+		gestures.position = { x: 400, y: 450 };
+		gestures.down(1, 100, 100, 1000);
+		gestures.move(1, 100, 300);
+		for (let frame = 0; frame < 50; frame += 1) {
+			gestures.edgePan(50);
+		}
+		expect(gestures.zoom).toEqual({ scale: 2, x: 0, y: -200 });
+		expect(gestures.position).toEqual({ x: 400, y: 899 });
 	});
 
 	it('FA18: nothing pans at 1x, or before the finger moves (a tap)', () => {
@@ -295,7 +342,9 @@ describe('edge pan while zoomed', () => {
 		zoomToTwo(gestures, 0);
 		gestures.position = { x: 780, y: 300 };
 		gestures.down(1, 100, 100, 1000);
-		expect(gestures.edgePan(100)).toBe(true);
+		for (let frame = 0; frame < 20; frame += 1) {
+			expect(gestures.edgePan(100)).toBe(true);
+		}
 		expect(gestures.zoom).toEqual({ scale: 2, x: 0, y: 0 });
 	});
 

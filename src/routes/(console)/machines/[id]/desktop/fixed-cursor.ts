@@ -1,5 +1,5 @@
-import { contentBox, toDisplay, type Box, type Point, type Size } from './input.ts';
-import { MAX_ZOOM, zoomedBox, type Zoom } from './zoom.ts';
+import { toDisplay, type Box, type Point, type Size } from './input.ts';
+import { localContent, MAX_ZOOM, zoomedBox, type Zoom } from './zoom.ts';
 
 /**
  * The fixed cursor touch mode (SPEC-DESKTOP-FLOATING FA22–FA24): the remote
@@ -13,11 +13,6 @@ import { MAX_ZOOM, zoomedBox, type Zoom } from './zoom.ts';
 /** The middle of the visible box, on the page. */
 export function centreOf(base: Box): Point {
 	return { x: base.left + base.width / 2, y: base.top + base.height / 2 };
-}
-
-/** The picture's place inside the unzoomed box, measured from the box's corner. */
-function localContent(base: Size, picture: Size): Box {
-	return contentBox({ left: 0, top: 0, width: base.width, height: base.height }, picture);
 }
 
 /**
