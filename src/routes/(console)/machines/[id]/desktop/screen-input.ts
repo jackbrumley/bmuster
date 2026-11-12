@@ -1,5 +1,7 @@
 import type { InputMessage } from '#lib/domain/desktop/messages.ts';
-import { KeyFilter, toDisplay, TouchGestures, type Geometry, type TouchMode } from './input.ts';
+import { KeyFilter, toDisplay } from './input.ts';
+import { TouchGestures, type Geometry, type Later, type TouchMode } from './touch-gestures.ts';
+import { zoomedBox, type Zoom } from './zoom.ts';
 
 /**
  * Joins the viewer's mouse, keyboard and fingers on the screen element to
@@ -10,7 +12,9 @@ import { KeyFilter, toDisplay, TouchGestures, type Geometry, type TouchMode } fr
  *
  * The listeners are attached here, not in the template, because the wheel
  * and touch ones must cancel the page's own scrolling (not passive), and
- * the screen takes the keyboard like any remote desktop window. Events
+ * the screen takes the keyboard like any remote desktop window. A pinch
+ * zooms the picture in the browser (`zoom`), and the mouse maps through
+ * that zoom too. Events
  * whose target is a control laid over the screen never reach the machine.
  */
 
@@ -18,8 +22,11 @@ export type ScreenInputHost = {
 	send(message: InputMessage): void;
 	/** False for a watch-only session or before the machine's end is open. */
 	controlling(): boolean;
+	/** The unzoomed picture box, the picture's size and the display's. */
 	geometry(): Geometry | undefined;
 	touchMode(): TouchMode;
+	/** Draws the picture at this zoom. */
+	zoom(zoom: Zoom): void;
 };
 
 /** Attaches the input; returns the function that takes it off again. */
@@ -29,12 +36,13 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 			host.send(message);
 		}
 	};
-	const keys = new KeyFilter(send, (run, ms) => {
+	const later: Later = (run, ms) => {
 		const timer = setTimeout(run, ms);
 		return () => {
 			clearTimeout(timer);
 		};
-	});
+	};
+	const keys = new KeyFilter(send, later);
 	const gestures = new TouchGestures(
 		{
 			pointer: (x, y, buttons) => {
@@ -42,9 +50,13 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 			},
 			wheel: (dx, dy) => {
 				send({ type: 'wheel', dx, dy, mode: 'pixel' });
+			},
+			zoom: (zoom) => {
+				host.zoom(zoom);
 			}
 		},
-		() => host.geometry()
+		() => host.geometry(),
+		later
 	);
 	let pendingMove: { x: number; y: number; buttons: number } | undefined;
 	let moveScheduled = false;
@@ -53,7 +65,12 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 		const shape = host.geometry();
 		return shape === undefined
 			? undefined
-			: toDisplay({ x: event.clientX, y: event.clientY }, shape.box, shape.picture, shape.display);
+			: toDisplay(
+					{ x: event.clientX, y: event.clientY },
+					zoomedBox(shape.box, gestures.zoom),
+					shape.picture,
+					shape.display
+				);
 	};
 	const button = (event: PointerEvent) => {
 		const at = mouseAt(event);
@@ -169,5 +186,6 @@ export function attachScreenInput(surface: HTMLElement, host: ScreenInputHost): 
 		window.removeEventListener('blur', releaseAll);
 		document.removeEventListener('visibilitychange', onVisibility);
 		keys.reset();
+		gestures.cancel();
 	};
 }

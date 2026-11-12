@@ -13,7 +13,8 @@
 	/**
 	 * The phone's keys for the remote screen (SPEC-DESKTOP 5.3): Esc, Tab,
 	 * Ctrl, Alt, the Windows key, arrows, and a button that opens the phone's
-	 * own keyboard, whose characters go as `text`. Ctrl and Alt stay pressed
+	 * own keyboard, whose characters go as `text`, in a grid that wraps so
+	 * every key is in sight. Ctrl and Alt stay pressed
 	 * for the next key. Pressing a key never takes focus from the typing
 	 * area, so the phone's keyboard stays open. Ctrl+Alt+Del and other
 	 * combinations are on the Keys menu (SPEC-DESKTOP-KEYS). `onkeyboard`
@@ -166,22 +167,20 @@
 </div>
 
 <style>
+	/* Every key in sight: the row wraps instead of hiding keys off to the side. */
 	.keys {
-		display: flex;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
 		gap: var(--space-2);
-		overflow-x: auto;
-		padding-bottom: var(--space-1);
-		scrollbar-width: none;
 	}
 
 	.key {
-		flex: 0 0 auto;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		min-width: 44px;
+		min-width: 0;
 		height: 40px;
-		padding: 0 var(--space-3);
+		padding: 0 var(--space-1);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-pill);
 		background: var(--surface-elevated);
