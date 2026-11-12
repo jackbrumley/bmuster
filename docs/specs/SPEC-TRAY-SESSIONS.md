@@ -186,7 +186,7 @@ TS12 changes: the command line is the quoted tray copy and `tray`.
 
 ## Windows, version 3: a Start menu shortcut without a console window
 
-**Status:** `BUILT, NOT YET APPROVED` · asked for 2026-11-12. Replaces the Start menu shortcut of "Windows" above.
+**Status:** `PENDING RELEASE` · approved 2026-11-12 (Jack: "go"), asked for 2026-11-12. Replaces the Start menu shortcut of "Windows" above.
 
 ### Problem
 

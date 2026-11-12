@@ -112,7 +112,7 @@ Every acceptance criterion has a passing test with the name the table gives, exc
 
 ## Windows outputs from the console session
 
-**Status:** `BUILT, NOT YET APPROVED` · asked for 2026-11-12 after the Display card on a Windows 10 PC showed "Outputs: None found" (and "Secure desktop: Unknown") while desktop capture worked.
+**Status:** `PENDING RELEASE` · approved 2026-11-12 (Jack: "go"), asked for 2026-11-12 after the Display card on a Windows 10 PC showed "Outputs: None found" (and "Secure desktop: Unknown") while desktop capture worked.
 
 **This is security work.** It adds a second mode to the desktop helper that the LocalSystem service starts in the console session.
 
