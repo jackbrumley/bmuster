@@ -2,29 +2,16 @@
 	import { flushSync, onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { MediaQuery } from 'svelte/reactivity';
-	import {
-		IconAdjustmentsHorizontal,
-		IconArrowsMaximize,
-		IconArrowsMinimize,
-		IconCrosshair,
-		IconClipboard,
-		IconEye,
-		IconKeyboard,
-		IconWindowMaximize
-	} from '@tabler/icons-svelte-runes';
+	import { IconCrosshair } from '@tabler/icons-svelte-runes';
 	import { hasPermission, type Permission } from '#lib/domain/access/access.ts';
 	import type {
 		DesktopSettings as PictureSettings,
 		InputMessage
 	} from '#lib/domain/desktop/messages.ts';
 	import { displayChoices, shownSize } from '#lib/domain/desktop/displays.ts';
-	import { screenLabel } from '#lib/domain/desktop/screen.ts';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 	import { signedInUserOf } from '#lib/domain/machines/machine.ts';
-	import Button from '#lib/ui/button.svelte';
-	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
-	import Notice from '#lib/ui/notice.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
 	import { consoleSessionRoute } from '#lib/runes/session-link.svelte.ts';
@@ -44,12 +31,11 @@
 	import { attachStageInput } from './stage-input.ts';
 	import { watchViewport } from './viewport-watch.ts';
 	import type { Geometry, TouchMode } from './touch-gestures.ts';
-	import TouchInputChoice from './touch-input-choice.svelte';
-	import { readTouchMode, saveTouchMode, touchModeHelp } from './touch-input.ts';
+	import { readTouchMode, saveTouchMode } from './touch-input.ts';
 	import { NO_ZOOM, zoomTransform, type Zoom } from './zoom.ts';
-	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
 	import StageOverlay from './stage-overlay.svelte';
+	import UnderScreenInput from './under-screen-input.svelte';
 	import {
 		connectingTitle as connectingTitleFor,
 		isRunning,
@@ -57,10 +43,10 @@
 		stageViewport
 	} from './stage-state.ts';
 	import PhoneToolbar from './phone-toolbar.svelte';
-	import PoppedOutNotice from './popped-out-notice.svelte';
+	import SessionBar from './session-bar.svelte';
+	import SessionNotices from './session-notices.svelte';
 	import { PHONE_QUERY, popOutFeatures, popOutName, popOutSize, popOutUrl } from './pop-out.ts';
 	import { PopOutWindow } from './pop-out-window.svelte.ts';
-	import ToolButton from './tool-button.svelte';
 	import type { PageProps } from './$types';
 
 	/**
@@ -139,29 +125,6 @@
 		const needed: Permission = mode === 'control' ? 'desktop-control' : 'desktop-view';
 		return data.grants.some((grant) => grant.permission === needed && grant.consent === 'ask');
 	}
-
-	const status = $derived.by(() => {
-		switch (connection.kind) {
-			case 'idle':
-				return 'Not connected';
-			case 'starting':
-			case 'connecting':
-				return 'Connecting…';
-			case 'live': {
-				if (!connection.ready) {
-					return 'Waiting for the machine…';
-				}
-				const { fps, bytesPerSecond } = session?.throughput ?? { fps: 0, bytesPerSecond: 0 };
-				return `${fps} fps · ${Math.round(bytesPerSecond / 1024)} KB/s`;
-			}
-			case 'reconnecting':
-				return 'Reconnecting…';
-			case 'moved':
-				return 'Open in another window';
-			case 'ended':
-				return 'Ended';
-		}
-	});
 
 	/** Until the first picture arrives the stage waits under the veil, saying what it waits for. */
 	const connectingTitle = $derived(
@@ -341,144 +304,49 @@
 				ondisconnect={() => void endSession()}
 			/>
 		{/if}
-		<div class="bar" class:hidden={phone}>
-			{#if displayOptions.length > 1}
-				<ChipGroup
-					label="Display"
-					options={displayOptions}
-					bind:value={
-						() => session?.current ?? null,
-						(value: string | null) => {
-							if (value !== null) session?.selectDisplay(value);
-						}
-					}
-				/>
-			{/if}
-			<div class="tools">
-				{#if watchOnly && running}
-					<span class="badge"><IconEye size={16} /> View only</span>
-				{/if}
-				{#if screenState !== undefined}
-					<span class="screen-state" data-screen={screenState.kind}>{screenLabel(screenState)}</span
-					>
-				{/if}
-				<span
-					class="status"
-					role="status"
-					data-fps={session?.throughput.fps ?? 0}
-					data-bytes-per-second={session?.throughput.bytesPerSecond ?? 0}>{status}</span
-				>
-				{#if running && canControl && session?.mode !== undefined}
-					<Button
-						variant="secondary"
-						size="compact"
-						type="button"
-						onclick={() => {
-							switchMode(watchOnly ? 'control' : 'watch');
-						}}>{watchOnly ? 'Take control' : 'Switch to view only'}</Button
-					>
-				{/if}
-				{#if running && !watchOnly}
-					<ToolButton
-						label="Keys"
-						pressed={keysOpen}
-						disabled={false}
-						onclick={() => {
-							toggle('keys');
-						}}
-					>
-						<IconKeyboard size={20} />
-					</ToolButton>
-				{/if}
-				{#if running && !watchOnly}
-					<ToolButton
-						label="Clipboard"
-						pressed={open === 'clipboard'}
-						disabled={false}
-						onclick={() => {
-							toggle('clipboard');
-						}}
-					>
-						<IconClipboard size={20} />
-					</ToolButton>
-				{/if}
-				{#if running}
-					<ToolButton
-						label="Picture settings"
-						pressed={open === 'settings'}
-						disabled={false}
-						onclick={() => {
-							toggle('settings');
-						}}
-					>
-						<IconAdjustmentsHorizontal size={20} />
-					</ToolButton>
-				{/if}
-				{#if !choosing}
-					<ToolButton
-						label={fullScreen ? 'Leave full screen' : 'Full screen'}
-						pressed={undefined}
-						disabled={false}
-						onclick={() => void toggleFullScreen()}
-					>
-						{#if fullScreen}
-							<IconArrowsMinimize size={20} />
-						{:else}
-							<IconArrowsMaximize size={20} />
-						{/if}
-					</ToolButton>
-				{/if}
-				{#if running}
-					<ToolButton
-						label="Pop out into a window"
-						pressed={undefined}
-						disabled={false}
-						onclick={popOutWindow}
-					>
-						<IconWindowMaximize size={20} />
-					</ToolButton>
-				{/if}
-				{#if running}
-					<Button variant="secondary" size="compact" type="button" onclick={() => void endSession()}
-						>Disconnect</Button
-					>
-				{/if}
-			</div>
-		</div>
+		<SessionBar
+			hidden={phone}
+			{connection}
+			throughput={session?.throughput}
+			mode={session?.mode}
+			{running}
+			{canControl}
+			{choosing}
+			{fullScreen}
+			screen={screenState}
+			displays={displayOptions}
+			display={session?.current ?? null}
+			{keysOpen}
+			clipboardOpen={open === 'clipboard'}
+			settingsOpen={open === 'settings'}
+			ondisplay={(id: string) => session?.selectDisplay(id)}
+			onswitch={switchMode}
+			onkeys={() => {
+				toggle('keys');
+			}}
+			onclipboard={() => {
+				toggle('clipboard');
+			}}
+			onsettings={() => {
+				toggle('settings');
+			}}
+			onfullscreen={() => void toggleFullScreen()}
+			onpopout={popOutWindow}
+			ondisconnect={() => void endSession()}
+		/>
 
-		{#if connection.kind === 'ended'}
-			<Notice tone="info" title={connection.message} children={undefined} />
-		{:else if poppedOut}
-			<PoppedOutNotice closed={popOut.closed} onbringback={bringBack} onclose={closePopOut} />
-		{:else if connection.kind === 'moved'}
-			<Notice tone="info" title="This session is open in another window or tab.">
-				<div class="actions">
-					<Button
-						variant="primary"
-						size="compact"
-						type="button"
-						onclick={() => void session?.takeBack()}>Use it here</Button
-					>
-				</div>
-			</Notice>
-		{/if}
-
-		{#if session?.problem !== undefined && running}
-			<Notice tone="warning" title={session.problem} children={undefined} />
-		{/if}
-
-		{#if session?.stalled === true && running}
-			<Notice tone="warning" title="The picture is paused: frames were not getting through.">
-				<div class="actions">
-					<Button
-						variant="secondary"
-						size="compact"
-						type="button"
-						onclick={() => session?.requestKeyframe()}>Resume</Button
-					>
-				</div>
-			</Notice>
-		{/if}
+		<SessionNotices
+			{connection}
+			{running}
+			{poppedOut}
+			popOutClosed={popOut.closed}
+			problem={session?.problem}
+			stalled={session?.stalled === true}
+			onbringback={bringBack}
+			onclosepopout={closePopOut}
+			ontakeback={() => void session?.takeBack()}
+			onresume={() => session?.requestKeyframe()}
+		/>
 
 		{#if choosing}
 			<DesktopStart
@@ -614,13 +482,12 @@
 		</div>
 
 		{#if running && !watchOnly && !phone}
-			<div class="phone-keys">
-				<KeyBar osFamily={machine.osFamily} send={sendInput} onkeyboard={undefined} />
-			</div>
-			<div class="touch-input">
-				<TouchInputChoice value={touchMode} onchange={chooseTouchMode} />
-				<p class="mode">{touchModeHelp(touchMode)}</p>
-			</div>
+			<UnderScreenInput
+				osFamily={machine.osFamily}
+				send={sendInput}
+				{touchMode}
+				ontouchmode={chooseTouchMode}
+			/>
 		{/if}
 	</div>
 {/if}
@@ -630,55 +497,6 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-3);
-	}
-
-	.bar {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-2) var(--space-3);
-	}
-
-	.tools {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: flex-end;
-		gap: var(--space-2);
-		margin-left: auto;
-	}
-
-	.badge {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		padding: var(--space-1) var(--space-3);
-		border-radius: var(--radius-pill);
-		background: var(--surface-muted);
-		color: var(--text-soft);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-	}
-
-	.status {
-		color: var(--muted);
-		font-size: var(--text-xs);
-		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
-	}
-
-	.screen-state {
-		color: var(--text-soft);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-	}
-
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-		margin-top: var(--space-2);
 	}
 
 	.stage {
@@ -691,8 +509,7 @@
 		overflow: hidden;
 	}
 
-	.stage.hidden,
-	.bar.hidden {
+	.stage.hidden {
 		display: none;
 	}
 
@@ -757,11 +574,6 @@
 		transform: translate(-50%, -50%);
 	}
 
-	.touch-input {
-		display: grid;
-		gap: var(--space-2);
-	}
-
 	/* Over the screen in full screen, under the controls button (z-index 2). */
 	.hint-over {
 		position: absolute;
@@ -770,17 +582,5 @@
 		z-index: 1;
 		width: min(340px, calc(100% - var(--space-12) - var(--space-12)));
 		transform: translateX(-50%);
-	}
-
-	.mode {
-		margin: 0;
-		color: var(--muted);
-		font-size: var(--text-xs);
-	}
-
-	@media (min-width: 900px) {
-		.phone-keys {
-			display: none;
-		}
 	}
 </style>

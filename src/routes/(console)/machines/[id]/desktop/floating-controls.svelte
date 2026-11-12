@@ -1,13 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import {
-		IconArrowsMinimize,
-		IconDeviceDesktop,
-		IconEye,
-		IconMenu2,
-		IconPlugConnectedX,
-		IconX
-	} from '@tabler/icons-svelte-runes';
+	import { IconMenu2 } from '@tabler/icons-svelte-runes';
 	import type {
 		AutoLevel,
 		DesktopSettings as PictureSettings,
@@ -15,7 +8,6 @@
 	} from '#lib/domain/desktop/messages.ts';
 	import type { OsFamily } from '#lib/domain/machines/machine.ts';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
-	import Button from '#lib/ui/button.svelte';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import Panel from '#lib/ui/panel.svelte';
 	import TabBar from '#lib/ui/tab-bar.svelte';
@@ -30,12 +22,12 @@
 		type FloatingPosition
 	} from './floating-position.ts';
 	import ClipboardPanel from './clipboard-panel.svelte';
+	import FloatingSessionTab from './floating-session-tab.svelte';
 	import type { DesktopClipboard } from './clipboard.svelte.ts';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
 	import { scrollEdges, sheetLayout } from './sheet-layout.ts';
 	import type { TouchMode } from './touch-gestures.ts';
-	import TouchInputChoice from './touch-input-choice.svelte';
 
 	/**
 	 * Full screen on phones and tablets (SPEC-DESKTOP-FLOATING, option A):
@@ -393,48 +385,19 @@
 											}
 										/>
 									{:else if shown === 'session'}
-										{#if mode !== undefined}
-											<span class="mode">
-												{#if control}
-													<IconDeviceDesktop size={16} /> Control
-												{:else}
-													<IconEye size={16} /> View only
-												{/if}
-											</span>
-										{/if}
-										{#if control}
-											<TouchInputChoice value={touchMode} onchange={ontouchmode} />
-										{/if}
-										<div class="actions">
-											{#if mode !== undefined && canSwitch}
-												<Button
-													variant="secondary"
-													size="compact"
-													type="button"
-													onclick={leave(() => {
-														onswitch(control ? 'watch' : 'control');
-													})}>{control ? 'Switch to view only' : 'Take control'}</Button
-												>
-											{/if}
-											<Button
-												variant="secondary"
-												size="compact"
-												type="button"
-												onclick={leave(onexit)}
-												>{#if exit === 'window'}<IconX size={18} /> Close window{:else}<IconArrowsMinimize
-														size={18}
-													/> Leave full screen{/if}</Button
-											>
-											{#if mode !== undefined}
-												<Button
-													variant="secondary"
-													size="compact"
-													type="button"
-													onclick={leave(ondisconnect)}
-													><IconPlugConnectedX size={18} /> Disconnect</Button
-												>
-											{/if}
-										</div>
+										<FloatingSessionTab
+											{mode}
+											{canSwitch}
+											{touchMode}
+											{exit}
+											{ontouchmode}
+											onswitch={(next: DesktopMode) => {
+												close();
+												onswitch(next);
+											}}
+											onexit={leave(onexit)}
+											ondisconnect={leave(ondisconnect)}
+										/>
 									{/if}
 								</div>
 							</div>
@@ -617,24 +580,5 @@
 	.fade.bottom {
 		bottom: 0;
 		background: linear-gradient(transparent, var(--surface-elevated));
-	}
-
-	.mode {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		justify-self: start;
-		padding: var(--space-1) var(--space-3);
-		border-radius: var(--radius-pill);
-		background: var(--surface-muted);
-		color: var(--text-soft);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-	}
-
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
 	}
 </style>
