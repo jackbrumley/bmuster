@@ -10,6 +10,7 @@
 	import Notice from '#lib/ui/notice.svelte';
 	import RadarSpinner from '#lib/ui/radar-spinner.svelte';
 	import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
+	import ReleaseBody from './release-body.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	let {
@@ -59,7 +60,7 @@
 		if (
 			!(await confirmAction({
 				title: `Update BMuster to ${version}?`,
-				message: `${view.release.notes}\n\nThe whole server is replaced (its launcher, Node and the console), so the console restarts and active sessions end; it may be unavailable for a minute or two. The new version must start within two minutes. ${ifItFails(view.release)} Machines receive the signed agent through their configured rollout, pins and update policy.`,
+				message: `The whole server is replaced (its launcher, Node and the console), so the console restarts and active sessions end; it may be unavailable for a minute or two. The new version must start within two minutes. ${ifItFails(view.release)} Machines receive the signed agent through their configured rollout, pins and update policy.`,
 				confirmLabel: 'Update now'
 			}))
 		)
@@ -135,7 +136,7 @@
 			recreate the container with its existing data volume.
 		</p>{/if}
 	{#if view.release !== null}<h3>What’s new in {view.release.version}</h3>
-		<p class="notes">{view.release.notes}</p>{/if}
+		<ReleaseBody body={view.release.notes} />{/if}
 </Panel>
 
 <style>
@@ -147,9 +148,5 @@
 	}
 	.muted {
 		color: var(--muted);
-	}
-	.notes {
-		white-space: pre-wrap;
-		overflow-wrap: anywhere;
 	}
 </style>

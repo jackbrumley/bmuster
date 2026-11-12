@@ -80,7 +80,8 @@ const SERVER_RELEASE: Data['server'] = {
 	lastSuccessAtIso: '2026-11-08T10:00:00.000Z',
 	release: {
 		version: '0.3.2',
-		notes: 'Server update reliability.',
+		notes:
+			'## What changed\n\n- Server update reliability.\n\n**Full Changelog**: https://github.com/jackbrumley/bmuster/compare/v0.3.1...v0.3.2',
 		publishedAtIso: '2026-11-08T10:00:00.000Z',
 		manifest: {
 			schemaVersion: 1,
@@ -179,6 +180,25 @@ async function startUpdate(screen: Awaited<ReturnType<typeof renderPage>>): Prom
 }
 
 describe('Updates page (SPEC-AGENT-UPDATES)', () => {
+	it('SU15: the release notes read as headings and lists, and the update confirmation leaves them out', async () => {
+		await render(ConfirmDialog);
+		const screen = await renderPage({ server: SERVER_RELEASE });
+		const server = screen.getByRole('region', { name: 'Server' });
+		await expect.element(server.getByRole('heading', { name: 'What changed' })).toBeVisible();
+		await expect
+			.element(server.getByRole('listitem').getByText('Server update reliability.'))
+			.toBeVisible();
+		await expect
+			.element(server.getByRole('link', { name: /compare\/v0\.3\.1\.\.\.v0\.3\.2/ }))
+			.toHaveAttribute('href', 'https://github.com/jackbrumley/bmuster/compare/v0.3.1...v0.3.2');
+		await expect.element(server.getByText('## What changed')).not.toBeInTheDocument();
+		await server.getByRole('button', { name: 'Update now' }).click();
+		const dialog = screen.getByRole('dialog', { name: 'Update BMuster to 0.3.2?' });
+		await expect.element(dialog.getByText(/The whole server is replaced/)).toBeVisible();
+		await expect.element(dialog.getByText(/Server update reliability/)).not.toBeInTheDocument();
+		await dialog.getByRole('button', { name: 'Cancel' }).click();
+	});
+
 	it('shows the version on offer, the stage, the builds and every machine, failures first', async () => {
 		const screen = await renderPage({});
 		await expect.element(screen.getByText('Version 0.2.0')).toBeVisible();
