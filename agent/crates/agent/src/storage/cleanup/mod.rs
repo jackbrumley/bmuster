@@ -423,6 +423,14 @@ mod tests {
         assert!(matches!(items[1].state, ItemState::Done { .. }));
         assert!(!data.join("storage").join(WANTED_FILE).exists());
         assert!(run_on(&data, Some(&m)).is_err(), "nothing waits now");
+        // The lock is an flock on an open file description. Another test in
+        // this process forking a child at that moment shares the description
+        // until the child's exec closes it, so the lock can look held for a
+        // moment after run_on let go. Wait for that, as a real start would.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while cleaner_running(&data) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         start_on(&data, Some(&m), OTHER, &[CleanupItem::OldVarTmp], 9).unwrap();
     }
 
