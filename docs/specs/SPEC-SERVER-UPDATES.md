@@ -72,7 +72,7 @@ This is security work: the updater runs as root and installs code that controls 
 | SU13 | The "BMuster X is available" notice in the console frame shows only while a release waits and no update is requested or running, and never on the Updates page (Jack, 2026-11-11: it appeared during an update).                                                                                                               | `server-update-notice.test.ts`                                  |
 | SU14 | While the server updates, the Updates page says "BMuster is updating to X. Please wait." under the radar, counts down the usual minute ("About 42 seconds left", then "Taking a little longer than usual"), says the page reloads by itself, and shows the updater's latest step. This replaces the radar-alone view of 0.4.7. | `update-wait.test.ts`, `updates-page.svelte.test.ts`            |
 
-## As built (pending release, 2026-11-09)
+## As built (v0.4.1, 2026-11-09)
 
 ### Criteria and their tests
 

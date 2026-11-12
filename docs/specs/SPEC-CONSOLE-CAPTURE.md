@@ -2,9 +2,9 @@
 
 **Status:** `IMPLEMENTED (v0.4.1)` 2026-11-09, native on the Fedora laptop since 0.4.5 (desktop, lock screen) · approved 2026-11-09 (Jack: "go", then "build everything") · builds on SPEC-DESKTOP (section 6) and replaces the plan in SPEC-WAYLAND-PORTAL for the screen and input.
 
-**Version 2 (every plane on the CRTC):** `IMPLEMENTED (v0.4.10)` 2026-11-10 · approved 2026-11-10 (Jack's bug report: LocalSend shows only its frame on the Fedora 44 GNOME laptop) · see [Version 2](#version-2-every-plane-on-the-crtc-pending-release).
+**Version 2 (every plane on the CRTC):** `IMPLEMENTED (v0.4.10)` 2026-11-10 · approved 2026-11-10 (Jack's bug report: LocalSend shows only its frame on the Fedora 44 GNOME laptop) · see [Version 2](#version-2-every-plane-on-the-crtc-v0410).
 
-**Version 3 (capitals and Caps Lock when typing by character):** `PENDING RELEASE` 2026-11-12 · Jack's bug report (capital letters from an Android phone came out lowercase on the KDE Plasma lock screen) · see [Version 3](#version-3-capitals-and-caps-lock-pending-release).
+**Version 3 (capitals and Caps Lock when typing by character):** `IMPLEMENTED (v0.4.20)` 2026-11-12 · Jack's bug report (capital letters from an Android phone came out lowercase on the KDE Plasma lock screen) · see [Version 3](#version-3-capitals-and-caps-lock-v0420).
 
 ## Problem
 
@@ -45,7 +45,7 @@ X11 stays as it is: it already covers greeters, has damage tracking and needs no
 
 1. The agent opens `/dev/uinput` only for a session whose ticket carries control, and creates two devices: **"BMuster keyboard"** (all `KEY_*` codes) and **"BMuster pointer"** (`ABS_X`/`ABS_Y` 0–65535, `BTN_LEFT`/`RIGHT`/`MIDDLE`, `REL_WHEEL`/`REL_HWHEEL` with hi-res variants). Watch sessions never open uinput. The devices are destroyed when the last control session ends.
 2. **Keyboard by position:** the browser's `code` maps to the evdev key code; the machine's own layout decides the character, as for a USB keyboard.
-3. **Keyboard by character** (phones): characters on the US layout are typed with their key and Shift. Other characters are not typed and the session reports "This character cannot be typed on this screen yet". Non-printing keys go by position. Shift timing and Caps Lock: [Version 3](#version-3-capitals-and-caps-lock-pending-release).
+3. **Keyboard by character** (phones): characters on the US layout are typed with their key and Shift. Other characters are not typed and the session reports "This character cannot be typed on this screen yet". Non-printing keys go by position. Shift timing and Caps Lock: [Version 3](#version-3-capitals-and-caps-lock-v0420).
 4. **Pointer:** absolute coordinates over the bounding box of all displays. With one display this is exact. With several, displays are assumed side by side in connector order; on a GNOME desktop the layout comes from mutter instead, and the pointer maps monitor by monitor (SPEC-DESKTOP-ALL-SCREENS).
 5. **Special keys:** Ctrl+Alt+Del and Ctrl+Alt+F1–F12 are sent as real key chords, so switching consoles works.
 6. **Release-all** on blur, end of session and every screen switch, as now.
@@ -156,7 +156,7 @@ cd agent && cargo build --release -p bmuster-agent
 
 Report the probe output and anything that differs, plus `journalctl -u bmuster-agent` lines with "console", "KMS", "uinput" or "The screen at the machine".
 
-## Version 2: every plane on the CRTC (pending release)
+## Version 2: every plane on the CRTC (v0.4.10)
 
 **Status:** `IMPLEMENTED (v0.4.10)` 2026-11-10 · approved 2026-11-10 (Jack: bug report, fix approved) · security work only in that it reads more of what the kernel scans out; no check changes.
 
@@ -196,7 +196,7 @@ On the Fedora 44 GNOME laptop (Wayland, mutter) the LocalSend window (Flutter on
 
 ## Version 3: capitals and Caps Lock (v0.4.20)
 
-**Status:** `PENDING RELEASE` 2026-11-12 · Jack's bug report · security work only in that the uinput keyboard gains a Caps Lock LED and the agent reads `/sys/class/leds`; no check changes.
+**Status:** `IMPLEMENTED (v0.4.20)` 2026-11-12 · Jack's bug report · security work only in that the uinput keyboard gains a Caps Lock LED and the agent reads `/sys/class/leds`; no check changes.
 
 ### Problem
 

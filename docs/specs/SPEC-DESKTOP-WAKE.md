@@ -57,7 +57,7 @@ None. No server, protocol or browser change: the new reasons travel in the exist
 
 - **Report line.** The machine report's `power.keepAwake` is a closed enum (`off`, `active`, `waiting-for-mains`) that the server parses strictly, so a new value such as `session` from a newer agent would make an older server reject the whole inventory. The session hold is logged only; showing it needs a server change first.
 
-## As built (pending release)
+## As built (v0.4.7)
 
 | #   | Status                                      | Test                                                                   |
 | :-- | :------------------------------------------ | :--------------------------------------------------------------------- |
