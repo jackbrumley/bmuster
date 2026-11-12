@@ -795,3 +795,137 @@ fn follow_switch_between_two_x_servers_keeps_the_stream_and_moves_input_and_bar(
     }
     drop(shown);
 }
+
+/// Owns `CLIPBOARD` from the test's own client and hands `text` to the
+/// first `UTF8_STRING` request in `INCR` parts of `part` bytes, as large
+/// clipboards from GTK and Qt arrive.
+fn incr_owner(x: &NestedX, text: Vec<u8>, part: usize) -> std::thread::JoinHandle<()> {
+    use x11rb::protocol::xproto::{
+        ChangeWindowAttributesAux, PropMode, Property, SelectionNotifyEvent, SELECTION_NOTIFY_EVENT,
+    };
+    use x11rb::wrapper::ConnectionExt as _;
+    let client = Client::new(x);
+    let atom = |name: &[u8]| {
+        client
+            .connection
+            .intern_atom(false, name)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .atom
+    };
+    let (clipboard, utf8, incr) = (atom(b"CLIPBOARD"), atom(b"UTF8_STRING"), atom(b"INCR"));
+    let window = client.connection.generate_id().unwrap();
+    client
+        .connection
+        .create_window(
+            0,
+            window,
+            client.root,
+            0,
+            0,
+            1,
+            1,
+            0,
+            WindowClass::INPUT_ONLY,
+            0,
+            &CreateWindowAux::new(),
+        )
+        .unwrap();
+    client
+        .connection
+        .set_selection_owner(window, clipboard, x11rb::CURRENT_TIME)
+        .unwrap();
+    client.sync();
+    std::thread::spawn(move || {
+        let conn = &client.connection;
+        let request = loop {
+            if let Event::SelectionRequest(request) = conn.wait_for_event().unwrap() {
+                if request.target == utf8 {
+                    break request;
+                }
+            }
+        };
+        let (requestor, property) = (request.requestor, request.property);
+        conn.change_window_attributes(
+            requestor,
+            &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+        )
+        .unwrap();
+        let length = u32::try_from(text.len()).unwrap();
+        conn.change_property32(PropMode::REPLACE, requestor, property, incr, &[length])
+            .unwrap();
+        let notify = SelectionNotifyEvent {
+            response_type: SELECTION_NOTIFY_EVENT,
+            sequence: 0,
+            time: request.time,
+            requestor,
+            selection: clipboard,
+            target: utf8,
+            property,
+        };
+        conn.send_event(false, requestor, EventMask::NO_EVENT, notify)
+            .unwrap();
+        conn.flush().unwrap();
+        let mut parts = text.chunks(part).map(<[u8]>::to_vec).collect::<Vec<_>>();
+        parts.push(Vec::new());
+        let mut parts = parts.into_iter().peekable();
+        while parts.peek().is_some() {
+            // The server goes away under a reader that gave up: stop quietly.
+            let Ok(event) = conn.wait_for_event() else {
+                return;
+            };
+            if let Event::PropertyNotify(change) = event {
+                if change.window == requestor
+                    && change.atom == property
+                    && change.state == Property::DELETE
+                {
+                    let chunk = parts.next().unwrap_or_default();
+                    // Checked, so the part is on the property before this thread can end.
+                    let _ = conn
+                        .change_property8(PropMode::REPLACE, requestor, property, utf8, &chunk)
+                        .map(|cookie| cookie.check());
+                    let _ = conn.flush();
+                }
+            }
+        }
+    })
+}
+
+#[test]
+fn x11_clipboard_round_trips_text_between_clients() {
+    use bmuster_desktop::clipboard::x11::X11Clipboard;
+    use bmuster_desktop::control::MAX_CLIPBOARD_BYTES;
+    let Some(x) = NestedX::start() else { return };
+    let mut machine = X11Clipboard::new(x.target.clone());
+    assert_eq!(machine.get().unwrap(), "", "nobody owns the clipboard yet");
+
+    // One BMuster clipboard (the session's) owns it; another client reads it.
+    let mut session = X11Clipboard::new(x.target.clone());
+    for text in [
+        "plain ASCII".to_string(),
+        "Grüße, 日本語 and an emoji \u{1F600}\nsecond line".to_string(),
+        "x".repeat(MAX_CLIPBOARD_BYTES),
+    ] {
+        session.set(&text).unwrap();
+        assert_eq!(machine.get().unwrap().len(), text.len());
+        assert_eq!(machine.get().unwrap(), text);
+    }
+
+    // The session reads what another program put there, in INCR parts.
+    let big: Vec<u8> = (0..300_000u32)
+        .map(|i| b'a' + u8::try_from(i % 26).unwrap())
+        .collect();
+    let owner = incr_owner(&x, big.clone(), 64 * 1024);
+    assert_eq!(session.get().unwrap().as_bytes(), big.as_slice());
+    owner.join().unwrap();
+
+    // More than the limit, in INCR parts, is refused with the reason.
+    let owner = incr_owner(&x, vec![b'y'; MAX_CLIPBOARD_BYTES + 10], 256 * 1024);
+    let error = session.get().unwrap_err();
+    assert_eq!(
+        error.0,
+        "The machine's clipboard holds more than 1 MB of text"
+    );
+    drop(owner);
+}

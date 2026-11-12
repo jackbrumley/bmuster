@@ -453,6 +453,21 @@ impl InputBackend for Input {
     fn flush(&mut self) -> InputResult<()> {
         Ok(())
     }
+
+    fn set_clipboard(&mut self, _text: &str) -> InputResult<()> {
+        Err(no_portal_clipboard())
+    }
+
+    fn clipboard(&mut self) -> InputResult<String> {
+        Err(no_portal_clipboard())
+    }
+}
+
+/// The portal's Clipboard interface is not wired up yet (SPEC-DESKTOP 20.4).
+fn no_portal_clipboard() -> bmuster_desktop::input::InputError {
+    bmuster_desktop::input::InputError(
+        "Copy and paste is not built for Wayland portal sessions yet.".into(),
+    )
 }
 
 /// A typed character's key on the portal: `NotifyKeyboardKeycode` takes

@@ -242,6 +242,9 @@ pub enum ErrorCode {
     BadMessage,
     /// Input the screen cannot take, like a character with no key on it.
     InputFailed,
+    /// The screen has no clipboard BMuster can reach, or reading or setting
+    /// it failed (SPEC-DESKTOP 20.3). The message never holds the text.
+    ClipboardFailed,
 }
 
 /// Why a session ended (SPEC-DESKTOP 9).
@@ -258,8 +261,8 @@ pub enum EndReason {
     TooManySessions,
 }
 
-/// A message to the browser (SPEC-DESKTOP 5.2). Consent, Wayland and
-/// clipboard replies come with their phases.
+/// A message to the browser (SPEC-DESKTOP 5.2, clipboard 20.3). Consent
+/// and Wayland replies come with their phases.
 #[derive(Debug, Clone, Serialize)]
 #[serde(
     tag = "type",
@@ -288,6 +291,14 @@ pub enum AgentMessage {
         screen: DesktopState,
     },
     Stalled,
+    /// The machine's clipboard text, in reply to `clipboard-pull`.
+    Clipboard {
+        text: String,
+    },
+    /// A `clipboard-push` is on the machine's clipboard; its UTF-8 length.
+    ClipboardSent {
+        bytes: usize,
+    },
     Error {
         code: ErrorCode,
         message: String,
@@ -381,6 +392,48 @@ mod tests {
         assert_eq!(
             parse(r#"{"type":"future-thing","x":1}"#),
             Parsed::Unknown("future-thing".to_string())
+        );
+    }
+
+    #[test]
+    fn clipboard_messages_serialise_and_limit() {
+        let most = "a".repeat(MAX_CLIPBOARD_BYTES);
+        assert_eq!(
+            parse(&format!(r#"{{"type":"clipboard-push","text":"{most}"}}"#)),
+            Parsed::Message(ClientMessage::ClipboardPush { text: most.clone() })
+        );
+        assert!(matches!(
+            parse(&format!(r#"{{"type":"clipboard-push","text":"{most}a"}}"#)),
+            Parsed::Bad(_)
+        ));
+        // The limit counts UTF-8 bytes, not characters.
+        let wide = "é".repeat(MAX_CLIPBOARD_BYTES / 2 + 1);
+        assert!(matches!(
+            parse(&format!(r#"{{"type":"clipboard-push","text":"{wide}"}}"#)),
+            Parsed::Bad(_)
+        ));
+        assert_eq!(
+            parse(r#"{"type":"clipboard-pull"}"#),
+            Parsed::Message(ClientMessage::ClipboardPull)
+        );
+        assert_eq!(
+            AgentMessage::Clipboard {
+                text: "héllo\n".into()
+            }
+            .to_json(),
+            r#"{"type":"clipboard","text":"héllo\n"}"#
+        );
+        assert_eq!(
+            AgentMessage::ClipboardSent { bytes: 6 }.to_json(),
+            r#"{"type":"clipboard-sent","bytes":6}"#
+        );
+        assert_eq!(
+            AgentMessage::Error {
+                code: ErrorCode::ClipboardFailed,
+                message: "no clipboard".into()
+            }
+            .to_json(),
+            r#"{"type":"error","code":"clipboard-failed","message":"no clipboard"}"#
         );
     }
 

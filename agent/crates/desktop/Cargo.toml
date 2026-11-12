@@ -21,6 +21,8 @@ libc = "=0.2.191"
 x11rb = { version = "=0.13.2", default-features = false, features = ["shm", "damage", "xfixes", "randr", "xtest"] }
 
 [target.'cfg(windows)'.dependencies]
+# The clipboard for copy and paste (SPEC-DESKTOP 20.4); already in the build through the agent's tray.
+arboard = { version = "=3.7.0", default-features = false }
 windows = { version = "=0.62.2", features = [
   "Win32_Foundation",
   "Win32_Graphics_Direct3D",

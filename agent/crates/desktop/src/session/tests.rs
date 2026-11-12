@@ -126,6 +126,10 @@ fn harness(mode: Mode) -> Harness {
 }
 
 fn harness_with(mode: Mode, displays: Vec<DisplayInfo>) -> Harness {
+    harness_on(mode, displays, Recorder::default())
+}
+
+fn harness_on(mode: Mode, displays: Vec<DisplayInfo>, recorder: Recorder) -> Harness {
     let screen = Arc::new(Mutex::new(Screen::default()));
     let full_captures = Arc::new(Mutex::new(0));
     let first = displays[0].rect();
@@ -136,7 +140,6 @@ fn harness_with(mode: Mode, displays: Vec<DisplayInfo>) -> Harness {
         screen: screen.clone(),
         full_captures: full_captures.clone(),
     };
-    let recorder = Recorder::default();
     let backend = recorder.clone();
     let now = Instant::now();
     let session = DesktopSession::new(
@@ -313,6 +316,77 @@ fn permissions_watch_only_drops_control_messages_and_never_builds_an_injector() 
         assert!(h.send(text).is_empty(), "{text}");
     }
     assert!(h.recorder.take().is_empty());
+}
+
+/// A control session whose screen has a clipboard holding `held`.
+fn clipboard_harness(held: &str) -> (Harness, Arc<Mutex<String>>) {
+    let clipboard = Arc::new(Mutex::new(held.to_string()));
+    let recorder = Recorder {
+        clipboard: Some(clipboard.clone()),
+        ..Recorder::default()
+    };
+    let mut h = harness_on(Mode::Control, vec![display("A", 0, 128, 64)], recorder);
+    h.send(HELLO);
+    (h, clipboard)
+}
+
+#[test]
+fn clipboard_watch_only_is_refused_and_touches_nothing() {
+    let mut h = harness(Mode::Watch);
+    h.send(HELLO);
+    let first = h.send(r#"{"type":"clipboard-push","text":"secret"}"#);
+    assert_eq!(texts(&first).len(), 1);
+    assert_eq!(texts(&first)[0]["code"], "not-allowed");
+    assert!(h.send(r#"{"type":"clipboard-pull"}"#).is_empty());
+    assert!(h.session.input.is_none(), "no injector, so no clipboard");
+}
+
+#[test]
+fn clipboard_push_and_pull_reach_the_screen() {
+    let (mut h, clipboard) = clipboard_harness("from the machine");
+    let pulled = texts(&h.send(r#"{"type":"clipboard-pull"}"#));
+    assert_eq!(
+        pulled,
+        vec![serde_json::json!({"type": "clipboard", "text": "from the machine"})]
+    );
+    let pushed = texts(&h.send(r#"{"type":"clipboard-push","text":"héllo"}"#));
+    assert_eq!(
+        pushed,
+        vec![serde_json::json!({"type": "clipboard-sent", "bytes": 6})]
+    );
+    assert_eq!(*clipboard.lock().unwrap(), "héllo");
+    assert!(h.recorder.take().is_empty(), "no keys were pressed");
+}
+
+#[test]
+fn clipboard_failures_are_reported_and_the_session_goes_on() {
+    // A screen with no clipboard (KMS and uinput).
+    let mut h = harness(Mode::Control);
+    h.send(HELLO);
+    for message in [
+        r#"{"type":"clipboard-push","text":"x"}"#,
+        r#"{"type":"clipboard-pull"}"#,
+    ] {
+        let out = texts(&h.send(message));
+        assert_eq!(out.len(), 1, "{message}");
+        assert_eq!(out[0]["code"], "clipboard-failed");
+        assert_eq!(
+            out[0]["message"],
+            "Copy and paste is not available on this screen."
+        );
+    }
+    // Too much text at the machine.
+    let (mut h, _) = clipboard_harness(&"x".repeat(control::MAX_CLIPBOARD_BYTES + 1));
+    let out = texts(&h.send(r#"{"type":"clipboard-pull"}"#));
+    assert_eq!(out[0]["code"], "clipboard-failed");
+    assert_eq!(
+        out[0]["message"],
+        "The machine's clipboard holds more than 1 MB of text"
+    );
+    assert_eq!(h.session.ended(), None);
+    // Input still works after.
+    h.send(r#"{"type":"pointer","x":1,"y":1,"buttons":0}"#);
+    assert_eq!(h.recorder.take(), vec![Call::Move(1, 1)]);
 }
 
 #[test]

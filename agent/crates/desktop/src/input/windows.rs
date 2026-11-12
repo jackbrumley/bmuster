@@ -201,6 +201,14 @@ impl InputBackend for SendInputBackend {
     fn flush(&mut self) -> InputResult<()> {
         Ok(())
     }
+
+    fn set_clipboard(&mut self, text: &str) -> InputResult<()> {
+        crate::clipboard::windows::set(text)
+    }
+
+    fn clipboard(&mut self) -> InputResult<String> {
+        crate::clipboard::windows::get()
+    }
 }
 
 /// Wakes the display and resets the idle timers (SPEC-DESKTOP-WAKE): a

@@ -9,6 +9,7 @@
 use super::keymap::KeyPosition;
 use super::{Axis, Button, InputBackend, InputError, InputResult, WHEEL_NOTCH};
 use crate::capture::x11_session::{connect, X11Target};
+use crate::clipboard::x11::X11Clipboard;
 use std::collections::HashMap;
 use x11rb::connection::{Connection, RequestConnection};
 use x11rb::protocol::xproto::{
@@ -141,6 +142,8 @@ pub struct XTestInput {
     /// Characters currently mapped onto spare key codes.
     borrowed: HashMap<Keysym, Keycode>,
     wheel: [i32; 2],
+    /// The display's clipboard (SPEC-DESKTOP 20.4).
+    clipboard: X11Clipboard,
 }
 
 impl XTestInput {
@@ -181,6 +184,7 @@ impl XTestInput {
             next_spare: 0,
             borrowed: HashMap::new(),
             wheel: [0; 2],
+            clipboard: X11Clipboard::new(target.clone()),
         })
     }
 
@@ -381,6 +385,14 @@ impl InputBackend for XTestInput {
         self.connection
             .flush()
             .map_err(failed("flushing X requests"))
+    }
+
+    fn set_clipboard(&mut self, text: &str) -> InputResult<()> {
+        self.clipboard.set(text)
+    }
+
+    fn clipboard(&mut self) -> InputResult<String> {
+        self.clipboard.get()
     }
 }
 

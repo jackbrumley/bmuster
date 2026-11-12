@@ -438,6 +438,9 @@ fn follow_wayland_and_text_console_wait_open_with_a_reason() {
         of_type(&texts(&out), "state")[0]["screen"]["reason"],
         "Text console"
     );
+    // Copy and paste says why it cannot, rather than leaving the viewer waiting (SPEC-DESKTOP 20, C3).
+    let out = texts(&h.send(r#"{"type":"clipboard-pull"}"#));
+    assert_eq!(out[0]["code"], "clipboard-failed");
     assert!(h.session.ended().is_none());
 
     // An X session comes back: the stream resumes.

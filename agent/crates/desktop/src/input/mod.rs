@@ -93,6 +93,16 @@ pub trait InputBackend: Send {
     fn secure_attention(&mut self) -> InputResult<bool>;
     /// Sends anything buffered.
     fn flush(&mut self) -> InputResult<()>;
+    /// Puts `text` on the screen's clipboard (SPEC-DESKTOP 20). The
+    /// clipboard rides on the injector so a watch-only session, which has
+    /// none, can never reach it. Screens with no reachable clipboard say so.
+    fn set_clipboard(&mut self, _text: &str) -> InputResult<()> {
+        Err(crate::clipboard::not_available())
+    }
+    /// The screen's clipboard text; empty when it holds no text.
+    fn clipboard(&mut self) -> InputResult<String> {
+        Err(crate::clipboard::not_available())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,6 +248,16 @@ impl InputController {
 
     /// Releases every key and button this session holds down. Every release
     /// is tried even when one fails; the first error is returned.
+    /// Puts `text` on the screen's clipboard (SPEC-DESKTOP 20).
+    pub fn set_clipboard(&mut self, text: &str) -> InputResult<()> {
+        self.backend.set_clipboard(text)
+    }
+
+    /// The screen's clipboard text.
+    pub fn clipboard(&mut self) -> InputResult<String> {
+        self.backend.clipboard()
+    }
+
     pub fn release_all(&mut self) -> InputResult<()> {
         let mut first_error = None;
         for held in std::mem::take(&mut self.held).into_iter().rev() {
@@ -299,6 +319,8 @@ pub mod recording {
     pub struct Recorder {
         pub calls: Arc<Mutex<Vec<Call>>>,
         pub has_sas: bool,
+        /// The screen's clipboard; `None` is a screen without one.
+        pub clipboard: Option<Arc<Mutex<String>>>,
     }
 
     impl Recorder {
@@ -339,6 +361,21 @@ pub mod recording {
         }
         fn flush(&mut self) -> InputResult<()> {
             Ok(())
+        }
+        fn set_clipboard(&mut self, text: &str) -> InputResult<()> {
+            match &self.clipboard {
+                Some(held) => {
+                    *held.lock().unwrap() = text.to_string();
+                    Ok(())
+                }
+                None => Err(crate::clipboard::not_available()),
+            }
+        }
+        fn clipboard(&mut self) -> InputResult<String> {
+            match &self.clipboard {
+                Some(held) => Ok(held.lock().unwrap().clone()),
+                None => Err(crate::clipboard::not_available()),
+            }
         }
     }
 }
