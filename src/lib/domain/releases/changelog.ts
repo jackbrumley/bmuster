@@ -15,6 +15,22 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.23',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Phone, Trackpad: tap once on a desktop icon (one click), tap twice and release to open it (double click), then tap and touch-and-hold on a window title bar and drag it (it moves, it does not maximise)',
+				'Phone, Fixed cursor: the same three taps; no crosshair shows over the cursor',
+				'Phone, Trackpad zoomed in a long way: push the cursor to each edge and hold your finger still; the view keeps panning with the cursor until you drag it back towards the centre'
+			]
+		},
+		changes: [
+			'Phone, Trackpad and Fixed cursor: tap twice and release to double click; tap, then touch and hold to press and drag with no extra click',
+			'Phone, Trackpad while zoomed: the cursor stays on screen, and holding it near an edge keeps panning like a joystick until you move it back',
+			'Fixed cursor mode no longer draws a crosshair over the cursor'
+		]
+	},
+	{
 		version: '0.4.22',
 		testing: {
 			kind: 'steps',

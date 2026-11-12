@@ -208,7 +208,7 @@ None.
 
 ### Revised after the phone test
 
-**Status:** `IMPLEMENTED (unreleased)` · confirmed with Jack 2026-11-12 after testing v0.4.22 on an Android phone: "double tap and release should be considered a double click; double tap and hold should be considered a click and hold, only releasing when I release the tap"; zoomed in, the cursor must not leave the visible area, and near an edge the view should keep panning like a joystick, even with the finger still, with the cursor travelling with the view; and the fixed cursor's crosshair is not needed, since the cursor already shows there · **security work:** the gestures send input to another person's computer.
+**Status:** `IMPLEMENTED (v0.4.23)` · confirmed with Jack 2026-11-12 after testing v0.4.22 on an Android phone: "double tap and release should be considered a double click; double tap and hold should be considered a click and hold, only releasing when I release the tap"; zoomed in, the cursor must not leave the visible area, and near an edge the view should keep panning like a joystick, even with the finger still, with the cursor travelling with the view; and the fixed cursor's crosshair is not needed, since the cursor already shows there · **security work:** the gestures send input to another person's computer.
 
 Problems in v0.4.22:
 
