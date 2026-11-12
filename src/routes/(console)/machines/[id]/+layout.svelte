@@ -107,25 +107,31 @@
 		color: var(--text);
 	}
 
+	/* Icon, names, badges in a row; on a phone the badges drop under the name. */
 	.identity {
-		display: flex;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: center;
-		gap: var(--space-3);
+		column-gap: var(--space-3);
+		row-gap: var(--space-2);
 	}
 
 	.names {
-		flex: 1;
 		min-width: 0;
 	}
 
-	/* Side by side when there is room; stacked to the right on a phone. */
 	.badges {
 		display: flex;
-		flex-shrink: 0;
-		max-width: 50%;
 		flex-wrap: wrap;
 		justify-content: flex-end;
 		gap: var(--space-1);
+	}
+
+	@media (max-width: 640px) {
+		.badges {
+			grid-column: 2 / -1;
+			justify-content: flex-start;
+		}
 	}
 
 	/* The same size as PageHeader's title on the other pages. */
