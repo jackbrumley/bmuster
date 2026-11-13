@@ -11,7 +11,12 @@ export const consoleSessions = sqliteTable('console_sessions', {
 	lastSeenAt: integer({ mode: 'timestamp_ms' }).notNull(),
 	expiresAt: integer({ mode: 'timestamp_ms' }).notNull(),
 	userAgent: text().notNull(),
-	ip: text().notNull()
+	ip: text().notNull(),
+	/**
+	 * The last time the person typed their password again in this session (SPEC-COMMANDS C10).
+	 * Null until they do: the sign-in itself (`createdAt`) is the first check.
+	 */
+	reconfirmedAt: integer({ mode: 'timestamp_ms' })
 });
 
 /** Failed password sign-ins, for the per-email and per-address pauses. Old rows are pruned. */

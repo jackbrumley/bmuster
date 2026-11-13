@@ -25,6 +25,10 @@ import {
 	serverLogWriter,
 	storeServerLogs
 } from '#lib/server/services/logs/server-log.ts';
+import {
+	closeRunsCutByRestart,
+	scheduleCommandOutputRetention
+} from '#lib/server/services/commands/command-retention.ts';
 import { closeSessionsCutByRestart } from '#lib/server/services/sessions/session-audit.ts';
 import { sessionRelay } from '#lib/server/services/sessions/relay.ts';
 import { scheduleShareLinkSweeps } from '#lib/server/services/share-links/share-links.ts';
@@ -41,7 +45,8 @@ import { registerServedCertificate } from '#lib/server/tls/served-certificate.ts
  * is printed (SPEC-SIGN-IN S17, S18); the email queue starts working
  * (SPEC-EMAIL E3); machines whose live socket was open when the server
  * stopped get a grace period to reconnect (SPEC-PRESENCE P4), and sessions the
- * stop cut off are recorded as ended (SPEC-SESSIONS T9); share links that
+ * stop cut off are recorded as ended (SPEC-SESSIONS T9), as are command runs, whose output
+ * is deleted after 30 days (SPEC-COMMANDS C16); share links that
  * run out end every 10 seconds (SPEC-SHARE-LINKS D7). The server's
  * own log records are kept from the start, and old agent and server log
  * records are pruned now and hourly (SPEC-AGENT-LOGS 2). The dev
@@ -97,6 +102,16 @@ export const init: ServerInit = async () => {
 			`Recorded ${closed === 1 ? 'a session' : `${closed} sessions`} cut off by the restart as ended.`
 		);
 	}
+	// Command runs live in memory: one the restart cut off ends now (SPEC-COMMANDS C16).
+	const runs = closeRunsCutByRestart(database, Date.now());
+	if (runs > 0) {
+		serverLog(
+			'info',
+			'sessions',
+			`Closed ${runs === 1 ? 'a command run' : `${runs} command runs`} cut off by the restart.`
+		);
+	}
+	scheduleCommandOutputRetention(database);
 };
 
 /**

@@ -8,6 +8,7 @@ export {
 } from './schema/access.ts';
 export { agentRollouts, machineUpdates } from './schema/agent-updates.ts';
 export { auditEntries } from './schema/audit.ts';
+export { commandRunMachines, commandRunScripts, commandRuns } from './schema/commands.ts';
 export { diagnosticsTokens } from './schema/diagnostics-tokens.ts';
 export { emailMessages } from './schema/email.ts';
 export { identityProviders } from './schema/identity-providers.ts';

@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { inventorySchema } from '#lib/schemas/agents/agent-protocol.ts';
 import type { MachineUpdateState } from '#lib/domain/machines/agent-updates.ts';
 import type {
@@ -87,6 +87,27 @@ export function activeMachineBasics(
 		.from(machines)
 		.where(and(eq(machines.id, id), isNull(machines.removedAt)))
 		.get();
+}
+
+/** Name, system and agent version of each machine here that has not been removed (SPEC-COMMANDS). */
+export function machineAgentFacts(
+	database: Queryable,
+	ids: readonly string[]
+): Map<string, { name: string; osFamily: OsFamily; agentVersion: string }> {
+	if (ids.length === 0) {
+		return new Map();
+	}
+	const rows = database
+		.select({
+			id: machines.id,
+			name: machines.name,
+			osFamily: machines.osFamily,
+			agentVersion: machines.agentVersion
+		})
+		.from(machines)
+		.where(and(inArray(machines.id, [...ids]), isNull(machines.removedAt)))
+		.all();
+	return new Map(rows.map(({ id, ...facts }) => [id, facts]));
 }
 
 /** True for a machine that is enrolled and has not been removed. */

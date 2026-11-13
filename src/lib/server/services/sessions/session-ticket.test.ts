@@ -47,6 +47,34 @@ describe('session tickets (T3)', () => {
 		});
 	}
 
+	it('C13: the exec vector carries run-commands, the exact command and the 2 MB cap the agent checks', () => {
+		const exec = vectors.tickets.find((vector) => vector.ticket.purpose.kind === 'exec');
+		if (exec === undefined) throw new Error('no exec vector');
+		expect(exec.ticket.permissions).toEqual(['view', 'run-commands']);
+		expect(exec.ticket.purpose).toEqual({
+			kind: 'exec',
+			shell: 'powershell',
+			command: 'Get-Service | Where-Object Status -eq "Running"',
+			timeoutMs: 60_000,
+			maxOutputBytes: 2 * 1024 * 1024
+		});
+		// Signed over the exact bytes: a changed command or machine fails the agent's check.
+		const changed = signTicket(
+			{
+				...exec.ticket,
+				purpose: {
+					kind: 'exec',
+					shell: 'powershell',
+					command: 'shutdown /s',
+					timeoutMs: 60_000,
+					maxOutputBytes: 2 * 1024 * 1024
+				}
+			},
+			privateKey
+		);
+		expect(changed.signature).not.toBe(exec.signatureBase64);
+	});
+
 	it('keeps the agreed field order whatever order the ticket was built in', () => {
 		const vector = vectors.tickets[0];
 		if (vector === undefined) throw new Error('no vectors');

@@ -110,7 +110,7 @@ export type DesktopMode = (typeof DESKTOP_MODES)[number];
 
 /** Someone using a machine right now (SPEC-SESSIONS T8, SPEC-DESKTOP R17). */
 export type SessionInUse =
-	| { kind: 'terminal' | 'files'; userName: string }
+	| { kind: 'terminal' | 'files' | 'command'; userName: string }
 	| { kind: 'desktop'; mode: DesktopMode; userName: string };
 
 /** "terminal by Kim", "desktop (control) by Kim", for "In use: …". */
@@ -120,6 +120,7 @@ export function inUseLabel(sessions: readonly SessionInUse[]): string {
 			switch (session.kind) {
 				case 'terminal':
 				case 'files':
+				case 'command':
 					return `${session.kind} by ${session.userName}`;
 				case 'desktop':
 					return `desktop (${session.mode}) by ${session.userName}`;

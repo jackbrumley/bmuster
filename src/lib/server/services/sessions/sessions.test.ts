@@ -174,7 +174,15 @@ describe('the signed ticket (T3)', () => {
 			sessionId: result.reply.sessionId,
 			machineId,
 			user: { id: admin.id, name: admin.name },
-			permissions: ['view', 'terminal', 'desktop-view', 'desktop-control', 'files', 'share-links'],
+			permissions: [
+				'view',
+				'terminal',
+				'desktop-view',
+				'desktop-control',
+				'files',
+				'share-links',
+				'run-commands'
+			],
 			runAs: { kind: 'admin' },
 			issuedAtMs: NOW,
 			expiresAtMs: NOW + 60_000,

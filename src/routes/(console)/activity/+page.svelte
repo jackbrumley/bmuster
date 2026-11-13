@@ -238,6 +238,13 @@
 			case 'share-link-ended':
 			case 'share-link-expired':
 				return IconLinkOff;
+			case 'password-confirmed':
+				return IconKey;
+			case 'command-run-started':
+			case 'command-run-machine':
+			case 'command-run-cancelled':
+			case 'command-run-ended':
+				return IconTerminal2;
 		}
 	}
 </script>

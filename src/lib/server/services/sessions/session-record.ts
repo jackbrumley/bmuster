@@ -39,10 +39,12 @@ export type SessionRecord = {
 } & (
 	| { kind: 'terminal'; shell: TerminalShell }
 	| { kind: 'files' }
+	/** One machine's part of a command run (SPEC-COMMANDS); the server is its other end. */
+	| { kind: 'exec'; shell: TerminalShell; runId: string }
 	| { kind: 'desktop'; mode: DesktopMode }
 );
 
-/** The server's own end of a session, in the browser's place (file sessions). */
+/** The server's own end of a session, in the browser's place (file and exec sessions). */
 export type LocalEnd = {
 	/** The agent's socket is open: requests can go. */
 	ready(): void;

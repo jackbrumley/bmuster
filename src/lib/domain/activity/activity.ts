@@ -116,7 +116,13 @@ const AUDIT_KINDS = [
 	'share-link-created',
 	'share-link-opened',
 	'share-link-ended',
-	'share-link-expired'
+	'share-link-expired',
+	// SPEC-COMMANDS
+	'password-confirmed',
+	'command-run-started',
+	'command-run-machine',
+	'command-run-cancelled',
+	'command-run-ended'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -345,5 +351,15 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Ended a share link';
 		case 'share-link-expired':
 			return 'A share link ran out';
+		case 'password-confirmed':
+			return 'Typed their password again';
+		case 'command-run-started':
+			return 'Started a command run';
+		case 'command-run-machine':
+			return 'Ran a command';
+		case 'command-run-cancelled':
+			return 'Cancelled a command run';
+		case 'command-run-ended':
+			return 'A command run finished';
 	}
 }

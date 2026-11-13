@@ -58,6 +58,8 @@ function kindDetail(record: SessionRecord): Record<string, string> {
 			return { type: 'terminal', shell: record.shell, 'run as': RUN_AS_LABEL };
 		case 'files':
 			return { type: 'files', 'run as': RUN_AS_LABEL };
+		case 'exec':
+			return { type: 'command', shell: record.shell, run: record.runId, 'run as': RUN_AS_LABEL };
 		case 'desktop':
 			// Ask sessions are refused until consent prompts exist (SPEC-DESKTOP 13). A guest connects
 			// without asking, the machine always notified, by the owner's decision (SPEC-SHARE-LINKS D1).

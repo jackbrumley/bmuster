@@ -440,7 +440,9 @@ export function createRelay(limits: RelayLimits) {
 					end(sessionId, 'failed', parsed.data.message);
 					return;
 				case 'exec-done':
-					// Terminal sessions never send it; exec sessions arrive with MCP.
+					// An exec session's last word (SPEC-COMMANDS): its owner reads the result.
+					session.local?.text(text);
+					end(sessionId, 'exited', 'The command finished.');
 					return;
 			}
 		},
@@ -545,6 +547,8 @@ export function createRelay(limits: RelayLimits) {
 							return { kind: record.kind, userName: record.userName };
 						case 'desktop':
 							return { kind: 'desktop', mode: record.mode, userName: record.userName };
+						case 'exec':
+							return { kind: 'command', userName: record.userName };
 					}
 				});
 		},
@@ -558,9 +562,14 @@ export function createRelay(limits: RelayLimits) {
 			return sessions.has(sessionId);
 		},
 
-		/** Running sessions this person opened. */
+		/**
+		 * Running sessions this person opened. A command run's sessions are not counted: a run
+		 * paces itself (SPEC-COMMANDS C14) and must not stop its owner opening a terminal.
+		 */
 		countFor(userId: string): number {
-			return [...sessions.values()].filter((session) => session.userId === userId).length;
+			return [...sessions.values()].filter(
+				(session) => session.userId === userId && session.record.kind !== 'exec'
+			).length;
 		},
 
 		/** The ids of the running sessions this person (or share link) opened. */
