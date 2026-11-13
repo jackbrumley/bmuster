@@ -39,8 +39,11 @@ canonical: https://bmuster.com/
     </p>
     <div class="panel-foot">
       <p class="command-note">
-        BMuster is in early development. There is no release yet, so this command does not work yet; follow along on
-        <a href="{{ site.repo_url }}">GitHub</a>.
+        Downloads and release notes are on
+        <a href="{{ site.repo_url }}/releases">GitHub Releases</a>. Free code signing provided by
+        <a href="https://about.signpath.io/">SignPath.io</a>, certificate by
+        <a href="https://signpath.org/">SignPath Foundation</a>
+        (<a href="{{ '/code-signing-policy' | relative_url }}">code signing policy</a>).
       </p>
     </div>
   </section>
@@ -54,7 +57,7 @@ canonical: https://bmuster.com/
     </p>
     <ul>
       <li>Remote desktop and terminal in the browser, built mobile-first so it works from your phone</li>
-      <li>Unattended access for IT staff, or ask the person at the machine first</li>
+      <li>Unattended access for IT staff, with a notice on the machine and a Disconnect button while someone is connected</li>
       <li>Inventory for every machine: hardware, operating system, GPUs and who is signed in</li>
       <li>Users, groups and access rules that decide who can reach which machines and what they can do</li>
       <li>Sign in with a password, or with Microsoft 365 or Authentik, and an activity log of who did what</li>
@@ -116,7 +119,7 @@ canonical: https://bmuster.com/
   const hint = document.getElementById("install-variant-hint");
   const variantButtons = document.querySelectorAll(".install-variant-btn");
 
-  // Server install commands (docs/install.sh and docs/install.ps1, once the first release is out).
+  // Server install commands (docs/install.sh and docs/install.ps1).
   const installVariants = {
     linux: {
       command: "curl -fsSL https://bmuster.com/install.sh | sudo sh",
