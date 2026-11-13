@@ -107,7 +107,7 @@ impl Shell {
 pub enum SessionPurpose {
     /// An interactive shell on a pseudo-terminal of this size.
     Terminal { shell: Shell, cols: u16, rows: u16 },
-    /// One command, no input, output capped (the MCP `run_command` tool).
+    /// One command, no input, output capped (SPEC-COMMANDS: Commands runs).
     Exec {
         shell: Shell,
         command: String,
@@ -142,7 +142,7 @@ impl SessionPurpose {
     pub fn required_permission(&self) -> &'static str {
         match self {
             SessionPurpose::Terminal { .. } => "terminal",
-            SessionPurpose::Exec { .. } => "ai-commands",
+            SessionPurpose::Exec { .. } => "run-commands",
             SessionPurpose::Files {} => "files",
             SessionPurpose::Desktop { .. } => "desktop-view",
         }
@@ -398,7 +398,7 @@ mod tests {
         }));
         assert_eq!(
             open(&key, &exec, NOW),
-            Err(TicketError::MissingPermission("ai-commands"))
+            Err(TicketError::MissingPermission("run-commands"))
         );
         let files = ticket_json(json!({ "purpose": { "kind": "files" } }));
         assert_eq!(
@@ -462,6 +462,56 @@ mod tests {
             ),
             Err(TicketError::NotATicket(_))
         ));
+    }
+
+    /// SPEC-COMMANDS C13: a command runs only from a ticket that carries
+    /// `run-commands`; `terminal` (or the old `ai-commands`) is not enough.
+    #[test]
+    fn exec_needs_run_commands() {
+        let key = SigningKey::from_bytes(&[9; 32]);
+        let exec = |permissions: serde_json::Value| {
+            ticket_json(json!({
+                "permissions": permissions,
+                "purpose": {
+                    "kind": "exec", "shell": "powershell", "command": "Restart-Service Spooler",
+                    "timeoutMs": 60_000, "maxOutputBytes": 2_097_152
+                }
+            }))
+        };
+        for refused in [
+            json!(["view", "terminal"]),
+            json!(["view", "ai-commands"]),
+            json!([
+                "view",
+                "terminal",
+                "desktop-control",
+                "files",
+                "share-links"
+            ]),
+        ] {
+            assert_eq!(
+                open(&key, &exec(refused.clone()), NOW),
+                Err(TicketError::MissingPermission("run-commands")),
+                "{refused}"
+            );
+        }
+        let ticket = open(&key, &exec(json!(["view", "run-commands"])), NOW).unwrap();
+        assert!(matches!(ticket.purpose, SessionPurpose::Exec { .. }));
+    }
+
+    /// SPEC-COMMANDS C13: an exec ticket names one machine; any other agent refuses it.
+    #[test]
+    fn exec_ticket_for_another_machine_is_refused() {
+        let key = SigningKey::from_bytes(&[9; 32]);
+        let ticket = ticket_json(json!({
+            "machineId": "0e7a1c55-0000-4000-8000-000000000001",
+            "permissions": ["view", "run-commands"],
+            "purpose": {
+                "kind": "exec", "shell": "sh", "command": "uptime",
+                "timeoutMs": 60_000, "maxOutputBytes": 2_097_152
+            }
+        }));
+        assert_eq!(open(&key, &ticket, NOW), Err(TicketError::WrongMachine));
     }
 
     #[test]

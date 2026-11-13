@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { PERMISSIONS } from '#lib/domain/access/access.ts';
+import {
+	PERMISSIONS,
+	permissionLabel,
+	isCompletePermissionSet,
+	togglePermission
+} from '#lib/domain/access/access.ts';
 import { done, grantAccess } from '#tests/helpers/access.ts';
 import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
@@ -7,7 +12,13 @@ import { updateMachineDetails } from '../machines/machine-details.ts';
 import { removeMachine } from '../machines/machine-views.ts';
 import { activityFeed } from '../users/activity-feed.ts';
 import { toConsoleUser } from '../users/users.ts';
-import { activityScopeFor, canSeeMachine, permissionsFor, visibleMachineIds } from './access.ts';
+import {
+	activityScopeFor,
+	canSeeMachine,
+	machineIdsWith,
+	permissionsFor,
+	visibleMachineIds
+} from './access.ts';
 import { createRule } from './rules.ts';
 import { createGroup, listMachineGroups, setGroupMembers } from './groups.ts';
 
@@ -174,5 +185,54 @@ describe('what members see (A6)', () => {
 		const { database, admin, pat, office } = await setUp();
 		updateMachineDetails(database, office, { name: 'Reception', description: '' }, admin.id, NOW);
 		expect(activityFeed(database, activityScopeFor(database, pat), 50)).toEqual([]);
+	});
+});
+
+describe('running commands (SPEC-COMMANDS C11)', () => {
+	it('C11: run-commands is its own permission, labelled "Run commands", needing only view', () => {
+		expect(PERMISSIONS).toContain('run-commands');
+		expect(permissionLabel('run-commands')).toBe('Run commands');
+		expect(isCompletePermissionSet(['run-commands'])).toBe(false);
+		expect(togglePermission([], 'run-commands', true)).toEqual(['view', 'run-commands']);
+		// Nothing else brings it along, not even the terminal or full desktop control.
+		const everythingElse = PERMISSIONS.filter((permission) => permission !== 'run-commands');
+		for (const permission of everythingElse) {
+			expect(togglePermission([], permission, true)).not.toContain('run-commands');
+		}
+		expect(togglePermission(['view', 'run-commands', 'terminal'], 'terminal', false)).toEqual([
+			'view',
+			'run-commands'
+		]);
+	});
+
+	it('C11: admins have it on every machine; a member only once a rule gives it', async () => {
+		const { database, admin, pat, office, server } = await setUp();
+		expect(permissionsFor(database, admin, office)).toContainEqual({
+			permission: 'run-commands',
+			consent: 'unattended'
+		});
+		expect(machineIdsWith(database, admin, 'run-commands')).toEqual(new Set([office, server]));
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'Engineers',
+			memberIds: [pat.id],
+			machineIds: [office, server],
+			permissions: ['view', 'terminal', 'desktop-view', 'desktop-control', 'files', 'share-links'],
+			consent: 'unattended'
+		});
+		expect(permissionsFor(database, pat, office).map((grant) => grant.permission)).not.toContain(
+			'run-commands'
+		);
+		expect(machineIdsWith(database, pat, 'run-commands')).toEqual(new Set());
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'Fleet',
+			memberIds: [pat.id],
+			machineIds: [server],
+			permissions: ['view', 'run-commands'],
+			consent: 'unattended'
+		});
+		expect(machineIdsWith(database, pat, 'run-commands')).toEqual(new Set([server]));
+		expect(machineIdsWith(database, pat, 'view')).toEqual(visibleMachineIds(database, pat));
 	});
 });

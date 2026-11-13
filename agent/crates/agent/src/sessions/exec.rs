@@ -1,5 +1,5 @@
 //! An exec session: one command, its output as frames, then `exec-done`
-//! (docs/mcp.md). Each output frame is one byte naming the stream
+//! (SPEC-COMMANDS). Each output frame is one byte naming the stream
 //! (`EXEC_STDOUT` or `EXEC_STDERR`) followed by the bytes. The browser side
 //! sends nothing; anything it sends is ignored.
 

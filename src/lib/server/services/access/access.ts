@@ -102,12 +102,50 @@ export function canSeeMachine(database: Queryable, user: ConsoleUser, machineId:
 
 /** Every machine the person may see (`view`): the Machines list, Activity and join-code status. */
 export function visibleMachineIds(database: Queryable, user: ConsoleUser): Set<string> {
+	return machineIdsWith(database, user, 'view');
+}
+
+/**
+ * The machine groups a person picks from in the Machines page's select mode (SPEC-COMMANDS
+ * C2): every group for an admin; for a member only the groups their own rules giving
+ * `run-commands` name, since members do not see the Groups page (A1–A3).
+ */
+export function commandGroupIdsFor(
+	database: Queryable,
+	user: ConsoleUser
+): { kind: 'all' } | { kind: 'some'; groupIds: Set<string> } {
+	switch (user.role) {
+		case 'admin':
+			return { kind: 'all' };
+		case 'member':
+			return {
+				kind: 'some',
+				groupIds: new Set(
+					rulesFor(database, user.id)
+						.filter((rule) => rule.permissions.includes('run-commands'))
+						.map((rule) => rule.machineGroupId)
+				)
+			};
+	}
+}
+
+/**
+ * Every machine on which the person holds `permission`: `view` for the Machines list,
+ * `run-commands` for the Machines page's select mode (SPEC-COMMANDS C5).
+ */
+export function machineIdsWith(
+	database: Queryable,
+	user: ConsoleUser,
+	permission: Permission
+): Set<string> {
 	const active = activeMachineNames(database);
 	switch (user.role) {
 		case 'admin':
 			return new Set(active.keys());
 		case 'member': {
-			const rules = rulesFor(database, user.id).filter((rule) => rule.permissions.includes('view'));
+			const rules = rulesFor(database, user.id).filter((rule) =>
+				rule.permissions.includes(permission)
+			);
 			if (rules.some((rule) => rule.allMachines)) {
 				return new Set(active.keys());
 			}

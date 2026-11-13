@@ -15,7 +15,9 @@ export const PERMISSIONS = [
 	'desktop-view',
 	'desktop-control',
 	'files',
-	'share-links'
+	'share-links',
+	// SPEC-COMMANDS C11: one command on many machines as root or SYSTEM. Nothing includes it.
+	'run-commands'
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -34,6 +36,8 @@ export function permissionLabel(permission: Permission): string {
 			return 'Files';
 		case 'share-links':
 			return 'Share links';
+		case 'run-commands':
+			return 'Run commands';
 	}
 }
 
@@ -48,6 +52,7 @@ function includedBy(permission: Permission): Permission[] {
 		case 'desktop-view':
 		case 'files':
 		case 'share-links':
+		case 'run-commands':
 			return ['view'];
 	}
 }

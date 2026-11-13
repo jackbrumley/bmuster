@@ -1,5 +1,5 @@
-//! Running one command without a terminal (the MCP `run_command` tool,
-//! docs/mcp.md): no input, stdout and stderr kept apart, a time limit and an
+//! Running one command without a terminal (SPEC-COMMANDS runs, later the MCP
+//! `run_command` tool): no input, stdout and stderr kept apart, a time limit and an
 //! output cap. Everything the command starts ends with it.
 
 use super::placement::Placement;

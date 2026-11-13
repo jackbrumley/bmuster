@@ -42,7 +42,7 @@
 				},
 				"permissions": [
 					"view",
-					"ai-commands"
+					"run-commands"
 				],
 				"runAs": {
 					"kind": "admin"
@@ -54,12 +54,12 @@
 					"shell": "powershell",
 					"command": "Get-Service | Where-Object Status -eq \"Running\"",
 					"timeoutMs": 60000,
-					"maxOutputBytes": 1048576
+					"maxOutputBytes": 2097152
 				}
 			},
-			"ticketJson": "{\"sessionId\":\"6c9fad2f-2e3b-4d4c-9f80-1b2c3d4e5f60\",\"machineId\":\"3f0c2a8e-8a8e-4c55-9d3c-2a4f1c1d7e10\",\"user\":{\"id\":\"8d6c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b\",\"name\":\"Jack Brumley\"},\"permissions\":[\"view\",\"ai-commands\"],\"runAs\":{\"kind\":\"admin\"},\"issuedAtMs\":1794000000000,\"expiresAtMs\":1794000060000,\"purpose\":{\"kind\":\"exec\",\"shell\":\"powershell\",\"command\":\"Get-Service | Where-Object Status -eq \\\"Running\\\"\",\"timeoutMs\":60000,\"maxOutputBytes\":1048576}}",
-			"ticketBase64": "eyJzZXNzaW9uSWQiOiI2YzlmYWQyZi0yZTNiLTRkNGMtOWY4MC0xYjJjM2Q0ZTVmNjAiLCJtYWNoaW5lSWQiOiIzZjBjMmE4ZS04YThlLTRjNTUtOWQzYy0yYTRmMWMxZDdlMTAiLCJ1c2VyIjp7ImlkIjoiOGQ2YzFhMmItM2M0ZC00ZTVmLThhOWItMGMxZDJlM2Y0YTViIiwibmFtZSI6IkphY2sgQnJ1bWxleSJ9LCJwZXJtaXNzaW9ucyI6WyJ2aWV3IiwiYWktY29tbWFuZHMiXSwicnVuQXMiOnsia2luZCI6ImFkbWluIn0sImlzc3VlZEF0TXMiOjE3OTQwMDAwMDAwMDAsImV4cGlyZXNBdE1zIjoxNzk0MDAwMDYwMDAwLCJwdXJwb3NlIjp7ImtpbmQiOiJleGVjIiwic2hlbGwiOiJwb3dlcnNoZWxsIiwiY29tbWFuZCI6IkdldC1TZXJ2aWNlIHwgV2hlcmUtT2JqZWN0IFN0YXR1cyAtZXEgXCJSdW5uaW5nXCIiLCJ0aW1lb3V0TXMiOjYwMDAwLCJtYXhPdXRwdXRCeXRlcyI6MTA0ODU3Nn19",
-			"signatureBase64": "Wpuk6Mhy6vYxEeJqlMztL8Culb6W+35jl5Y0U+cD3Mh5DSRfESQBtBJD2Co+YPcg+pEd9YResiq046th9Z8XDA=="
+			"ticketJson": "{\"sessionId\":\"6c9fad2f-2e3b-4d4c-9f80-1b2c3d4e5f60\",\"machineId\":\"3f0c2a8e-8a8e-4c55-9d3c-2a4f1c1d7e10\",\"user\":{\"id\":\"8d6c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b\",\"name\":\"Jack Brumley\"},\"permissions\":[\"view\",\"run-commands\"],\"runAs\":{\"kind\":\"admin\"},\"issuedAtMs\":1794000000000,\"expiresAtMs\":1794000060000,\"purpose\":{\"kind\":\"exec\",\"shell\":\"powershell\",\"command\":\"Get-Service | Where-Object Status -eq \\\"Running\\\"\",\"timeoutMs\":60000,\"maxOutputBytes\":2097152}}",
+			"ticketBase64": "eyJzZXNzaW9uSWQiOiI2YzlmYWQyZi0yZTNiLTRkNGMtOWY4MC0xYjJjM2Q0ZTVmNjAiLCJtYWNoaW5lSWQiOiIzZjBjMmE4ZS04YThlLTRjNTUtOWQzYy0yYTRmMWMxZDdlMTAiLCJ1c2VyIjp7ImlkIjoiOGQ2YzFhMmItM2M0ZC00ZTVmLThhOWItMGMxZDJlM2Y0YTViIiwibmFtZSI6IkphY2sgQnJ1bWxleSJ9LCJwZXJtaXNzaW9ucyI6WyJ2aWV3IiwicnVuLWNvbW1hbmRzIl0sInJ1bkFzIjp7ImtpbmQiOiJhZG1pbiJ9LCJpc3N1ZWRBdE1zIjoxNzk0MDAwMDAwMDAwLCJleHBpcmVzQXRNcyI6MTc5NDAwMDA2MDAwMCwicHVycG9zZSI6eyJraW5kIjoiZXhlYyIsInNoZWxsIjoicG93ZXJzaGVsbCIsImNvbW1hbmQiOiJHZXQtU2VydmljZSB8IFdoZXJlLU9iamVjdCBTdGF0dXMgLWVxIFwiUnVubmluZ1wiIiwidGltZW91dE1zIjo2MDAwMCwibWF4T3V0cHV0Qnl0ZXMiOjIwOTcxNTJ9fQ==",
+			"signatureBase64": "BQDef5sKm9m8GEeBmS7kP6Wg9tJdEtNHd1uVKFhWuxe3ior5T/rtf5R40/pTUd9Q9gwGyxhlIg6ZzMLDgh0HAA=="
 		},
 		{
 			"ticket": {
