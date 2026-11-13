@@ -16,7 +16,7 @@ import { clearSignInFailures, recordSignInFailure, signInPause } from './sign-in
  * A wrong password counts toward the sign-in pauses (SPEC-SIGN-IN S4), as at the sign-in page.
  */
 
-export const WRONG_PASSWORD = 'That password is not right.';
+const WRONG_PASSWORD = 'That password is not right.';
 export const SIGN_IN_AGAIN =
 	'You signed in more than 10 minutes ago. Sign out and sign in again, then run it.';
 

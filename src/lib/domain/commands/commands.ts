@@ -102,23 +102,6 @@ export function runMachineStatusLabel(status: RunMachineStatus): string {
 	}
 }
 
-/** Still to finish: the run is not over while any machine is in one of these. */
-export function isUnfinished(status: RunMachineStatus): boolean {
-	switch (status) {
-		case 'waiting':
-		case 'running':
-			return true;
-		case 'succeeded':
-		case 'failed':
-		case 'timed-out':
-		case 'offline':
-		case 'skipped':
-		case 'lost':
-		case 'cancelled':
-			return false;
-	}
-}
-
 /** What **Run again on failed and offline** picks up (C18). */
 export function needsRunAgain(status: RunMachineStatus): boolean {
 	switch (status) {
@@ -246,6 +229,16 @@ export type RunMachineOutput =
 			stdoutTruncated: boolean;
 			stderrTruncated: boolean;
 	  };
+
+/** A group chip in the Machines page's select mode (C2): its machines the person can see. */
+export type SelectGroup = { id: string; name: string; machineIds: string[] };
+
+/**
+ * Select mode on the Machines page (C1–C5): offered only to people who may run commands on
+ * at least one machine; `runnable` are the machines that get a tick box.
+ */
+export type CommandSelection =
+	{ kind: 'none' } | { kind: 'allowed'; runnable: string[]; groups: SelectGroup[] };
 
 /** What **Run command** starts from: the machines, and the commands when running again (C18). */
 export type CommandDraft = {

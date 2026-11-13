@@ -25,6 +25,11 @@ import {
 	USER_GROUP_ID,
 	USER_GROUPS
 } from '#tests/helpers/long-data.ts';
+import type { CommandSelection } from '#lib/domain/commands/commands.ts';
+import { COMMAND_RUN, COMMAND_RUN_SUMMARY, LONG_COMMAND } from '#tests/helpers/long-data.ts';
+import CommandRunPage from './commands/[id=uuid]/+page.svelte';
+import CommandsPage from './commands/+page.svelte';
+import RunCommand from './commands/new/run-command.svelte';
 import AccessPage from './access/+page.svelte';
 import ActivityPage from './activity/+page.svelte';
 import AddPage from './add/+page.svelte';
@@ -63,29 +68,107 @@ vi.mock('$app/state', () => ({
 	}
 }));
 
+/** Select mode's data: every machine tickable, in a group with a long name (SPEC-COMMANDS C21). */
+const SELECTION: CommandSelection = {
+	kind: 'allowed',
+	runnable: MACHINES.map((entry) => entry.id),
+	groups: [
+		{ id: 'g-all', name: 'All machines', machineIds: MACHINES.map((entry) => entry.id) },
+		{ id: MACHINE_GROUP_ID, name: LONG_GROUP, machineIds: MACHINES.map((entry) => entry.id) }
+	]
+};
+
+function machinesPage(view: 'cards' | 'table') {
+	localStorage.setItem('bmuster-machines-view', view);
+	return render(
+		MachinesPage,
+		{
+			params: {},
+			form: undefined,
+			data: {
+				...CONSOLE,
+				now: NOW,
+				rollout: { kind: 'none' },
+				view: { kind: 'machines', machines: MACHINES },
+				commands: SELECTION
+			}
+		},
+		IN_CONSOLE
+	);
+}
+
+/** Run command for every long machine; `review` goes on to Review. */
+async function runCommand(review: boolean) {
+	const screen = await render(
+		RunCommand,
+		{
+			draft: {
+				machineIds: MACHINES.map((entry) => entry.id),
+				scripts: [
+					{ osFamily: 'windows', shell: 'powershell', command: LONG_COMMAND },
+					{ osFamily: 'linux', shell: 'bash', command: LONG_COMMAND }
+				],
+				timeoutMs: 600_000,
+				rerunOf: null
+			}
+		},
+		IN_CONSOLE
+	);
+	if (review) {
+		await screen.getByRole('button', { name: 'Review' }).click();
+	}
+	return screen;
+}
+
 /** Every console page outside the machine tabs. */
 const PAGES: PhonePage[] = [
 	...(['cards', 'table'] as const).map((view) => ({
 		name: `Machines (${view})`,
 		ready: `${LONG_MACHINE_NAME}-1`,
-		open: () => {
-			localStorage.setItem('bmuster-machines-view', view);
-			return render(
-				MachinesPage,
+		open: () => machinesPage(view)
+	})),
+	// SPEC-COMMANDS C21: select mode with its chips and bottom bar, and the Commands screens.
+	...(['cards', 'table'] as const).map((view) => ({
+		name: `Machines select mode (${view})`,
+		ready: '1 selected',
+		open: async () => {
+			const screen = await machinesPage(view);
+			await screen.getByRole('button', { name: 'Select', exact: true }).click();
+			await screen.getByRole('button', { name: LONG_GROUP }).click();
+			await screen.getByRole('checkbox', { name: `Select ${LONG_MACHINE_NAME}-1` }).click();
+			return screen;
+		}
+	})),
+	{
+		name: 'Commands',
+		ready: LONG_PERSON,
+		open: () =>
+			render(
+				CommandsPage,
 				{
 					params: {},
 					form: undefined,
-					data: {
-						...CONSOLE,
-						now: NOW,
-						rollout: { kind: 'none' },
-						view: { kind: 'machines', machines: MACHINES }
-					}
+					data: { ...CONSOLE, now: NOW, runs: [COMMAND_RUN_SUMMARY] }
 				},
 				IN_CONSOLE
-			);
-		}
-	})),
+			)
+	},
+	{ name: 'Run command', ready: 'Time limit', open: () => runCommand(false) },
+	{ name: 'Run command review', ready: 'Will be skipped', open: () => runCommand(true) },
+	{
+		name: 'Command run results',
+		ready: `${LONG_MACHINE_NAME}-2`,
+		open: () =>
+			render(
+				CommandRunPage,
+				{
+					params: { id: COMMAND_RUN.id },
+					form: undefined,
+					data: { ...CONSOLE, now: NOW, run: COMMAND_RUN }
+				},
+				IN_CONSOLE
+			)
+	},
 	{
 		name: 'Share link guest page',
 		ready: SHARE_LINK.machineName,

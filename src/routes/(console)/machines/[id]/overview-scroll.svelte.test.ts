@@ -55,6 +55,7 @@ function dataFor(machine: Machine) {
 		user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
 		localNetworkMode: false,
 		serverUpdate: null,
+		runCommands: false,
 		signedIn: true as const,
 		now: NOW,
 		machine,

@@ -15,7 +15,13 @@ import ConsoleFrame from './console-frame.svelte';
 
 const PHONE = { width: 360, height: 780 };
 
-export const CONSOLE = { user: ADMIN, localNetworkMode: true, serverUpdate: null, signedIn: true };
+export const CONSOLE = {
+	user: ADMIN,
+	localNetworkMode: true,
+	serverUpdate: null,
+	runCommands: true,
+	signedIn: true
+};
 const GRANTS: Grant[] = PERMISSIONS.map((permission) => ({ permission, consent: 'unattended' }));
 export const MACHINE_DATA = { ...CONSOLE, now: NOW, machine: MACHINE, grants: GRANTS };
 export const IN_CONSOLE = {

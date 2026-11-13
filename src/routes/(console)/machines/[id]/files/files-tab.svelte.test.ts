@@ -97,7 +97,7 @@ beforeEach(async () => {
 afterEach(() => {
 	// A question left open would open the next test's dialog over everything.
 	if (confirmation.current.kind === 'asking') {
-		confirmation.current.answer(false);
+		confirmation.current.answer({ kind: 'no' });
 	}
 });
 
@@ -110,6 +110,7 @@ async function openTab(machine: Machine, grants: Grant[] = GRANTS) {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
 			localNetworkMode: false,
 			serverUpdate: null,
+			runCommands: false,
 			signedIn: true,
 			now: Date.parse('2026-11-07T12:00:00.000Z'),
 			machine,

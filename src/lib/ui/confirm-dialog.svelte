@@ -24,15 +24,41 @@
 
 	let typedText = $state('');
 	let typedError = $state<string | undefined>(undefined);
+	let password = $state('');
+	let passwordError = $state<string | undefined>(undefined);
+
+	/** Why the typed check does not pass yet, or undefined when it does. */
+	function typedProblem(): string | undefined {
+		switch (asking?.typed.kind) {
+			case undefined:
+			case 'none':
+				return undefined;
+			case 'text':
+				return typedText.trim() === asking.typed.text
+					? undefined
+					: 'Type the name exactly as shown to confirm.';
+			case 'count':
+				return typedText.trim() === String(asking.typed.count)
+					? undefined
+					: `Type ${asking.typed.count} to confirm.`;
+		}
+	}
 
 	function answer(yes: boolean): void {
-		if (yes && asking?.typed.kind === 'text' && typedText.trim() !== asking.typed.text) {
-			typedError = 'Type the name exactly as shown to confirm.';
-			return;
+		if (yes) {
+			typedError = typedProblem();
+			passwordError =
+				asking?.password.kind === 'ask' && password === '' ? 'Type your password.' : undefined;
+			if (typedError !== undefined || passwordError !== undefined) {
+				return;
+			}
 		}
+		const given = password;
 		typedText = '';
 		typedError = undefined;
-		asking?.answer(yes);
+		password = '';
+		passwordError = undefined;
+		asking?.answer(yes ? { kind: 'yes', password: given } : { kind: 'no' });
 	}
 </script>
 
@@ -60,6 +86,33 @@
 					required={true}
 					error={typedError}
 					bind:value={typedText}
+				/>
+			</div>
+		{:else if asking.typed.kind === 'count'}
+			<div class="typed">
+				<TextField
+					label="Type {asking.typed.count}, the number of machines, to confirm"
+					name="confirm-count"
+					type="text"
+					autocomplete="off"
+					autocapitalize="off"
+					required={true}
+					error={typedError}
+					bind:value={typedText}
+				/>
+			</div>
+		{/if}
+		{#if asking.password.kind === 'ask'}
+			<div class="typed">
+				<TextField
+					label="Your password (you signed in more than 10 minutes ago)"
+					name="confirm-password"
+					type="password"
+					autocomplete="current-password"
+					autocapitalize="off"
+					required={true}
+					error={passwordError}
+					bind:value={password}
 				/>
 			</div>
 		{/if}

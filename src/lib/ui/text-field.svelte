@@ -5,7 +5,8 @@
 	 * The standard single-line field (AGENTS.md §4, §12): a label above a box
 	 * with 16px text, so iPhones do not zoom in when it is tapped, and the
 	 * field's error underneath it. `multiline` is a box several lines tall
-	 * for plain text that keeps its line breaks (notes, descriptions).
+	 * for plain text that keeps its line breaks (notes, descriptions); `code`
+	 * is the same box in a monospaced font, for commands and scripts.
 	 */
 	let {
 		label,
@@ -20,7 +21,7 @@
 		label: string;
 		/** The form field name, for forms that post without JavaScript. */
 		name: string;
-		type: 'text' | 'password' | 'email' | 'url' | 'multiline';
+		type: 'text' | 'password' | 'email' | 'url' | 'multiline' | 'code';
 		autocomplete: HTMLInputAttributes['autocomplete'];
 		autocapitalize: 'off' | 'sentences' | 'words';
 		required: boolean;
@@ -33,8 +34,10 @@
 
 <label class="field">
 	<span>{label}</span>
-	{#if type === 'multiline'}
+	{#if type === 'multiline' || type === 'code'}
 		<textarea
+			class:code={type === 'code'}
+			spellcheck={type === 'code' ? false : undefined}
 			{name}
 			{autocomplete}
 			{autocapitalize}
@@ -90,6 +93,13 @@
 		font-size: var(--text-base);
 		line-height: 1.5;
 		resize: vertical;
+	}
+
+	textarea.code {
+		font-family: var(--font-mono);
+		white-space: pre;
+		overflow-wrap: normal;
+		overflow-x: auto;
 	}
 
 	input[aria-invalid='true'],

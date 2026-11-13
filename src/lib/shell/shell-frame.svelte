@@ -19,10 +19,17 @@
 	let {
 		user,
 		localNetworkMode,
+		runCommands,
 		children
-	}: { user: ConsoleUser; localNetworkMode: boolean; children: Snippet } = $props();
+	}: {
+		user: ConsoleUser;
+		localNetworkMode: boolean;
+		/** The person may run commands somewhere: the Commands tab shows (SPEC-COMMANDS C20). */
+		runCommands: boolean;
+		children: Snippet;
+	} = $props();
 
-	const main = $derived(mainNav(user.role));
+	const main = $derived(mainNav(user.role, runCommands));
 	const admin = $derived(adminNav(user.role));
 	const moreHref = resolve('/(console)/more');
 	const moreCurrent = $derived(

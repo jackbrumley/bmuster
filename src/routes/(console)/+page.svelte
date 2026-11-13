@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { refreshAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { IconDevices, IconLockAccess, IconSearch } from '@tabler/icons-svelte-runes';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
@@ -19,6 +19,11 @@
 	import MachineCards from './machine-cards.svelte';
 	import MachineTable from './machine-table.svelte';
 	import { defaultView, readSavedView, saveView, type MachinesView } from './machines-view.ts';
+	import Button from '#lib/ui/button.svelte';
+	import ToggleChips from '#lib/ui/toggle-chips.svelte';
+	import { COMMAND_LIMITS, type CommandDraft } from '#lib/domain/commands/commands.ts';
+	import { MachineSelection, type TickBoxes } from './machine-selection.svelte.ts';
+	import SelectionBar from './selection-bar.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -64,7 +69,58 @@
 		}
 	}
 
-	const visible = $derived(machinesMatching(rows, query, filter ?? 'all'));
+	/** Select mode (SPEC-COMMANDS C1–C5), for people who may run commands somewhere. */
+	const selection = new MachineSelection();
+	const groups = $derived(data.commands.kind === 'allowed' ? data.commands.groups : []);
+	const runnable = $derived(
+		new Set(data.commands.kind === 'allowed' ? data.commands.runnable : [])
+	);
+	const selectChips = $derived([
+		...groups.map((group) => ({ value: `group:${group.id}` as const, label: group.name })),
+		{ value: 'windows' as const, label: 'Windows' },
+		{ value: 'linux' as const, label: 'Linux' },
+		{ value: 'online' as const, label: 'Online' }
+	]);
+
+	// In select mode the select chips stand in for the usual filter.
+	const visible = $derived(
+		selection.active
+			? machinesMatching(rows, query, 'all').filter((row) => selection.matches(row, groups))
+			: machinesMatching(rows, query, filter ?? 'all')
+	);
+
+	const ticks: TickBoxes = $derived(
+		selection.active
+			? {
+					kind: 'on',
+					canTick: (id: string) => runnable.has(id),
+					isTicked: (id: string) => selection.ticked.has(id),
+					toggle: (id: string) => {
+						selection.toggle(id);
+					}
+				}
+			: { kind: 'off' }
+	);
+
+	/** C3, C5: what Select all would tick, and what it skips. */
+	const shownRunnable = $derived(
+		visible.filter((row) => runnable.has(row.machine.id)).map((row) => row.machine.id)
+	);
+	const shownOthers = $derived(visible.length - shownRunnable.length);
+	const selectAllLabel = $derived(
+		`Select all ${shownRunnable.length}${shownOthers > 0 ? ` · ${shownOthers} you cannot run commands on` : ''}`
+	);
+
+	function runCommand(): void {
+		const machineIds = rows.map((row) => row.machine.id).filter((id) => selection.ticked.has(id));
+		const commandDraft: CommandDraft = {
+			machineIds,
+			scripts: [],
+			timeoutMs: COMMAND_LIMITS.defaultTimeoutMs,
+			rerunOf: null
+		};
+		void goto(resolve('/(console)/commands/new'), { state: { commandDraft } });
+	}
 
 	// The Table view's sort, kept here so the export lists machines in the same order.
 	let sort = $state<DataTableSort>({ column: 'name', direction: 'asc' });
@@ -116,6 +172,27 @@
 {#snippet headerActions()}
 	<ChipGroup label="View" options={viewOptions} bind:value={() => view, pickView} />
 	<ExportButton href={exportHref} />
+	{#if data.commands.kind === 'allowed'}
+		{#if selection.active}
+			<Button
+				variant="primary"
+				size="compact"
+				type="button"
+				onclick={() => {
+					selection.finish();
+				}}>Done</Button
+			>
+		{:else}
+			<Button
+				variant="secondary"
+				size="compact"
+				type="button"
+				onclick={() => {
+					selection.start();
+				}}>Select</Button
+			>
+		{/if}
+	{/if}
 {/snippet}
 
 <PageHeader
@@ -153,7 +230,29 @@
 				bind:value={query}
 			/>
 		</label>
-		<ChipGroup label="Filter machines" options={filters} bind:value={filter} />
+		{#if selection.active}
+			<ToggleChips
+				label="Narrow the machines"
+				options={selectChips}
+				bind:selected={selection.chips}
+			/>
+			{#if (selection.narrowed || query.trim() !== '') && shownRunnable.length + shownOthers > 0}
+				<p class="select-all">
+					<button
+						data-raw-button="chip"
+						type="button"
+						class="select-all-link"
+						onclick={() => {
+							selection.tickAll(shownRunnable);
+						}}
+					>
+						{selectAllLabel}
+					</button>
+				</p>
+			{/if}
+		{:else}
+			<ChipGroup label="Filter machines" options={filters} bind:value={filter} />
+		{/if}
 	</div>
 
 	{#if visible.length === 0}
@@ -164,16 +263,38 @@
 			children={undefined}
 		/>
 	{:else if view === 'table'}
-		<MachineTable rows={visible} {now} batchSize={BATCH_SIZE} {resetKey} bind:sort />
+		<MachineTable rows={visible} {now} batchSize={BATCH_SIZE} {resetKey} {ticks} bind:sort />
 	{:else}
-		<MachineCards rows={visible} {now} batchSize={BATCH_SIZE} {resetKey} />
+		<MachineCards rows={visible} {now} batchSize={BATCH_SIZE} {resetKey} {ticks} />
 	{/if}
+{/if}
+
+{#if selection.active && selection.ticked.size > 0}
+	<SelectionBar
+		count={selection.ticked.size}
+		onclear={() => {
+			selection.ticked.clear();
+		}}
+		onrun={runCommand}
+	/>
 {/if}
 
 <style>
 	.toolbar {
 		display: grid;
 		gap: var(--space-3);
+	}
+
+	.select-all-link {
+		min-height: 40px;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--brand);
+		font-size: var(--text-sm);
+		font-weight: var(--weight-semibold);
+		text-align: left;
+		cursor: pointer;
 	}
 
 	.search {

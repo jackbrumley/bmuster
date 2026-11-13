@@ -8,7 +8,8 @@ import MachinesPage from './+page.svelte';
 import type { PageData } from './$types';
 
 const refreshAll = vi.hoisted(() => vi.fn(() => Promise.resolve()));
-vi.mock('$app/navigation', () => ({ refreshAll }));
+const goto = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock('$app/navigation', () => ({ refreshAll, goto }));
 
 const NOW = Date.parse('2026-11-07T12:00:00.000Z');
 
@@ -72,10 +73,12 @@ function renderPage(machines: Machine[] = MACHINES, rollout: Rollout = { kind: '
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
 			localNetworkMode: false,
 			serverUpdate: null,
+			runCommands: false,
 			signedIn: true,
 			now: NOW,
 			rollout,
-			view: { kind: 'machines', machines }
+			view: { kind: 'machines', machines },
+			commands: { kind: 'none' }
 		}
 	});
 }

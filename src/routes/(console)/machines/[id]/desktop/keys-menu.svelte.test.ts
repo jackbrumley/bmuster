@@ -109,7 +109,7 @@ describe('the Keys menu', () => {
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
 		if (confirmation.current.kind === 'asking') {
 			expect(confirmation.current.options.message).toContain('restart');
-			confirmation.current.answer(false);
+			confirmation.current.answer({ kind: 'no' });
 		}
 		await new Promise((done) => setTimeout(done, 20));
 		expect(sent).toEqual([]);
@@ -117,7 +117,8 @@ describe('the Keys menu', () => {
 
 		await button.click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
-		if (confirmation.current.kind === 'asking') confirmation.current.answer(true);
+		if (confirmation.current.kind === 'asking')
+			confirmation.current.answer({ kind: 'yes', password: '' });
 		await expect.poll(() => sent).toEqual([{ type: 'special', name: 'ctrl-alt-del' }]);
 	});
 

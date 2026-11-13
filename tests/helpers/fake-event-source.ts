@@ -25,6 +25,11 @@ export class FakeEventSource extends EventTarget {
 		this.dispatchEvent(new MessageEvent('status', { data: JSON.stringify(event) }));
 	}
 
+	/** Any named event, e.g. a command run's rows (SPEC-COMMANDS C16). */
+	send(event: string, data: unknown): void {
+		this.dispatchEvent(new MessageEvent(event, { data: JSON.stringify(data) }));
+	}
+
 	/** What the browser does when the server refuses the stream. */
 	refuse(): void {
 		this.readyState = FakeEventSource.CLOSED;

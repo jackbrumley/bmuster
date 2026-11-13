@@ -7,6 +7,7 @@ import {
 	IconLock,
 	IconLogin2,
 	IconPlus,
+	IconTerminal2,
 	IconUsers,
 	IconUsersGroup
 } from '@tabler/icons-svelte-runes';
@@ -21,6 +22,7 @@ import type { ConsoleRole } from '#lib/domain/users/user.ts';
 type NavRoute =
 	| '/(console)'
 	| '/(console)/activity'
+	| '/(console)/commands'
 	| '/(console)/add'
 	| '/(console)/users'
 	| '/(console)/groups'
@@ -31,18 +33,26 @@ type NavRoute =
 
 export type NavItem = { route: NavRoute; label: string; icon: typeof IconDevices };
 
-export function mainNav(role: ConsoleRole): NavItem[] {
+/**
+ * The main pages. Commands (SPEC-COMMANDS C20) is shown to people who may run commands on
+ * at least one machine; the server checks every run again.
+ */
+export function mainNav(role: ConsoleRole, runCommands: boolean): NavItem[] {
 	const machines: NavItem = { route: '/(console)', label: 'Machines', icon: IconDevices };
 	const activity: NavItem = { route: '/(console)/activity', label: 'Activity', icon: IconActivity };
+	const commands: NavItem[] = runCommands
+		? [{ route: '/(console)/commands', label: 'Commands', icon: IconTerminal2 }]
+		: [];
 	switch (role) {
 		case 'admin':
 			return [
 				machines,
 				activity,
+				...commands,
 				{ route: '/(console)/add', label: 'Add machine', icon: IconPlus }
 			];
 		case 'member':
-			return [machines, activity];
+			return [machines, activity, ...commands];
 	}
 }
 

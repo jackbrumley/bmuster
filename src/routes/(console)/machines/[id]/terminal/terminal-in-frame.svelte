@@ -11,6 +11,6 @@
 	let { pageProps }: { pageProps: PageProps } = $props();
 </script>
 
-<ShellFrame user={pageProps.data.user} localNetworkMode={false}>
+<ShellFrame user={pageProps.data.user} localNetworkMode={false} runCommands={false}>
 	<TerminalTab {...pageProps} />
 </ShellFrame>

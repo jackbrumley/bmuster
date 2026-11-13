@@ -25,11 +25,15 @@
 
 	const primary = $derived(columns.find((column) => column.phone === 'primary'));
 	const badge = $derived(columns.find((column) => column.phone === 'badge'));
+	const lead = $derived(columns.find((column) => column.phone === 'lead'));
 </script>
 
 <ul class="list" aria-label={label}>
 	{#each rows as row (rowKey(row))}
 		<li>
+			{#if lead !== undefined}
+				<span class="lead"><CellContent column={lead} {row} /></span>
+			{/if}
 			<a class="row" href={rowHref(row)}>
 				<span class="primary">
 					{#if primary !== undefined}
@@ -59,11 +63,26 @@
 		}
 	}
 
+	li {
+		display: flex;
+		align-items: center;
+	}
+
 	li + li {
 		border-top: 1px solid var(--border);
 	}
 
+	.lead {
+		display: inline-flex;
+		flex-shrink: 0;
+		padding-left: var(--space-1);
+	}
+
+	/* Clipped to its own box, so a wide badge never covers a lead control beside it. */
 	.row {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
 		display: flex;
 		align-items: center;
 		gap: var(--space-2);

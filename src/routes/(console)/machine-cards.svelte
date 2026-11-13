@@ -13,14 +13,26 @@
 	import { osLabel } from '#lib/domain/machines/machine.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import type { MachineRow } from '#lib/domain/machines/machine-row.ts';
+	import type { TickBoxes } from './machine-selection.svelte.ts';
+	import SelectTick from './select-tick.svelte';
 
-	/** The Cards view of the Machines page: one card per machine, a batch at a time. */
+	/**
+	 * The Cards view of the Machines page: one card per machine, a batch at a time. In select
+	 * mode a card the person may run commands on has a tick box above it (SPEC-COMMANDS C1, C5).
+	 */
 	let {
 		rows,
 		now,
 		batchSize,
-		resetKey
-	}: { rows: readonly MachineRow[]; now: number; batchSize: number; resetKey: string } = $props();
+		resetKey,
+		ticks
+	}: {
+		rows: readonly MachineRow[];
+		now: number;
+		batchSize: number;
+		resetKey: string;
+		ticks: TickBoxes;
+	} = $props();
 </script>
 
 <ScrollBatches items={rows} {batchSize} {resetKey}>
@@ -29,6 +41,17 @@
 			{#each shown as { machine, disk, updates, cpuPercent, memoryPercent } (machine.id)}
 				<li>
 					<Panel heading={undefined} actions={undefined} tone="normal" padding="none">
+						{#if ticks.kind === 'on' && ticks.canTick(machine.id)}
+							<div class="tick-row">
+								<SelectTick
+									name={machine.name}
+									ticked={ticks.isTicked(machine.id)}
+									ontoggle={() => {
+										ticks.toggle(machine.id);
+									}}
+								/>
+							</div>
+						{/if}
 						<a class="card-link" href={resolve('/(console)/machines/[id]', { id: machine.id })}>
 							<div class="card-head">
 								<OsIcon family={machine.osFamily} size={28} />
@@ -108,6 +131,12 @@
 </ScrollBatches>
 
 <style>
+	.tick-row {
+		display: flex;
+		padding: var(--space-1) var(--space-2) 0;
+		border-bottom: 1px solid var(--border);
+	}
+
 	.pending {
 		color: var(--muted);
 		font-size: var(--text-xs);

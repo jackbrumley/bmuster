@@ -12,7 +12,6 @@ import {
 	type PlannedMachine,
 	type RunCounts,
 	type RunMachineOutput,
-	type RunSummary,
 	type RunView
 } from '#lib/domain/commands/commands.ts';
 import type { SignInCheck } from '#lib/domain/auth/sign-in-check.ts';
@@ -119,17 +118,6 @@ const countsSchema: z.ZodType<RunCounts> = z.object({
 	lost: z.int(),
 	cancelled: z.int()
 });
-
-const runSummarySchema: z.ZodType<RunSummary> = z.object({
-	id: z.uuid(),
-	startedBy: z.string(),
-	startedIso: z.iso.datetime(),
-	status: z.enum(RUN_STATUSES),
-	commands: z.array(z.object({ osFamily: z.enum(['windows', 'linux']), firstLine: z.string() })),
-	counts: countsSchema
-});
-
-export const runListReplySchema = z.object({ runs: z.array(runSummarySchema) });
 
 export const runViewSchema: z.ZodType<RunView> = z.object({
 	id: z.uuid(),

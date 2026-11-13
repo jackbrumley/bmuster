@@ -151,7 +151,8 @@ describe('the desktop tab', () => {
 		await sheet.getByRole('button', { name: 'Disconnect' }).click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
 		expect(socket.messages()).not.toContainEqual({ type: 'end' });
-		if (confirmation.current.kind === 'asking') confirmation.current.answer(true);
+		if (confirmation.current.kind === 'asking')
+			confirmation.current.answer({ kind: 'yes', password: '' });
 		await expect.poll(() => socket.messages()).toContainEqual({ type: 'end' });
 		if (document.fullscreenElement !== null) await document.exitFullscreen();
 	});

@@ -79,6 +79,7 @@ async function connect(button: 'Connect' | 'Watch only') {
 				user: { id: 'u', name: 'Uma', email: 'uma@example.com', role: 'member' as const },
 				localNetworkMode: false,
 				serverUpdate: null,
+				runCommands: false,
 				signedIn: true,
 				now: loadedAt,
 				machine: TEST_MACHINE,

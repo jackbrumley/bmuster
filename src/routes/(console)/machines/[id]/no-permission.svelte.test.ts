@@ -34,6 +34,7 @@ function props(grants: Grant[]) {
 			user: { id: 'm', name: 'Mo', email: 'mo@example.com', role: 'member' as const },
 			localNetworkMode: false,
 			serverUpdate: null,
+			runCommands: false,
 			signedIn: true,
 			now: Date.parse('2026-11-07T12:00:00.000Z'),
 			machine: MACHINE,

@@ -8,6 +8,7 @@ import type { ConsoleUser } from '#lib/domain/users/user.ts';
 import type { Machine, MachineInventory } from '#lib/domain/machines/machine.ts';
 import type { SessionInUse } from '#lib/domain/sessions/session.ts';
 import type { ShareLinkView } from '#lib/domain/share-links/share-links.ts';
+import type { RunSummary, RunView } from '#lib/domain/commands/commands.ts';
 
 const GB = 1024 ** 3;
 
@@ -281,6 +282,17 @@ export function longDataReply(url: URL): Response {
 	if (url.pathname.endsWith('/storage/cleanup')) {
 		return json({ run: { kind: 'none' } });
 	}
+	if (url.pathname.endsWith('/api/commands/plan')) {
+		return json({
+			machines: MACHINES.map((entry, index) => ({
+				id: entry.id,
+				name: entry.name,
+				osFamily: entry.osFamily,
+				plan: index === 0 ? { kind: 'skipped', reason: 'agent-too-old' } : { kind: 'runs' }
+			})),
+			signIn: { kind: 'password' }
+		});
+	}
 	return json({ message: `Not in this test: ${url.pathname}` }, 404);
 }
 
@@ -307,3 +319,56 @@ export function pastRightEdge(width: number): string {
 		.slice(0, 15)
 		.join('\n');
 }
+
+/** A command with a long first line and no place to break it (SPEC-COMMANDS C21). */
+export const LONG_COMMAND = `Get-ChildItem -Path "C:\\${LONG_WORD}\\${LONG_WORD}" -Recurse | Remove-Item -Force\nRestart-Service -Name Spooler`;
+
+const COMMAND_COUNTS = {
+	waiting: 1,
+	running: 1,
+	succeeded: 19,
+	failed: 1,
+	'timed-out': 1,
+	offline: 1,
+	skipped: 1,
+	lost: 1,
+	cancelled: 1
+};
+
+/** A run on the Commands tab. */
+export const COMMAND_RUN_SUMMARY: RunSummary = {
+	id: '77777777-7777-4777-8777-777777777777',
+	startedBy: LONG_PERSON,
+	startedIso: '2026-11-12T08:00:00.000Z',
+	status: 'running',
+	commands: [
+		{ osFamily: 'windows', firstLine: LONG_COMMAND.split('\n')[0] ?? '' },
+		{ osFamily: 'linux', firstLine: `systemctl restart ${LONG_WORD}` }
+	],
+	counts: COMMAND_COUNTS
+};
+
+/** A run's results page. */
+export const COMMAND_RUN: RunView = {
+	id: COMMAND_RUN_SUMMARY.id,
+	startedBy: LONG_PERSON,
+	startedIso: '2026-11-12T08:00:00.000Z',
+	endedIso: null,
+	status: 'running',
+	timeoutMs: 600_000,
+	scripts: [
+		{ osFamily: 'windows', shell: 'powershell', command: LONG_COMMAND },
+		{ osFamily: 'linux', shell: 'bash', command: `systemctl restart ${LONG_WORD}` }
+	],
+	machines: MACHINES.map((entry, index) => ({
+		machineId: entry.id,
+		machineName: entry.name,
+		status: index === 0 ? 'lost' : 'failed',
+		reason: `The connection to the machine was lost: ${LONG_WORD}`,
+		exitCode: 2_147_483_647,
+		durationMs: 600_000,
+		output: { kind: 'kept', bytes: 2 * 1024 * 1024 }
+	})),
+	counts: COMMAND_COUNTS,
+	canCancel: true
+};

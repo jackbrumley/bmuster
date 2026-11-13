@@ -108,6 +108,7 @@ function renderPage(overrides: Partial<Data>) {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
 			localNetworkMode: false,
 			serverUpdate: null,
+			runCommands: false,
 			signedIn: true,
 			now: NOW,
 			server: {

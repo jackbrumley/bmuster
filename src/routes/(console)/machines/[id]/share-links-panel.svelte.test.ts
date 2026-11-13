@@ -59,7 +59,7 @@ function stubServer(options: { existing: ShareLinkView[]; canControl: boolean })
 }
 
 beforeEach(() => {
-	if (confirmation.current.kind === 'asking') confirmation.current.answer(false);
+	if (confirmation.current.kind === 'asking') confirmation.current.answer({ kind: 'no' });
 });
 
 describe('Share links on the machine page (SPEC-SHARE-LINKS)', () => {
@@ -150,13 +150,14 @@ describe('Share links on the machine page (SPEC-SHARE-LINKS)', () => {
 		const end = screen.getByRole('button', { name: 'End now' });
 		await end.click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
-		if (confirmation.current.kind === 'asking') confirmation.current.answer(false);
+		if (confirmation.current.kind === 'asking') confirmation.current.answer({ kind: 'no' });
 		await new Promise((done) => setTimeout(done, 20));
 		expect(calls.filter((call) => call.method === 'DELETE')).toEqual([]);
 
 		await end.click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
-		if (confirmation.current.kind === 'asking') confirmation.current.answer(true);
+		if (confirmation.current.kind === 'asking')
+			confirmation.current.answer({ kind: 'yes', password: '' });
 		await expect
 			.poll(() => calls.filter((call) => call.method === 'DELETE').map((call) => call.url))
 			.toEqual([`/api/share-links/${LINK_ID}`]);

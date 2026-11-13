@@ -16,9 +16,10 @@ export type DataTableColumn<T> = {
 	link: boolean;
 	/**
 	 * Its place in the phone list (below 640px): the row's main content, the
-	 * badge at the row's right end, or left out.
+	 * badge at the row's right end, a control before the row's link (a
+	 * selection tick box), or left out.
 	 */
-	phone: 'primary' | 'badge' | 'hidden';
+	phone: 'primary' | 'badge' | 'lead' | 'hidden';
 	/** `hide` drops the column while the table is narrower than 1060px, where it runs out of room. */
 	medium: 'show' | 'hide';
 };

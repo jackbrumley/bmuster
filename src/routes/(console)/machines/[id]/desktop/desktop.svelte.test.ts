@@ -265,7 +265,8 @@ describe('the desktop tab', () => {
 		const { screen, socket } = await open(CONTROL, 'Watch only');
 		await screen.getByRole('button', { name: 'Disconnect' }).click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
-		if (confirmation.current.kind === 'asking') confirmation.current.answer(true);
+		if (confirmation.current.kind === 'asking')
+			confirmation.current.answer({ kind: 'yes', password: '' });
 		await expect.poll(() => socket.messages()).toContainEqual({ type: 'end' });
 		socket.receive(
 			JSON.stringify({
@@ -528,6 +529,7 @@ describe('the desktop tab', () => {
 					user: { id: 'p', name: 'Pat', email: 'pat@example.com', role: 'member' as const },
 					localNetworkMode: false,
 					serverUpdate: null,
+					runCommands: false,
 					signedIn: true,
 					now: Date.parse('2026-11-07T12:00:00.000Z'),
 					machine: TEST_MACHINE,

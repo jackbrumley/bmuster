@@ -10,6 +10,8 @@
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import { machineSortValue, type MachineRow } from '#lib/domain/machines/machine-row.ts';
 	import LowDiskTag from './low-disk-tag.svelte';
+	import type { TickBoxes } from './machine-selection.svelte.ts';
+	import SelectTick from './select-tick.svelte';
 
 	/**
 	 * The Table view of the Machines page: sortable columns, one line per
@@ -20,17 +22,39 @@
 		now,
 		batchSize,
 		resetKey,
+		ticks,
 		sort = $bindable()
 	}: {
 		rows: readonly MachineRow[];
 		now: number;
 		batchSize: number;
 		resetKey: string;
+		/** Select mode's tick boxes (SPEC-COMMANDS C1, C5), first on each row. */
+		ticks: TickBoxes;
 		sort: DataTableSort;
 	} = $props();
 
+	const tickColumn: DataTableColumn<MachineRow>[] = $derived(
+		ticks.kind === 'on'
+			? [
+					{
+						key: 'select',
+						label: 'Select',
+						align: 'left',
+						sortable: false,
+						value: () => null,
+						cell: tickCell,
+						link: false,
+						phone: 'lead',
+						medium: 'show'
+					}
+				]
+			: []
+	);
+
 	// Derived: the Last seen column compares online machines as seen `now`.
 	const columns: readonly DataTableColumn<MachineRow>[] = $derived([
+		...tickColumn,
 		{
 			key: 'name',
 			label: 'Name',
@@ -99,6 +123,18 @@
 		}
 	]);
 </script>
+
+{#snippet tickCell({ machine }: MachineRow)}
+	{#if ticks.kind === 'on' && ticks.canTick(machine.id)}
+		<SelectTick
+			name={machine.name}
+			ticked={ticks.isTicked(machine.id)}
+			ontoggle={() => {
+				ticks.toggle(machine.id);
+			}}
+		/>
+	{/if}
+{/snippet}
 
 {#snippet nameCell({ machine, updates }: MachineRow)}
 	<span class="name">

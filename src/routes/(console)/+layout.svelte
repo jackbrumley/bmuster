@@ -6,7 +6,11 @@
 	let { data, children }: LayoutProps = $props();
 </script>
 
-<ShellFrame user={data.user} localNetworkMode={data.localNetworkMode}>
+<ShellFrame
+	user={data.user}
+	localNetworkMode={data.localNetworkMode}
+	runCommands={data.runCommands}
+>
 	<ServerUpdateNotice initial={data.serverUpdate} />
 	{@render children()}
 </ShellFrame>

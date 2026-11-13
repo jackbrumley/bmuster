@@ -91,7 +91,7 @@ describe('the Clean up panel (SPEC-STORAGE S20)', () => {
 			expect(confirmation.current.options.message).toContain(
 				'System journal over 200 MB: 1.0 GB in 12 files.'
 			);
-			confirmation.current.answer(false);
+			confirmation.current.answer({ kind: 'no' });
 		}
 		expect(starts()).toEqual([]);
 	});
@@ -104,7 +104,7 @@ describe('the Clean up panel (SPEC-STORAGE S20)', () => {
 		await screen.getByRole('button', { name: 'Clean up' }).click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
 		if (confirmation.current.kind === 'asking') {
-			confirmation.current.answer(true);
+			confirmation.current.answer({ kind: 'yes', password: '' });
 		}
 		await expect
 			.poll(() => starts().map((request) => request.body))

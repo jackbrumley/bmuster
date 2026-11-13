@@ -24,7 +24,14 @@ declare global {
 		interface PageData {
 			signedIn: boolean;
 		}
-		// interface PageState {}
+		/**
+		 * Shallow-routing state. `commandDraft` carries the machines (and, to run again, the
+		 * commands) to Run command (SPEC-COMMANDS 5). Optional because a fresh page has none;
+		 * the page parses it with zod and the server checks everything again.
+		 */
+		interface PageState {
+			commandDraft?: unknown;
+		}
 		// interface Platform {}
 	}
 }
