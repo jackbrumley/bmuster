@@ -48,4 +48,17 @@ describe('install scripts (A3)', () => {
 		// Plain ASCII, so it reads the same in every Windows code page.
 		expect(windows).toMatch(/^[ -~\t\n\r]*$/);
 	});
+
+	it('A3a: the Windows script stops with a plain reason when an antivirus blocks the download', () => {
+		const windows = windowsInstallScript('https://bmuster.example.org');
+		// Stopped explicitly: Get-FileHash ignores the script's preference in Windows PowerShell 5.1.
+		expect(windows).toContain(
+			'Get-FileHash -LiteralPath $download -Algorithm SHA256 -ErrorAction Stop'
+		);
+		expect(windows).toMatch(/^\$blocked = 'BMuster: [^'\n]*Protection history[^'\n]*'$/m);
+		expect(
+			windows.match(/throw "\$blocked Windows said: \$\(\$_\.Exception\.Message\)"/g)
+		).toHaveLength(2);
+		expect(windows).toMatch(/^[ -~\t\n\r]*$/);
+	});
 });

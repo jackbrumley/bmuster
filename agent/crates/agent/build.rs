@@ -10,9 +10,9 @@
 //!   variable of that name is set at build time (development builds and
 //!   self-builders). Empty otherwise, so a release build trusts only the
 //!   project key.
-//! * Windows: the program's icon (SPEC-BRAND-ICON), a resource file made
-//!   from `assets/bmuster.ico` without a resource compiler
-//!   (`src/tray/resource.rs`), linked into the MSVC build.
+//! * Windows: the program's icon and version details (SPEC-BRAND-ICON), a
+//!   resource file made from `assets/bmuster.ico` and the version without a
+//!   resource compiler (`src/tray/resource.rs`), linked into the MSVC build.
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
@@ -23,8 +23,6 @@ mod ico;
 mod resource;
 
 fn main() {
-    windows_icon();
-
     let target = std::env::var("TARGET").expect("cargo sets TARGET for build scripts");
     println!("cargo:rustc-env=BMUSTER_TARGET={target}");
 
@@ -36,6 +34,7 @@ fn main() {
         panic!("BMUSTER_VERSION: {e}");
     }
     println!("cargo:rustc-env=BMUSTER_VERSION={version}");
+    windows_resources(&version);
 
     let release_key = std::fs::read_to_string("release-key.pub")
         .expect("release-key.pub (the project's release public key) is missing");
@@ -59,11 +58,11 @@ fn main() {
     println!("cargo:rerun-if-env-changed=BMUSTER_EXTRA_RELEASE_KEY");
 }
 
-/// Windows builds: writes the icon resource and, for the MSVC linker (the
-/// release build), links it into the program. MinGW's linker takes resources
+/// Windows builds: writes the icon and version resources and, for the MSVC
+/// linker (the release build), links them into the program. MinGW's linker takes resources
 /// only as objects from `windres`, so a GNU build has no program icon (its
 /// tray still draws the mark from the embedded icon file).
-fn windows_icon() {
+fn windows_resources(version: &str) {
     println!("cargo:rerun-if-changed=assets/bmuster.ico");
     println!("cargo:rerun-if-changed=src/tray/ico.rs");
     println!("cargo:rerun-if-changed=src/tray/resource.rs");
@@ -75,8 +74,9 @@ fn windows_icon() {
     let images = ico::images(&bytes).unwrap_or_else(|e| panic!("assets/bmuster.ico: {e}"));
     let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR for build scripts");
     let res = std::path::Path::new(&out_dir).join("bmuster-icon.res");
-    std::fs::write(&res, resource::icon_resource(&images))
-        .unwrap_or_else(|e| panic!("{}: {e}", res.display()));
+    let mut compiled = resource::icon_resource(&images);
+    resource::version_resource(&mut compiled, version);
+    std::fs::write(&res, compiled).unwrap_or_else(|e| panic!("{}: {e}", res.display()));
     if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
         println!("cargo:rustc-link-arg-bins={}", res.display());
     }

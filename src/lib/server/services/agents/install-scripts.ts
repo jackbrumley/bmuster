@@ -148,16 +148,28 @@ if ($PinCert -ne '') {
 
 $target = 'x86_64-pc-windows-msvc'
 $download = Join-Path $env:TEMP ("bmuster-agent-" + [guid]::NewGuid() + ".exe")
+$blocked = 'BMuster: Windows would not let the downloaded agent be read or run, so nothing was installed. This is usually Microsoft Defender or another antivirus: open Windows Security > Virus & threat protection > Protection history to see what it detected. More: https://bmuster.com/code-signing-policy'
 try {
 	$manifest = Invoke-RestMethod "$Url/agent/v1/releases/latest?target=$target"
 	Write-Host "BMuster: downloading agent $($manifest.version) for $target"
 	Invoke-WebRequest $manifest.url -OutFile $download -UseBasicParsing
-	$hash = (Get-FileHash $download -Algorithm SHA256).Hash.ToLowerInvariant()
+	# Get-FileHash is a module function in Windows PowerShell 5.1, so it
+	# ignores this script's ErrorActionPreference: stop it explicitly. An
+	# antivirus that quarantines the download fails here, when it is read.
+	try {
+		$hash = (Get-FileHash -LiteralPath $download -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+	} catch {
+		throw "$blocked Windows said: $($_.Exception.Message)"
+	}
 	if ($hash -ne $manifest.sha256) { throw 'BMuster: the download does not match its SHA-256; not installing.' }
 	$arguments = @('install', '--url', $Url, '--code', $Code)
 	if ($Name -ne '') { $arguments += @('--name', $Name) }
 	if ($PinCert -ne '') { $arguments += @('--pin-cert', $PinCert) }
-	& $download @arguments
+	try {
+		& $download @arguments
+	} catch {
+		throw "$blocked Windows said: $($_.Exception.Message)"
+	}
 	if ($LASTEXITCODE -ne 0) { throw "BMuster: install failed (exit $LASTEXITCODE)." }
 } finally {
 	[Net.ServicePointManager]::ServerCertificateValidationCallback = $previousCheck

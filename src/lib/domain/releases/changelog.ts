@@ -15,6 +15,20 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.25',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Windows: in Explorer, right-click C:\\Program Files\\BMuster\\bmuster-agent.exe, Properties, Details: it shows BMuster, BMuster agent and 0.4.25',
+				'Windows: on a machine where Microsoft Defender blocks the agent, the install line stops with the BMuster message about Protection history and installs nothing'
+			]
+		},
+		changes: [
+			'Windows install: when Microsoft Defender or another antivirus blocks the downloaded agent, the install line now stops with a plain reason and points to Protection history, instead of a confusing second error',
+			'Windows: the agent program now carries its name, publisher, description and version (Properties, Details), which antivirus products look for'
+		]
+	},
+	{
 		version: '0.4.24',
 		testing: {
 			kind: 'steps',
