@@ -1,6 +1,6 @@
 # SPEC-COMMANDS: Run a command on many machines at once
 
-**Status:** `APPROVED` (2026-11-14: Commands; no notice at the machine in v1; typed count above 10; output kept 30 days; offline machines skipped) · **Date:** 2026-11-14 · Design inputs: Jack's request (2026-11-14), SPEC-SESSIONS (the agent's `exec` purpose, built and tested but not yet used by the server), SPEC-MCP (draft: Claude's commands, approved by a person), SPEC-ACCESS (permissions, machine groups, rules).
+**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-14 (Commands; no notice at the machine in v1; typed count above 10; output kept 30 days; offline machines skipped) · **Date:** 2026-11-14 · Design inputs: Jack's request (2026-11-14), SPEC-SESSIONS (the agent's `exec` purpose, built and tested but not yet used by the server), SPEC-MCP (draft: Claude's commands, approved by a person), SPEC-ACCESS (permissions, machine groups, rules).
 
 > **Security work.** This feature runs commands as root or SYSTEM on many machines with one click. It changes the access model (a new permission), the session ticket the agent checks, and the audit log. Every check below is checked twice: by the server when the run starts, and by each agent from its own signed ticket.
 
@@ -99,3 +99,26 @@ Saved commands (a library), schedules, queueing for offline machines, killing a 
 2. **Tell the person at the machine?** A short tray notice ("An administrator ran a command") per run. Recommended: no for v1, matching the terminal; revisit with the Allow / Deny prompt work.
 3. **Typed count threshold:** more than 10 machines (recommended), or every run on more than one machine.
 4. **Output retention:** 30 days (recommended), or a setting.
+
+## 10. As built
+
+Where the build differs from the sections above, or settles something they left open.
+
+- **Output cap.** The agent's `maxOutputBytes` counts stdout and stderr together, so each ticket asks for 2 MB and the server keeps at most 1 MB of each stream, marking a stream cut off when it passed 1 MB. When the agent itself reports `truncated` (both streams together passed 2 MB), both streams are marked cut off, since the agent does not say which one lost bytes. `outputSha256` is the SHA-256 of the kept stdout bytes followed by the kept stderr bytes.
+- **Agent version.** "Too old" means older than `0.4.26-0`, so this release's own test and development builds (`0.4.26-…`) run commands; anything from 0.4.25 or before is skipped as "Agent too old (update first)". A development agent built before the version bump reports 0.4.25 and is skipped too.
+- **macOS.** macOS machines are skipped as "Commands run on Windows and Linux only" (the spec covers Windows and Linux shells only).
+- **Offline.** Offline machines wait their turn in the run (status `waiting`) and are marked `offline` only when their turn comes and they are still offline (C15). Review lists them as skipped (offline) because that is what happens if nothing changes.
+- **Rechecked at each turn.** Besides the check at the start (C12), each machine is checked again when its turn comes: removed machine, disabled owner, or `run-commands` taken away since → `skipped` with that reason. The ticket carries the permissions the person holds at that moment.
+- **Machines without permission on Review.** Review lists them as skipped ("You cannot run commands on it") and the console leaves them out of the request; a request that still names one is refused whole by the server (C12).
+- **Typed count.** The server requires `confirmCount` to equal the machine count on every run, not only above 10; the console sends it, and only asks the person to type it above 10.
+- **Who may cancel.** The person who started the run, or an admin.
+- **Failed vs lost.** An agent that refused the ticket or could not start the shell gives `failed` with no exit code and the agent's message as the reason. `lost` covers the agent's socket closing mid-run and a command that went 30 seconds past its time limit without an answer. A timed-out command has no exit code.
+- **Restart.** Runs live in the server's memory. At start-up a run the restart cut off is closed: machines that were running become `lost`, waiting ones `skipped` ("The server restarted before its turn").
+- **Recent sign-in (C10).** Built in the auth area for reuse (`services/auth/recent-sign-in.ts`): the console session's `created_at` (the sign-in) or a new additive `reconfirmed_at` column (the last password check in that session) must be within 10 minutes. A wrong password is recorded as `sign-in-failed` (method "password check") and counts toward the per-email and per-address pauses; a right one clears that email's failures and is audited as `password-confirmed`. Someone with no password (provider sign-in only) is asked to sign out and sign in again.
+- **Group chips for members (C2).** Admins see every machine group. Members do not see the Groups page, so they see only the machine groups named by their own rules that give `run-commands`, each listing only machines they can see.
+- **Routes added.** `POST /api/commands/plan` (what Review shows, and whether the password is needed; runs nothing) and `GET /api/commands/runs/<id>/machines/<machineId>` (one machine's output, for people who can view that machine). Output is never in a list or an event.
+- **Schema.** `command_run_machines` also has `position` (start order), `session_id` (joins the row to the agent's timeline), `output_bytes` and `output_deleted_at`; `skip_reason` also holds why a machine failed to run or was lost.
+- **Audit kinds.** `command-run-started`, `command-run-machine` (one per machine, including skipped and offline ones), `command-run-cancelled`, `command-run-ended` and `password-confirmed`. A run's exec sessions are not also logged as `session-opened` / `session-ended`; the per-machine entry names the session.
+- **Sessions.** A run's exec sessions use the relay with the server as their other end (like Files). They do not count toward the 10 sessions a person may have open, and they show as "command by <name>" in a machine's "In use".
+- **Retention.** Output older than 30 days is deleted at start-up and every hour (beside the log retention, in its own schedule).
+- **Tests.** C7 is in `commands-schema.test.ts` (kebab-case file names). C13's Rust tests are `exec_needs_run_commands` and `exec_ticket_for_another_machine_is_refused` (`agent/crates/protocol/src/session.rs`); the shared exec ticket vector was re-signed with `run-commands` and the 2 MB cap. C11 is in `services/access/access.test.ts`, C16's live updates and C18 in `commands/[id=uuid]/run-results.svelte.test.ts`, C20 in `commands/commands-page.svelte.test.ts`, C21 in `phone-overflow.svelte.test.ts`.
