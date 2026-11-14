@@ -326,9 +326,23 @@ describe('people running a saved command (SC1, SC10, SC12, SC13)', () => {
 				message: expect.stringContaining(message) as unknown
 			});
 		}
-		// Kim cannot run commands on mint: refused whole, naming it.
+		// Kim may run commands nowhere: the command looks missing, even to Review (no scripts shown).
+		const kim = setup.consoleAs('kim');
+		expect(planSavedRun(kim, id, runRequest([setup.machine.mint]))).toMatchObject({
+			kind: 'refused',
+			status: 404
+		});
+		// Given Run commands on reception only, mint in the selection refuses it whole, naming it.
+		grantAccess(setup.database, {
+			adminId: setup.people.admin.id,
+			name: 'Kim runs',
+			memberIds: [setup.people.kim.id],
+			machineIds: [setup.machine.reception],
+			permissions: ['view', 'run-commands'],
+			consent: 'unattended'
+		});
 		expect(
-			await startSavedRun(setup.consoleAs('kim'), id, runRequest([setup.machine.mint]))
+			await startSavedRun(kim, id, runRequest([setup.machine.mint, setup.machine.reception]))
 		).toEqual({
 			kind: 'refused',
 			status: 403,

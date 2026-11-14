@@ -218,7 +218,11 @@ function checkSelection(
 	request: { version: number; machineIds: string[]; values: ParameterValues }
 ): { kind: 'ok'; selection: Selection } | Refused {
 	const command = runnableSavedCommand(context.database, id);
-	if (command === undefined) {
+	// Someone who may run it nowhere is not shown its scripts, even through Review.
+	if (
+		command === undefined ||
+		savedRunMachines(context.database, context.user, command).length === 0
+	) {
 		return NOT_FOUND;
 	}
 	if (command.version !== request.version) {
