@@ -66,6 +66,10 @@ Contributor notes are in [AGENTS.md](AGENTS.md).
 
 Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/) ([code signing policy](https://bmuster.com/code-signing-policy)). Every release is also signed with the project's own Ed25519 key, and the server and agents refuse any update without a valid signature.
 
+## Support
+
+BMuster is free and made by one person. If it saves you time, please consider a [small donation](https://bmuster.com/donate) through GitHub Sponsors or PayPal. Admins see a short reminder on the Machines page after a couple of weeks; it runs entirely on your server, sends nothing anywhere and never checks whether you donated.
+
 ## License
 
 [GNU AGPLv3](LICENSE). Your machines, your server, your data.

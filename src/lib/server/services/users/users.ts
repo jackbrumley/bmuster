@@ -1,5 +1,6 @@
-import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { ConsoleRole, ConsoleUser, UserView } from '#lib/domain/users/user.ts';
+import type { InUseSince } from '#lib/domain/settings/donate-reminder.ts';
 import { identityProviders, userIdentities, users } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
@@ -11,6 +12,22 @@ export type UserRow = typeof users.$inferSelect;
 
 export function hasUsers(database: Queryable): boolean {
 	return database.select({ id: users.id }).from(users).limit(1).get() !== undefined;
+}
+
+/**
+ * When this server came into use: its first account's creation, made at setup
+ * (SPEC-DONATE D2). Accounts are disabled, never deleted, so it never moves.
+ */
+export function inUseSince(database: Queryable): InUseSince {
+	const first = database
+		.select({ createdAt: users.createdAt })
+		.from(users)
+		.orderBy(asc(users.createdAt))
+		.limit(1)
+		.get();
+	return first === undefined
+		? { kind: 'not-set-up' }
+		: { kind: 'at', ms: first.createdAt.getTime() };
 }
 
 export function findUserById(database: Queryable, id: string): UserRow | undefined {

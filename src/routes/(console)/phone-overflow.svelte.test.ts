@@ -90,7 +90,8 @@ function machinesPage(view: 'cards' | 'table') {
 				now: NOW,
 				rollout: { kind: 'none' },
 				view: { kind: 'machines', machines: MACHINES },
-				commands: SELECTION
+				commands: SELECTION,
+				donate: { kind: 'hidden' }
 			}
 		},
 		IN_CONSOLE

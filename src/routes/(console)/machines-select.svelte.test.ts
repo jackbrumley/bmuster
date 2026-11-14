@@ -63,7 +63,8 @@ function renderPage(commands: CommandSelection = ALLOWED) {
 			now: NOW,
 			rollout: { kind: 'none' },
 			view: { kind: 'machines', machines: MACHINES },
-			commands
+			commands,
+			donate: { kind: 'hidden' }
 		}
 	});
 }
