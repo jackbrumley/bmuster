@@ -1,6 +1,6 @@
 # SPEC-SAVED-COMMANDS: Scripts an admin writes once
 
-**Status:** `IMPLEMENTED (pending release)` (As built: section 11) · **Date:** 2026-11-15 · Design inputs: Jack's decisions (2026-11-15), SPEC-COMMANDS (runs, the runner, the 10-at-once and 10-minute limits, recent sign-in, `run-commands`), SPEC-MCP (assistant runs held for approval, `ai-view`, `ai-commands`, the hybrid wait, section 15's "pre-approved read-only templates" risk), SPEC-ACCESS (machine groups, rules).
+**Status:** `IMPLEMENTED (v0.4.34)` (As built: section 11) · **Date:** 2026-11-15 · Design inputs: Jack's decisions (2026-11-15), SPEC-COMMANDS (runs, the runner, the 10-at-once and 10-minute limits, recent sign-in, `run-commands`), SPEC-MCP (assistant runs held for approval, `ai-view`, `ai-commands`, the hybrid wait, section 15's "pre-approved read-only templates" risk), SPEC-ACCESS (machine groups, rules).
 
 > **Security work.** This adds the first way for an AI assistant to run a command **without a person approving it**, and a new way for people to start a Commands run. Commands run as root or SYSTEM. Every unattended condition is checked when the assistant asks and again at each machine's turn in the runner; parameter values never become script text; the ticket and the agent are unchanged, and the agent still checks `run-commands` on its own signed ticket.
 

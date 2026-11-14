@@ -146,5 +146,9 @@
 	"0.4.33": {
 		"minimumLauncher": "0.4.1",
 		"rollbackFrom": ["0.4.32"]
+	},
+	"0.4.34": {
+		"minimumLauncher": "0.4.1",
+		"rollbackFrom": ["0.4.33"]
 	}
 }

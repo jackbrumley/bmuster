@@ -15,6 +15,26 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.34',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Firefox, pop-out desktop on Windows: copy text on your computer, click the remote screen, Ctrl+V into Notepad; then right-click Paste works too',
+				'Commands, Saved commands: switch on Disk space and Check for updates; run each on Windows and Fedora from Run command, Saved command',
+				'Allow Disk space for AI without approval, then ask your assistant for disk space on fedora: it runs straight away; ask for something else: it waits on Approvals',
+				'Run a slow command (Check for updates) and open the machine: In use links to its output, which grows while it runs; the assistant sees it too',
+				'Open a share link in a private window: the guest connects; Groups shows People and Machines tabs'
+			]
+		},
+		changes: [
+			'Clipboard: press Ctrl+V in the remote screen to paste text copied on your own computer, in every browser (Firefox and Safari included), the pop-out window and share links; no permission prompt. Right-click Paste on the machine pastes what was last copied there',
+			'Saved commands: admins write scripts once (per system, with typed parameters passed safely, and a reads-only or changes-the-machine label) on Commands, Saved commands; anyone allowed runs them in two clicks. Eight read-only starters ship switched off: updates, disk space, uptime, top processes, service status, recent errors, network settings, installed software',
+			'AI assistants can list and run saved commands; one an admin marks as allowed runs without approval (capped at 60 an hour per connection, with a switch in Settings to turn this off), the rest wait on Approvals. Settings, AI assistants shows how many machines the AI can see and can grant All machines in one tap',
+			'Commands: a running command’s output is visible while it runs, to you on the results page and to AI assistants, and a machine’s In use line opens it; the approve confirmation is one short sentence',
+			'Share links work again (guests’ requests were refused as cross-site). Groups has People and Machines tabs. The Manual install join code is centred. The Updates page only notes a server update while one runs or when it failed. Notices have rounded corners. The server logs when a session’s connection drops'
+		]
+	},
+	{
 		version: '0.4.33',
 		testing: {
 			kind: 'steps',
