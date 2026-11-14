@@ -142,11 +142,15 @@
 		if (view.decide.kind !== 'yes') {
 			return;
 		}
+		// A short, plain confirmation: the full command is already on the card above it.
+		const names = view.machines.map((machine) => machine.name);
+		const where =
+			names.length <= 3
+				? names.join(', ')
+				: `${names.slice(0, 3).join(', ')} and ${String(names.length - 3)} more`;
 		const answer = await confirmWithChecks({
 			title: `Run on ${String(count)} ${count === 1 ? 'machine' : 'machines'}?`,
-			message: edited
-				? `Before: ${view.command} (${limitText(view.timeoutMs)}). After: ${shown} (${limitText(shownLimit)}). It runs as ${runsAs}.`
-				: `${shown}. It runs as ${runsAs}, time limit ${limitText(shownLimit)}.`,
+			message: `${edited ? 'Your edited command' : 'The command shown'} runs on ${where} as ${runsAs}, with a time limit of ${limitText(shownLimit)}.`,
 			confirmLabel: 'Approve and run',
 			typedCount: null,
 			recheck: recheckAsk(view.decide.signIn)
@@ -257,6 +261,13 @@
 							<li><IconAlertTriangle size={16} stroke={1.75} /> {warning}</li>
 						{/each}
 					</ul>
+				{/if}
+				{#if mode === 'edit' && edited}
+					<details class="asked">
+						<summary>What the assistant asked for</summary>
+						<pre class="command" data-testid="asked-command">{view.command}</pre>
+						<p class="meta">Time limit {limitText(view.timeoutMs)}</p>
+					</details>
 				{/if}
 				{#if mode === 'edit'}
 					<TextField
@@ -421,6 +432,16 @@
 		color: var(--muted);
 		font-size: var(--text-xs);
 		overflow-wrap: anywhere;
+	}
+
+	.asked summary {
+		cursor: pointer;
+		font-size: var(--text-sm);
+		color: var(--muted);
+	}
+
+	.asked .command {
+		margin-top: var(--space-2);
 	}
 
 	.reason {

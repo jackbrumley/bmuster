@@ -324,7 +324,7 @@ While pending, the machine rows are `waiting` and the runner does not know the r
 - **The command:** monospaced, full width, wrapping (`white-space: pre-wrap; overflow-wrap: anywhere`), never ellipsed; line and character counts; "Runs as root" or "Runs as SYSTEM" in words.
 - **Warnings** (hints, never the boundary), each a sentence: changes files or services, downloads and runs code, hidden content (`-EncodedCommand`, `base64 -d | sh`), touches BMuster's own agent or service.
 - **Approve**, **Edit**, **Deny**; on a phone in a bar fixed to the bottom, Deny left, Approve right. Approve opens the Commands confirmation and, when needed, the password check.
-- **Edit** opens the command in a monospaced box with the same markers, and a before and after on confirm.
+- **Edit** opens the command in a monospaced box with the same markers; once changed, the card keeps "What the assistant asked for" (the original command and time limit) beside it. (0.4.34: the confirmation after Approve is one short sentence, naming the machines, who it runs as and the time limit, never the command, which is already on the card.)
 
 ### 11.2 The safety boundary
 

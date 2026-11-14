@@ -104,7 +104,11 @@ describe('the approval card (SPEC-MCP M25)', () => {
 		await expect.element(approve).toBeDisabled();
 		await expect.element(approve, { timeout: 3_000 }).toBeEnabled();
 		await approve.click();
-		expect(await answerYes()).toContain('systemctl status restic-backup.service');
+		// A short, plain confirmation: the machines, who it runs as and the limit, not the command.
+		const confirmation = await answerYes();
+		expect(confirmation).toContain('The command shown runs on mint');
+		expect(confirmation).toContain('as root, with a time limit of');
+		expect(confirmation).not.toContain('systemctl');
 		await expect.poll(() => sent.length).toBe(1);
 		expect(sent[0]).toEqual({
 			url: `/api/commands/runs/${RUN}/approve`,
@@ -123,13 +127,16 @@ describe('the approval card (SPEC-MCP M25)', () => {
 		await screen.getByRole('button', { name: 'Edit' }).click();
 		const box = screen.getByRole('textbox', { name: 'Command to approve' });
 		await box.fill('echo two');
+		// What the assistant asked for stays on the card while editing.
+		await expect.element(screen.getByTestId('asked-command')).toHaveTextContent('echo one');
 		const approve = screen.getByRole('button', { name: 'Approve edited' });
 		await expect.element(approve).toBeDisabled();
 		await expect.element(approve, { timeout: 3_000 }).toBeEnabled();
 		await approve.click();
 		const message = await answerYes();
-		expect(message).toContain('Before: echo one');
-		expect(message).toContain('After: echo two');
+		// The confirmation stays short: it says the command was edited, not the command itself.
+		expect(message).toContain('Your edited command runs on');
+		expect(message).not.toContain('echo');
 		await expect.poll(() => sent.length).toBe(1);
 		expect(sent[0]?.body).toMatchObject({ command: 'echo two' });
 	});
