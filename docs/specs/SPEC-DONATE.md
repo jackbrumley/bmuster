@@ -1,6 +1,6 @@
 # SPEC-DONATE: a humble donation reminder
 
-**Status:** `DRAFT` · decided by Jack 2026-11-14 · **Date:** 2026-11-14
+**Status:** `IMPLEMENTED (pending release)` · decided by Jack 2026-11-14 · **Date:** 2026-11-14 · see As built at the end
 
 ## 1. Problem
 
@@ -58,3 +58,12 @@ No schema change: one more key in the `settings` table, and the existing `settin
 ## 7. Open questions
 
 None. Decided by Jack on 2026-11-14.
+
+## As built (pending release)
+
+- **Rules:** `src/lib/domain/settings/donate-reminder.ts` (`donateReminder`, `nextDonateAnswer`, `DONATE_URL`). The answer is `{ kind: 'none' } | { kind: 'not-now'; atMs; donatedBefore } | { kind: 'donated'; atMs }`; `donatedBefore` carries the thank-you wording through a later "Not now".
+- **Store:** `src/lib/server/services/settings/donate-reminder.ts` reads and writes the `donate.reminder` row, parsed with zod on every read. The audit entry is `setting-changed` on "Donation reminder" with `from` and `to` as "not answered", "not now" or "donated". No new audit kind, so the Activity page needed no change.
+- **In use since:** `inUseSince()` in the users service, the earliest `users.created_at`. The server key was not used: it is made at first enrolment, not at setup.
+- **Machines page:** `+page.server.ts` adds `donate: DonateReminder` to the page data (always hidden for members); `donate-reminder.svelte` beside the route renders it after the list, above the select-mode bar. It is an `<aside>` with a top rule, not a card, so it reads as a footer line. Donate is an outlined pill link with a heart icon; the two answers are secondary compact Buttons with a small spinner while sending.
+- **Wording:** "thanks" shows the thank-you line, then the first sentence; "again" shows the first sentence, then the giving-back line.
+- **Tests:** the phone sweep is its own file (`phone-overflow-donate.svelte.test.ts`, all three wordings, light and dark), because `phone-overflow.svelte.test.ts` is at its size limit.
