@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lt, or, isNotNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, lte, ne, or, isNotNull } from 'drizzle-orm';
 import type { CommandScript, RunMachineStatus, RunStatus } from '#lib/domain/commands/commands.ts';
 import type { OsFamily } from '#lib/domain/machines/machine.ts';
 import type { Queryable } from '../../database/connection.ts';
@@ -15,12 +15,17 @@ import {
  * per machine. The only code that touches these tables.
  */
 
+/** A person's run starts at once; an assistant's waits for a person's approval (SPEC-MCP M17). */
+export type NewRunOrigin =
+	{ kind: 'person' } | { kind: 'assistant'; grantId: string; reason: string; expiresAt: number };
+
 export type NewRun = {
 	id: string;
 	startedBy: string;
 	startedAt: number;
 	timeoutMs: number;
 	rerunOf: string | null;
+	origin: NewRunOrigin;
 	scripts: CommandScript[];
 	machines: { machineId: string; status: 'waiting' | 'skipped'; skipReason: string | null }[];
 };
@@ -33,9 +38,17 @@ export function insertRun(database: Queryable, run: NewRun): void {
 			startedBy: run.startedBy,
 			startedAt: new Date(run.startedAt),
 			endedAt: null,
-			status: 'running',
+			status: run.origin.kind === 'person' ? 'running' : 'pending-approval',
 			timeoutMs: run.timeoutMs,
-			rerunOf: run.rerunOf
+			rerunOf: run.rerunOf,
+			requester: run.origin.kind,
+			...(run.origin.kind === 'assistant'
+				? {
+						oauthGrantId: run.origin.grantId,
+						reason: run.origin.reason,
+						expiresAt: new Date(run.origin.expiresAt)
+					}
+				: {})
 		})
 		.run();
 	database
@@ -259,14 +272,137 @@ export function setRunStatus(database: Queryable, runId: string, status: RunStat
 	database.update(commandRuns).set({ status }).where(eq(commandRuns.id, runId)).run();
 }
 
-/** Runs the server was running when it stopped. */
+/** Runs the server was running when it stopped. Runs waiting for approval are not running. */
 export function unfinishedRunIds(database: Queryable): string[] {
 	return database
 		.select({ id: commandRuns.id })
 		.from(commandRuns)
-		.where(isNull(commandRuns.endedAt))
+		.where(and(isNull(commandRuns.endedAt), ne(commandRuns.status, 'pending-approval')))
 		.all()
 		.map((row) => row.id);
+}
+
+/** Assistant runs waiting for approval, newest first. */
+export function pendingRuns(database: Queryable): RunRow[] {
+	return database
+		.select({ run: commandRuns, name: users.name })
+		.from(commandRuns)
+		.innerJoin(users, eq(users.id, commandRuns.startedBy))
+		.where(eq(commandRuns.status, 'pending-approval'))
+		.orderBy(desc(commandRuns.startedAt))
+		.all()
+		.map((row) => ({ ...row.run, startedByName: row.name }));
+}
+
+/** How many runs this person's assistants have waiting (SPEC-MCP M24). */
+export function pendingCountOf(database: Queryable, userId: string): number {
+	return database
+		.select({ id: commandRuns.id })
+		.from(commandRuns)
+		.where(
+			and(
+				eq(commandRuns.status, 'pending-approval'),
+				eq(commandRuns.startedBy, userId),
+				eq(commandRuns.requester, 'assistant')
+			)
+		)
+		.all().length;
+}
+
+/** Assistant runs not yet ended: waiting for approval or running. */
+export function openAssistantRuns(database: Queryable): RunRow[] {
+	return database
+		.select({ run: commandRuns, name: users.name })
+		.from(commandRuns)
+		.innerJoin(users, eq(users.id, commandRuns.startedBy))
+		.where(and(isNull(commandRuns.endedAt), eq(commandRuns.requester, 'assistant')))
+		.all()
+		.map((row) => ({ ...row.run, startedByName: row.name }));
+}
+
+/** Pending runs whose time to be decided has passed. */
+export function expiredPendingRunIds(database: Queryable, now: number): string[] {
+	return database
+		.select({ id: commandRuns.id })
+		.from(commandRuns)
+		.where(
+			and(eq(commandRuns.status, 'pending-approval'), lte(commandRuns.expiresAt, new Date(now)))
+		)
+		.all()
+		.map((row) => row.id);
+}
+
+/**
+ * A pending run's decision, only if it is still pending: approve, deny, expiry and cancel race
+ * through here, and exactly one wins (SPEC-MCP 10.1). False when another got there first.
+ */
+export function settlePending(
+	database: Queryable,
+	runId: string,
+	outcome:
+		| { status: 'running'; decidedBy: string; startedAt: number; timeoutMs: number }
+		| { status: 'denied'; decidedBy: string; note: string }
+		| { status: 'expired' | 'cancelled' },
+	now: number
+): boolean {
+	const values =
+		outcome.status === 'running'
+			? {
+					status: outcome.status,
+					decidedBy: outcome.decidedBy,
+					decidedAt: new Date(now),
+					startedAt: new Date(outcome.startedAt),
+					timeoutMs: outcome.timeoutMs
+				}
+			: outcome.status === 'denied'
+				? {
+						status: outcome.status,
+						decidedBy: outcome.decidedBy,
+						decidedAt: new Date(now),
+						denyNote: outcome.note,
+						endedAt: new Date(now)
+					}
+				: { status: outcome.status, endedAt: new Date(now) };
+	return (
+		database
+			.update(commandRuns)
+			.set(values)
+			.where(and(eq(commandRuns.id, runId), eq(commandRuns.status, 'pending-approval')))
+			.run().changes === 1
+	);
+}
+
+/** Keeps what the assistant asked for beside the approver's edit (SPEC-MCP M20). */
+export function recordEdit(
+	database: Queryable,
+	runId: string,
+	edit: { command: string; requestedCommand: string; requestedTimeoutMs: number }
+): void {
+	database
+		.update(commandRunScripts)
+		.set({ command: edit.command, requestedCommand: edit.requestedCommand })
+		.where(eq(commandRunScripts.runId, runId))
+		.run();
+	database
+		.update(commandRuns)
+		.set({ requestedTimeoutMs: edit.requestedTimeoutMs })
+		.where(eq(commandRuns.id, runId))
+		.run();
+}
+
+/** A machine skipped when the run is approved (agent too old, unsupported system). */
+export function markSkipped(
+	database: Queryable,
+	runId: string,
+	machineId: string,
+	reason: string,
+	now: number
+): void {
+	database
+		.update(commandRunMachines)
+		.set({ status: 'skipped', skipReason: reason, endedAt: new Date(now) })
+		.where(machineRow(runId, machineId))
+		.run();
 }
 
 /** Every machine row still waiting or running in these runs, as `status`. */

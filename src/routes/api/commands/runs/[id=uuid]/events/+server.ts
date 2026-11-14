@@ -2,7 +2,7 @@ import { database } from '#lib/server/database/app-database.ts';
 import { route } from '#lib/server/guards/route.ts';
 import { SESSION_COOKIE } from '#lib/server/services/auth/sessions.ts';
 import { runFeedStream } from '#lib/server/services/commands/command-feed.ts';
-import { appRunner } from '../../../command-context.server.ts';
+import { appRunner } from '#lib/server/services/commands/app-runner.ts';
 import type { RequestHandler } from './$types';
 
 /**

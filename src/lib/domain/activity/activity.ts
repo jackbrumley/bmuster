@@ -129,7 +129,10 @@ const AUDIT_KINDS = [
 	'mcp-grant-ended',
 	'mcp-refresh-refused',
 	'mcp-kill-switch',
-	'mcp-tool-called'
+	'mcp-tool-called',
+	'command-run-requested',
+	'command-run-denied',
+	'command-run-expired'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -380,5 +383,11 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Stopped all AI access';
 		case 'mcp-tool-called':
 			return 'Read machines through an AI assistant';
+		case 'command-run-requested':
+			return 'Asked to run a command';
+		case 'command-run-denied':
+			return "Denied an AI assistant's command";
+		case 'command-run-expired':
+			return 'A command waiting for approval expired';
 	}
 }

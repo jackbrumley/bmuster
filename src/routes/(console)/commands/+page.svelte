@@ -4,7 +4,7 @@
 	import {
 		commandOsLabel,
 		countsLine,
-		type RunStatus,
+		runStatusLabel,
 		type RunSummary
 	} from '#lib/domain/commands/commands.ts';
 	import EmptyState from '#lib/ui/empty-state.svelte';
@@ -19,17 +19,6 @@
 	 * first line and how far each got. A new run starts from Machines (Select).
 	 */
 	let { data }: PageProps = $props();
-
-	function statusText(status: RunStatus): string {
-		switch (status) {
-			case 'running':
-				return 'Running';
-			case 'finished':
-				return 'Finished';
-			case 'cancelled':
-				return 'Cancelled';
-		}
-	}
 
 	function commandText(run: RunSummary): string {
 		return run.commands.length === 1
@@ -71,7 +60,9 @@
 				<span class="run">
 					<code class="command">{commandText(run)}</code>
 					<span class="meta">
-						{run.startedBy} · {formatRelative(run.startedIso, data.now)} · {statusText(run.status)}
+						{run.startedBy} · {formatRelative(run.startedIso, data.now)} · {runStatusLabel(
+							run.status
+						)}
 					</span>
 					<span class="counts">{countsLine(run.counts)}</span>
 				</span>

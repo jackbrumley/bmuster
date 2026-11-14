@@ -30,6 +30,8 @@ export type ExecRequest = {
 	runId: string;
 	machineId: string;
 	user: { id: string; name: string };
+	/** How a machine's "In use" names it: "Jack Brumley (asked via Claude Code)". */
+	inUseName: string;
 	permissions: string[];
 	shell: CommandShell;
 	command: string;
@@ -162,7 +164,7 @@ export function runOnMachine(
 		id: sessionId,
 		machineId: request.machineId,
 		userId: request.user.id,
-		userName: request.user.name,
+		userName: request.inUseName,
 		viewer: { kind: 'user' },
 		kind: 'exec',
 		shell: request.shell,

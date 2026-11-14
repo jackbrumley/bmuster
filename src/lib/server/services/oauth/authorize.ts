@@ -1,6 +1,7 @@
 import {
 	DEFAULT_SCOPES,
 	isMcpScope,
+	withImpliedScopes,
 	mcpServerUrl,
 	type AssistantName,
 	type McpScope,
@@ -71,7 +72,7 @@ function requestedScopes(scope: string | undefined): McpScope[] | undefined {
 	if (known.length !== names.length) {
 		return undefined;
 	}
-	return known.includes('machines:read') ? known : ['machines:read', ...known];
+	return withImpliedScopes(['machines:read', ...known]);
 }
 
 async function checkAuthorize(
@@ -112,7 +113,10 @@ async function checkAuthorize(
 	}
 	const scopes = requestedScopes(params.scope);
 	if (scopes === undefined) {
-		return fail('invalid_scope', 'Only machines:read and offline_access can be asked for.');
+		return fail(
+			'invalid_scope',
+			'Only machines:read, commands:run and offline_access can be asked for.'
+		);
 	}
 	return {
 		kind: 'valid',

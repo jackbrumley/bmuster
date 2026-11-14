@@ -235,7 +235,7 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 		const challenge = await mcp(undefined, { id: 1, method: 'tools/list', params: {} }, 'legacy');
 		expect(challenge.status).toBe(401);
 		expect(challenge.headers.get('www-authenticate')).toBe(
-			`Bearer resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource/mcp", scope="machines:read offline_access"`
+			`Bearer resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource/mcp", scope="machines:read commands:run offline_access"`
 		);
 		const resource = await Promise.resolve(
 			invoke(protectedResource, '/.well-known/oauth-protected-resource/mcp', getting(), {})
@@ -292,7 +292,15 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 			await mcp(connected.access_token, { id: 2, method: 'tools/list', params: {} }, 'legacy')
 		);
 		expect(listed).toMatchObject({
-			result: { tools: [{ name: 'list_machines' }, { name: 'get_machine' }] }
+			result: {
+				tools: [
+					{ name: 'list_machines' },
+					{ name: 'get_machine' },
+					{ name: 'run_command' },
+					{ name: 'get_command_result' },
+					{ name: 'cancel_command' }
+				]
+			}
 		});
 		const called = await rpcReply(
 			await mcp(

@@ -12,6 +12,7 @@ import {
 	type PlannedMachine,
 	type RunCounts,
 	type RunMachineOutput,
+	type RunOrigin,
 	type RunView
 } from '#lib/domain/commands/commands.ts';
 import type { SignInCheck } from '#lib/domain/auth/sign-in-check.ts';
@@ -119,9 +120,45 @@ const countsSchema: z.ZodType<RunCounts> = z.object({
 	cancelled: z.int()
 });
 
+const runOriginSchema: z.ZodType<RunOrigin> = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('person') }),
+	z.object({
+		kind: z.literal('assistant'),
+		assistant: z.string(),
+		verified: z.boolean(),
+		reason: z.string(),
+		expiresIso: z.iso.datetime(),
+		decision: z.discriminatedUnion('kind', [
+			z.object({ kind: z.literal('pending') }),
+			z.object({
+				kind: z.literal('approved'),
+				by: z.string(),
+				atIso: z.iso.datetime(),
+				edit: z.discriminatedUnion('kind', [
+					z.object({ kind: z.literal('unchanged') }),
+					z.object({
+						kind: z.literal('edited'),
+						requestedCommand: z.string(),
+						requestedTimeoutMs: z.int()
+					})
+				])
+			}),
+			z.object({
+				kind: z.literal('denied'),
+				by: z.string(),
+				atIso: z.iso.datetime(),
+				note: z.string()
+			}),
+			z.object({ kind: z.literal('expired') }),
+			z.object({ kind: z.literal('cancelled') })
+		])
+	})
+]);
+
 export const runViewSchema: z.ZodType<RunView> = z.object({
 	id: z.uuid(),
 	startedBy: z.string(),
+	origin: runOriginSchema,
 	startedIso: z.iso.datetime(),
 	endedIso: z.iso.datetime().nullable(),
 	status: z.enum(RUN_STATUSES),

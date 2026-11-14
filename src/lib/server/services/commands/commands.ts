@@ -17,9 +17,10 @@ import { permissionsFor } from '../access/access.ts';
 import { isAgentConnected } from '../agents/live-agents.ts';
 import { reconfirmPassword, signInCheck, SIGN_IN_AGAIN } from '../auth/recent-sign-in.ts';
 import { machineAgentFacts } from '../machines/machine-views.ts';
-import { auditRunCancelled, auditRunStarted } from './command-audit.ts';
+import { cancelPendingRun, cancelStartedRun } from './assistant-pending.ts';
+import { auditRunStarted } from './command-audit.ts';
 import type { CommandRunner } from './command-runner.ts';
-import { cancelWaiting, findRun, insertRun, setRunStatus } from './command-runs.ts';
+import { findRun, insertRun, machinesOf } from './command-runs.ts';
 
 /**
  * Starting and cancelling command runs (SPEC-COMMANDS C8–C17). Everything the browser sends is
@@ -37,7 +38,7 @@ export type CommandContext = {
 	now: number;
 };
 
-export type Refused = { kind: 'refused'; status: 400 | 403 | 404 | 429; message: string };
+export type Refused = { kind: 'refused'; status: 400 | 403 | 404 | 409 | 429; message: string };
 
 type MachineFacts = { id: string; name: string; osFamily: OsFamily; agentVersion: string };
 
@@ -75,13 +76,15 @@ function skipReasonOf(
 	if (machine.osFamily === 'macos') {
 		return 'unsupported-system';
 	}
-	if (
-		!isAgentVersion(machine.agentVersion) ||
-		compareAgentVersions(machine.agentVersion, FIRST_COMMANDS_AGENT) < 0
-	) {
+	if (agentTooOld(machine.agentVersion)) {
 		return 'agent-too-old';
 	}
 	return isAgentConnected(machine.id) ? undefined : 'offline';
+}
+
+/** An agent older than the first that runs commands (C15). */
+export function agentTooOld(version: string): boolean {
+	return !isAgentVersion(version) || compareAgentVersions(version, FIRST_COMMANDS_AGENT) < 0;
 }
 
 /** What Review shows for these machines (C8), and whether the password is needed (C10). */
@@ -114,8 +117,8 @@ export function planRun(
 	};
 }
 
-/** C10: a recent sign-in, or the password now. */
-async function checkRecentSignIn(
+/** C10: a recent sign-in, or the password now. Approving an assistant's command uses it too. */
+export async function checkRecentSignIn(
 	context: CommandContext,
 	password: StartRunRequest['password']
 ): Promise<Refused | undefined> {
@@ -230,6 +233,7 @@ export async function startRun(
 			startedAt: context.now,
 			timeoutMs: request.timeoutMs,
 			rerunOf: request.rerunOf,
+			origin: { kind: 'person' },
 			scripts: request.scripts,
 			machines: rows
 		});
@@ -242,7 +246,8 @@ export async function startRun(
 				timeoutMs: request.timeoutMs,
 				machineCount: rows.length,
 				skippedCount: rows.filter((row) => row.status === 'skipped').length,
-				rerunOf: request.rerunOf
+				rerunOf: request.rerunOf,
+				approval: { kind: 'none' }
 			},
 			context.now
 		);
@@ -253,7 +258,8 @@ export async function startRun(
 
 /**
  * C17: machines that have not started are cancelled; machines already running finish or reach
- * their time limit. The person who started the run, or an admin, may cancel it.
+ * their time limit. A run still waiting for approval is cancelled whole (SPEC-MCP M21). The
+ * person who started the run, or an admin, may cancel it.
  */
 export function cancelRun(
 	context: Pick<CommandContext, 'database' | 'runner' | 'user' | 'now'>,
@@ -263,21 +269,27 @@ export function cancelRun(
 	if (run === undefined || !mayCancel(context.user, run.startedBy)) {
 		return { kind: 'refused', status: 404, message: 'No command run with this id.' };
 	}
-	if (run.endedAt !== null || run.status !== 'running') {
-		return { kind: 'refused', status: 400, message: 'This run has already ended.' };
+	switch (run.status) {
+		case 'pending-approval': {
+			const machines = machinesOf(context.database, [runId]).length;
+			return cancelPendingRun(context, run, 'person', context.user.id)
+				? { kind: 'cancelled', notStarted: machines }
+				: { kind: 'refused', status: 409, message: 'This request was decided a moment ago.' };
+		}
+		case 'running':
+			if (run.endedAt === null) {
+				return {
+					kind: 'cancelled',
+					notStarted: cancelStartedRun(context, run, 'person', context.user.id)
+				};
+			}
+			return { kind: 'refused', status: 400, message: 'This run has already ended.' };
+		case 'finished':
+		case 'cancelled':
+		case 'denied':
+		case 'expired':
+			return { kind: 'refused', status: 400, message: 'This run has already ended.' };
 	}
-	const notStarted = context.database.transaction((transaction) => {
-		const count = cancelWaiting(transaction, runId, context.now);
-		setRunStatus(transaction, runId, 'cancelled');
-		auditRunCancelled(
-			transaction,
-			{ runId, userId: context.user.id, notStarted: count },
-			context.now
-		);
-		return count;
-	});
-	context.runner.settle(runId);
-	return { kind: 'cancelled', notStarted };
 }
 
 export function mayCancel(user: ConsoleUser, startedBy: string): boolean {

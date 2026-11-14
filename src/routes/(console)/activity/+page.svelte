@@ -256,7 +256,11 @@
 			case 'mcp-kill-switch':
 				return IconHandStop;
 			case 'mcp-tool-called':
+			case 'command-run-requested':
 				return IconRobot;
+			case 'command-run-denied':
+			case 'command-run-expired':
+				return IconHandStop;
 		}
 	}
 </script>

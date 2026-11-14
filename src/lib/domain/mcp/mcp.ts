@@ -1,15 +1,33 @@
+import type { ApproverMode } from '#lib/domain/commands/assistant-runs.ts';
+
 /**
  * AI assistants connected over MCP (SPEC-MCP). Any assistant that speaks MCP can connect:
  * Claude, ChatGPT or another. Browser-safe: the shapes the console and the server share.
  */
 
-/** What a token may be used for (SPEC-MCP 8.2). Step 1 advertises these two. */
-export const MCP_SCOPES = ['machines:read', 'offline_access'] as const;
+/** What a token may be used for (SPEC-MCP 8.2). */
+export const MCP_SCOPES = ['machines:read', 'commands:run', 'offline_access'] as const;
 
 export type McpScope = (typeof MCP_SCOPES)[number];
 
-/** A client that asks for no scope gets read access only, without a refresh token. */
-export const DEFAULT_SCOPES: readonly McpScope[] = ['machines:read'];
+/** A client that asks for no scope gets the tools, without a refresh token. */
+export const DEFAULT_SCOPES: readonly McpScope[] = ['machines:read', 'commands:run'];
+
+/**
+ * Every grant holds `machines:read` and `commands:run` together. A grant allowed before step 2
+ * (v0.4.27) holds `machines:read` only; its person was told then that every command would wait for
+ * their approval, so it may ask too, and nobody has to reconnect (SPEC-MCP 17, the scope step-up).
+ * What an assistant can do is still decided by the access rules (`ai-commands`) and by a person
+ * approving each command in the console.
+ */
+export function withImpliedScopes(scopes: readonly McpScope[]): McpScope[] {
+	return MCP_SCOPES.filter(
+		(scope) =>
+			scopes.includes(scope) ||
+			((scope === 'machines:read' || scope === 'commands:run') &&
+				(scopes.includes('machines:read') || scopes.includes('commands:run')))
+	);
+}
 
 export function isMcpScope(scope: string): scope is McpScope {
 	return MCP_SCOPES.some((known) => known === scope);
@@ -20,6 +38,8 @@ export function scopeLabel(scope: McpScope): string {
 	switch (scope) {
 		case 'machines:read':
 			return 'See the machines where an access rule gives you AI commands: names, systems, status, disks and recent activity.';
+		case 'commands:run':
+			return 'Ask to run commands on those machines. Each one waits for a person to approve it in BMuster.';
 		case 'offline_access':
 			return 'Stay connected until you disconnect it, or for 30 days.';
 	}
@@ -71,6 +91,12 @@ type McpGroupChoice =
 	| { kind: 'missing'; id: string };
 
 export type McpSettingsView = { enabled: boolean; userGroup: McpGroupChoice };
+
+/** Who may approve an assistant's request, as Settings → AI assistants shows it (M19). */
+export type ApproverSettingsView = {
+	mode: ApproverMode;
+	group: McpGroupChoice;
+};
 
 /** Whether AI assistants can connect now, and whether this person may connect one. */
 export type ConnectState = 'on' | 'off' | 'not-allowed';

@@ -352,6 +352,7 @@ export const COMMAND_RUN_SUMMARY: RunSummary = {
 export const COMMAND_RUN: RunView = {
 	id: COMMAND_RUN_SUMMARY.id,
 	startedBy: LONG_PERSON,
+	origin: { kind: 'person' },
 	startedIso: '2026-11-12T08:00:00.000Z',
 	endedIso: null,
 	status: 'running',

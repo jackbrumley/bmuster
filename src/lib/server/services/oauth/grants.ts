@@ -8,7 +8,8 @@ import {
 	type AssistantName,
 	type AssistantStatus,
 	type GrantView,
-	type McpScope
+	type McpScope,
+	withImpliedScopes
 } from '#lib/domain/mcp/mcp.ts';
 import {
 	oauthClients,
@@ -48,7 +49,7 @@ export type EndReason = NonNullable<(typeof oauthGrants.$inferSelect)['endedReas
 const storedScopes = z.array(z.string());
 
 function parseScopes(json: string): McpScope[] {
-	return storedScopes.parse(JSON.parse(json)).filter(isMcpScope);
+	return withImpliedScopes(storedScopes.parse(JSON.parse(json)).filter(isMcpScope));
 }
 
 export function hashSecret(secret: string): string {
@@ -165,6 +166,7 @@ type GrantFacts = {
 	scopes: McpScope[];
 	createdAt: Date;
 	endedAt: Date | null;
+	endedReason: EndReason | null;
 	lastUsedAt: Date | null;
 	lastIp: string | null;
 	assistant: AssistantName;
@@ -186,6 +188,7 @@ export function findGrant(database: Queryable, grantId: string): GrantFacts | un
 				scopes: parseScopes(row.grant.scopes),
 				createdAt: row.grant.createdAt,
 				endedAt: row.grant.endedAt,
+				endedReason: row.grant.endedReason,
 				lastUsedAt: row.grant.lastUsedAt,
 				lastIp: row.grant.lastIp,
 				assistant: assistantOf(row.client),

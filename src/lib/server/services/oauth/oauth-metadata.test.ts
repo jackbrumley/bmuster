@@ -32,7 +32,7 @@ describe('discovery (SPEC-MCP M5)', () => {
 
 	it('M5: the 401 challenge points at the resource metadata and names the scope', () => {
 		expect(bearerChallenge(ORIGIN, 'none')).toBe(
-			`Bearer resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource/mcp", scope="machines:read offline_access"`
+			`Bearer resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource/mcp", scope="machines:read commands:run offline_access"`
 		);
 		expect(bearerChallenge(ORIGIN, 'invalid_token')).toContain('error="invalid_token"');
 	});
