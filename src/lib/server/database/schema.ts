@@ -33,4 +33,5 @@ export { consoleSessions, signInFailures } from './schema/sessions.ts';
 export { shareLinkFailures, shareLinks } from './schema/share-links.ts';
 export { settings } from './schema/settings.ts';
 export { supportCodeFailures, supportCodes } from './schema/support-codes.ts';
+export { recoveryCodes, signInChallenges, totpAuthenticators } from './schema/two-factor.ts';
 export { userIdentities, users } from './schema/users.ts';

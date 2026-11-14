@@ -169,6 +169,13 @@
       "when": 1794618873798,
       "tag": "0023_empty_nitro",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1794624671602,
+      "tag": "0024_goofy_mentallo",
+      "breakpoints": true
     }
   ]
 }
