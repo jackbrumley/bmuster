@@ -1,6 +1,6 @@
 # SPEC-TWO-FACTOR: Two-factor sign-in (authenticator app and recovery codes)
 
-**Status:** `IMPLEMENTED (pending release)` (As built: section 11) · **Date:** 2026-11-14 · Decisions: Jack, 2026-11-14 (section 3) · Builds on SPEC-SIGN-IN (passwords, sessions, sign-in limits, `admin:reset`), SPEC-COMMANDS C10 (recent sign-in) and SPEC-MCP (approvals), `docs/access-and-sign-in.md` section 2.
+**Status:** `IMPLEMENTED (v0.4.30)` (As built: section 11) · **Date:** 2026-11-14 · Decisions: Jack, 2026-11-14 (section 3) · Builds on SPEC-SIGN-IN (passwords, sessions, sign-in limits, `admin:reset`), SPEC-COMMANDS C10 (recent sign-in) and SPEC-MCP (approvals), `docs/access-and-sign-in.md` section 2.
 
 > **Security work.** This changes password sign-in, adds a half-signed-in state, changes the recent sign-in check used by Commands runs and AI approvals, adds an admin reset and a host command. Nothing here weakens a check: every new step is in addition to the password, wrong codes count toward the existing pauses, and admins can still always sign in with a password (with their code when two-factor is on for them).
 

@@ -15,6 +15,25 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.30',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Account: Set up two-factor sign-in, scan the QR code with your authenticator app (light and dark theme), enter the first code; save the 10 recovery codes with Download and Copy',
+				'Sign out and in: after the password, the code step opens the number pad on a phone and accepts the current code once only; try a recovery code typed in lower case',
+				'Settings, Security: choose Required for admins; another admin without it is taken to set-up at their next sign-in',
+				'More than 10 minutes after signing in, start a Commands run or approve an AI request: it asks for your authenticator code',
+				'Users: Reset two-factor on another person, with confirmation; Activity shows each step'
+			]
+		},
+		changes: [
+			'Two-factor sign-in: turn on an authenticator app (Google or Microsoft Authenticator, 1Password, Bitwarden and others) from your Account page by scanning a QR code, and keep 10 single-use recovery codes for a lost phone',
+			'Settings, Security: require two-factor sign-in for admins or for everyone who signs in with a password. New servers require it for admins; servers that update stay off until you choose. People who sign in through Microsoft 365 or Authentik are never asked',
+			'With two-factor on, the check before a Commands run or an AI approval asks for your authenticator code instead of your password',
+			'Admins can reset someone’s two-factor on the Users page; a host command resets it for a locked-out last admin (see the hosting guide)'
+		]
+	},
+	{
 		version: '0.4.29',
 		testing: {
 			kind: 'steps',
