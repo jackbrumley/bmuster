@@ -15,6 +15,20 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.32',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'ChatGPT: Settings, Apps and Connectors, Advanced, Developer mode on; Create with https://bmuster.brumley.info/mcp and OAuth; sign in and Allow; ask it to list your BMuster machines',
+				'If any assistant fails to connect, the server log shows an oauth line naming the step and reason (npm run diagnostics -- server)'
+			]
+		},
+		changes: [
+			'AI assistants: ChatGPT can now connect. BMuster accepts ChatGPT’s published app description and apps that sign in with their own secret, and also answers the discovery addresses some assistants check first',
+			'AI assistants: every sign-in step and every refusal is now written to the server log, without tokens, codes or secrets, so a failed connection shows exactly where it stopped'
+		]
+	},
+	{
 		version: '0.4.31',
 		testing: {
 			kind: 'steps',
