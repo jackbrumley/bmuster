@@ -7,7 +7,7 @@
 	import { adapterItem, gpuItem } from '#lib/domain/machines/inventory-items.ts';
 	import { osLabel, signedInUserOf } from '#lib/domain/machines/machine.ts';
 	import { powerSourceLabel } from '#lib/domain/machines/power.ts';
-	import { inUseLabel } from '#lib/domain/sessions/session.ts';
+	import InUseList from '#lib/ui/in-use-list.svelte';
 	import { canSendUserMessage } from '#lib/domain/machines/user-message.ts';
 	import { hasPermission } from '#lib/domain/access/access.ts';
 	import { machinePresence } from '#lib/runes/machine-presence.svelte.ts';
@@ -40,7 +40,6 @@
 
 	const facts = $derived.by(() => {
 		const list = [
-			...(machine.inUse.length > 0 ? [{ label: 'In use', value: inUseLabel(machine.inUse) }] : []),
 			{ label: 'Operating system', value: osLabel(machine) },
 			{ label: 'Signed in', value: user.kind === 'user' ? user.name : 'Nobody' },
 			{
@@ -164,6 +163,12 @@
 			padding="normal"
 		>
 			<dl>
+				{#if machine.inUse.length > 0}
+					<div class="fact">
+						<dt>In use</dt>
+						<dd><InUseList machineId={machine.id} sessions={machine.inUse} /></dd>
+					</div>
+				{/if}
 				{#each facts as fact (fact.label)}
 					<div class="fact">
 						<dt>{fact.label}</dt>

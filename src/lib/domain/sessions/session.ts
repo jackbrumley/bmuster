@@ -110,21 +110,24 @@ export type DesktopMode = (typeof DESKTOP_MODES)[number];
 
 /** Someone using a machine right now (SPEC-SESSIONS T8, SPEC-DESKTOP R17). */
 export type SessionInUse =
-	| { kind: 'terminal' | 'files' | 'command'; userName: string }
+	| { kind: 'terminal' | 'files'; userName: string }
+	/** A machine's part of a command run; the console links it to the run (SPEC-COMMANDS C24). */
+	| { kind: 'command'; userName: string; runId: string }
 	| { kind: 'desktop'; mode: DesktopMode; userName: string };
 
-/** "terminal by Kim", "desktop (control) by Kim", for "In use: …". */
+/** "terminal by Kim", "desktop (control) by Kim": one entry of "In use: …". */
+export function inUseText(session: SessionInUse): string {
+	switch (session.kind) {
+		case 'terminal':
+		case 'files':
+		case 'command':
+			return `${session.kind} by ${session.userName}`;
+		case 'desktop':
+			return `desktop (${session.mode}) by ${session.userName}`;
+	}
+}
+
+/** Every entry of "In use: …", for places that show it as plain text. */
 export function inUseLabel(sessions: readonly SessionInUse[]): string {
-	return sessions
-		.map((session) => {
-			switch (session.kind) {
-				case 'terminal':
-				case 'files':
-				case 'command':
-					return `${session.kind} by ${session.userName}`;
-				case 'desktop':
-					return `desktop (${session.mode}) by ${session.userName}`;
-			}
-		})
-		.join(', ');
+	return sessions.map(inUseText).join(', ');
 }

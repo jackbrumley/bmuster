@@ -203,3 +203,24 @@ describe('Overview: inventory (SPEC-MACHINE-DETAILS D10–D14)', () => {
 		await expect.element(screen.getByText('Disk nearly full')).not.toBeInTheDocument();
 	});
 });
+
+describe('Overview: a command in use (SPEC-COMMANDS C24)', () => {
+	it('C24: "In use" links a running command to its run, with this machine’s output open', async () => {
+		const runId = '99999999-9999-4999-8999-999999999999';
+		const screen = await renderOverview({
+			...MACHINE,
+			inUse: [
+				{ kind: 'files', userName: 'Kim' },
+				{ kind: 'command', userName: 'Jack Brumley (asked via Claude Code)', runId }
+			]
+		});
+		expect(factOf(screen.container, 'In use')?.replace(/\s+/gu, ' ').trim()).toBe(
+			'files by Kim, command by Jack Brumley (asked via Claude Code)'
+		);
+		await expect
+			.element(
+				screen.getByRole('link', { name: 'command by Jack Brumley (asked via Claude Code)' })
+			)
+			.toHaveAttribute('href', `/commands/${runId}?machine=${MACHINE_ID}`);
+	});
+});

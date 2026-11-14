@@ -11,7 +11,7 @@
 	import { formatBytes, formatRelative } from '#lib/utils/format.ts';
 	import { updateBadge } from '#lib/domain/machines/agent-updates.ts';
 	import { osLabel } from '#lib/domain/machines/machine.ts';
-	import { inUseLabel } from '#lib/domain/sessions/session.ts';
+	import InUseList from '#lib/ui/in-use-list.svelte';
 	import type { MachineRow } from '#lib/domain/machines/machine-row.ts';
 	import type { TickBoxes } from './machine-selection.svelte.ts';
 	import SelectTick from './select-tick.svelte';
@@ -91,13 +91,10 @@
 								</p>
 							{/if}
 
-							{#if updates > 0 || machine.inUse.length > 0 || machine.lowDisk.length > 0 || updateBadge(machine.update).kind === 'shown'}
+							{#if updates > 0 || machine.lowDisk.length > 0 || updateBadge(machine.update).kind === 'shown'}
 								<div class="tags">
 									{#if machine.lowDisk.length > 0}
 										<LowDiskTag drives={machine.lowDisk} />
-									{/if}
-									{#if machine.inUse.length > 0}
-										<span class="tag in-use">In use: {inUseLabel(machine.inUse)}</span>
 									{/if}
 									{#if updates > 0}
 										<span class="tag warn">{updates} updates</span>
@@ -106,6 +103,13 @@
 								</div>
 							{/if}
 						</a>
+
+						<!-- Outside the card's link: a command in use links to its own run (C24). -->
+						{#if machine.inUse.length > 0}
+							<p class="in-use">
+								In use: <InUseList machineId={machine.id} sessions={machine.inUse} />
+							</p>
+						{/if}
 
 						<div class="actions">
 							<a
@@ -214,9 +218,12 @@
 		font-size: var(--text-xs);
 	}
 
-	.tag.in-use {
-		background: var(--brand-tint);
+	.in-use {
+		margin: 0;
+		padding: 0 var(--space-4) var(--space-4);
 		color: var(--brand);
+		font-size: var(--text-xs);
+		overflow-wrap: anywhere;
 	}
 
 	.tag.warn {
