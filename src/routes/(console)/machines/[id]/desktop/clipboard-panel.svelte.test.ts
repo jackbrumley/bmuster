@@ -5,7 +5,7 @@ import '#lib/ui/design-tokens.css';
 import ClipboardPanel from './clipboard-panel.svelte';
 import { DesktopClipboard } from './clipboard.svelte.ts';
 
-// SPEC-DESKTOP 21: C8, C9.
+// SPEC-DESKTOP 21: C8, C9, C40, C47.
 
 async function setup(text = '') {
 	const sent: ViewerMessage[] = [];
@@ -129,5 +129,29 @@ describe('the clipboard panel with clipboard sharing (SPEC-DESKTOP 21.11)', () =
 		await panel.getByRole('button', { name: 'Copy to phone' }).click();
 		expect(write).toHaveBeenCalledWith('copied at the machine');
 		vi.unstubAllGlobals();
+	});
+});
+
+describe('the clipboard panel and Ctrl+V into the screen (SPEC-DESKTOP 21.12)', () => {
+	it('C47: on a desktop it says Ctrl+V into the screen works in every browser, and what right-click → Paste does', async () => {
+		const { clipboard, panel } = await setup();
+		await expect
+			.element(panel.getByRole('heading', { name: 'To paste on the machine' }))
+			.toBeVisible();
+		const help = panel.getByText(/Click the screen and press Ctrl\+V/);
+		await expect.element(help).toBeVisible();
+		const said = help.element().textContent;
+		expect(said).toContain('Works in every browser.');
+		expect(said).toContain(
+			'Right-click → Paste on the machine pastes only what was last copied on the machine.'
+		);
+		clipboard.sharing = false;
+		await expect
+			.element(
+				panel.getByText(
+					'Turn on Share clipboard to have Ctrl+V on the screen paste what you copied here.'
+				)
+			)
+			.toBeVisible();
 	});
 });

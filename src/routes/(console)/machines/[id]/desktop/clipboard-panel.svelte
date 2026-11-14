@@ -67,6 +67,12 @@
 				</div>
 			{/if}
 		{:else}
+			<SectionHeading id="{uid}-paste" text="To paste on the machine" tone="normal" />
+			<p class="help">
+				{clipboard.sharing
+					? 'Click the screen and press Ctrl+V (on a Mac controlling a Mac, Cmd+V): what you copied here pastes where the cursor is. Works in every browser. Right-click → Paste on the machine pastes only what was last copied on the machine.'
+					: 'Turn on Share clipboard to have Ctrl+V on the screen paste what you copied here.'}
+			</p>
 			{#if clipboard.sharing && !clipboard.readAllowed}
 				<div class="actions">
 					<Button
@@ -79,8 +85,9 @@
 					</Button>
 				</div>
 				<p class="help">
-					Lets this browser send what you copy here to the machine each time you come back to this
-					window. Copies on the machine arrive here by themselves.
+					Optional, in Chrome and Edge: also sends what you copy here to the machine each time you
+					come back to this window, so right-click → Paste there has it too. Copies on the machine
+					arrive here by themselves.
 				</p>
 			{/if}
 			<TextField
