@@ -162,6 +162,13 @@
       "when": 1794615780634,
       "tag": "0022_flawless_darkstar",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1794618873798,
+      "tag": "0023_empty_nitro",
+      "breakpoints": true
     }
   ]
 }
