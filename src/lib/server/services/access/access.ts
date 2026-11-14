@@ -20,8 +20,8 @@ import { enabledAdmins } from '../users/users.ts';
 /**
  * The one answer to "what may this person do on this machine" (SPEC-ACCESS
  * A5, AGENTS.md §11). Admins have every permission on every machine and
- * connect unattended, except `ai-commands` (SPEC-MCP M3): an AI assistant sees a machine only
- * where a rule says so, admins included. A member has the union of every rule whose user group
+ * connect unattended, except `ai-view` and `ai-commands` (SPEC-MCP M3, M35): an AI assistant sees
+ * a machine, or asks to run on it, only where a rule says so, admins included. A member has the union of every rule whose user group
  * they are in and whose machine group holds the machine; a permission is
  * unattended when any rule giving it says so. Removed machines give nothing.
  */
@@ -33,8 +33,8 @@ type MemberRule = {
 	consent: Consent;
 };
 
-/** Permissions that come only from rules, for admins too (SPEC-MCP M3). */
-const RULES_ONLY: readonly Permission[] = ['ai-commands'];
+/** Permissions that come only from rules, for admins too (SPEC-MCP M3, M35). */
+const RULES_ONLY: readonly Permission[] = ['ai-view', 'ai-commands'];
 
 const ADMIN_DEFAULTS: Grant[] = PERMISSIONS.filter(
 	(permission) => !RULES_ONLY.includes(permission)
@@ -145,8 +145,9 @@ export function commandGroupIdsFor(
 
 /**
  * Every machine on which the person holds `permission`: `view` for the Machines list,
- * `run-commands` for the Machines page's select mode (SPEC-COMMANDS C5), `ai-commands` for what
- * an AI assistant may see (SPEC-MCP M11), which admins hold only through rules.
+ * `run-commands` for the Machines page's select mode (SPEC-COMMANDS C5), `ai-view` for what an AI
+ * assistant may see (SPEC-MCP M37) and `ai-commands` for where it may ask to run commands (M17),
+ * which admins hold only through rules.
  */
 export function machineIdsWith(
 	database: Queryable,

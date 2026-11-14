@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { getCommandResultInput, runCommandInput } from '#lib/schemas/mcp/tools.ts';
+import { grantAccess } from '#tests/helpers/access.ts';
 import {
 	agentAnswers,
 	asAsked,
@@ -12,7 +13,7 @@ import { NOW } from '#tests/helpers/people.ts';
 import { getCommandResultTool, resultText, runCommandTool } from '../mcp/command-tools.ts';
 import { endGrant } from '../oauth/grants.ts';
 import { closeRunsCutByRestart } from './command-retention.ts';
-import { deleteRule } from '../access/rules.ts';
+import { deleteRule, updateRule } from '../access/rules.ts';
 import { findRun, machinesOf, settlePending } from './command-runs.ts';
 import { pendingFor } from './approvers.ts';
 import { approveRun } from './assistant-runs.ts';
@@ -208,6 +209,75 @@ describe('both permissions, checked twice (SPEC-MCP M18)', () => {
 		deleteRule(database, people.admin.id, rules.patAi.ruleId, clock.now);
 		runner.begin(takenAway, '192.0.2.9');
 		expect(machinesOf(database, [takenAway])[0]).toMatchObject({
+			status: 'skipped',
+			skipReason: 'AI commands was taken away before its turn.'
+		});
+		expect(mintTickets).toEqual([]);
+	});
+});
+
+describe('AI can view is not enough to ask (SPEC-MCP M38)', () => {
+	it('M38: run_command on a machine open to AI for viewing only refuses the whole call', async () => {
+		const { database, machine, people, assistantOf, tools } = await setUpAssistantRuns();
+		grantAccess(database, {
+			adminId: people.admin.id,
+			name: 'Pat AI view',
+			memberIds: [people.pat.id],
+			machineIds: [machine.payroll],
+			permissions: ['view', 'ai-view'],
+			consent: 'unattended'
+		});
+		const tickets = connect(machine.payroll);
+		const pat = await assistantOf('pat');
+		const viewOnly =
+			'payroll is open to AI for viewing only; ask the person to grant AI commands. Nothing was asked.';
+		expect(await runCommandTool(tools(pat), ask({ machines: ['mint', 'payroll'] }))).toEqual({
+			kind: 'error',
+			message: viewOnly
+		});
+		expect(await runCommandTool(tools(pat), ask({ machines: [machine.payroll] }))).toEqual({
+			kind: 'error',
+			message: viewOnly
+		});
+		expect(tickets).toEqual([]);
+	});
+
+	it('M38: approving and the runner still need ai-commands; ai-view left behind is not enough', async () => {
+		const { database, machine, people, rules, assistantOf, tools, consoleAs, runner, clock } =
+			await setUpAssistantRuns();
+		const mintTickets = connect(machine.mint);
+		const pat = await assistantOf('pat');
+		const askMint = async (): Promise<string> => {
+			const asked = await runCommandTool(tools(pat), ask({ machines: ['mint'] }));
+			return asked.kind === 'ok' ? asked.output.runId : '';
+		};
+		const pending = await askMint();
+		const running = await askMint();
+		settlePending(
+			database,
+			running,
+			{ status: 'running', decidedBy: people.pat.id, startedAt: clock.now, timeoutMs: 60_000 },
+			clock.now
+		);
+		// The admin takes AI commands away, leaving AI can view and Run commands.
+		const patAiGroups = {
+			userGroupId: rules.patAi.userGroupId,
+			machineGroupId: rules.patAi.machineGroupId
+		};
+		updateRule(
+			database,
+			people.admin.id,
+			rules.patAi.ruleId,
+			{ ...patAiGroups, permissions: ['view', 'ai-view', 'run-commands'], consent: 'unattended' },
+			clock.now
+		);
+		expect(await approveRun(consoleAs('pat'), pending, asAsked('uptime', 60_000, 1))).toEqual({
+			kind: 'refused',
+			status: 403,
+			message: 'pat no longer has AI commands on mint.'
+		});
+		runner.begin(running, '192.0.2.9');
+		expect(machinesOf(database, [running])[0]).toMatchObject({
 			status: 'skipped',
 			skipReason: 'AI commands was taken away before its turn.'
 		});

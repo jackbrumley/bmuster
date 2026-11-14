@@ -148,6 +148,34 @@ describe('read tools (SPEC-MCP M11)', () => {
 	});
 });
 
+describe('AI can view (SPEC-MCP M37)', () => {
+	it('M37: a machine open to AI for viewing only appears in list_machines and get_machine', async () => {
+		const { database, context, admin, pat, payroll } = await setUp();
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'AI view',
+			memberIds: [pat.id],
+			machineIds: [payroll],
+			permissions: ['view', 'ai-view'],
+			consent: 'unattended'
+		});
+		const listed = listMachinesTool(context(pat, ['machines:read']), all);
+		expect(listed.kind === 'ok' && listed.output.machines.map((machine) => machine.name)).toEqual([
+			'mint',
+			'payroll',
+			'reception'
+		]);
+		expect(getMachineTool(context(pat, ['machines:read']), { machine: 'payroll' })).toMatchObject({
+			kind: 'ok',
+			output: { id: payroll, name: 'payroll' }
+		});
+		// Admins hold ai-view only through rules: the AI view rule is not theirs.
+		expect(getMachineTool(context(admin, ['machines:read']), { machine: payroll })).toMatchObject({
+			kind: 'error'
+		});
+	});
+});
+
 describe('never exposed (SPEC-MCP M12)', () => {
 	it('M12: no output field could carry a code, secret, key, ticket, token, note or email address', () => {
 		const schemas = {

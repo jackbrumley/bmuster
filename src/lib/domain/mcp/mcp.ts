@@ -17,7 +17,7 @@ export const DEFAULT_SCOPES: readonly McpScope[] = ['machines:read', 'commands:r
  * Every grant holds `machines:read` and `commands:run` together. A grant allowed before step 2
  * (v0.4.27) holds `machines:read` only; its person was told then that every command would wait for
  * their approval, so it may ask too, and nobody has to reconnect (SPEC-MCP 17, the scope step-up).
- * What an assistant can do is still decided by the access rules (`ai-commands`) and by a person
+ * What an assistant can do is still decided by the access rules (`ai-view`, `ai-commands`) and by a person
  * approving each command in the console.
  */
 export function withImpliedScopes(scopes: readonly McpScope[]): McpScope[] {
@@ -37,9 +37,9 @@ export function isMcpScope(scope: string): scope is McpScope {
 export function scopeLabel(scope: McpScope): string {
 	switch (scope) {
 		case 'machines:read':
-			return 'See the machines where an access rule gives you AI commands: names, systems, status, disks and recent activity.';
+			return 'See the machines an access rule opens to AI (AI can view or AI commands): names, systems, status, disks and recent activity.';
 		case 'commands:run':
-			return 'Ask to run commands on those machines. Each one waits for a person to approve it in BMuster.';
+			return 'Ask to run commands on the machines where you have AI commands. Each one waits for a person to approve it in BMuster.';
 		case 'offline_access':
 			return 'Stay connected until you disconnect it, or for 30 days.';
 	}

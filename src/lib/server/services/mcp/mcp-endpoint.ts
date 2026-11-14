@@ -78,7 +78,7 @@ function bmusterMcpServer(context: McpRequestContext): McpServer {
 		{ name: 'BMuster', version: __BMUSTER_VERSION__ },
 		{
 			instructions:
-				'BMuster manages computers. You act as the signed-in person and see only the machines an access rule opens to AI commands. Commands you ask for with run_command wait for a person to approve them in BMuster; nothing runs until they do.'
+				'BMuster manages computers. You act as the signed-in person. You see only the machines an access rule opens to AI: AI can view lets you read them; AI commands also lets you ask to run commands there. Commands you ask for with run_command wait for a person to approve them in BMuster; nothing runs until they do.'
 		}
 	);
 	server.registerTool(
@@ -86,7 +86,7 @@ function bmusterMcpServer(context: McpRequestContext): McpServer {
 		{
 			title: 'List machines',
 			description:
-				'Lists the machines you may see in BMuster: name, host name, system, status and shells. Only machines an access rule opens to AI commands.',
+				'Lists the machines you may see in BMuster: name, host name, system, status and shells. Only machines an access rule opens to AI (AI can view, or AI commands, which includes it).',
 			inputSchema: listMachinesInput,
 			outputSchema: listMachinesOutput,
 			annotations: READ_ONLY
@@ -101,7 +101,7 @@ function bmusterMcpServer(context: McpRequestContext): McpServer {
 		{
 			title: 'Get a machine',
 			description:
-				"One machine's inventory: system, status, CPU, memory, disks, who is signed in, what is in use, and its recent activity.",
+				"One machine's inventory: system, status, CPU, memory, disks, who is signed in, what is in use, and its recent activity. Needs AI can view (or AI commands) on the machine.",
 			inputSchema: getMachineInput,
 			outputSchema: getMachineOutput,
 			annotations: READ_ONLY
@@ -116,7 +116,7 @@ function bmusterMcpServer(context: McpRequestContext): McpServer {
 		{
 			title: 'Ask to run a command',
 			description:
-				'Asks to run one command on 1 to 10 machines. A person must approve it in BMuster first: nothing runs until they do, and they may edit or deny it. Commands run as root (Linux) or SYSTEM (Windows), with no input. Keep commands read-only unless the person asked for a change, and never interactive. Waits up to 45 seconds; if the run has not ended by then, call get_command_result with the runId until it has.',
+				'Asks to run one command on 1 to 10 machines. Needs AI commands on every machine: a machine open to AI for viewing only refuses the call, and the person must ask an admin to grant AI commands. A person must approve it in BMuster first: nothing runs until they do, and they may edit or deny it. Commands run as root (Linux) or SYSTEM (Windows), with no input. Keep commands read-only unless the person asked for a change, and never interactive. Waits up to 45 seconds; if the run has not ended by then, call get_command_result with the runId until it has.',
 			inputSchema: runCommandInput,
 			outputSchema: commandResultOutput,
 			annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }

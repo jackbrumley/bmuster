@@ -130,6 +130,35 @@ describe('access rules (A4)', () => {
 	});
 });
 
+describe('AI can view in access rules (SPEC-MCP M36)', () => {
+	it('M36: a rule giving AI commands must give AI can view too', () => {
+		expect(request(['view', 'ai-commands']).success).toBe(false);
+		expect(request(['view', 'ai-view', 'ai-commands']).success).toBe(true);
+		expect(request(['view', 'ai-view']).success).toBe(true);
+	});
+
+	it('M36: a rule saved before 0.4.33 lists AI can view with AI commands', async () => {
+		const { database, admin, it, office } = await setUp();
+		// 0.4.32 stored the complete set of its day, which had no ai-view.
+		const id = done(
+			createRule(
+				database,
+				admin.id,
+				{
+					userGroupId: it,
+					machineGroupId: office,
+					permissions: ['view', 'ai-commands'],
+					consent: 'ask'
+				},
+				NOW
+			)
+		);
+		expect(listAccessRules(database)).toMatchObject([
+			{ id, permissions: ['view', 'ai-view', 'ai-commands'] }
+		]);
+	});
+});
+
 describe('deleting a group used by rules (A8)', () => {
 	it('A8: deletes the rules that use it too, and never the people or machines', async () => {
 		const { database, admin, it, office } = await setUp();

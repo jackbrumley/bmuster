@@ -29,7 +29,7 @@ describe('the consent screen (SPEC-MCP M7)', () => {
 		await expect.element(screen.getByText(/Its details come from/)).toBeVisible();
 		await expect.element(screen.getByText(/Afterwards you go back to/)).toBeVisible();
 		await expect
-			.element(screen.getByText(/See the machines where an access rule gives you AI commands/))
+			.element(screen.getByText(/See the machines an access rule opens to AI/))
 			.toBeVisible();
 		await expect
 			.element(
@@ -48,6 +48,30 @@ describe('the consent screen (SPEC-MCP M7)', () => {
 		const posted = new FormData(allow.element().closest('form') ?? undefined);
 		expect(posted.get('state')).toBe('abc');
 		expect(posted.get('client_id')).toBe(FIELDS[0]?.value);
+	});
+
+	it('M39: the scope lines say viewing needs AI can view and asking needs AI commands', async () => {
+		const screen = await render(Consent, {
+			view: {
+				kind: 'ask',
+				assistant: { name: 'Claude', identity: { kind: 'verified', host: 'claude.ai' } },
+				redirect: { kind: 'web', host: 'claude.ai' },
+				scopes: ['machines:read', 'commands:run']
+			},
+			fields: FIELDS,
+			userName: 'Jack Brumley',
+			outcome: { kind: 'none' }
+		});
+		await expect
+			.element(
+				screen.getByText(
+					/See the machines an access rule opens to AI \(AI can view or AI commands\)/
+				)
+			)
+			.toBeVisible();
+		await expect
+			.element(screen.getByText(/Ask to run commands on the machines where you have AI commands/))
+			.toBeVisible();
 	});
 
 	it('M7: warns about an unverified assistant and a loopback redirect', async () => {

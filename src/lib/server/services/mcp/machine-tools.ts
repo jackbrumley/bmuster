@@ -18,8 +18,8 @@ import type { McpPrincipal } from '../oauth/tokens.ts';
 import { withActorNames } from '../users/activity-feed.ts';
 
 /**
- * The read tools (SPEC-MCP 9.1, 9.2, M11, M12): only machines where the person holds
- * `ai-commands`, never removed ones, and only inventory. Each call is audited with the person as
+ * The read tools (SPEC-MCP 9.1, 9.2, M11, M12, M37): only machines where the person holds
+ * `ai-view` (given directly or through `ai-commands`), never removed ones, and only inventory. Each call is audited with the person as
  * actor and the assistant as `via` (M13).
  */
 
@@ -36,7 +36,7 @@ const NEEDS_SCOPE = 'This connection was not allowed to read machines (scope mac
 
 /** The machines this person's assistant may see, by name. */
 function aiMachines(context: ToolContext): Machine[] {
-	const allowed = machineIdsWith(context.database, context.principal.user, 'ai-commands');
+	const allowed = machineIdsWith(context.database, context.principal.user, 'ai-view');
 	return listMachines(context.database, context.now, context.releases).filter((machine) =>
 		allowed.has(machine.id)
 	);

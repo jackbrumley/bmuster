@@ -5,7 +5,8 @@
  * An access rule joins one user group to one machine group with a set of
  * permissions. A person's permissions on a machine are the union of every
  * rule that matches them both; there are no deny rules. Admins have every
- * permission on every machine except `ai-commands`, which comes only from rules (SPEC-MCP M3).
+ * permission on every machine except `ai-view` and `ai-commands`, which come only from rules
+ * (SPEC-MCP M3, M35).
  */
 
 /** Every permission, in the order the console lists them. A new one is added here only. */
@@ -18,8 +19,11 @@ export const PERMISSIONS = [
 	'share-links',
 	// SPEC-COMMANDS C11: one command on many machines as root or SYSTEM. Nothing includes it.
 	'run-commands',
-	// SPEC-MCP M3: what an AI assistant acting as the person may see (and, later, ask to run on).
+	// SPEC-MCP M35: what an AI assistant acting as the person may see. Only ai-commands includes it.
 	// Server-side only: the agent never checks it. Admins hold it only through rules.
+	'ai-view',
+	// SPEC-MCP M3, M36: where an AI assistant acting as the person may also ask to run commands,
+	// each approved by a person. Server-side only, rules only, like ai-view.
 	'ai-commands'
 ] as const;
 
@@ -41,26 +45,70 @@ export function permissionLabel(permission: Permission): string {
 			return 'Share links';
 		case 'run-commands':
 			return 'Run commands';
+		case 'ai-view':
+			return 'AI can view';
 		case 'ai-commands':
 			return 'AI commands (with approval)';
 	}
 }
 
-/** What a permission includes besides itself: every other one includes `view`; control includes watching. */
+/** One line under each permission on the rule form (SPEC-MCP M40). */
+export function permissionAbout(permission: Permission): string {
+	switch (permission) {
+		case 'view':
+			return 'See the machine in the list, its inventory and its activity.';
+		case 'terminal':
+			return 'Open a terminal on the machine.';
+		case 'desktop-view':
+			return 'Watch the screen, without control.';
+		case 'desktop-control':
+			return 'Use the mouse and keyboard on the screen.';
+		case 'files':
+			return 'Browse, download and upload files.';
+		case 'share-links':
+			return 'Make links that let someone without an account in for a while.';
+		case 'run-commands':
+			return 'Run one command on many machines at once, as root or SYSTEM.';
+		case 'ai-view':
+			return 'An AI assistant acting as the person can see the machine, but cannot ask to run anything.';
+		case 'ai-commands':
+			return 'The assistant can also ask to run commands there; each waits for a person to approve it.';
+	}
+}
+
+/**
+ * What a permission includes besides itself: every other one includes `view`; control includes
+ * watching; AI commands includes AI can view (SPEC-MCP M36).
+ */
 function includedBy(permission: Permission): Permission[] {
 	switch (permission) {
 		case 'view':
 			return [];
 		case 'desktop-control':
 			return ['view', 'desktop-view'];
+		case 'ai-commands':
+			return ['view', 'ai-view'];
 		case 'terminal':
 		case 'desktop-view':
 		case 'files':
 		case 'share-links':
 		case 'run-commands':
-		case 'ai-commands':
+		case 'ai-view':
 			return ['view'];
 	}
+}
+
+/**
+ * A stored permission set with what each permission includes added, in PERMISSIONS order. Rules
+ * are saved complete, but "complete" grows when an inclusion is added: a rule saved by 0.4.32 as
+ * `view` and `ai-commands` reads as giving `ai-view` too (SPEC-MCP M36), with no migration.
+ */
+export function withIncluded(permissions: readonly Permission[]): Permission[] {
+	return PERMISSIONS.filter(
+		(candidate) =>
+			permissions.includes(candidate) ||
+			permissions.some((held) => includedBy(held).includes(candidate))
+	);
 }
 
 /** True when every permission's inclusions are in the set too, and it is not empty. */

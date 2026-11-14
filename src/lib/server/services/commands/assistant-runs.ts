@@ -78,35 +78,38 @@ function refuse(message: string): ToolRefusal {
 }
 
 /**
- * The machines named, each by id or by a name no other machine open to AI commands shares. A
- * machine without `ai-commands` refuses the whole call, naming it (M17).
+ * The machines named, each by id or by a name no other machine open to AI shares (the machines
+ * list_machines shows). A machine without `ai-commands` refuses the whole call, naming it, and
+ * says so plainly when it is open to AI for viewing only (M17, M38).
  */
 function resolveMachines(
 	context: AssistantContext,
 	wanted: readonly string[]
 ): { kind: 'ok'; ids: string[] } | ToolRefusal {
 	const allowed = machineIdsWith(context.database, context.principal.user, 'ai-commands');
+	const viewable = machineIdsWith(context.database, context.principal.user, 'ai-view');
 	const names = activeMachineNames(context.database);
 	const ids: string[] = [];
 	for (const raw of wanted) {
 		const name = raw.trim();
-		if (allowed.has(name)) {
-			ids.push(name);
-			continue;
-		}
-		const matching = [...allowed].filter(
-			(id) => (names.get(id) ?? '').toLowerCase() === name.toLowerCase()
-		);
+		const matching = viewable.has(name)
+			? [name]
+			: [...viewable].filter((id) => (names.get(id) ?? '').toLowerCase() === name.toLowerCase());
 		const [only] = matching;
-		if (matching.length === 1 && only !== undefined) {
-			ids.push(only);
-			continue;
+		if (matching.length > 1) {
+			return refuse(`More than one machine is called ${name}. Use its id from list_machines.`);
 		}
-		return refuse(
-			matching.length > 1
-				? `More than one machine is called ${name}. Use its id from list_machines.`
-				: `${name} is not open to AI commands for you, so nothing was asked. Use list_machines to see the machines that are.`
-		);
+		if (only === undefined) {
+			return refuse(
+				`${name} is not open to AI commands for you, so nothing was asked. Use list_machines to see the machines that are.`
+			);
+		}
+		if (!allowed.has(only)) {
+			return refuse(
+				`${names.get(only) ?? name} is open to AI for viewing only; ask the person to grant AI commands. Nothing was asked.`
+			);
+		}
+		ids.push(only);
 	}
 	if (new Set(ids).size !== ids.length) {
 		return refuse('A machine is named twice. Name each machine once.');

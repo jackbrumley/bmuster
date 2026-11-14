@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { CONSENTS, isCompletePermissionSet, PERMISSIONS } from '#lib/domain/access/access.ts';
+import {
+	CONSENTS,
+	isCompletePermissionSet,
+	PERMISSIONS,
+	withIncluded
+} from '#lib/domain/access/access.ts';
 
 /** Requests and replies for groups and access rules (SPEC-ACCESS). */
 
@@ -47,7 +52,7 @@ const permissionsSchema = z
 	)
 	.refine(
 		isCompletePermissionSet,
-		'Tick at least See inventory. Every permission includes See inventory, and Control desktop includes Watch desktop.'
+		'Tick at least See inventory. Every permission includes See inventory, Control desktop includes Watch desktop, and AI commands includes AI can view.'
 	);
 
 /** POST /api/access-rules and PATCH /api/access-rules/<id>. */
@@ -58,8 +63,11 @@ export const accessRuleRequestSchema = z.object({
 	consent: z.enum(CONSENTS)
 });
 
-/** The permissions column, read back from the database. */
-export const storedPermissionsSchema = z.array(z.enum(PERMISSIONS));
+/**
+ * The permissions column, read back from the database, with what each permission includes
+ * (SPEC-MCP M36): every reader sees the set as complete by today's include rules.
+ */
+export const storedPermissionsSchema = z.array(z.enum(PERMISSIONS)).transform(withIncluded);
 
 /** Every change answers with what the page needs to refresh itself. */
 export const changedReplySchema = z.object({ id: z.uuid() });

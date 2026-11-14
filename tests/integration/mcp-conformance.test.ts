@@ -315,6 +315,44 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 		expect(parsed.total).toBe(1);
 	});
 
+	it('M39: the instructions and tool descriptions say which AI permission each tool needs', async () => {
+		const connected = await connectClaudeCode('localhost', 50_002);
+		const initialized = await rpcReply(
+			await mcp(
+				connected.access_token,
+				{
+					id: 1,
+					method: 'initialize',
+					params: {
+						protocolVersion: '2025-11-25',
+						capabilities: {},
+						clientInfo: { name: 'bmuster-test', version: '1' }
+					}
+				},
+				'legacy'
+			)
+		);
+		const instructions = z
+			.object({ result: z.object({ instructions: z.string() }) })
+			.parse(initialized).result.instructions;
+		expect(instructions).toContain('AI can view');
+		expect(instructions).toContain('AI commands');
+		const listed = await rpcReply(
+			await mcp(connected.access_token, { id: 2, method: 'tools/list', params: {} }, 'legacy')
+		);
+		const tools = z
+			.object({
+				result: z.object({
+					tools: z.array(z.object({ name: z.string(), description: z.string() }))
+				})
+			})
+			.parse(listed).result.tools;
+		const described = Object.fromEntries(tools.map((tool) => [tool.name, tool.description]));
+		expect(described['list_machines']).toContain('AI can view');
+		expect(described['get_machine']).toContain('AI can view');
+		expect(described['run_command']).toContain('AI commands on every machine');
+	});
+
 	it('2026-07-28: server/discover and tools/call, every structuredContent valid; other versions refused', async () => {
 		const connected = await connectClaudeCode('localhost', 50_001);
 		const discovered = await rpcReply(
