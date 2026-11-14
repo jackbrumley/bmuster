@@ -265,7 +265,7 @@ describe('the guest page and its requests (SL5, SL9, SL10, SL19)', () => {
 			data: { token, guest: { recipient: 'Dave, Acme Printers', permissions: ['desktop-view'] } }
 		});
 		expect(first.event.headersSet).toMatchObject({
-			'referrer-policy': 'no-referrer',
+			'referrer-policy': 'same-origin',
 			'cache-control': 'no-store'
 		});
 		expect(cookies.values.get('bmuster_guest')?.path).toBe(`/s/${token}`);

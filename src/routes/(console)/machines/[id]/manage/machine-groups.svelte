@@ -78,7 +78,9 @@
 <Modal {open} title="Groups" onclose={() => (open = false)}>
 	{#if chosenGroups.length === 0}
 		<p class="muted">
-			No machine groups yet. <a href={resolve('/(console)/groups')}>Make one on the Groups page</a>.
+			No machine groups yet. <a href={resolve('/(console)/groups/machines')}
+				>Make one on the Groups page</a
+			>.
 		</p>
 	{:else}
 		<div class="choices">

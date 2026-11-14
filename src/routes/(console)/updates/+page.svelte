@@ -119,7 +119,7 @@
 	/** Opens the Early updates group on the Groups page. */
 	const earlyGroupHref = $derived(
 		resolve(
-			`/(console)/groups?${new URLSearchParams({ machineGroup: data.earlyGroup.id }).toString()}`
+			`/(console)/groups/machines?${new URLSearchParams({ machineGroup: data.earlyGroup.id }).toString()}`
 		)
 	);
 

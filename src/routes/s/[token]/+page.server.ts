@@ -30,11 +30,14 @@ import type { PageServerLoad, PageServerLoadEvent } from './$types';
  * wrong, ended or expired token gets the same plain "This link has ended".
  * A browser without this link's guest cookie gets one, and that opening is
  * audited (address and browser). The token never leaves in a Referer, a
- * cache or a search index.
+ * cache or a search index. `same-origin`, not `no-referrer`: under
+ * `no-referrer` browsers send `Origin: null` on the page's own POSTs, which
+ * the origin check (SPEC-SIGN-IN S8) rightly refuses; `same-origin` still
+ * sends nothing to any other site.
  */
 export const load: PageServerLoad = page.public((event: PageServerLoadEvent) => {
 	event.setHeaders({
-		'referrer-policy': 'no-referrer',
+		'referrer-policy': 'same-origin',
 		'cache-control': 'no-store',
 		'x-robots-tag': 'noindex'
 	});

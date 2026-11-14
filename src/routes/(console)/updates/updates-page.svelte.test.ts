@@ -402,7 +402,10 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 			.toBeVisible();
 		await expect
 			.element(screen.getByRole('link', { name: 'add one' }))
-			.toHaveAttribute('href', '/groups?machineGroup=00000000-0000-4000-8000-0000000ea51e');
+			.toHaveAttribute(
+				'href',
+				'/groups/machines?machineGroup=00000000-0000-4000-8000-0000000ea51e'
+			);
 	});
 
 	it('U8: counts the Early updates machines and offers to add or take out', async () => {
@@ -447,7 +450,10 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 		await expect.element(panel.getByText(/^Looked on GitHub /)).toBeVisible();
 		await expect
 			.element(panel.getByRole('link', { name: 'open the Test group' }))
-			.toHaveAttribute('href', '/groups?machineGroup=00000000-0000-4000-8000-000000007e57');
+			.toHaveAttribute(
+				'href',
+				'/groups/machines?machineGroup=00000000-0000-4000-8000-000000007e57'
+			);
 		await expect
 			.element(screen.getByText(/Version 0\.2\.1-test\.1 · Test channel · online/))
 			.toBeVisible();
