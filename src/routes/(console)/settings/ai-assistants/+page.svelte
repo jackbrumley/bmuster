@@ -13,6 +13,7 @@
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import ConnectedAssistants from '../../connected-assistants.svelte';
+	import AiReach from './ai-reach.svelte';
 	import ApproverSettings from './approver-settings.svelte';
 	import SettingsTabs from '../settings-tabs.svelte';
 	import type { PageProps } from './$types';
@@ -138,6 +139,8 @@
 		</Button>
 	</div>
 </Panel>
+
+<AiReach access={data.aiAccess} unattended={data.unattended} />
 
 <ApproverSettings approvers={data.approvers} groups={data.groups} />
 

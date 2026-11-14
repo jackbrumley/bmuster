@@ -147,6 +147,14 @@ const PAGES: readonly PhonePage[] = [
 					data: {
 						...CONSOLE,
 						now: NOW,
+						aiAccess: {
+							kind: 'group',
+							canView: 1234,
+							canAsk: 567,
+							viewsAll: false,
+							asksAll: false
+						},
+						unattended: true,
 						settings: {
 							enabled: true,
 							userGroup: { kind: 'group', id: USER_GROUP_ID, name: LONG_GROUP }
@@ -211,6 +219,14 @@ const PAGES: readonly PhonePage[] = [
 						run: {
 							id: RUN_ID,
 							startedBy: `${LONG_PERSON} via ${LONG_WORD}`,
+							saved: {
+								kind: 'saved',
+								name: LONG_WORD,
+								version: 12,
+								effect: 'changes',
+								values: [{ label: LONG_WORD, value: LONG_WORD }],
+								preApproved: false
+							},
 							origin: {
 								kind: 'assistant',
 								assistant: LONG_WORD,
@@ -241,6 +257,14 @@ const PAGES: readonly PhonePage[] = [
 						approval: {
 							kind: 'card',
 							view: {
+								saved: {
+									kind: 'saved',
+									name: LONG_WORD,
+									version: 12,
+									effect: 'changes',
+									values: [],
+									preApproved: false
+								},
 								runId: RUN_ID,
 								requestedBy: LONG_PERSON,
 								assistant: LONG_WORD,
