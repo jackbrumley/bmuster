@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { IconHandStop } from '@tabler/icons-svelte-runes';
 	import { mcpSettingsReplySchema, stoppedReplySchema } from '#lib/schemas/mcp/console.ts';
 	import AiAssistantHelp from '#lib/ui/ai-assistant-help.svelte';
@@ -18,8 +19,8 @@
 
 	/**
 	 * Settings → AI assistants (SPEC-MCP 8.5): Allow AI assistants (MCP) and who may connect one,
-	 * saved together; who may approve their commands; every connected assistant with Disconnect;
-	 * Stop all AI access.
+	 * saved together, and which permission a rule must give (SPEC-MCP M41); who may approve their
+	 * commands; every connected assistant with Disconnect; Stop all AI access.
 	 */
 	let { data }: PageProps = $props();
 
@@ -102,6 +103,11 @@
 		Lets people connect an AI assistant, such as Claude or ChatGPT, to act as them. Off until you
 		choose who may.
 	</p>
+	<p class="lead">
+		Then add an access rule on <a href={resolve('/(console)/access')}>Access rules</a> for those people
+		and machines, giving AI can view (the assistant sees the machines) or AI commands (it can also ask
+		to run commands, each approved by a person). Admins need a rule too.
+	</p>
 	{#if data.settings.userGroup.kind === 'missing'}
 		<Notice tone="warning" title="The group was deleted">
 			<p>Nobody can connect an AI assistant until you choose another group.</p>
@@ -156,6 +162,10 @@
 	.lead {
 		color: var(--muted);
 		font-size: var(--text-sm);
+	}
+
+	a {
+		color: var(--brand);
 	}
 
 	.save {

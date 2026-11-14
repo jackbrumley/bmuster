@@ -1,12 +1,13 @@
 <script lang="ts">
 	import type { ConnectState } from '#lib/domain/mcp/mcp.ts';
-	import CopyField from './copy-field.svelte';
+	import AiConnectGuide from './ai-connect-guide.svelte';
 	import Panel from './panel.svelte';
 
 	/**
 	 * What connecting an AI assistant means, in plain words (SPEC-MCP 8.5): on the Account page,
 	 * where people connect one, and on Settings → AI assistants, where admins turn it on. Any
-	 * assistant that speaks MCP can connect, not only Claude.
+	 * assistant that speaks MCP can connect, not only Claude. How to connect each one is in
+	 * AiConnectGuide (SPEC-MCP M42); what AI can view and AI commands allow is here (M41).
 	 */
 	let { serverUrl, state }: { serverUrl: string; state: ConnectState } = $props();
 </script>
@@ -24,22 +25,20 @@
 				You are not in the group of people who may connect an AI assistant. Ask an admin to add you.
 			</p>
 		{/if}
-		<h3>To connect</h3>
-		<ol>
-			<li>In your assistant, add a custom connector (or remote MCP server) with this address:</li>
-		</ol>
-		<CopyField value={serverUrl} label="MCP server address" />
-		<ol start="2">
-			<li>
-				Your browser opens BMuster. Sign in if asked, check the assistant's name, and press Allow.
-			</li>
-		</ol>
+		<AiConnectGuide {serverUrl} />
 		<h3>What it can do</h3>
+		<p>
+			It sees only the machines an access rule opens to AI for you, admins included. Nothing else.
+			The rule gives one of two permissions:
+		</p>
 		<ul>
-			<li>It sees only the machines an access rule opens to AI commands. Nothing else.</li>
 			<li>
-				It can ask to run commands there, and every command waits for a person to approve it in
-				BMuster. Nothing runs without that approval.
+				AI can view: it sees the machine's inventory, status and recent activity, but cannot ask to
+				run anything there.
+			</li>
+			<li>
+				AI commands: it can also ask to run commands there, and every command waits for a person to
+				approve it in BMuster. Nothing runs without that approval.
 			</li>
 			<li>Everything it does is in Activity, as you, via the assistant.</li>
 		</ul>
