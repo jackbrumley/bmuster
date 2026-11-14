@@ -1,12 +1,12 @@
 # SPEC-SESSION-FILES: Sending files through a desktop session
 
-**Status:** `DRAFT` (awaiting approval of the open questions below) · decisions 1–7 approved by Jack, 2026-11-15 · **Date:** 2026-11-15 · Builds on SPEC-FILES (the files channel, chunked uploads, streamed downloads), SPEC-DESKTOP section 21 (copy and paste, the KMS clipboard helper, clipboard sharing), SPEC-SESSION-UNITS (helpers in transient units), SPEC-AGENT-TRAY and SPEC-TRAY-SESSIONS (the tray in every signed-in desktop).
+**Status:** `APPROVED` · decisions 1–7 and all 11 open questions approved as recommended by Jack, 2026-11-15 · **Date:** 2026-11-15 · Builds on SPEC-FILES (the files channel, chunked uploads, streamed downloads), SPEC-DESKTOP section 21 (copy and paste, the KMS clipboard helper, clipboard sharing), SPEC-SESSION-UNITS (helpers in transient units), SPEC-AGENT-TRAY and SPEC-TRAY-SESSIONS (the tray in every signed-in desktop).
 
 > **Security work** (AGENTS.md, "This tool controls other people's computers"). This spec adds a program that a root or SYSTEM service starts as the signed-in person to write into, and read from, their home folder; it puts file lists on their clipboard and reads file lists from it; it adds a ticket purpose and a channel. Every check below is in addition to the existing ones; none is relaxed.
 
 ## Open questions (with recommendations)
 
-Answer each with "yes" to accept the recommendation, or say otherwise.
+All eleven accepted as recommended (Jack, 2026-11-15).
 
 1. **Does sending or fetching files also need `desktop-control`?** Recommend **yes, `files` and `desktop-control` both, in both directions, and only during a live control session of that person.** Reasons: putting files on the clipboard and reading it already needs control (SPEC-DESKTOP 21.6); a watch-only viewer has not been allowed to act on the screen, and the person at the machine consented to control, not to watch-only plus deliveries; one rule for both directions is easier to explain. Someone with `files` alone keeps the Files tab, which already reaches the whole disk.
 2. **A locked screen.** The person is signed in but has stepped away. Recommend **refuse both directions while the screen is locked or at the sign-in screen**, with "The machine is locked. Unlock it, then send the files again." This matches copy and paste (C20) and means nobody receives files, or has their clipboard read, while away. Files already saved stay saved.
