@@ -5,6 +5,7 @@ import {
 	commandOsLabel,
 	skipReasonLabel,
 	type CommandOsFamily,
+	type CommandScript,
 	type PlannedMachine,
 	type SkipReason
 } from '#lib/domain/commands/commands.ts';
@@ -21,7 +22,7 @@ import { machineAgentFacts } from '../machines/machine-views.ts';
 import { cancelPendingRun, cancelStartedRun } from './assistant-pending.ts';
 import { auditRunStarted } from './command-audit.ts';
 import type { CommandRunner } from './command-runner.ts';
-import { findRun, insertRun, machinesOf } from './command-runs.ts';
+import { findRun, insertRun, machinesOf, type NewRunSaved } from './command-runs.ts';
 
 /**
  * Starting and cancelling command runs (SPEC-COMMANDS C8–C17). Everything the browser sends is
@@ -43,10 +44,15 @@ export type CommandContext = {
 
 export type Refused = { kind: 'refused'; status: 400 | 403 | 404 | 409 | 429; message: string };
 
-type MachineFacts = { id: string; name: string; osFamily: OsFamily; agentVersion: string };
+export type MachineFacts = {
+	id: string;
+	name: string;
+	osFamily: OsFamily;
+	agentVersion: string;
+};
 
 /** The machines asked for, every one visible to the person; else the refusal. */
-function visibleMachines(
+export function visibleMachines(
 	context: Pick<CommandContext, 'database' | 'user'>,
 	machineIds: readonly string[]
 ): { kind: 'ok'; machines: MachineFacts[] } | Refused {
@@ -66,7 +72,7 @@ function visibleMachines(
 }
 
 /** Why this machine would not run now, or undefined when it would (C8, C15). */
-function skipReasonOf(
+export function skipReasonOf(
 	context: Pick<CommandContext, 'database' | 'user'>,
 	machine: MachineFacts
 ): SkipReason | undefined {
@@ -173,14 +179,9 @@ export async function startRun(
 		machine,
 		reason: skipReasonOf(context, machine)
 	}));
-	// C12: refused whole, naming the machines, never trimmed.
-	const forbidden = machines.filter((entry) => entry.reason === 'no-permission');
-	if (forbidden.length > 0) {
-		return {
-			kind: 'refused',
-			status: 403,
-			message: `You cannot run commands on ${forbidden.map((entry) => entry.machine.name).join(', ')}. Take them out of the selection and try again.`
-		};
+	const forbidden = forbiddenRefusal(machines);
+	if (forbidden !== undefined) {
+		return forbidden;
 	}
 	// C9: the count typed in the confirmation, checked here too.
 	if (request.confirmCount !== request.machineIds.length) {
@@ -222,9 +223,47 @@ export async function startRun(
 		return signIn;
 	}
 
+	return beginPersonRun(context, {
+		machines,
+		scripts: request.scripts,
+		timeoutMs: request.timeoutMs,
+		rerunOf: request.rerunOf,
+		saved: { kind: 'none' }
+	});
+}
+
+/** C12: a selection with a machine the person may not run on is refused whole, naming them. */
+export function forbiddenRefusal(
+	machines: readonly { machine: MachineFacts; reason: SkipReason | undefined }[]
+): Refused | undefined {
+	const forbidden = machines.filter((entry) => entry.reason === 'no-permission');
+	return forbidden.length === 0
+		? undefined
+		: {
+				kind: 'refused',
+				status: 403,
+				message: `You cannot run commands on ${forbidden.map((entry) => entry.machine.name).join(', ')}. Take them out of the selection and try again.`
+			};
+}
+
+/**
+ * A person's run, every check passed: recorded with the machines skipped at the start and
+ * their reasons, audited, and handed to the runner. A saved command's run is marked with it
+ * (SPEC-SAVED-COMMANDS SC7).
+ */
+export function beginPersonRun(
+	context: CommandContext,
+	run: {
+		machines: readonly { machine: MachineFacts; reason: SkipReason | undefined }[];
+		scripts: CommandScript[];
+		timeoutMs: number;
+		rerunOf: string | null;
+		saved: NewRunSaved;
+	}
+): { kind: 'started'; runId: string } {
 	const runId = crypto.randomUUID();
 	// Offline machines wait their turn: they may be back by then (C15).
-	const rows = machines.map(({ machine, reason }) =>
+	const rows = run.machines.map(({ machine, reason }) =>
 		reason === undefined || reason === 'offline'
 			? { machineId: machine.id, status: 'waiting' as const, skipReason: null }
 			: { machineId: machine.id, status: 'skipped' as const, skipReason: skipReasonLabel(reason) }
@@ -234,10 +273,11 @@ export async function startRun(
 			id: runId,
 			startedBy: context.user.id,
 			startedAt: context.now,
-			timeoutMs: request.timeoutMs,
-			rerunOf: request.rerunOf,
+			timeoutMs: run.timeoutMs,
+			rerunOf: run.rerunOf,
 			origin: { kind: 'person' },
-			scripts: request.scripts,
+			saved: run.saved,
+			scripts: run.scripts,
 			machines: rows
 		});
 		auditRunStarted(
@@ -245,11 +285,12 @@ export async function startRun(
 			{
 				id: runId,
 				userId: context.user.id,
-				scripts: request.scripts,
-				timeoutMs: request.timeoutMs,
+				scripts: run.scripts,
+				timeoutMs: run.timeoutMs,
 				machineCount: rows.length,
 				skippedCount: rows.filter((row) => row.status === 'skipped').length,
-				rerunOf: request.rerunOf,
+				rerunOf: run.rerunOf,
+				saved: run.saved,
 				approval: { kind: 'none' }
 			},
 			context.now

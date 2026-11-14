@@ -4,6 +4,7 @@
  * statuses and their labels, and the shapes the run pages show.
  */
 import type { TerminalShell } from '#lib/domain/sessions/session.ts';
+import type { SavedRunMark } from './saved-commands.ts';
 
 /** The systems a command can be written for; macOS machines are skipped for now. */
 export const COMMAND_OS_FAMILIES = ['windows', 'linux'] as const;
@@ -240,6 +241,8 @@ export type RunOrigin =
 
 type RunDecision =
 	| { kind: 'pending' }
+	/** A saved command an assistant ran with no person approving (SPEC-SAVED-COMMANDS SC17). */
+	| { kind: 'pre-approved' }
 	| { kind: 'approved'; by: string; atIso: string; edit: RunEdit }
 	| { kind: 'denied'; by: string; atIso: string; note: string }
 	| { kind: 'expired' }
@@ -268,6 +271,8 @@ export type RunSummary = {
 	status: RunStatus;
 	/** The first line of each system's command. */
 	commands: { osFamily: CommandOsFamily; firstLine: string }[];
+	/** The saved command it came from (SPEC-SAVED-COMMANDS SC14). */
+	saved: SavedRunMark;
 	counts: RunCounts;
 };
 
@@ -294,6 +299,8 @@ export type RunView = {
 	/** Who started it, "via" the assistant for an assistant's run (SPEC-MCP M28). */
 	startedBy: string;
 	origin: RunOrigin;
+	/** The saved command it came from (SPEC-SAVED-COMMANDS SC14). */
+	saved: SavedRunMark;
 	startedIso: string;
 	endedIso: string | null;
 	status: RunStatus;

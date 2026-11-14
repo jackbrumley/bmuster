@@ -16,6 +16,7 @@ function summary(id: string, startedIso: string, firstLine: string): RunSummary 
 		startedIso,
 		status: 'finished',
 		commands: [{ osFamily: 'windows', firstLine }],
+		saved: { kind: 'none' },
 		counts: { ...emptyCounts(), succeeded: 19, failed: 1, offline: 1 }
 	};
 }

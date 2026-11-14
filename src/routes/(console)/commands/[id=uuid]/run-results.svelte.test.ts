@@ -37,6 +37,7 @@ function view(machines: RunMachineView[], status: RunView['status'] = 'finished'
 		id: RUN,
 		startedBy: 'Ada',
 		origin: { kind: 'person' },
+		saved: { kind: 'none' },
 		startedIso: '2026-11-14T11:58:00.000Z',
 		endedIso: status === 'running' ? null : '2026-11-14T11:59:00.000Z',
 		status,

@@ -345,6 +345,7 @@ export const COMMAND_RUN_SUMMARY: RunSummary = {
 		{ osFamily: 'windows', firstLine: LONG_COMMAND.split('\n')[0] ?? '' },
 		{ osFamily: 'linux', firstLine: `systemctl restart ${LONG_WORD}` }
 	],
+	saved: { kind: 'none' },
 	counts: COMMAND_COUNTS
 };
 
@@ -353,6 +354,7 @@ export const COMMAND_RUN: RunView = {
 	id: COMMAND_RUN_SUMMARY.id,
 	startedBy: LONG_PERSON,
 	origin: { kind: 'person' },
+	saved: { kind: 'none' },
 	startedIso: '2026-11-12T08:00:00.000Z',
 	endedIso: null,
 	status: 'running',

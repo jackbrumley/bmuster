@@ -8,8 +8,10 @@ import {
 	type RunCounts,
 	type RunMachineStatus
 } from '#lib/domain/commands/commands.ts';
+import { savedEffectLabel } from '#lib/domain/commands/saved-commands.ts';
 import type { Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
+import type { NewRunSaved } from './command-runs.ts';
 
 /**
  * Audit entries for command runs (SPEC-COMMANDS C19): the start with every command, each
@@ -31,6 +33,8 @@ export function auditRunStarted(
 		machineCount: number;
 		skippedCount: number;
 		rerunOf: string | null;
+		/** The saved command it came from (SPEC-SAVED-COMMANDS SC7). */
+		saved: NewRunSaved;
 		/** An assistant's run approved by a person (SPEC-MCP 12): who asked, through what, any edit. */
 		approval: ApprovalDetail;
 	},
@@ -60,6 +64,7 @@ export function auditRunStarted(
 				skipped: String(run.skippedCount),
 				'run as': 'Administrator (root or SYSTEM)',
 				...(run.rerunOf === null ? {} : { 'run again from': run.rerunOf }),
+				...savedDetail(run.saved),
 				...approvalDetail(run.approval)
 			}
 		},
@@ -142,7 +147,11 @@ export function auditRunCancelled(
 	);
 }
 
-/** An approved assistant's run, for the start entry; `none` for a person's own run. */
+/**
+ * An approved assistant's run, for the start entry; `none` for a person's own run. A saved
+ * command an assistant ran without approval is `pre-approved` (SPEC-SAVED-COMMANDS SC22): the
+ * person is the actor, "via <assistant>, pre-approved saved command <name>".
+ */
 export type ApprovalDetail =
 	| { kind: 'none' }
 	| {
@@ -150,7 +159,28 @@ export type ApprovalDetail =
 			requestedBy: string;
 			assistant: string;
 			edit: { kind: 'unchanged' } | { kind: 'edited'; requestedCommand: string };
-	  };
+	  }
+	| { kind: 'pre-approved'; via: Record<string, string>; savedName: string };
+
+/** "Service status (version 3)", its label and the values a run filled in. */
+export function savedDetail(saved: NewRunSaved): Record<string, string> {
+	switch (saved.kind) {
+		case 'none':
+			return {};
+		case 'saved':
+			return {
+				'saved command': `${saved.name} (version ${String(saved.version)})`,
+				label: savedEffectLabel(saved.effect),
+				...(Object.keys(saved.values).length === 0
+					? {}
+					: {
+							parameters: Object.entries(saved.values)
+								.map(([name, value]) => `${name}=${String(value)}`)
+								.join(', ')
+						})
+			};
+	}
+}
 
 function approvalDetail(approval: ApprovalDetail): Record<string, string> {
 	switch (approval.kind) {
@@ -164,6 +194,12 @@ function approvalDetail(approval: ApprovalDetail): Record<string, string> {
 				...(approval.edit.kind === 'edited'
 					? { 'requested command': approval.edit.requestedCommand }
 					: {})
+			};
+		case 'pre-approved':
+			return {
+				...approval.via,
+				via: `${approval.via['via'] ?? 'an AI assistant'}, pre-approved saved command ${approval.savedName}`,
+				approval: 'Pre-approved saved command: no person approved this run'
 			};
 	}
 }
@@ -188,6 +224,9 @@ export function auditRunRequested(
 		command: string;
 		timeoutMs: number;
 		reason: string;
+		/** A saved command sent to Approvals, and why it could not run without one (SC22). */
+		saved: NewRunSaved;
+		whyApproval: string;
 	},
 	now: number
 ): void {
@@ -206,6 +245,8 @@ export function auditRunRequested(
 				command: entry.command,
 				'time limit': seconds(entry.timeoutMs),
 				reason: entry.reason,
+				...savedDetail(entry.saved),
+				...(entry.whyApproval === '' ? {} : { 'needs approval because': entry.whyApproval }),
 				...entry.via
 			}
 		},
