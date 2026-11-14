@@ -15,6 +15,21 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.33',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Access, Rules: give your AI group AI can view on one machine group and AI commands on another; the form explains each permission',
+				'Ask your assistant to list machines: both groups appear; ask it to run a command on a view-only machine: it is refused with the reason, nothing waits for approval',
+				'Account or Settings, AI assistants: How to connect shows each assistant with this server’s address and working Copy buttons, on a phone too'
+			]
+		},
+		changes: [
+			'AI assistants: a new AI can view permission lets an assistant list and read machines without being able to ask for commands; AI commands (with approval) now includes viewing, so existing rules keep working. Every permission on the access rule form now says what it allows',
+			'AI assistants: the help panel has step-by-step instructions for Claude Code, Codex, claude.ai, ChatGPT, VS Code, Cursor and others, with this server’s address and Copy buttons, and bmuster.com/ai-assistants has the same public guide'
+		]
+	},
+	{
 		version: '0.4.32',
 		testing: {
 			kind: 'steps',
