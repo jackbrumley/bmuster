@@ -362,7 +362,7 @@ describe('Updates page (SPEC-AGENT-UPDATES)', () => {
 				}
 			}
 		});
-		await expect.element(screen.getByText('Server update: downloading')).toBeVisible();
+		await expect.element(screen.getByText('Updating the server')).toBeVisible();
 		await expect.element(screen.getByText('Downloading and checking BMuster 0.3.2')).toBeVisible();
 		await expect.element(screen.getByText('A server update is already in progress.')).toBeVisible();
 		await expect

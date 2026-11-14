@@ -5,6 +5,7 @@ import type {
 	SessionInUse
 } from '#lib/domain/sessions/session.ts';
 import { agentSessionEventSchema, browserControlSchema } from '#lib/schemas/sessions/sessions.ts';
+import { serverLog } from '../logs/server-log.ts';
 import { OutputRing } from './output-ring.ts';
 import {
 	clipboardTransferOf,
@@ -197,6 +198,13 @@ export function createRelay(limits: RelayLimits) {
 			return;
 		}
 		sessions.delete(sessionId);
+		// The server's side of every ending, so a dropped session shows both ends in diagnostics.
+		serverLog(
+			reason === 'agent-lost' || reason === 'failed' ? 'warn' : 'info',
+			'sessions',
+			`Session ${sessionId} (${session.record.kind}) ended after ${String(Date.now() - session.record.openedAt)} ms: ${reason}: ${message}`,
+			session.machineId
+		);
 		for (const timer of session.timers.values()) {
 			clearTimeout(timer);
 		}
@@ -452,6 +460,12 @@ export function createRelay(limits: RelayLimits) {
 			if (session?.agent.peer !== peer) {
 				return;
 			}
+			serverLog(
+				'info',
+				'sessions',
+				`Session ${sessionId} (${session.record.kind}): the machine's connection closed`,
+				session.machineId
+			);
 			if (session.record.kind !== 'desktop' || session.local !== undefined) {
 				end(sessionId, 'agent-lost', 'The connection to the machine was lost.');
 				return;
@@ -523,6 +537,12 @@ export function createRelay(limits: RelayLimits) {
 			if (session?.browser.peer !== peer) {
 				return;
 			}
+			serverLog(
+				'info',
+				'sessions',
+				`Session ${sessionId} (${session.record.kind}): the browser's connection closed`,
+				session.machineId
+			);
 			session.browser = { peer: undefined, waiting: 0, paused: false };
 			if (session.agent.paused) {
 				session.agent.paused = false;

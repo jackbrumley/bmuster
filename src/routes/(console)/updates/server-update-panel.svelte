@@ -13,6 +13,7 @@
 	import ReleaseBody from './release-body.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
+	import { updateOperationNotice } from '#lib/domain/releases/server-update-notice.ts';
 	let {
 		view,
 		onRestarting
@@ -26,6 +27,8 @@
 			? `If it does not, BMuster ${view.installedVersion} comes back automatically on the same database.`
 			: `If it does not, the server stays stopped for an administrator, with a copy of the database from before the update.`;
 	}
+	/** A note about the last update only while one runs or when it needs attention (SU16). */
+	const operationNotice = $derived(updateOperationNotice(view.operation.phase));
 	/** What the panel is asking the server: nothing, a check, or to install. */
 	let busy = $state<'idle' | 'checking' | 'installing'>('idle');
 	async function check(): Promise<void> {
@@ -104,11 +107,9 @@
 	{#if view.problem !== null}<Notice tone="danger" title="Update check failed"
 			><p>{view.problem}</p></Notice
 		>{/if}
-	{#if view.operation.phase !== 'idle'}<Notice
-			tone={view.operation.phase === 'failed' || view.operation.phase === 'rolled-back'
-				? 'warning'
-				: 'info'}
-			title="Server update: {view.operation.phase}"
+	{#if operationNotice !== undefined}<Notice
+			tone={operationNotice.tone}
+			title={operationNotice.title}
 			><p>{view.operation.message}</p>
 			{#if view.operation.atIso !== null}<p>
 					{new Date(view.operation.atIso).toLocaleString()}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ServerUpdateView } from '#lib/schemas/releases/server-updates.ts';
-import { showsUpdateNotice } from './server-update-notice.ts';
+import { showsUpdateNotice, updateOperationNotice } from './server-update-notice.ts';
 
 type Phase = ServerUpdateView['operation']['phase'];
 
@@ -57,5 +57,25 @@ describe('the update-available notice (SPEC-SERVER-UPDATES SU13)', () => {
 		expect(showsUpdateNotice(view('idle', true), 'updates')).toBe(false);
 		expect(showsUpdateNotice(view('idle', false), 'other')).toBe(false);
 		expect(showsUpdateNotice(null, 'other')).toBe(false);
+	});
+
+	it('SU16: notes the last server update only while one runs or when it needs attention', () => {
+		for (const phase of ['idle', 'up-to-date', 'healthy'] as const) {
+			expect(updateOperationNotice(phase), phase).toBeUndefined();
+		}
+		for (const phase of [
+			'requested',
+			'checking',
+			'downloading',
+			'switching',
+			'starting'
+		] as const) {
+			expect(updateOperationNotice(phase), phase).toEqual({
+				tone: 'info',
+				title: 'Updating the server'
+			});
+		}
+		expect(updateOperationNotice('failed')?.tone).toBe('warning');
+		expect(updateOperationNotice('rolled-back')?.tone).toBe('warning');
 	});
 });

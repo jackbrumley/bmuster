@@ -33,7 +33,8 @@
 		align-items: flex-start;
 		gap: var(--space-3);
 		padding: var(--space-3) var(--space-4);
-		border-radius: var(--radius-inner);
+		/* Soft corners like the cards and fields around it. */
+		border-radius: var(--radius-control);
 		border: 1px solid currentColor;
 	}
 

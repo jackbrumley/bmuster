@@ -27,3 +27,29 @@ export function showsUpdateNotice(
 			return false;
 	}
 }
+
+/**
+ * The Updates page's note about the last server update (SPEC-SERVER-UPDATES SU16): shown only
+ * while one runs or when it needs attention. A healthy or quiet updater shows nothing, because
+ * the installed version is already on the panel.
+ */
+export function updateOperationNotice(
+	phase: ServerUpdateView['operation']['phase']
+): { tone: 'info' | 'warning'; title: string } | undefined {
+	switch (phase) {
+		case 'idle':
+		case 'up-to-date':
+		case 'healthy':
+			return undefined;
+		case 'requested':
+		case 'checking':
+		case 'downloading':
+		case 'switching':
+		case 'starting':
+			return { tone: 'info', title: 'Updating the server' };
+		case 'rolled-back':
+			return { tone: 'warning', title: 'The update was rolled back' };
+		case 'failed':
+			return { tone: 'warning', title: 'The server update failed' };
+	}
+}

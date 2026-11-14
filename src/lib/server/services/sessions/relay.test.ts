@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { serverLog } from '../logs/server-log.ts';
 import { CLOSE_ENDED, CLOSE_REPLACED, createRelay, RELAY_LIMITS, type RelayPeer } from './relay.ts';
 import type { ClipboardTransfer, EndedSession, SessionRecord } from './session-record.ts';
+
+vi.mock('../logs/server-log.ts', () => ({ serverLog: vi.fn() }));
 
 /** A socket end that records what it was sent; bytes count as written when `flush` runs. */
 type FakePeer = RelayPeer & {
@@ -293,6 +296,30 @@ describe('ending sessions (T6)', () => {
 		const silent = started();
 		vi.advanceTimersByTime(RELAY_LIMITS.agentWaitMs);
 		expect(silent.ended).toMatchObject([{ reason: 'agent-timeout' }]);
+	});
+
+	it("logs the server's side of a dropped session: which end closed, and how it ended", () => {
+		const lost = started();
+		const agent = fakePeer(true);
+		lost.relay.attachAgent(RECORD.id, RECORD.machineId, agent);
+		vi.mocked(serverLog).mockClear();
+		lost.relay.agentClosed(RECORD.id, agent);
+		expect(vi.mocked(serverLog).mock.calls).toEqual([
+			[
+				'info',
+				'sessions',
+				`Session ${RECORD.id} (${RECORD.kind}): the machine's connection closed`,
+				RECORD.machineId
+			],
+			[
+				'warn',
+				'sessions',
+				expect.stringMatching(
+					new RegExp(`^Session ${RECORD.id} \\(${RECORD.kind}\\) ended after \\d+ ms: agent-lost: `)
+				),
+				RECORD.machineId
+			]
+		]);
 	});
 
 	it('ends 60 seconds after the last browser left', () => {
