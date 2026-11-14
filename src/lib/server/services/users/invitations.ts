@@ -11,7 +11,7 @@ import {
 	usePasswordLinks
 } from '../auth/password-links.ts';
 import { hashPassword } from '../auth/passwords.ts';
-import { startSession, type StartedSession } from '../auth/sessions.ts';
+import { sessionOrChallenge, type SignInNext } from '../auth/sign-in-steps.ts';
 import type { SignInClient } from '../auth/client.ts';
 import { enqueueEmail } from '../email/email-queue.ts';
 import { invitationEmail, providerInvitationEmail } from '../email/templates.ts';
@@ -183,9 +183,12 @@ export function lookUpInvitation(
 		: link;
 }
 
-export type AcceptOutcome = { kind: 'accepted'; session: StartedSession } | { kind: 'unusable' };
+export type AcceptOutcome = { kind: 'accepted'; next: SignInNext } | { kind: 'unusable' };
 
-/** Sets their password, uses up the link and signs them in. */
+/**
+ * Sets their password, uses up the link and signs them in, or takes them to two-factor set-up
+ * first when the server requires it for them (SPEC-TWO-FACTOR 2.2).
+ */
 export async function acceptInvitation(
 	database: AppDatabase,
 	token: string,
@@ -204,7 +207,6 @@ export async function acceptInvitation(
 		}
 		setPasswordHash(transaction, link.user.id, passwordHash);
 		usePasswordLinks(transaction, link.user.id, now);
-		markSignedIn(transaction, link.user.id, now);
 		recordAudit(
 			transaction,
 			{
@@ -216,6 +218,10 @@ export async function acceptInvitation(
 			},
 			now
 		);
-		return { kind: 'accepted', session: startSession(transaction, link.user.id, client, now) };
+		const next = sessionOrChallenge(transaction, link.user, client, now);
+		if (next.kind === 'session') {
+			markSignedIn(transaction, link.user.id, now);
+		}
+		return { kind: 'accepted', next };
 	});
 }

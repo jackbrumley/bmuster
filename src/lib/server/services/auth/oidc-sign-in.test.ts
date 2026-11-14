@@ -6,7 +6,8 @@ import {
 	startFakeProvider,
 	type FakeProvider
 } from '#tests/helpers/fake-oidc-provider.ts';
-import { addTestUser, CLIENT, NOW } from '#tests/helpers/people.ts';
+import { addTestUser, CLIENT, NOW, PASSWORD } from '#tests/helpers/people.ts';
+import { turnOnTwoFactor } from '#tests/helpers/two-factor.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { userIdentities, users } from '../../database/schema.ts';
 import { addProvider } from './identity-providers.ts';
@@ -17,6 +18,7 @@ import {
 	type OidcSignIn
 } from './oidc-sign-in.ts';
 import { findSession } from './sessions.ts';
+import { updateSettingAsSystem } from '../settings/settings.ts';
 
 /**
  * S10 against a real (local) provider: discovery, the authorisation URL, the
@@ -166,6 +168,22 @@ describe('OpenID Connect sign-in (S10)', () => {
 		const second = (await signIn(database, providerId, { ...PRIYA, email: 'priya.n@example.com' }))
 			.result;
 		expect(second).toMatchObject({ kind: 'signed-in', user: { id: invited.id } });
+	});
+
+	it('never asks for a two-factor code: the provider handles it (SPEC-TWO-FACTOR TF8)', async () => {
+		const { database, providerId } = await setUp('invited');
+		const invited = await addTestUser(database, {
+			email: 'priya@example.com',
+			role: 'admin',
+			password: PASSWORD
+		});
+		await turnOnTwoFactor(database, invited, NOW);
+		updateSettingAsSystem(database, 'twoFactorSignIn', 'everyone', 'test', NOW);
+		const { result } = await signIn(database, providerId, PRIYA);
+		if (result.kind !== 'signed-in') throw new Error(result.message);
+		expect(findSession(database, result.session.token, Date.now())).toMatchObject({
+			userId: invited.id
+		});
 	});
 
 	it('refuses someone not invited when the provider is invite-only', async () => {

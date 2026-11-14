@@ -23,7 +23,7 @@ describe('password sign-in (S3)', () => {
 			CLIENT,
 			NOW
 		);
-		if (result.kind !== 'signed-in') throw new Error(result.message);
+		if (result.kind !== 'signed-in') throw new Error(result.kind);
 		expect(result.user.id).toBe(user.id);
 		expect(findSession(database, result.session.token, NOW)).toEqual({
 			kind: 'active',

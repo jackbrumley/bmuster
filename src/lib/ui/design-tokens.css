@@ -103,6 +103,12 @@
 	--radar-ring-faint: light-dark(rgba(127, 154, 114, 0.37), rgba(127, 154, 114, 0.37));
 	--radar-beam: light-dark(#a3e635, #a3e635);
 	--radar-contact: light-dark(#d9f99d, #d9f99d);
+	/*
+	 * QR codes (SPEC-TWO-FACTOR): dark on white in both themes, because many scanners cannot
+	 * read a light-on-dark code.
+	 */
+	--qr-light: light-dark(#ffffff, #ffffff);
+	--qr-dark: light-dark(#000000, #000000);
 	--focus-ring: var(--brand);
 	--success: light-dark(#16a34a, #4ade80);
 	--success-bg: light-dark(#dcfce7, rgba(74, 222, 128, 0.14));

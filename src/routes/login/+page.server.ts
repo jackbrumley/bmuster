@@ -6,9 +6,9 @@ import { page } from '#lib/server/guards/page.ts';
 import { signInClient } from '#lib/server/services/auth/client.ts';
 import { signInProviders } from '#lib/server/services/auth/identity-providers.ts';
 import { signInWithPassword, WRONG_DETAILS } from '#lib/server/services/auth/password-sign-in.ts';
-import { SESSION_COOKIE, sessionCookieOptions } from '#lib/server/services/auth/sessions.ts';
 import { emailReadiness } from '#lib/server/services/settings/email-settings.ts';
 import { formText } from '#lib/utils/form-data.ts';
+import { continueSignIn } from './sign-in-next.server.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 /** The sign-in page: a password, or "Continue with" each enabled provider (SPEC-SIGN-IN 3). */
@@ -20,6 +20,8 @@ export const load: PageServerLoad = page.public(({ locals, url }) => {
 	return {
 		providers: signInProviders(database),
 		returnTo,
+		// A two-factor step that ran out sends the person back here (SPEC-TWO-FACTOR 2.3).
+		timedOut: url.searchParams.get('timedOut') === '1',
 		// Forgot password is offered only when the server can send the email (SPEC-EMAIL E4).
 		canResetByEmail: emailReadiness(database).kind === 'ready'
 	};
@@ -37,11 +39,12 @@ export const actions = {
 		if (result.kind === 'refused') {
 			return fail(400, { email, message: result.message });
 		}
-		event.cookies.set(
-			SESSION_COOKIE,
-			result.session.token,
-			sessionCookieOptions(result.session.expiresAt)
+		continueSignIn(
+			event.cookies,
+			result.kind === 'signed-in'
+				? { kind: 'session', session: result.session }
+				: { kind: 'challenge', challenge: result.challenge },
+			safeReturnPath(event.url.searchParams.get('returnTo'))
 		);
-		redirect(303, safeReturnPath(event.url.searchParams.get('returnTo')));
 	})
 } satisfies Actions;

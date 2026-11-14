@@ -59,6 +59,8 @@
 	>
 		{#if form?.message !== undefined}
 			<p class="problem" role="alert">{form.message}</p>
+		{:else if data.timedOut}
+			<p class="problem" role="alert">Your sign-in timed out. Sign in again.</p>
 		{/if}
 		<TextField
 			label="Email"

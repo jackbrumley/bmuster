@@ -14,6 +14,7 @@ describe('server settings (S16)', () => {
 			'agentUpdatePolicy',
 			'maxUploadGb',
 			'localNetworkMode',
+			'twoFactorSignIn',
 			'organisationName',
 			'scamImpersonators',
 			'scamReportAdvice'

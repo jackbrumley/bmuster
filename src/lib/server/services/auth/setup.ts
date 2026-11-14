@@ -1,6 +1,6 @@
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
 import { firstAdminSchema } from '#lib/schemas/auth/sign-in.ts';
-import type { AppDatabase } from '../../database/connection.ts';
+import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import type { FirstAdmin } from '../../env.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { getSetting, updateSettingAsSystem } from '../settings/settings.ts';
@@ -8,16 +8,18 @@ import { hasUsers, insertUser, markSignedIn, toConsoleUser } from '../users/user
 import type { SignInClient } from './client.ts';
 import { hashPassword } from './passwords.ts';
 import type { SetupCodeKeeper } from './setup-code.ts';
-import { startSession, type StartedSession } from './sessions.ts';
+import { sessionOrChallenge, type SignInNext } from './sign-in-steps.ts';
 
 /**
  * First run (SPEC-SIGN-IN S1, S17): while there are no users, /setup makes
  * the first admin and signs them in, once the person has typed the setup code
  * from the server's log. The check and the insert share one transaction, so
- * two people racing for /setup cannot both become admin.
+ * two people racing for /setup cannot both become admin. A new server
+ * requires two-factor sign-in for admins (SPEC-TWO-FACTOR 2.1), so `next` is
+ * normally the set-up step rather than a session.
  */
 export type SetupResult =
-	| { kind: 'created'; user: ConsoleUser; session: StartedSession }
+	| { kind: 'created'; user: ConsoleUser; next: SignInNext }
 	| { kind: 'wrong-code'; message: string }
 	| { kind: 'closed' };
 
@@ -45,7 +47,6 @@ export async function setupFirstAdmin(
 			{ name: input.name, email: input.email, role: 'admin', passwordHash },
 			now
 		);
-		markSignedIn(transaction, user.id, now);
 		recordAudit(
 			transaction,
 			{
@@ -57,9 +58,13 @@ export async function setupFirstAdmin(
 			},
 			now
 		);
-		const session = startSession(transaction, user.id, client, now);
+		requireTwoFactorForAdmins(transaction, now);
+		const next = sessionOrChallenge(transaction, user, client, now);
+		if (next.kind === 'session') {
+			markSignedIn(transaction, user.id, now);
+		}
 		setupCode.clear();
-		return { kind: 'created', user: toConsoleUser(user), session };
+		return { kind: 'created', user: toConsoleUser(user), next };
 	});
 }
 
@@ -145,6 +150,12 @@ async function createAdminFromEnvironment(
 			},
 			now
 		);
+		requireTwoFactorForAdmins(transaction, now);
 		return true;
 	});
+}
+
+/** A new server's default (SPEC-TWO-FACTOR 2.1): written with the first admin, as the system. */
+function requireTwoFactorForAdmins(database: Queryable, now: number): void {
+	updateSettingAsSystem(database, 'twoFactorSignIn', 'admins', 'first-run setup', now);
 }

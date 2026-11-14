@@ -7,6 +7,8 @@
 	 * field's error underneath it. `multiline` is a box several lines tall
 	 * for plain text that keeps its line breaks (notes, descriptions); `code`
 	 * is the same box in a monospaced font, for commands and scripts.
+	 * `one-time-code` is a text box with the phone's number pad, for a code from an
+	 * authenticator app (SPEC-TWO-FACTOR).
 	 */
 	let {
 		label,
@@ -21,7 +23,7 @@
 		label: string;
 		/** The form field name, for forms that post without JavaScript. */
 		name: string;
-		type: 'text' | 'password' | 'email' | 'url' | 'multiline' | 'code';
+		type: 'text' | 'password' | 'email' | 'url' | 'multiline' | 'code' | 'one-time-code';
 		autocomplete: HTMLInputAttributes['autocomplete'];
 		autocapitalize: 'off' | 'sentences' | 'words';
 		required: boolean;
@@ -49,7 +51,8 @@
 	{:else}
 		<input
 			{name}
-			{type}
+			type={type === 'one-time-code' ? 'text' : type}
+			inputmode={type === 'one-time-code' ? 'numeric' : undefined}
 			{autocomplete}
 			{autocapitalize}
 			{required}

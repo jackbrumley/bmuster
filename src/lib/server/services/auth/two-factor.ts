@@ -369,7 +369,7 @@ export async function confirmTotpSetUp(
 	now: number
 ): Promise<{ kind: 'on'; recoveryCodes: string[] } | Refused> {
 	const pending = authenticatorOf(database, user.id);
-	if (pending === undefined || pending.enabledAt !== null) {
+	if (pending?.enabledAt !== null) {
 		return {
 			kind: 'refused',
 			status: 409,

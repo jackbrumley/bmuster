@@ -51,7 +51,7 @@ describe('first-run setup (S1)', () => {
 		expect(needsSetupRedirect('/', true)).toBe(false);
 	});
 
-	it('creates the first admin once, signed in, with a hashed password', async () => {
+	it('creates the first admin once, with a hashed password, then two-factor set-up (SPEC-TWO-FACTOR TF1, TF8)', async () => {
 		const database = testDatabase();
 		expect(hasUsers(database)).toBe(false);
 		const printed = printedKeeper();
@@ -65,10 +65,11 @@ describe('first-run setup (S1)', () => {
 		);
 		if (result.kind !== 'created') throw new Error('setup refused');
 		expect(result.user).toMatchObject({ name: 'Jack', email: 'jack@example.com', role: 'admin' });
-		expect(findSession(database, result.session.token, NOW)).toEqual({
-			kind: 'active',
-			userId: result.user.id
-		});
+		// A new server requires two-factor for admins, so the session waits for its set-up.
+		expect(getSetting(database, 'twoFactorSignIn')).toBe('admins');
+		if (result.next.kind !== 'challenge') throw new Error('expected the set-up step');
+		expect(result.next.challenge.step).toBe('set-up');
+		expect(findSession(database, result.next.challenge.token, NOW)).toEqual({ kind: 'none' });
 		const [row] = database.select().from(users).all();
 		expect(row?.passwordHash?.startsWith('$argon2id$')).toBe(true);
 
@@ -201,19 +202,26 @@ describe('admin from the environment (S18)', () => {
 		]);
 		expect(listAudit(database, 10)).toMatchObject([
 			{
+				kind: 'setting-changed',
+				actorUserId: null,
+				target: 'Two-factor sign-in',
+				detail: { from: 'off', to: 'admins', source: 'first-run setup' }
+			},
+			{
 				kind: 'setup',
 				actorUserId: null,
 				target: 'root@example.com',
 				detail: { source: 'BMUSTER_ADMIN_EMAIL and BMUSTER_ADMIN_PASSWORD' }
 			}
 		]);
+		// SPEC-TWO-FACTOR TF1, TF8: the new admin's password leads to two-factor set-up.
 		const signedIn = await signInWithPassword(
 			database,
 			{ email: 'root@example.com', password: PASSWORD },
 			CLIENT,
 			NOW
 		);
-		expect(signedIn.kind).toBe('signed-in');
+		expect(signedIn).toMatchObject({ kind: 'second-step', challenge: { step: 'set-up' } });
 		// /setup is closed: every page then goes to sign-in.
 		expect(needsSetupRedirect('/', hasUsers(database))).toBe(false);
 	});

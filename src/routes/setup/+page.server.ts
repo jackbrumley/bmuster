@@ -3,11 +3,11 @@ import { setupRequestSchema } from '#lib/schemas/auth/sign-in.ts';
 import { database } from '#lib/server/database/app-database.ts';
 import { page } from '#lib/server/guards/page.ts';
 import { signInClient } from '#lib/server/services/auth/client.ts';
-import { SESSION_COOKIE, sessionCookieOptions } from '#lib/server/services/auth/sessions.ts';
 import { setupFirstAdmin } from '#lib/server/services/auth/setup.ts';
 import { serverSetupCode } from '#lib/server/services/auth/setup-code.ts';
 import { hasUsers } from '#lib/server/services/users/users.ts';
 import { formText } from '#lib/utils/form-data.ts';
+import { continueSignIn } from '../login/sign-in-next.server.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -60,11 +60,6 @@ export const actions = {
 				message: result.message
 			});
 		}
-		event.cookies.set(
-			SESSION_COOKIE,
-			result.session.token,
-			sessionCookieOptions(result.session.expiresAt)
-		);
-		redirect(303, '/');
+		continueSignIn(event.cookies, result.next, '/');
 	})
 } satisfies Actions;

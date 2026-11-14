@@ -9,6 +9,7 @@ import { listAudit } from '../audit/audit.ts';
 import { signInWithPassword } from '../auth/password-sign-in.ts';
 import { deliverDueEmails } from '../email/email-queue.ts';
 import { sendSmtp } from '../email/smtp.ts';
+import { updateSettingAsSystem } from '../settings/settings.ts';
 import { acceptInvitation, addUserAndInvite, inviteUser, lookUpInvitation } from './invitations.ts';
 import { toConsoleUser } from './users.ts';
 
@@ -128,6 +129,37 @@ describe('invitations (E5)', () => {
 			NOW + 1000
 		);
 		expect(accepted.kind).toBe('accepted');
+	});
+
+	it('signs them in, or takes them to two-factor set-up when it is required (SPEC-TWO-FACTOR TF8)', async () => {
+		const { database, admin } = await setUp('off');
+		for (const [email, policy] of [
+			['ada@example.test', 'admins'],
+			['bea@example.test', 'everyone']
+		] as const) {
+			updateSettingAsSystem(database, 'twoFactorSignIn', policy, 'test', NOW);
+			const added = await addUserAndInvite(
+				database,
+				admin,
+				{ name: email, email, role: 'member', signIn: { kind: 'invite' } },
+				context,
+				NOW
+			);
+			const url =
+				added.kind === 'done' && added.invitation.kind === 'link' ? added.invitation.url : '';
+			const accepted = await acceptInvitation(
+				database,
+				tokenFrom(url),
+				'they choose this',
+				CLIENT,
+				NOW + 1000
+			);
+			expect(accepted, policy).toMatchObject(
+				policy === 'admins'
+					? { kind: 'accepted', next: { kind: 'session' } }
+					: { kind: 'accepted', next: { kind: 'challenge', challenge: { step: 'set-up' } } }
+			);
+		}
 	});
 
 	it('lasts 7 days', async () => {
