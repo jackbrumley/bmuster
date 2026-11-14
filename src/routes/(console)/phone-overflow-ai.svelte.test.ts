@@ -121,7 +121,15 @@ const PAGES: readonly PhonePage[] = [
 						signIn: ['Password', LONG_GROUP],
 						connect: 'on',
 						serverUrl: `https://${LONG_HOSTNAME}/mcp`,
-						grants: GRANTS
+						grants: GRANTS,
+						origin: `https://${LONG_HOSTNAME}`,
+						// SPEC-TWO-FACTOR: the panel with its warning and both buttons, at phone width.
+						twoFactor: {
+							kind: 'on',
+							sinceIso: new Date(NOW - 86_400_000).toISOString(),
+							recoveryCodesLeft: 2,
+							required: false
+						}
 					}
 				},
 				IN_CONSOLE

@@ -30,7 +30,7 @@ import { qrPicture } from './two-factor-qr.ts';
 /** 160 bits, RFC 4226's recommended key length. */
 const KEY_BYTES = 20;
 /** A pending (not yet confirmed) key is shown again for this long, so a scanned QR keeps working. */
-export const PENDING_KEY_MS = 60 * 60_000;
+const PENDING_KEY_MS = 60 * 60_000;
 /** 16 characters of the 32-letter code alphabet: 80 bits. */
 const RECOVERY_CODE_LENGTH = 16;
 const ISSUER = 'BMuster';

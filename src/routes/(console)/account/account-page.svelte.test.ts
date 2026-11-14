@@ -48,7 +48,9 @@ function renderAccount(grants: GrantView[]) {
 			signIn: ['Password'],
 			connect: 'on',
 			serverUrl: 'https://bmuster.example.com/mcp',
-			grants
+			grants,
+			origin: 'https://bmuster.example.com',
+			twoFactor: { kind: 'off', required: false }
 		}
 	});
 }

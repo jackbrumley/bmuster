@@ -23,6 +23,7 @@
 		"agent:release-key": "node scripts/agent-release-key.ts",
 		"agent:sign": "node scripts/agent-sign.ts",
 		"admin:reset": "node scripts/admin-reset.ts",
+		"two-factor:reset": "node scripts/two-factor-reset.ts",
 		"diagnostics": "node scripts/diagnostics.ts",
 		"icons:generate": "node scripts/icons-generate.ts",
 		"prepare": "svelte-kit sync || echo ''; git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .githooks || true",

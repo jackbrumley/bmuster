@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { refreshAll } from '$app/navigation';
-	import { IconKey, IconPlus, IconShieldCheck } from '@tabler/icons-svelte-runes';
+	import { IconKey, IconPlus, IconShieldCheck, IconShieldLock } from '@tabler/icons-svelte-runes';
 	import Button from '#lib/ui/button.svelte';
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
@@ -19,6 +19,8 @@
 	} from '#lib/domain/users/user.ts';
 	import UserForm from './user-form.svelte';
 	import Checkbox from '#lib/ui/checkbox.svelte';
+	import { resetReplySchema } from '#lib/schemas/auth/two-factor.ts';
+	import { apiRequest } from '#lib/utils/api-client.ts';
 	import { addUser, sendInvitation, setUserGroups, updateUser } from './user-requests.ts';
 	import InvitationLink from './invitation-link.svelte';
 	import SignInChoice from './sign-in-choice.svelte';
@@ -198,6 +200,30 @@
 		await refreshAll();
 	}
 
+	/** SPEC-TWO-FACTOR 2.8: another person's two-factor goes; they set it up again if required. */
+	async function resetTwoFactor(user: UserView): Promise<void> {
+		const yes = await confirmAction({
+			title: `Reset ${user.name}'s two-factor sign-in?`,
+			message:
+				'Their authenticator app and recovery codes stop working. They sign in with their password, and set two-factor up again if this server requires it.',
+			confirmLabel: 'Reset two-factor'
+		});
+		if (!yes) {
+			return;
+		}
+		const result = await apiRequest({
+			method: 'DELETE',
+			url: resolve('/api/users/[id=uuid]/two-factor', { id: user.id }),
+			body: undefined,
+			reply: resetReplySchema
+		});
+		showToast(
+			result.ok ? `${user.name}'s two-factor sign-in is reset.` : result.message,
+			result.ok ? 'success' : 'error'
+		);
+		await refreshAll();
+	}
+
 	async function enable(user: UserView): Promise<void> {
 		const result = await updateUser(user.id, { action: 'enable' });
 		showToast(
@@ -232,6 +258,9 @@
 				{/if}
 				{#if user.status.kind === 'disabled'}
 					<span class="badge off">Disabled</span>
+				{/if}
+				{#if data.twoFactorOn[user.id] !== undefined}
+					<span class="badge on"><IconShieldLock size={14} /> Two-factor</span>
 				{/if}
 			</span>
 			<span class="meta">{user.email}</span>
@@ -309,6 +338,12 @@
 			</dd>
 			<dt>Signs in with</dt>
 			<dd>{signInSummary(selected)}</dd>
+			<dt>Two-factor</dt>
+			<dd>
+				{data.twoFactorOn[selected.id] === undefined
+					? 'Off'
+					: `On, turned on ${formatRelative(data.twoFactorOn[selected.id] ?? '', data.now)}`}
+			</dd>
 			<dt>Last sign-in</dt>
 			<dd>
 				{selected.lastSignIn.kind === 'at'
@@ -320,6 +355,16 @@
 	{#snippet footer()}
 		{#if selected !== undefined}
 			{@const user = selected}
+			{#if data.twoFactorOn[user.id] !== undefined && user.id !== data.me}
+				<Button
+					variant="secondary"
+					size="compact"
+					type="button"
+					onclick={() => void resetTwoFactor(user)}
+				>
+					Reset two-factor
+				</Button>
+			{/if}
 			{#if canInvite(user)}
 				<Button variant="secondary" size="compact" type="button" onclick={() => void invite(user)}>
 					Send invitation
@@ -452,6 +497,11 @@
 		background: var(--warning-bg);
 		color: var(--warning);
 		font-size: var(--text-xs);
+	}
+
+	.badge.on {
+		background: var(--success-bg);
+		color: var(--success);
 	}
 
 	.badge.off {

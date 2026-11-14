@@ -303,7 +303,9 @@ const PAGES: PhonePage[] = [
 							}
 						],
 						userGroups: USER_GROUPS,
-						emailReady: true
+						emailReady: true,
+						// The Two-factor badge beside the long name (SPEC-TWO-FACTOR 2.8).
+						twoFactorOn: { [ADMIN.id]: '2026-11-10T00:00:00.000Z' }
 					}
 				},
 				IN_CONSOLE
