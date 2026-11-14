@@ -1,6 +1,6 @@
 # SPEC-DONATE: a humble donation reminder
 
-**Status:** `IMPLEMENTED (pending release)` · decided by Jack 2026-11-14 · **Date:** 2026-11-14 · see As built at the end
+**Status:** `IMPLEMENTED (v0.4.28)` · decided by Jack 2026-11-14 · **Date:** 2026-11-14 · see As built at the end
 
 ## 1. Problem
 

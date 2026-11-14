@@ -15,6 +15,19 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.28',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'As an admin on a server older than 14 days with machines: the slim line shows at the bottom of Machines on desktop and phone, and nowhere else',
+				'Not now hides it; as a member it never shows; Donate opens bmuster.com/donate in a new tab'
+			]
+		},
+		changes: [
+			'A small donation reminder for admins at the bottom of the Machines page, from a server’s 14th day: Donate opens bmuster.com/donate (GitHub Sponsors or PayPal), Not now hides it for 5 days, I’ve donated hides it for 90. It never shows to members, guests or on the managed computers, and BMuster sends nothing about it'
+		]
+	},
+	{
 		version: '0.4.27',
 		testing: {
 			kind: 'steps',
