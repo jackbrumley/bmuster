@@ -1,9 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { isHttpError, isRedirect, type RequestEvent } from '@sveltejs/kit';
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
+import { eq } from 'drizzle-orm';
 import type { AppDatabase } from '#lib/server/database/connection.ts';
+import { oauthTokens } from '#lib/server/database/schema.ts';
 import { createGroup, setGroupMembers } from '#lib/server/services/access/groups.ts';
-import { saveMcpSettings } from '#lib/server/services/oauth/grants.ts';
+import { decideConsent } from '#lib/server/services/oauth/authorize.ts';
+import { registerClient } from '#lib/server/services/oauth/clients.ts';
+import { hashSecret, saveMcpSettings } from '#lib/server/services/oauth/grants.ts';
+import { tokenRequest } from '#lib/server/services/oauth/tokens.ts';
 import type { FetchJson } from '#lib/server/services/oauth/safe-fetch.ts';
 import { done } from './access.ts';
 import { NOW } from './people.ts';
@@ -127,4 +132,87 @@ export async function rpcReply(response: Response): Promise<unknown> {
 		return JSON.parse(data.at(-1) ?? 'null');
 	}
 	return JSON.parse(text);
+}
+
+export type Connection = {
+	clientId: string;
+	grantId: string;
+	accessToken: string;
+	refreshToken: string;
+};
+
+/**
+ * A person's assistant connected straight through the services, as the consent screen and token
+ * endpoint would: a registered (unverified) client, or Claude Code's metadata document.
+ */
+export async function connectAssistant(
+	database: AppDatabase,
+	userId: string,
+	kind: 'registered' | 'claude-code',
+	now: number
+): Promise<Connection> {
+	const server = documentServer({ [CLAUDE_CODE_ID]: CLAUDE_CODE_DOCUMENT });
+	const redirectUri =
+		kind === 'claude-code'
+			? 'http://localhost:33333/callback'
+			: 'https://claude.ai/api/mcp/auth_callback';
+	let clientId = CLAUDE_CODE_ID;
+	if (kind === 'registered') {
+		const registered = registerClient(
+			database,
+			{ client_name: 'Helper bot', redirect_uris: [redirectUri] },
+			now
+		);
+		if (registered.kind !== 'registered') throw new Error(registered.message);
+		clientId = registered.reply.client_id;
+	}
+	const pkce = pkcePair();
+	const decision = await decideConsent(
+		database,
+		{
+			userId,
+			allow: true,
+			params: {
+				response_type: 'code',
+				client_id: clientId,
+				redirect_uri: redirectUri,
+				code_challenge: pkce.challenge,
+				code_challenge_method: 'S256',
+				resource: RESOURCE,
+				scope: 'machines:read offline_access'
+			}
+		},
+		ORIGIN,
+		server.fetchJson,
+		now
+	);
+	if (decision.kind !== 'redirect') throw new Error(`Consent refused: ${decision.kind}`);
+	const issued = tokenRequest(
+		database,
+		{
+			grant_type: 'authorization_code',
+			code: new URL(decision.location).searchParams.get('code') ?? '',
+			redirect_uri: redirectUri,
+			code_verifier: pkce.verifier,
+			client_id: clientId,
+			resource: RESOURCE
+		},
+		RESOURCE,
+		now
+	);
+	if (issued.kind !== 'issued' || issued.body.refresh_token === undefined) {
+		throw new Error('No tokens were issued');
+	}
+	const grantId = database
+		.select({ grantId: oauthTokens.grantId })
+		.from(oauthTokens)
+		.where(eq(oauthTokens.hash, hashSecret(issued.body.access_token)))
+		.get()?.grantId;
+	if (grantId === undefined) throw new Error('No grant was made');
+	return {
+		clientId,
+		grantId,
+		accessToken: issued.body.access_token,
+		refreshToken: issued.body.refresh_token
+	};
 }

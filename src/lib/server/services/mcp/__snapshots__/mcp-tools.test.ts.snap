@@ -1,0 +1,266 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code, secret, key, ticket, token, note or email address 1`] = `
+{
+  "get_machine": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "agentVersion": {
+        "type": "string",
+      },
+      "architecture": {
+        "type": "string",
+      },
+      "cpuPercent": {
+        "type": [
+          "number",
+          "null",
+        ],
+      },
+      "disks": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "freeBytes": {
+              "type": "number",
+            },
+            "mount": {
+              "type": "string",
+            },
+            "totalBytes": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "mount",
+            "totalBytes",
+            "freeBytes",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "groups": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "hostname": {
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "inUse": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "by": {
+              "type": "string",
+            },
+            "kind": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "kind",
+            "by",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "kernel": {
+        "type": "string",
+      },
+      "lastSeenAt": {
+        "type": "string",
+      },
+      "lastUser": {
+        "type": [
+          "string",
+          "null",
+        ],
+      },
+      "memory": {
+        "additionalProperties": false,
+        "properties": {
+          "totalBytes": {
+            "type": [
+              "number",
+              "null",
+            ],
+          },
+          "usedPercent": {
+            "type": [
+              "number",
+              "null",
+            ],
+          },
+        },
+        "required": [
+          "totalBytes",
+          "usedPercent",
+        ],
+        "type": "object",
+      },
+      "name": {
+        "type": "string",
+      },
+      "os": {
+        "enum": [
+          "windows",
+          "linux",
+          "macos",
+        ],
+        "type": "string",
+      },
+      "osVersion": {
+        "type": "string",
+      },
+      "recentActivity": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "type": "string",
+            },
+            "summary": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "at",
+            "summary",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "shells": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "status": {
+        "enum": [
+          "online",
+          "reconnecting",
+          "offline",
+        ],
+        "type": "string",
+      },
+      "uptimeSeconds": {
+        "type": [
+          "number",
+          "null",
+        ],
+      },
+    },
+    "required": [
+      "id",
+      "name",
+      "hostname",
+      "os",
+      "osVersion",
+      "kernel",
+      "architecture",
+      "status",
+      "lastSeenAt",
+      "uptimeSeconds",
+      "cpuPercent",
+      "memory",
+      "disks",
+      "lastUser",
+      "agentVersion",
+      "shells",
+      "groups",
+      "inUse",
+      "recentActivity",
+    ],
+    "type": "object",
+  },
+  "list_machines": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "machines": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "groups": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "hostname": {
+              "type": "string",
+            },
+            "id": {
+              "type": "string",
+            },
+            "lastSeenAt": {
+              "type": "string",
+            },
+            "name": {
+              "type": "string",
+            },
+            "os": {
+              "enum": [
+                "windows",
+                "linux",
+                "macos",
+              ],
+              "type": "string",
+            },
+            "osVersion": {
+              "type": "string",
+            },
+            "shells": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "status": {
+              "enum": [
+                "online",
+                "reconnecting",
+                "offline",
+              ],
+              "type": "string",
+            },
+          },
+          "required": [
+            "id",
+            "name",
+            "hostname",
+            "os",
+            "osVersion",
+            "status",
+            "lastSeenAt",
+            "shells",
+            "groups",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "total": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer",
+      },
+    },
+    "required": [
+      "machines",
+      "total",
+    ],
+    "type": "object",
+  },
+}
+`;
