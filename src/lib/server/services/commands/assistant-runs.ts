@@ -9,6 +9,7 @@ import {
 	commandOsLabel,
 	firstLine,
 	type CommandOsFamily,
+	type CommandScript,
 	type CommandShell
 } from '#lib/domain/commands/commands.ts';
 import { assistantLabel } from '#lib/domain/mcp/mcp.ts';
@@ -36,8 +37,10 @@ import {
 	markSkipped,
 	pendingCountOf,
 	recordEdit,
+	savedOfRun,
 	scriptsOf,
 	settlePending,
+	type NewRunSaved,
 	type RunRow
 } from './command-runs.ts';
 import { agentTooOld, checkRecentSignIn, type CommandContext, type Refused } from './commands.ts';
@@ -71,9 +74,9 @@ export type Requested = {
 	machines: ApprovalMachine[];
 };
 
-type ToolRefusal = { kind: 'refused'; message: string };
+export type ToolRefusal = { kind: 'refused'; message: string };
 
-function refuse(message: string): ToolRefusal {
+export function refuse(message: string): ToolRefusal {
 	return { kind: 'refused', message };
 }
 
@@ -82,7 +85,7 @@ function refuse(message: string): ToolRefusal {
  * list_machines shows). A machine without `ai-commands` refuses the whole call, naming it, and
  * says so plainly when it is open to AI for viewing only (M17, M38).
  */
-function resolveMachines(
+export function resolveMachines(
 	context: AssistantContext,
 	wanted: readonly string[]
 ): { kind: 'ok'; ids: string[] } | ToolRefusal {
@@ -150,7 +153,7 @@ export function requestAssistantRun(
 	context: AssistantContext,
 	request: AssistantRequest
 ): Requested | ToolRefusal {
-	const { database, principal, now } = context;
+	const { database } = context;
 	if (request.machines.length < 1 || request.machines.length > ASSISTANT_RUN_LIMITS.maxMachines) {
 		return refuse(`Ask for 1 to ${String(ASSISTANT_RUN_LIMITS.maxMachines)} machines in one call.`);
 	}
@@ -187,6 +190,34 @@ export function requestAssistantRun(
 			'The command has text-direction control characters, which make it read differently from what runs. Write it without them.'
 		);
 	}
+	return holdForApproval(context, {
+		machineIds: resolved.ids,
+		script: script.data,
+		timeoutMs: request.timeoutSeconds * 1000,
+		reason: request.reason,
+		saved: { kind: 'none' },
+		whyApproval: ''
+	});
+}
+
+/**
+ * A request every check allowed, held for a person's approval (M17): a Commands run waiting
+ * for approval, audited, the approvers' consoles told, and an email if a rule asks for one.
+ * A saved command an assistant may not run unattended comes here too, with why
+ * (SPEC-SAVED-COMMANDS SC17).
+ */
+export function holdForApproval(
+	context: AssistantContext,
+	request: {
+		machineIds: string[];
+		script: CommandScript;
+		timeoutMs: number;
+		reason: string;
+		saved: NewRunSaved;
+		whyApproval: string;
+	}
+): Requested | ToolRefusal {
+	const { database, principal, now } = context;
 	if (pendingCountOf(database, principal.user.id) >= ASSISTANT_RUN_LIMITS.maxPending) {
 		return refuse(
 			`${String(ASSISTANT_RUN_LIMITS.maxPending)} requests already wait for approval. Wait for a decision, or withdraw one with cancel_command.`
@@ -194,18 +225,19 @@ export function requestAssistantRun(
 	}
 	const runId = crypto.randomUUID();
 	const expiresAt = now + ASSISTANT_RUN_LIMITS.expiresMs;
-	const plans = machinePlans(database, resolved.ids);
+	const plans = machinePlans(database, request.machineIds);
 	const via = viaDetail(principal.assistant, principal.clientId);
 	database.transaction((transaction) => {
 		insertRun(transaction, {
 			id: runId,
 			startedBy: principal.user.id,
 			startedAt: now,
-			timeoutMs: request.timeoutSeconds * 1000,
+			timeoutMs: request.timeoutMs,
 			rerunOf: null,
 			origin: { kind: 'assistant', grantId: principal.grantId, reason: request.reason, expiresAt },
-			scripts: [script.data],
-			machines: resolved.ids.map((machineId) => ({
+			saved: request.saved,
+			scripts: [request.script],
+			machines: request.machineIds.map((machineId) => ({
 				machineId,
 				status: 'waiting',
 				skipReason: null
@@ -218,14 +250,16 @@ export function requestAssistantRun(
 				userId: principal.user.id,
 				via,
 				machines: plans.map((plan) => ({ id: plan.id, name: plan.name })),
-				shell: request.shell,
-				command: request.command,
-				timeoutMs: request.timeoutSeconds * 1000,
-				reason: request.reason
+				shell: request.script.shell,
+				command: request.script.command,
+				timeoutMs: request.timeoutMs,
+				reason: request.reason,
+				saved: request.saved,
+				whyApproval: request.whyApproval
 			},
 			now
 		);
-		const [first] = resolved.ids;
+		const [first] = request.machineIds;
 		if (first !== undefined) {
 			raiseNotification(
 				transaction,
@@ -237,7 +271,10 @@ export function requestAssistantRun(
 						machines: machineNamesText(plans.map((plan) => plan.name)),
 						requestedBy: principal.user.name,
 						assistant: assistantLabel(principal.assistant),
-						firstLine: firstLine(request.command)
+						firstLine:
+							request.saved.kind === 'saved'
+								? `Saved command: ${request.saved.name}`
+								: firstLine(request.script.command)
 					}
 				},
 				now
@@ -396,6 +433,16 @@ export async function approveRun(
 	if (stored === undefined) {
 		throw new Error(`Command run ${runId} has no command`);
 	}
+	if (
+		run.savedCommandId !== null &&
+		(request.command !== stored.command || request.timeoutMs !== run.timeoutMs)
+	) {
+		return {
+			kind: 'refused',
+			status: 400,
+			message: 'A saved command is approved as it is: it cannot be edited here.'
+		};
+	}
 	const script = commandScriptSchema.safeParse({
 		osFamily: stored.osFamily,
 		shell: stored.shell,
@@ -460,6 +507,7 @@ export async function approveRun(
 				machineCount: machineIds.length,
 				skippedCount: plans.filter((plan) => plan.plan === 'agent-too-old').length,
 				rerunOf: null,
+				saved: savedOfRun(run),
 				approval: {
 					kind: 'approved',
 					requestedBy: run.startedByName,

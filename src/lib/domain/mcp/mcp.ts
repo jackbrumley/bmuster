@@ -105,3 +105,12 @@ export type ConnectState = 'on' | 'off' | 'not-allowed';
 export function mcpServerUrl(origin: string): string {
 	return `${origin}/mcp`;
 }
+
+/**
+ * What the group who may connect an assistant can reach (SPEC-SAVED-COMMANDS SC24, SC25): how many
+ * machines its rules open to AI can view and to AI commands, and whether its rule on All machines
+ * already gives each (the one-tap buttons hide then). `no-group` while nobody may connect.
+ */
+export type AiAccessView =
+	| { kind: 'no-group' }
+	| { kind: 'group'; canView: number; canAsk: number; viewsAll: boolean; asksAll: boolean };

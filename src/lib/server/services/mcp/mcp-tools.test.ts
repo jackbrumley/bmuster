@@ -7,7 +7,8 @@ import {
 	getMachineInput,
 	getMachineOutput,
 	listMachinesInput,
-	listMachinesOutput
+	listMachinesOutput,
+	listSavedCommandsOutput
 } from '#lib/schemas/mcp/tools.ts';
 import { grantAccess } from '#tests/helpers/access.ts';
 import {
@@ -181,6 +182,7 @@ describe('never exposed (SPEC-MCP M12)', () => {
 		const schemas = {
 			list_machines: z.toJSONSchema(listMachinesOutput),
 			get_machine: z.toJSONSchema(getMachineOutput),
+			list_saved_commands: z.toJSONSchema(listSavedCommandsOutput),
 			run_command: z.toJSONSchema(commandResultOutput),
 			cancel_command: z.toJSONSchema(cancelCommandOutput)
 		};

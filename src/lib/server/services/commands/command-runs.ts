@@ -1,5 +1,7 @@
-import { and, asc, desc, eq, inArray, isNull, lt, lte, ne, or, isNotNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, isNotNull } from 'drizzle-orm';
 import type { CommandScript, RunMachineStatus, RunStatus } from '#lib/domain/commands/commands.ts';
+import { z } from 'zod';
+import type { ParameterValues, SavedEffect } from '#lib/domain/commands/saved-commands.ts';
 import type { OsFamily } from '#lib/domain/machines/machine.ts';
 import type { Queryable } from '../../database/connection.ts';
 import {
@@ -15,9 +17,26 @@ import {
  * per machine. The only code that touches these tables.
  */
 
-/** A person's run starts at once; an assistant's waits for a person's approval (SPEC-MCP M17). */
+/**
+ * A person's run starts at once; an assistant's waits for a person's approval (SPEC-MCP M17),
+ * unless it is a saved command every unattended condition allows (SPEC-SAVED-COMMANDS SC17).
+ */
 type NewRunOrigin =
-	{ kind: 'person' } | { kind: 'assistant'; grantId: string; reason: string; expiresAt: number };
+	| { kind: 'person' }
+	| { kind: 'assistant'; grantId: string; reason: string; expiresAt: number }
+	| { kind: 'pre-approved'; grantId: string; reason: string };
+
+/** The saved command a run came from, copied onto the run (SPEC-SAVED-COMMANDS SC7). */
+export type NewRunSaved =
+	| { kind: 'none' }
+	| {
+			kind: 'saved';
+			id: string;
+			name: string;
+			version: number;
+			effect: SavedEffect;
+			values: ParameterValues;
+	  };
 
 export type NewRun = {
 	id: string;
@@ -26,9 +45,25 @@ export type NewRun = {
 	timeoutMs: number;
 	rerunOf: string | null;
 	origin: NewRunOrigin;
+	saved: NewRunSaved;
 	scripts: CommandScript[];
 	machines: { machineId: string; status: 'waiting' | 'skipped'; skipReason: string | null }[];
 };
+
+function originColumns(origin: NewRunOrigin) {
+	switch (origin.kind) {
+		case 'person':
+			return {};
+		case 'assistant':
+			return {
+				oauthGrantId: origin.grantId,
+				reason: origin.reason,
+				expiresAt: new Date(origin.expiresAt)
+			};
+		case 'pre-approved':
+			return { oauthGrantId: origin.grantId, reason: origin.reason, preApproved: true };
+	}
+}
 
 export function insertRun(database: Queryable, run: NewRun): void {
 	database
@@ -38,15 +73,18 @@ export function insertRun(database: Queryable, run: NewRun): void {
 			startedBy: run.startedBy,
 			startedAt: new Date(run.startedAt),
 			endedAt: null,
-			status: run.origin.kind === 'person' ? 'running' : 'pending-approval',
+			status: run.origin.kind === 'assistant' ? 'pending-approval' : 'running',
 			timeoutMs: run.timeoutMs,
 			rerunOf: run.rerunOf,
-			requester: run.origin.kind,
-			...(run.origin.kind === 'assistant'
+			requester: run.origin.kind === 'person' ? 'person' : 'assistant',
+			...originColumns(run.origin),
+			...(run.saved.kind === 'saved'
 				? {
-						oauthGrantId: run.origin.grantId,
-						reason: run.origin.reason,
-						expiresAt: new Date(run.origin.expiresAt)
+						savedCommandId: run.saved.id,
+						savedCommandName: run.saved.name,
+						savedCommandVersion: run.saved.version,
+						savedCommandEffect: run.saved.effect,
+						savedCommandValues: JSON.stringify(run.saved.values)
 					}
 				: {})
 		})
@@ -71,6 +109,28 @@ export function insertRun(database: Queryable, run: NewRun): void {
 }
 
 export type RunRow = typeof commandRuns.$inferSelect & { startedByName: string };
+
+const valuesSchema = z.record(z.string(), z.union([z.string(), z.number()]));
+
+/** The saved command a run came from, as the run copied it (SPEC-SAVED-COMMANDS SC7). */
+export function savedOfRun(run: RunRow): NewRunSaved {
+	if (
+		run.savedCommandId === null ||
+		run.savedCommandName === null ||
+		run.savedCommandVersion === null ||
+		run.savedCommandEffect === null
+	) {
+		return { kind: 'none' };
+	}
+	return {
+		kind: 'saved',
+		id: run.savedCommandId,
+		name: run.savedCommandName,
+		version: run.savedCommandVersion,
+		effect: run.savedCommandEffect,
+		values: valuesSchema.parse(JSON.parse(run.savedCommandValues ?? '{}'))
+	};
+}
 
 export function findRun(database: Queryable, runId: string): RunRow | undefined {
 	const row = database
@@ -433,4 +493,19 @@ export function deleteOutputBefore(database: Queryable, before: number, now: num
 			)
 		)
 		.run().changes;
+}
+
+/** Unattended runs through this assistant grant since `since` (SPEC-SAVED-COMMANDS SC20). */
+export function preApprovedRunsSince(database: Queryable, grantId: string, since: number): number {
+	return database
+		.select({ id: commandRuns.id })
+		.from(commandRuns)
+		.where(
+			and(
+				eq(commandRuns.oauthGrantId, grantId),
+				eq(commandRuns.preApproved, true),
+				gte(commandRuns.startedAt, new Date(since))
+			)
+		)
+		.all().length;
 }

@@ -37,6 +37,7 @@ function view(machines: RunMachineView[], status: RunView['status'] = 'finished'
 		id: RUN,
 		startedBy: 'Ada',
 		origin: { kind: 'person' },
+		saved: { kind: 'none' },
 		startedIso: '2026-11-14T11:58:00.000Z',
 		endedIso: status === 'running' ? null : '2026-11-14T11:59:00.000Z',
 		status,
@@ -290,5 +291,45 @@ describe('a running machine’s output, live (SPEC-COMMANDS C23, C24)', () => {
 		await expect.element(screen.getByText('1 running')).toBeVisible();
 		expect(screen.getByText(/^Output:/u).query()).toBeNull();
 		expect(fetch).not.toHaveBeenCalled();
+	});
+});
+
+describe('a saved command’s run (SPEC-SAVED-COMMANDS SC14)', () => {
+	it('SC14: names the saved command, its version, its values and its label; Changes the machine in the warning colour', async () => {
+		const screen = await render(RunResults, {
+			initial: {
+				...view([row(1, 'failed', 1)]),
+				saved: {
+					kind: 'saved',
+					name: 'Restart spooler',
+					version: 4,
+					effect: 'changes',
+					values: [{ label: 'service', value: 'Spooler' }],
+					preApproved: true
+				},
+				origin: {
+					kind: 'assistant',
+					assistant: 'Claude Code',
+					verified: true,
+					reason: '',
+					expiresIso: '2026-11-14T12:10:00.000Z',
+					decision: { kind: 'pre-approved' }
+				}
+			},
+			now: NOW,
+			openMachineId: null
+		});
+		await expect
+			.element(screen.getByText('Saved command: Restart spooler (version 4)'))
+			.toBeVisible();
+		await expect.element(screen.getByText('service: Spooler')).toBeVisible();
+		await expect
+			.element(screen.getByText('Ran without approval: a saved command an admin let AI run'))
+			.toBeVisible();
+		const label = screen.getByText('Changes the machine', { exact: true });
+		await expect.element(label).toBeVisible();
+		expect(label.element().classList.contains('changes')).toBe(true);
+		// Run again goes back through the saved command, not a typed copy of its prelude.
+		expect(screen.getByRole('button', { name: /Run again/ }).query()).toBeNull();
 	});
 });

@@ -5,6 +5,7 @@
  */
 import type { SignInCheck } from '#lib/domain/auth/sign-in-check.ts';
 import type { CommandOsFamily, CommandShell } from './commands.ts';
+import type { SavedRunMark } from './saved-commands.ts';
 
 export const ASSISTANT_RUN_LIMITS = {
 	/** Machines in one request (approval fatigue, SPEC-MCP 11.3). */
@@ -197,6 +198,8 @@ export type ApprovalView = {
 	timeoutMs: number;
 	machines: ApprovalMachine[];
 	decide: ApprovalDecide;
+	/** A saved command's request: approved as it is, never edited (SPEC-SAVED-COMMANDS SC23). */
+	saved: SavedRunMark;
 };
 
 /** A request on the Approvals page and in the live notice (M26). */

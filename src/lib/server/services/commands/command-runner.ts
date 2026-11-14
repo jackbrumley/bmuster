@@ -14,6 +14,7 @@ import { findGrant, viaDetail } from '../oauth/grants.ts';
 import { mcpEnabled } from '../oauth/mcp-settings.ts';
 import { findUserById, toConsoleUser } from '../users/users.ts';
 import { auditMachineResult, auditRunEnded } from './command-audit.ts';
+import { unattendedRefusal } from './saved-command-assistant.ts';
 import { runOnMachine, type LiveStreams } from './command-exec.ts';
 import {
 	endRun,
@@ -47,7 +48,19 @@ export type RunnerDeps = {
  */
 type RunOrigin =
 	| { kind: 'person' }
-	| { kind: 'assistant'; grantId: string; label: string; via: Record<string, string> };
+	| {
+			kind: 'assistant';
+			grantId: string;
+			label: string;
+			via: Record<string, string>;
+			/**
+			 * A saved command run without approval (SPEC-SAVED-COMMANDS SC17): it runs as the person,
+			 * and every unattended condition is checked again at each machine's turn (SC19).
+			 */
+			unattended:
+				| { kind: 'no' }
+				| { kind: 'yes'; savedCommandId: string | null; savedCommandVersion: number | null };
+	  };
 
 type ActiveRun = {
 	running: number;
@@ -178,7 +191,12 @@ export function createCommandRunner(deps: RunnerDeps) {
 		const allowed = permissionsFor(database, toConsoleUser(requester), machineId).some(
 			(grant) => grant.permission === 'ai-commands'
 		);
-		return allowed ? undefined : 'AI commands was taken away before its turn.';
+		if (!allowed) {
+			return 'AI commands was taken away before its turn.';
+		}
+		return run.origin.unattended.kind === 'yes'
+			? unattendedRefusal(database, run.origin.unattended, machineId)
+			: undefined;
 	}
 
 	/** Starts one machine, or records why it cannot start. */
@@ -199,7 +217,9 @@ export function createCommandRunner(deps: RunnerDeps) {
 				'skipped',
 				run.origin.kind === 'person'
 					? 'The person who started the run was disabled.'
-					: 'The person who approved the run was disabled.'
+					: run.origin.unattended.kind === 'yes'
+						? 'The person the assistant acts as was disabled.'
+						: 'The person who approved the run was disabled.'
 			);
 			return;
 		}
@@ -325,14 +345,24 @@ export function createCommandRunner(deps: RunnerDeps) {
 							kind: 'assistant',
 							grantId: row.oauthGrantId,
 							label: grant === undefined ? 'an AI assistant' : assistantLabel(grant.assistant),
-							via: grant === undefined ? {} : viaDetail(grant.assistant, grant.clientId)
+							via: grant === undefined ? {} : viaDetail(grant.assistant, grant.clientId),
+							unattended: row.preApproved
+								? {
+										kind: 'yes',
+										savedCommandId: row.savedCommandId,
+										savedCommandVersion: row.savedCommandVersion
+									}
+								: { kind: 'no' }
 						}
 					: { kind: 'person' };
 			active.set(runId, {
 				running: 0,
 				startedBy: row.startedBy,
+				// An approved assistant's run runs as its approver; a pre-approved one as the person.
 				runAs:
-					origin.kind === 'assistant' && row.decidedBy !== null ? row.decidedBy : row.startedBy,
+					origin.kind === 'assistant' && !row.preApproved && row.decidedBy !== null
+						? row.decidedBy
+						: row.startedBy,
 				origin,
 				startedAt: row.startedAt.getTime(),
 				timeoutMs: row.timeoutMs,

@@ -294,3 +294,51 @@ export function writeApproverSettings(
 	});
 	return { kind: 'changed' };
 }
+
+/**
+ * Allow AI to run saved commands without approval (SPEC-SAVED-COMMANDS SC21), stored as
+ * `mcp.savedCommandsUnattended`. On by default, so each saved command's own switch decides; off,
+ * every saved command an assistant asks for waits for approval.
+ */
+const UNATTENDED_KEY = 'mcp.savedCommandsUnattended';
+const UNATTENDED_LABEL = 'Allow AI to run saved commands without approval';
+
+export function unattendedAllowed(database: Queryable): boolean {
+	const value = stored(database, UNATTENDED_KEY);
+	return value === undefined ? true : enabledSchema.parse(value);
+}
+
+/** Saves the switch for an admin, audited when it changes. */
+export function writeUnattendedAllowed(
+	database: AppDatabase,
+	actorUserId: string,
+	allowed: boolean,
+	now: number
+): void {
+	database.transaction((transaction) => {
+		const before = unattendedAllowed(transaction);
+		if (before === allowed) {
+			return;
+		}
+		const value = JSON.stringify(allowed);
+		transaction
+			.insert(settings)
+			.values({ key: UNATTENDED_KEY, value, updatedAt: new Date(now), updatedBy: actorUserId })
+			.onConflictDoUpdate({
+				target: settings.key,
+				set: { value, updatedAt: new Date(now), updatedBy: actorUserId }
+			})
+			.run();
+		recordAudit(
+			transaction,
+			{
+				actor: { kind: 'user', userId: actorUserId },
+				kind: 'setting-changed',
+				target: UNATTENDED_LABEL,
+				machineId: null,
+				detail: { from: before ? 'on' : 'off', to: allowed ? 'on' : 'off' }
+			},
+			now
+		);
+	});
+}

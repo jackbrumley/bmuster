@@ -5,8 +5,11 @@
 		IconAlertTriangle,
 		IconArrowsExchange,
 		IconBell,
+		IconBookmark,
 		IconBug,
 		IconCertificate,
+		IconChartDonut,
+		IconClipboard,
 		IconCloudDownload,
 		IconDeviceDesktopMinus,
 		IconDeviceDesktopPlus,
@@ -15,32 +18,30 @@
 		IconEdit,
 		IconFileText,
 		IconFolderPlus,
-		IconChartDonut,
-		IconNoteOff,
-		IconRefresh,
+		IconHandStop,
 		IconKey,
+		IconLink,
+		IconLinkOff,
 		IconLock,
-		IconMail,
-		IconMailOff,
 		IconLogin2,
 		IconLogout,
-		IconPlugConnected,
-		IconHandStop,
-		IconRobot,
-		IconTrash,
+		IconMail,
+		IconMailOff,
+		IconMessage,
+		IconNoteOff,
 		IconPhone,
 		IconPhoneOff,
 		IconPin,
 		IconPlug,
-		IconLink,
-		IconLinkOff,
+		IconPlugConnected,
+		IconPlugConnectedX,
+		IconRefresh,
+		IconRobot,
 		IconRocket,
 		IconShieldLock,
 		IconShieldX,
-		IconPlugConnectedX,
-		IconClipboard,
-		IconMessage,
 		IconTerminal2,
+		IconTrash,
 		IconUpload,
 		IconUser,
 		IconUsersGroup,
@@ -261,6 +262,10 @@
 			case 'command-run-denied':
 			case 'command-run-expired':
 				return IconHandStop;
+			case 'saved-command-created':
+			case 'saved-command-changed':
+			case 'saved-command-deleted':
+				return IconBookmark;
 			case 'two-factor-turned-on':
 			case 'two-factor-turned-off':
 			case 'two-factor-reset':

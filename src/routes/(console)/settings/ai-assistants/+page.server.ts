@@ -3,7 +3,12 @@ import { database } from '#lib/server/database/app-database.ts';
 import { page } from '#lib/server/guards/page.ts';
 import { listUserGroups } from '#lib/server/services/access/groups.ts';
 import { listGrants } from '#lib/server/services/oauth/grants.ts';
-import { approverSettingsView, mcpSettingsView } from '#lib/server/services/oauth/mcp-settings.ts';
+import { aiAccessView } from '#lib/server/services/oauth/ai-access.ts';
+import {
+	approverSettingsView,
+	mcpSettingsView,
+	unattendedAllowed
+} from '#lib/server/services/oauth/mcp-settings.ts';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -17,6 +22,8 @@ export const load: PageServerLoad = page.admin(({ url }) => {
 		now,
 		settings: mcpSettingsView(database),
 		approvers: approverSettingsView(database),
+		aiAccess: aiAccessView(database),
+		unattended: unattendedAllowed(database),
 		groups: listUserGroups(database).map((group) => ({ id: group.id, name: group.name })),
 		grants: listGrants(database, { kind: 'all' }, now),
 		serverUrl: mcpServerUrl(url.origin)

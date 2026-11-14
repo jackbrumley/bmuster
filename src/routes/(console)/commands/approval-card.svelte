@@ -23,6 +23,7 @@
 	import Notice from '#lib/ui/notice.svelte';
 	import OsIcon from '#lib/ui/os-icon.svelte';
 	import Panel from '#lib/ui/panel.svelte';
+	import SavedRunTag from '#lib/ui/saved-run-tag.svelte';
 	import TextField from '#lib/ui/text-field.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
@@ -232,10 +233,13 @@
 			<p class="meta">
 				Asked {new Date(view.requestedIso).toLocaleString('en-AU')} · {remainingText}
 			</p>
-			<figure class="reason">
-				<figcaption>{view.assistant} says:</figcaption>
-				<blockquote>{view.reason}</blockquote>
-			</figure>
+			<SavedRunTag mark={view.saved} />
+			{#if view.reason !== ''}
+				<figure class="reason">
+					<figcaption>{view.assistant} says:</figcaption>
+					<blockquote>{view.reason}</blockquote>
+				</figure>
+			{/if}
 		</Panel>
 
 		<Panel heading="The command" actions={undefined} tone="normal" padding="normal">
@@ -336,10 +340,12 @@
 					>Deny</Button
 				>
 				<span class="right">
-					{#if canApprove}
+					{#if canApprove && view.saved.kind === 'none'}
 						<Button variant="secondary" size="compact" type="button" onclick={startEdit}
 							>Edit</Button
 						>
+					{/if}
+					{#if canApprove}
 						<Button
 							variant="primary"
 							size="compact"

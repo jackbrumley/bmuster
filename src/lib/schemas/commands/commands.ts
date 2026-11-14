@@ -17,6 +17,7 @@ import {
 	type RunView
 } from '#lib/domain/commands/commands.ts';
 import type { SignInCheck } from '#lib/domain/auth/sign-in-check.ts';
+import { SAVED_EFFECTS, type SavedRunMark } from '#lib/domain/commands/saved-commands.ts';
 
 /** The event name on GET /api/commands/runs/<id>/events. */
 export const COMMAND_RUN_EVENT = 'command-run';
@@ -129,6 +130,7 @@ const runOriginSchema: z.ZodType<RunOrigin> = z.discriminatedUnion('kind', [
 		expiresIso: z.iso.datetime(),
 		decision: z.discriminatedUnion('kind', [
 			z.object({ kind: z.literal('pending') }),
+			z.object({ kind: z.literal('pre-approved') }),
 			z.object({
 				kind: z.literal('approved'),
 				by: z.string(),
@@ -154,10 +156,24 @@ const runOriginSchema: z.ZodType<RunOrigin> = z.discriminatedUnion('kind', [
 	})
 ]);
 
+/** The saved command a run came from (SPEC-SAVED-COMMANDS SC14). */
+const savedRunMarkSchema: z.ZodType<SavedRunMark> = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('none') }),
+	z.object({
+		kind: z.literal('saved'),
+		name: z.string(),
+		version: z.int(),
+		effect: z.enum(SAVED_EFFECTS),
+		values: z.array(z.object({ label: z.string(), value: z.string() })),
+		preApproved: z.boolean()
+	})
+]);
+
 export const runViewSchema: z.ZodType<RunView> = z.object({
 	id: z.uuid(),
 	startedBy: z.string(),
 	origin: runOriginSchema,
+	saved: savedRunMarkSchema,
 	startedIso: z.iso.datetime(),
 	endedIso: z.iso.datetime().nullable(),
 	status: z.enum(RUN_STATUSES),

@@ -133,6 +133,10 @@ const AUDIT_KINDS = [
 	'command-run-requested',
 	'command-run-denied',
 	'command-run-expired',
+	// SPEC-SAVED-COMMANDS
+	'saved-command-created',
+	'saved-command-changed',
+	'saved-command-deleted',
 	// SPEC-TWO-FACTOR
 	'two-factor-turned-on',
 	'two-factor-turned-off',
@@ -396,6 +400,12 @@ export function activityLabel(kind: AuditKind): string {
 			return "Denied an AI assistant's command";
 		case 'command-run-expired':
 			return 'A command waiting for approval expired';
+		case 'saved-command-created':
+			return 'Added a saved command';
+		case 'saved-command-changed':
+			return 'Changed a saved command';
+		case 'saved-command-deleted':
+			return 'Deleted a saved command';
 		case 'two-factor-turned-on':
 			return 'Turned on two-factor sign-in';
 		case 'two-factor-turned-off':

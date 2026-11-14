@@ -9,6 +9,7 @@ import {
 	type RunSummary,
 	type RunView
 } from '#lib/domain/commands/commands.ts';
+import type { SavedRunMark } from '#lib/domain/commands/saved-commands.ts';
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
 import { commandScriptSchema } from '#lib/schemas/commands/commands.ts';
 import type { Queryable } from '../../database/connection.ts';
@@ -21,6 +22,7 @@ import {
 	machinesOf,
 	newestRuns,
 	outputOf,
+	savedOfRun,
 	scriptsOf,
 	type RunMachineRow,
 	type RunRow
@@ -84,6 +86,9 @@ export function originOf(
 	const script = scripts.find((row) => row.runId === run.id);
 	const requestedCommand = script?.requestedCommand ?? null;
 	const decision = ((): Extract<RunOrigin, { kind: 'assistant' }>['decision'] => {
+		if (run.preApproved) {
+			return { kind: 'pre-approved' };
+		}
 		switch (run.status) {
 			case 'pending-approval':
 				return { kind: 'pending' };
@@ -122,6 +127,27 @@ export function originOf(
 	};
 }
 
+/** The saved command a run came from, with its values by label (SPEC-SAVED-COMMANDS SC14). */
+export function savedMarkOf(run: RunRow): SavedRunMark {
+	const saved = savedOfRun(run);
+	switch (saved.kind) {
+		case 'none':
+			return { kind: 'none' };
+		case 'saved':
+			return {
+				kind: 'saved',
+				name: saved.name,
+				version: saved.version,
+				effect: saved.effect,
+				values: Object.entries(saved.values).map(([label, value]) => ({
+					label,
+					value: String(value)
+				})),
+				preApproved: run.preApproved
+			};
+	}
+}
+
 function countsOf(rows: readonly RunMachineRow[]) {
 	const counts = emptyCounts();
 	for (const row of rows) {
@@ -158,6 +184,7 @@ export function listRunsFor(database: Queryable, user: ConsoleUser): RunSummary[
 				commands: scripts
 					.filter((script) => script.runId === run.id)
 					.map((script) => ({ osFamily: script.osFamily, firstLine: firstLine(script.command) })),
+				saved: savedMarkOf(run),
 				counts: countsOf(own)
 			}
 		];
@@ -176,6 +203,7 @@ function viewOf(
 		id: run.id,
 		startedBy: requesterText(run.startedByName, origin),
 		origin,
+		saved: savedMarkOf(run),
 		startedIso: run.startedAt.toISOString(),
 		endedIso: run.endedAt === null ? null : run.endedAt.toISOString(),
 		status: run.status,

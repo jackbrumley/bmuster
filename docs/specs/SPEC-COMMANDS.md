@@ -101,7 +101,7 @@ Jack (2026-11-15): on a slow machine nobody could tell "working" from "stuck", b
 
 ## 8. Out of scope for v1
 
-Saved commands (a library), schedules, queueing for offline machines, killing a running command, running as the signed-in user, file uploads with a command, approval by a second person, and Claude's commands (SPEC-MCP).
+Saved commands (a library; since built in SPEC-SAVED-COMMANDS), schedules, queueing for offline machines, killing a running command, running as the signed-in user, file uploads with a command, approval by a second person, and Claude's commands (SPEC-MCP).
 
 ## 9. Open questions
 
