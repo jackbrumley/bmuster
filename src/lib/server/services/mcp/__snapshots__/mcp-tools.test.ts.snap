@@ -299,6 +299,15 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
         "items": {
           "additionalProperties": false,
           "properties": {
+            "approval": {
+              "description": "Whether running it waits for a person, over all its machines.",
+              "enum": [
+                "Runs at once (no approval needed)",
+                "Needs a person's approval in BMuster",
+                "Runs at once on the machines marked so; needs a person's approval in BMuster on the others",
+              ],
+              "type": "string",
+            },
             "description": {
               "type": "string",
             },
@@ -316,6 +325,14 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
               "items": {
                 "additionalProperties": false,
                 "properties": {
+                  "approval": {
+                    "description": "Whether running it on this machine waits for a person.",
+                    "enum": [
+                      "Runs at once (no approval needed)",
+                      "Needs a person's approval in BMuster",
+                    ],
+                    "type": "string",
+                  },
                   "id": {
                     "type": "string",
                   },
@@ -338,6 +355,7 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
                   "name",
                   "system",
                   "runsWithoutApproval",
+                  "approval",
                 ],
                 "type": "object",
               },
@@ -438,6 +456,7 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
             "systems",
             "parameters",
             "runsWithoutApproval",
+            "approval",
             "machines",
           ],
           "type": "object",

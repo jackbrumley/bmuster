@@ -7,7 +7,7 @@ import {
 	type SavedCommandView,
 	type SavedParameter
 } from '#lib/domain/commands/saved-commands.ts';
-import type { ListSavedCommandsOutput } from '#lib/schemas/mcp/tools.ts';
+import { SAVED_APPROVAL, type ListSavedCommandsOutput } from '#lib/schemas/mcp/tools.ts';
 import type { Queryable } from '../../database/connection.ts';
 import { machineIdsWith, permissionsFor } from '../access/access.ts';
 import { activeMachineNames, machineAgentFacts } from '../machines/machine-views.ts';
@@ -107,6 +107,16 @@ function assistantMachines(
 		.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** The command's approval in words, over its machines (SC31). */
+function overallApproval(
+	atOnce: readonly boolean[]
+): ListSavedCommandsOutput['commands'][number]['approval'] {
+	if (atOnce.every((runs) => runs)) {
+		return SAVED_APPROVAL.atOnce;
+	}
+	return atOnce.some((runs) => runs) ? SAVED_APPROVAL.some : SAVED_APPROVAL.needsApproval;
+}
+
 /** `list_saved_commands` (SC15): what this person's assistant may use, never the scripts. */
 export function listSavedForAssistant(context: AssistantContext): ListSavedCommandsOutput {
 	const { database, principal, now } = context;
@@ -124,6 +134,14 @@ export function listSavedForAssistant(context: AssistantContext): ListSavedComma
 				return [];
 			}
 			const withoutApproval = command.aiUnattended && switchedOn;
+			const listed = machines.map((machine) => {
+				const atOnce = withoutApproval && runMachines.has(machine.id);
+				return {
+					...machine,
+					runsWithoutApproval: atOnce,
+					approval: atOnce ? SAVED_APPROVAL.atOnce : SAVED_APPROVAL.needsApproval
+				};
+			});
 			return [
 				{
 					id: command.id,
@@ -133,10 +151,8 @@ export function listSavedForAssistant(context: AssistantContext): ListSavedComma
 					systems: command.systems,
 					parameters: command.parameters.map(parameterOutput),
 					runsWithoutApproval: withoutApproval,
-					machines: machines.map((machine) => ({
-						...machine,
-						runsWithoutApproval: withoutApproval && runMachines.has(machine.id)
-					}))
+					approval: overallApproval(listed.map((machine) => machine.runsWithoutApproval)),
+					machines: listed
 				}
 			];
 		}),
