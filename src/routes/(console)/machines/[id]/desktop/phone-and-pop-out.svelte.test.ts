@@ -81,6 +81,7 @@ async function connect(button: 'Connect' | 'Watch only') {
 				serverUpdate: null,
 				runCommands: false,
 				assistant: { kind: 'none' },
+				approvals: { kind: 'hidden' },
 				signedIn: true,
 				now: loadedAt,
 				machine: TEST_MACHINE,

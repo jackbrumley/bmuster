@@ -21,6 +21,7 @@ export const CONSOLE = {
 	serverUpdate: null,
 	runCommands: true,
 	assistant: { kind: 'none' as const },
+	approvals: { kind: 'hidden' as const },
 	signedIn: true
 };
 const GRANTS: Grant[] = PERMISSIONS.map((permission) => ({ permission, consent: 'unattended' }));

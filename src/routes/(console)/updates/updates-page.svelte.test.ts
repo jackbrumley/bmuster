@@ -110,6 +110,7 @@ function renderPage(overrides: Partial<Data>) {
 			serverUpdate: null,
 			runCommands: false,
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			signedIn: true,
 			now: NOW,
 			server: {

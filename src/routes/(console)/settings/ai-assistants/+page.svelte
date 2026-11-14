@@ -12,12 +12,14 @@
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiRequest } from '#lib/utils/api-client.ts';
 	import ConnectedAssistants from '../../connected-assistants.svelte';
+	import ApproverSettings from './approver-settings.svelte';
 	import SettingsTabs from '../settings-tabs.svelte';
 	import type { PageProps } from './$types';
 
 	/**
 	 * Settings → AI assistants (SPEC-MCP 8.5): Allow AI assistants (MCP) and who may connect one,
-	 * saved together; every connected assistant with Disconnect; Stop all AI access.
+	 * saved together; who may approve their commands; every connected assistant with Disconnect;
+	 * Stop all AI access.
 	 */
 	let { data }: PageProps = $props();
 
@@ -65,7 +67,7 @@
 		const yes = await confirmAction({
 			title: 'Stop all AI access?',
 			message:
-				'This turns AI assistants off and disconnects every one of them now. People must connect them again after an admin turns it back on.',
+				'This turns AI assistants off and disconnects every one of them now. Requests waiting for approval are cancelled. People must connect them again after an admin turns it back on.',
 			confirmLabel: 'Stop all AI access'
 		});
 		if (!yes) {
@@ -131,14 +133,17 @@
 	</div>
 </Panel>
 
+<ApproverSettings approvers={data.approvers} groups={data.groups} />
+
 <AiAssistantHelp serverUrl={data.serverUrl} state={data.settings.enabled ? 'on' : 'off'} />
 
 <ConnectedAssistants grants={data.grants} now={data.now} showPerson={true} />
 
 <Panel heading="Stop all AI access" actions={undefined} tone="danger" padding="normal">
 	<p class="lead">
-		Turns AI assistants off and disconnects every assistant, for everyone, at once. Use it if you
-		think one is misbehaving.
+		Turns AI assistants off and disconnects every assistant, for everyone, at once. Requests waiting
+		for approval are cancelled, and runs they started stop before any machine not yet started. Use
+		it if you think one is misbehaving.
 	</p>
 	<div class="save">
 		<Button variant="danger" size="compact" type="button" onclick={() => void stopAll()}>

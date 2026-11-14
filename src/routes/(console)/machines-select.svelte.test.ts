@@ -59,6 +59,7 @@ function renderPage(commands: CommandSelection = ALLOWED) {
 			serverUpdate: null,
 			runCommands: commands.kind === 'allowed',
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			signedIn: true,
 			now: NOW,
 			rollout: { kind: 'none' },

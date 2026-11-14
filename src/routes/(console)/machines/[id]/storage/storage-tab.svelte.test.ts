@@ -153,6 +153,7 @@ async function openTab(
 				serverUpdate: null,
 				runCommands: false,
 				assistant: { kind: 'none' },
+				approvals: { kind: 'hidden' },
 				signedIn: true,
 				now,
 				machine,

@@ -177,6 +177,28 @@
 		return parts.join(' · ');
 	}
 
+	/** For an AI assistant's run (SPEC-MCP M28): what was decided, by whom, and the reason. */
+	const decisionText = $derived.by((): string => {
+		if (run.origin.kind === 'person') {
+			return '';
+		}
+		const decision = run.origin.decision;
+		switch (decision.kind) {
+			case 'pending':
+				return 'Waiting for approval';
+			case 'approved':
+				return `Approved by ${decision.by}${decision.edit.kind === 'edited' ? ', edited' : ''}`;
+			case 'denied':
+				return decision.note === ''
+					? `Denied by ${decision.by}`
+					: `Denied by ${decision.by}: ${decision.note}`;
+			case 'expired':
+				return 'Expired: nobody decided within 10 minutes';
+			case 'cancelled':
+				return 'Withdrawn before anyone decided';
+		}
+	});
+
 	const startedText = $derived(
 		`Started by ${run.startedBy} ${new Date(run.startedIso).toLocaleString('en-AU')}`
 	);
@@ -190,6 +212,14 @@
 			<p class="meta">
 				{startedText}{ago > 0 ? ` (${ago} min ago)` : ''} · time limit {run.timeoutMs / 1000} s
 			</p>
+			{#if run.origin.kind === 'assistant'}
+				<p class="decision">{decisionText}</p>
+				<p class="meta">{run.origin.assistant} said: {run.origin.reason}</p>
+				{#if run.origin.decision.kind === 'approved' && run.origin.decision.edit.kind === 'edited'}
+					<p class="shell">Asked for (before the edit)</p>
+					<pre class="command">{run.origin.decision.edit.requestedCommand}</pre>
+				{/if}
+			{/if}
 			{#each run.scripts as script (script.osFamily)}
 				<p class="shell">{commandOsLabel(script.osFamily)} · {commandShellLabel(script.shell)}</p>
 				<pre class="command">{script.command}</pre>
@@ -307,6 +337,11 @@
 	.detail {
 		color: var(--muted);
 		font-size: var(--text-xs);
+		overflow-wrap: anywhere;
+	}
+
+	.decision {
+		font-weight: var(--weight-semibold);
 		overflow-wrap: anywhere;
 	}
 

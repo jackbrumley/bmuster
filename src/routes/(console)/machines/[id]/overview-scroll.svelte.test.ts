@@ -57,6 +57,7 @@ function dataFor(machine: Machine) {
 		serverUpdate: null,
 		runCommands: false,
 		assistant: { kind: 'none' as const },
+		approvals: { kind: 'hidden' as const },
 		signedIn: true as const,
 		now: NOW,
 		machine,

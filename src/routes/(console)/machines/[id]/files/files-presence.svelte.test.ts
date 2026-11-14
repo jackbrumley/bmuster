@@ -59,6 +59,7 @@ function openFiles(machine: Machine) {
 				serverUpdate: null,
 				runCommands: false,
 				assistant: { kind: 'none' },
+				approvals: { kind: 'hidden' },
 				signedIn: true,
 				now: NOW,
 				machine,
