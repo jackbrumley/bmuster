@@ -15,6 +15,19 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.31',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'In a terminal: codex mcp login bmuster, approve in the browser; it prints success and codex mcp list no longer says Not logged in; then ask Codex to list your BMuster machines',
+				'Signing in to the console, saving settings and other forms still work; nothing else changed'
+			]
+		},
+		changes: [
+			'AI assistants: signing in now completes. A built-in web-form check refused the assistant’s final sign-in step on installed servers (Codex: “missing field access_token”); BMuster’s own stricter cross-site check now covers it instead'
+		]
+	},
+	{
 		version: '0.4.30',
 		testing: {
 			kind: 'steps',

@@ -192,7 +192,7 @@ dependencies = [
 
 [[package]]
 name = "bmuster-agent"
-version = "0.4.30"
+version = "0.4.31"
 dependencies = [
  "anyhow",
  "arboard",
@@ -237,7 +237,7 @@ dependencies = [
 
 [[package]]
 name = "bmuster-desktop"
-version = "0.4.30"
+version = "0.4.31"
 dependencies = [
  "arboard",
  "jpeg-encoder",
@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "bmuster-protocol"
-version = "0.4.30"
+version = "0.4.31"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -266,7 +266,7 @@ dependencies = [
 
 [[package]]
 name = "bmuster-server"
-version = "0.4.30"
+version = "0.4.31"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -289,7 +289,7 @@ dependencies = [
 
 [[package]]
 name = "bmuster-service"
-version = "0.4.30"
+version = "0.4.31"
 dependencies = [
  "anyhow",
  "libc",

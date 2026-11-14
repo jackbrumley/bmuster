@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { RequestEvent } from '@sveltejs/kit';
 import { describe, expect, it } from 'vitest';
 import { isCrossOriginWrite, originCheck } from './origin-check.ts';
@@ -61,5 +62,29 @@ describe('origin check (S8)', () => {
 		});
 		expect(response.status).toBe(403);
 		expect(reached).toBe(false);
+	});
+
+	it('S8: covers the browser form posts SvelteKit no longer checks, and lets AI assistants reach the token endpoint', () => {
+		// vite.config.ts hands cross-site protection to this hook (csrf.trustedOrigins ['*']).
+		const config = readFileSync(new URL('../../../../vite.config.ts', import.meta.url), 'utf8');
+		expect(config).toContain("csrf: { trustedOrigins: ['*'] }");
+		const form = (path: string, origin: string | null): Request =>
+			new Request(`${SELF}${path}`, {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+					...(origin === null ? {} : { origin })
+				},
+				body: 'a=b'
+			});
+		// A cross-site or origin-less form post to a console page or action is still refused.
+		expect(
+			isCrossOriginWrite(form('/login', 'https://evil.example'), new URL(`${SELF}/login`))
+		).toBe(true);
+		expect(isCrossOriginWrite(form('/s/abc', null), new URL(`${SELF}/s/abc`))).toBe(true);
+		// An assistant's form-encoded token request (no Origin) is left to the token endpoint's guard.
+		expect(isCrossOriginWrite(form('/oauth/token', null), new URL(`${SELF}/oauth/token`))).toBe(
+			false
+		);
 	});
 });
