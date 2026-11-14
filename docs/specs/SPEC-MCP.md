@@ -184,6 +184,14 @@ Jack (2026-11-15): scripts an admin writes once, which an assistant may run with
 | M46 | **`list_saved_commands`** (read-only, `commands:run`): the switched-on saved commands with a machine where the person holds `ai-commands` in the command's groups; name, description, label, systems, parameters, machines and whether each runs without approval; never the script text (SPEC-SAVED-COMMANDS SC15). | `saved-command-assistant.test.ts` "SC15"                                            |
 | M47 | **`run_saved_command`** (`commands:run`): runs at once only when every unattended condition holds, else waits on Approvals like `run_command`; same result shape, with `savedCommand` and `commandRun: null` (SC16–SC22).                                                                                            | `saved-command-assistant.test.ts` "SC17", `mcp-conformance-commands.test.ts` "SC18" |
 
+### Honest results (SPEC-COMMANDS C25–C30)
+
+Jack (2026-11-15): a PowerShell command can print errors and still exit 0. Assistants now see when it did.
+
+| #   | Criterion | Named test |
+| :-- | :-------- | :--------- |
+| M48 | **Errors reported in results.** `get_command_result`, `run_command` and `run_saved_command` give each machine `errorsReported` (the count the PowerShell wrapper reported; null when the shell has no wrapper or no report came) and `wroteToStderr` (null until it finished). The text copy reads "Finished with errors (N)" for a machine that exited 0 with errors reported. | `windows-wrapper.test.ts` "M48" |
+
 ## 6. Shape
 
 ```
