@@ -152,7 +152,17 @@ export const commandResultOutput = z.object({
 			status: z.enum(RUN_MACHINE_STATUSES),
 			reason: z.string(),
 			exitCode: z.int().nullable(),
-			durationMs: z.int().nullable()
+			durationMs: z.int().nullable(),
+			runningForMs: z
+				.int()
+				.nullable()
+				.describe('While the machine runs: milliseconds since it started. Null otherwise.'),
+			lastOutputMsAgo: z
+				.int()
+				.nullable()
+				.describe(
+					'While the machine runs: milliseconds since its last output. Null otherwise, or before any output.'
+				)
 		})
 	),
 	output: z

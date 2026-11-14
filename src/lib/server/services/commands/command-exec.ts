@@ -13,7 +13,7 @@ import { signTicket, TICKET_LIFETIME_MS } from '../sessions/session-ticket.ts';
  * machine, the person, the exact command, shell, time limit and output cap, and the
  * permissions the person holds there. The relay carries it like any session, with the server
  * as the other end: stdout and stderr frames (first byte 1 or 2) are kept up to 1 MB each, and
- * the agent's `exec-done` is the result.
+ * the agent's `exec-done` is the result. Until then, the output so far can be read (C22).
  */
 
 /** First byte of an exec output frame (agent/crates/protocol/src/session.rs). */
@@ -76,11 +76,46 @@ class Kept {
 	all(): Buffer {
 		return Buffer.concat(this.#chunks);
 	}
+
+	/**
+	 * What has come so far, as text. A character the agent has sent only part of waits for the
+	 * next read, so the text so far is always the start of the text the result saves.
+	 */
+	soFar(): string {
+		const bytes = this.all();
+		return bytes.subarray(0, wholeCharacters(bytes)).toString('utf8');
+	}
 }
 
+/** How many of these bytes end on a whole UTF-8 character. */
+function wholeCharacters(bytes: Buffer): number {
+	const length = bytes.byteLength;
+	for (let back = 1; back <= Math.min(4, length); back += 1) {
+		const byte = bytes[length - back] ?? 0;
+		if ((byte & 0xc0) !== 0x80) {
+			const needed = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
+			return needed > back ? length - back : length;
+		}
+	}
+	return length;
+}
+
+/** A running command's output so far (SPEC-COMMANDS C22), read from the buffers the result is made from. */
+export type LiveStreams = {
+	/** Bytes kept so far in both streams: cheap, for the run view. */
+	bytes: () => number;
+	read: () => {
+		stdout: string;
+		stderr: string;
+		stdoutTruncated: boolean;
+		stderrTruncated: boolean;
+	};
+};
+
 /**
- * Asks the agent to run the command. `onDone` hears the result once, however it ends. False
- * when the machine's live socket is gone (it is offline: nothing was sent).
+ * Asks the agent to run the command. `onOutput` hears each output frame; `onDone` hears the
+ * result once, however it ends. Offline when the machine's live socket is gone (nothing was
+ * sent).
  */
 export function runOnMachine(
 	database: AppDatabase,
@@ -88,8 +123,9 @@ export function runOnMachine(
 	secretsKey: Buffer,
 	request: ExecRequest,
 	now: number,
-	onDone: (result: ExecResult) => void
-): { kind: 'sent'; sessionId: string } | { kind: 'offline' } {
+	handlers: { onOutput: () => void; onDone: (result: ExecResult) => void }
+): { kind: 'sent'; sessionId: string; live: LiveStreams } | { kind: 'offline' } {
+	const { onOutput, onDone } = handlers;
 	const sessionId = crypto.randomUUID();
 	const stdout = new Kept();
 	const stderr = new Kept();
@@ -111,8 +147,10 @@ export function runOnMachine(
 			const body = data.subarray(1);
 			if (data[0] === EXEC_STDOUT) {
 				stdout.push(body);
+				onOutput();
 			} else if (data[0] === EXEC_STDERR) {
 				stderr.push(body);
+				onOutput();
 			}
 		}
 	};
@@ -210,7 +248,19 @@ export function runOnMachine(
 		relay.end(sessionId, 'agent-lost', 'This machine is offline.');
 		return { kind: 'offline' };
 	}
-	return { kind: 'sent', sessionId };
+	return {
+		kind: 'sent',
+		sessionId,
+		live: {
+			bytes: () => stdout.bytes + stderr.bytes,
+			read: () => ({
+				stdout: stdout.soFar(),
+				stderr: stderr.soFar(),
+				stdoutTruncated: stdout.truncated,
+				stderrTruncated: stderr.truncated
+			})
+		}
+	};
 }
 
 function parseJson(text: string): unknown {

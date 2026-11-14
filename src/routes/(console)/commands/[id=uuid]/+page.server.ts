@@ -24,7 +24,7 @@ export const load: PageServerLoad = page.user(({ params, cookies }, { user }) =>
 		},
 		params.id
 	);
-	const run = runViewFor(database, user, params.id);
+	const run = runViewFor(database, user, params.id, appRunner());
 	if (run === undefined) {
 		error(404, 'No command run with this id.');
 	}

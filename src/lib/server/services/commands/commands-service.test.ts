@@ -407,7 +407,9 @@ describe('running (C13–C17)', () => {
 		if (first === undefined) throw new Error('no ticket');
 		agentAnswers(relay, first, { stdout: 'ok\n', stderr: '', exitCode: 0, timedOut: false });
 		expect(sent()).toBe(11);
-		expect(runViewFor(database, context('admin').user, started.runId)?.counts).toMatchObject({
+		expect(
+			runViewFor(database, context('admin').user, started.runId, context('admin').runner)?.counts
+		).toMatchObject({
 			succeeded: 1,
 			running: 10,
 			waiting: 1
@@ -434,7 +436,12 @@ describe('running (C13–C17)', () => {
 		if (started.kind !== 'started') throw new Error(started.message);
 		expect(onlineTickets).toHaveLength(1);
 		expect(oldTickets).toHaveLength(0);
-		const view = runViewFor(database, context('admin').user, started.runId);
+		const view = runViewFor(
+			database,
+			context('admin').user,
+			started.runId,
+			context('admin').runner
+		);
 		expect(view?.machines.map((row) => [row.machineName, row.status, row.reason])).toEqual([
 			['Online', 'running', ''],
 			['Offline', 'offline', ''],
@@ -514,7 +521,7 @@ describe('running (C13–C17)', () => {
 		);
 
 		const user = context('admin').user;
-		const view = runViewFor(database, user, started.runId);
+		const view = runViewFor(database, user, started.runId, context('admin').runner);
 		expect(view?.machines.map((row) => [row.machineName, row.status, row.exitCode])).toEqual([
 			['Good', 'succeeded', 0],
 			['Bad', 'failed', 5],
@@ -525,7 +532,9 @@ describe('running (C13–C17)', () => {
 		expect(view?.status).toBe('finished');
 		expect(view?.endedIso).not.toBeNull();
 		expect(view?.machines[4]?.reason).toBe('the ticket does not carry the run-commands permission');
-		expect(runOutputFor(database, user, started.runId, ids[1] ?? '')).toEqual({
+		expect(
+			runOutputFor(database, user, started.runId, ids[1] ?? '', context('admin').runner, 0)
+		).toEqual({
 			kind: 'kept',
 			stdout: '',
 			stderr: 'no such unit\n',
@@ -536,8 +545,10 @@ describe('running (C13–C17)', () => {
 		// 30 days on, the output goes; the rows and exit codes stay.
 		expect(pruneCommandOutput(database, clock.now + 29 * 24 * 60 * MINUTE)).toBe(0);
 		expect(pruneCommandOutput(database, clock.now + 31 * 24 * 60 * MINUTE)).toBe(5);
-		expect(runOutputFor(database, user, started.runId, ids[1] ?? '')).toEqual({ kind: 'deleted' });
-		const after = runViewFor(database, user, started.runId);
+		expect(
+			runOutputFor(database, user, started.runId, ids[1] ?? '', context('admin').runner, 0)
+		).toEqual({ kind: 'deleted' });
+		const after = runViewFor(database, user, started.runId, context('admin').runner);
 		expect(after?.machines[1]).toMatchObject({
 			status: 'failed',
 			exitCode: 5,
@@ -559,7 +570,14 @@ describe('running (C13–C17)', () => {
 			exitCode: 0,
 			timedOut: false
 		});
-		const output = runOutputFor(database, context('admin').user, started.runId, office);
+		const output = runOutputFor(
+			database,
+			context('admin').user,
+			started.runId,
+			office,
+			context('admin').runner,
+			0
+		);
 		expect(output).toMatchObject({ kind: 'kept', stdoutTruncated: true, stderrTruncated: false });
 		expect(output?.kind === 'kept' ? output.stdout.length : 0).toBe(1024 * 1024);
 	});
@@ -573,7 +591,12 @@ describe('running (C13–C17)', () => {
 		const started = await startRun(context('admin'), request(ids, { confirmCount: 11 }));
 		if (started.kind !== 'started') throw new Error(started.message);
 		expect(closeRunsCutByRestart(database, NOW + 5 * MINUTE)).toBe(1);
-		const view = runViewFor(database, context('admin').user, started.runId);
+		const view = runViewFor(
+			database,
+			context('admin').user,
+			started.runId,
+			context('admin').runner
+		);
 		expect(view?.status).toBe('finished');
 		expect(view?.counts).toMatchObject({ lost: 10, skipped: 1 });
 	});
@@ -603,7 +626,9 @@ describe('running (C13–C17)', () => {
 			kind: 'cancelled',
 			notStarted: 2
 		});
-		expect(runViewFor(database, admin, started.runId)?.counts).toMatchObject({
+		expect(
+			runViewFor(database, admin, started.runId, context('admin').runner)?.counts
+		).toMatchObject({
 			running: 10,
 			cancelled: 2
 		});
@@ -613,7 +638,7 @@ describe('running (C13–C17)', () => {
 			agentAnswers(relay, ticket, { stdout: '', stderr: '', exitCode: 0, timedOut: false });
 		}
 		expect(tickets.slice(10).every((list) => list.length === 0)).toBe(true);
-		const view = runViewFor(database, admin, started.runId);
+		const view = runViewFor(database, admin, started.runId, context('admin').runner);
 		expect(view?.status).toBe('cancelled');
 		expect(view?.endedIso).not.toBeNull();
 		expect(view?.counts).toMatchObject({ succeeded: 10, cancelled: 2 });
@@ -707,10 +732,14 @@ describe('the record (C19, C20)', () => {
 				.sort()
 		).toEqual([both.runId, hidden.runId].sort());
 		expect(listRunsFor(database, pat).map((run) => run.id)).toEqual([both.runId]);
-		expect(runViewFor(database, pat, both.runId)?.machines.map((row) => row.machineName)).toEqual([
-			'Office'
-		]);
-		expect(runViewFor(database, pat, hidden.runId)).toBeUndefined();
-		expect(runOutputFor(database, pat, both.runId, payroll)).toBeUndefined();
+		expect(
+			runViewFor(database, pat, both.runId, context('admin').runner)?.machines.map(
+				(row) => row.machineName
+			)
+		).toEqual(['Office']);
+		expect(runViewFor(database, pat, hidden.runId, context('admin').runner)).toBeUndefined();
+		expect(
+			runOutputFor(database, pat, both.runId, payroll, context('admin').runner, 0)
+		).toBeUndefined();
 	});
 });

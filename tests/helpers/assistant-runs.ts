@@ -86,35 +86,58 @@ function quietPeer(): RelayPeer {
 	};
 }
 
+/** The agent's side of an exec session opening: it attaches to the relay. */
+export function agentAttaches(relay: ReturnType<typeof createRelay>, ticket: Ticket): RelayPeer {
+	const peer = quietPeer();
+	expect(relay.attachAgent(ticket.sessionId, ticket.machineId, peer)).toEqual({ kind: 'attached' });
+	return peer;
+}
+
+/** One output frame from the agent while the command runs. */
+export function agentPrints(
+	relay: ReturnType<typeof createRelay>,
+	ticket: Ticket,
+	peer: RelayPeer,
+	stream: 'stdout' | 'stderr',
+	text: string | Buffer
+): void {
+	relay.fromAgent(
+		ticket.sessionId,
+		peer,
+		Buffer.concat([Buffer.from([stream === 'stdout' ? 1 : 2]), Buffer.from(text)])
+	);
+}
+
+/** The agent's last word: the command ended with this exit code. */
+export function agentFinishes(
+	relay: ReturnType<typeof createRelay>,
+	ticket: Ticket,
+	peer: RelayPeer,
+	exitCode: number
+): void {
+	relay.agentText(
+		ticket.sessionId,
+		peer,
+		JSON.stringify({
+			type: 'exec-done',
+			exitCode,
+			durationMs: 1200,
+			truncated: false,
+			timedOut: false
+		})
+	);
+}
+
 /** The agent's side of one exec session: attach, send output frames, then the result. */
 export function agentAnswers(
 	relay: ReturnType<typeof createRelay>,
 	ticket: Ticket,
 	result: { stdout: string; stderr: string; exitCode: number }
 ): void {
-	const peer = quietPeer();
-	expect(relay.attachAgent(ticket.sessionId, ticket.machineId, peer)).toEqual({ kind: 'attached' });
-	relay.fromAgent(
-		ticket.sessionId,
-		peer,
-		Buffer.concat([Buffer.from([1]), Buffer.from(result.stdout)])
-	);
-	relay.fromAgent(
-		ticket.sessionId,
-		peer,
-		Buffer.concat([Buffer.from([2]), Buffer.from(result.stderr)])
-	);
-	relay.agentText(
-		ticket.sessionId,
-		peer,
-		JSON.stringify({
-			type: 'exec-done',
-			exitCode: result.exitCode,
-			durationMs: 1200,
-			truncated: false,
-			timedOut: false
-		})
-	);
+	const peer = agentAttaches(relay, ticket);
+	agentPrints(relay, ticket, peer, 'stdout', result.stdout);
+	agentPrints(relay, ticket, peer, 'stderr', result.stderr);
+	agentFinishes(relay, ticket, peer, result.exitCode);
 }
 
 function enrol(

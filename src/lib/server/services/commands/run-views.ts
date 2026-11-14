@@ -25,6 +25,7 @@ import {
 	type RunMachineRow,
 	type RunRow
 } from './command-runs.ts';
+import type { LiveOutputs } from './command-runner.ts';
 import { mayCancel } from './commands.ts';
 
 /**
@@ -45,7 +46,8 @@ function scriptView(row: { osFamily: string; shell: string; command: string }): 
 	});
 }
 
-function machineView(row: RunMachineRow): RunMachineView {
+function machineView(row: RunMachineRow, live: LiveOutputs): RunMachineView {
+	const running = live.liveOutput(row.runId, row.machineId);
 	return {
 		machineId: row.machineId,
 		machineName: row.machineName,
@@ -54,11 +56,13 @@ function machineView(row: RunMachineRow): RunMachineView {
 		exitCode: row.exitCode,
 		durationMs: row.durationMs,
 		output:
-			row.outputDeletedAt !== null
-				? { kind: 'deleted' }
-				: row.outputKept
-					? { kind: 'kept', bytes: row.outputBytes ?? 0 }
-					: { kind: 'none' }
+			running !== undefined
+				? { kind: 'live', bytes: running.bytes() }
+				: row.outputDeletedAt !== null
+					? { kind: 'deleted' }
+					: row.outputKept
+						? { kind: 'kept', bytes: row.outputBytes ?? 0 }
+						: { kind: 'none' }
 	};
 }
 
@@ -165,7 +169,8 @@ function viewOf(
 	origin: RunOrigin,
 	rows: RunMachineRow[],
 	scripts: CommandScript[],
-	user: ConsoleUser
+	user: ConsoleUser,
+	live: LiveOutputs
 ) {
 	return {
 		id: run.id,
@@ -176,7 +181,7 @@ function viewOf(
 		status: run.status,
 		timeoutMs: run.timeoutMs,
 		scripts,
-		machines: rows.map(machineView),
+		machines: rows.map((row) => machineView(row, live)),
 		counts: countsOf(rows),
 		canCancel:
 			(run.status === 'running' || run.status === 'pending-approval') &&
@@ -188,7 +193,8 @@ function viewOf(
 export function runViewFor(
 	database: Queryable,
 	user: ConsoleUser,
-	runId: string
+	runId: string,
+	live: LiveOutputs
 ): RunView | undefined {
 	const run = findRun(database, runId);
 	if (run === undefined) {
@@ -200,15 +206,27 @@ export function runViewFor(
 		return undefined;
 	}
 	const scriptRows = scriptsOf(database, [runId]);
-	return viewOf(run, originOf(database, run, scriptRows), rows, scriptRows.map(scriptView), user);
+	return viewOf(
+		run,
+		originOf(database, run, scriptRows),
+		rows,
+		scriptRows.map(scriptView),
+		user,
+		live
+	);
 }
 
-/** One machine's output, for a person who can view the machine; undefined otherwise. */
+/**
+ * One machine's output, for a person who can view the machine; undefined otherwise. While the
+ * machine runs it is the output so far (C22); once the result is saved, the stored output.
+ */
 export function runOutputFor(
 	database: Queryable,
 	user: ConsoleUser,
 	runId: string,
-	machineId: string
+	machineId: string,
+	live: LiveOutputs,
+	now: number
 ): RunMachineOutput | undefined {
 	if (!visibleMachineIds(database, user).has(machineId)) {
 		return undefined;
@@ -216,6 +234,17 @@ export function runOutputFor(
 	const row = outputOf(database, runId, machineId);
 	if (row === undefined) {
 		return undefined;
+	}
+	const running = live.liveOutput(runId, machineId);
+	if (running !== undefined) {
+		return {
+			kind: 'live',
+			...running.read(),
+			bytes: running.bytes(),
+			runningForMs: Math.max(0, now - running.startedAt),
+			lastOutputMsAgo:
+				running.lastOutputAt === null ? null : Math.max(0, now - running.lastOutputAt)
+		};
 	}
 	if (row.outputDeletedAt !== null) {
 		return { kind: 'deleted' };

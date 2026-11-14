@@ -280,7 +280,12 @@ export type RunMachineView = {
 	reason: string;
 	exitCode: number | null;
 	durationMs: number | null;
-	output: { kind: 'none' } | { kind: 'kept'; bytes: number } | { kind: 'deleted' };
+	/** `live` while it runs (C22): the bytes so far, which the results page watches for change. */
+	output:
+		| { kind: 'none' }
+		| { kind: 'live'; bytes: number }
+		| { kind: 'kept'; bytes: number }
+		| { kind: 'deleted' };
 };
 
 /** A run's results page (C16). */
@@ -300,10 +305,25 @@ export type RunView = {
 	canCancel: boolean;
 };
 
-/** One machine's output (C16), as text: none before it finishes, deleted after 30 days. */
+/**
+ * One machine's output (C16), as text: none before it starts, the output so far while it runs
+ * (C22), then what was kept, deleted after 30 days.
+ */
 export type RunMachineOutput =
 	| { kind: 'none' }
 	| { kind: 'deleted' }
+	| {
+			kind: 'live';
+			stdout: string;
+			stderr: string;
+			stdoutTruncated: boolean;
+			stderrTruncated: boolean;
+			/** Both streams' bytes so far, as the run view counts them. */
+			bytes: number;
+			runningForMs: number;
+			/** Null before the first output. */
+			lastOutputMsAgo: number | null;
+	  }
 	| {
 			kind: 'kept';
 			stdout: string;

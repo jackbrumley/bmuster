@@ -356,11 +356,37 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
             "id": {
               "type": "string",
             },
+            "lastOutputMsAgo": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+              "description": "While the machine runs: milliseconds since its last output. Null otherwise, or before any output.",
+            },
             "name": {
               "type": "string",
             },
             "reason": {
               "type": "string",
+            },
+            "runningForMs": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+              "description": "While the machine runs: milliseconds since it started. Null otherwise.",
             },
             "status": {
               "enum": [
@@ -384,6 +410,8 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
             "reason",
             "exitCode",
             "durationMs",
+            "runningForMs",
+            "lastOutputMsAgo",
           ],
           "type": "object",
         },

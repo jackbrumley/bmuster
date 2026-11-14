@@ -14,7 +14,7 @@ import { findGrant, viaDetail } from '../oauth/grants.ts';
 import { mcpEnabled } from '../oauth/mcp-settings.ts';
 import { findUserById, toConsoleUser } from '../users/users.ts';
 import { auditMachineResult, auditRunEnded } from './command-audit.ts';
-import { runOnMachine } from './command-exec.ts';
+import { runOnMachine, type LiveStreams } from './command-exec.ts';
 import {
 	endRun,
 	finishMachine,
@@ -61,16 +61,42 @@ type ActiveRun = {
 	ip: string;
 };
 
+/**
+ * A machine's command while it runs (SPEC-COMMANDS C22, SPEC-MCP M44): its output so far, read
+ * from the exec buffers themselves, when it started and when output last came. It is there from
+ * the start until the result is saved; readers then read the stored output.
+ */
+export type LiveOutput = { startedAt: number; lastOutputAt: number | null } & LiveStreams;
+
+/** What the run views need from the runner: the live output of a run's machine. */
+export type LiveOutputs = Pick<CommandRunner, 'liveOutput'>;
+
 export type CommandRunner = ReturnType<typeof createCommandRunner>;
+
+function liveKey(runId: string, machineId: string): string {
+	return `${runId}/${machineId}`;
+}
 
 export function createCommandRunner(deps: RunnerDeps) {
 	const { database, relay, secretsKey, clock } = deps;
 	const active = new Map<string, ActiveRun>();
+	const live = new Map<string, LiveOutput>();
 	const listeners = new Set<(runId: string) => void>();
+	const outputListeners = new Set<(runId: string, machineId: string) => void>();
 
 	function changed(runId: string): void {
 		for (const listener of listeners) {
 			listener(runId);
+		}
+	}
+
+	function outputCame(runId: string, machineId: string): void {
+		const entry = live.get(liveKey(runId, machineId));
+		if (entry !== undefined) {
+			entry.lastOutputAt = clock();
+		}
+		for (const listener of outputListeners) {
+			listener(runId, machineId);
 		}
 	}
 
@@ -215,29 +241,36 @@ export function createCommandRunner(deps: RunnerDeps) {
 				ip: run.ip
 			},
 			now,
-			(result) => {
-				const ended = clock();
-				finishMachine(database, runId, machineId, result, ended);
-				auditMachineResult(
-					database,
-					{
-						runId,
-						userId: run.startedBy,
-						machineId,
-						machineName: name,
-						status: result.status,
-						reason: result.reason,
-						exitCode: result.exitCode,
-						durationMs: result.durationMs,
-						outputBytes: result.outputBytes,
-						outputSha256: result.outputSha256,
-						sessionId: result.sessionId,
-						via: viaOf(run)
-					},
-					ended
-				);
-				run.running -= 1;
-				pump(runId);
+			{
+				onOutput: () => {
+					outputCame(runId, machineId);
+				},
+				onDone: (result) => {
+					const ended = clock();
+					finishMachine(database, runId, machineId, result, ended);
+					// Saved: from here on, readers read the stored output.
+					live.delete(liveKey(runId, machineId));
+					auditMachineResult(
+						database,
+						{
+							runId,
+							userId: run.startedBy,
+							machineId,
+							machineName: name,
+							status: result.status,
+							reason: result.reason,
+							exitCode: result.exitCode,
+							durationMs: result.durationMs,
+							outputBytes: result.outputBytes,
+							outputSha256: result.outputSha256,
+							sessionId: result.sessionId,
+							via: viaOf(run)
+						},
+						ended
+					);
+					run.running -= 1;
+					pump(runId);
+				}
 			}
 		);
 		switch (sent.kind) {
@@ -246,6 +279,12 @@ export function createCommandRunner(deps: RunnerDeps) {
 				return;
 			case 'sent':
 				markRunning(database, runId, machineId, sent.sessionId, now);
+				live.set(liveKey(runId, machineId), {
+					startedAt: now,
+					lastOutputAt: null,
+					bytes: sent.live.bytes,
+					read: sent.live.read
+				});
 				run.running += 1;
 				return;
 		}
@@ -323,6 +362,19 @@ export function createCommandRunner(deps: RunnerDeps) {
 			return () => {
 				listeners.delete(listener);
 			};
+		},
+
+		/** Hears each output frame from any running machine until the returned function is called. */
+		onOutput(listener: (runId: string, machineId: string) => void): () => void {
+			outputListeners.add(listener);
+			return () => {
+				outputListeners.delete(listener);
+			};
+		},
+
+		/** A machine's output so far while its command runs; undefined once its result is saved. */
+		liveOutput(runId: string, machineId: string): LiveOutput | undefined {
+			return live.get(liveKey(runId, machineId));
 		},
 
 		isActive(runId: string): boolean {
