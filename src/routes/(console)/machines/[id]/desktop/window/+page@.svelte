@@ -19,6 +19,7 @@
 	import DesktopStart from '../desktop-start.svelte';
 	import FloatingControls from '../floating-controls.svelte';
 	import { handoverFrom } from '../pop-out.ts';
+	import { attachDropGuard } from '../drop-guard.ts';
 	import { attachStageInput } from '../stage-input.ts';
 	import StageOverlay from '../stage-overlay.svelte';
 	import { connectingTitle, isRunning, stageGeometry } from '../stage-state.ts';
@@ -82,6 +83,9 @@
 			session?.end();
 		}
 	}
+
+	/** A file dropped on the window never replaces the session with the file. */
+	onMount(() => attachDropGuard(window, undefined));
 
 	onMount(() => {
 		const surface = stage;

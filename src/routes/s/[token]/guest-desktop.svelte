@@ -25,6 +25,7 @@
 	import { FullScreen } from '../../(console)/machines/[id]/desktop/full-screen.svelte.ts';
 	import { LocalCursor } from '../../(console)/machines/[id]/desktop/local-cursor.ts';
 	import KeyBar from '../../(console)/machines/[id]/desktop/key-bar.svelte';
+	import { attachDropGuard } from '../../(console)/machines/[id]/desktop/drop-guard.ts';
 	import { attachStageInput } from '../../(console)/machines/[id]/desktop/stage-input.ts';
 	import ToolButton from '../../(console)/machines/[id]/desktop/tool-button.svelte';
 	import {
@@ -137,6 +138,14 @@
 		return attachClipboardSharing(session.clipboard);
 	});
 
+	/** Guests cannot send files yet (SPEC-SESSION-FILES question 11): a drop is caught and explained. */
+	let dropRefused = $state(false);
+	onMount(() =>
+		attachDropGuard(window, () => {
+			dropRefused = true;
+		})
+	);
+
 	onMount(() => {
 		const surface = stage;
 		if (surface === undefined || screenCanvas === undefined || cursorCanvas === undefined) {
@@ -175,6 +184,9 @@
 </script>
 
 <div class="guest-desktop">
+	{#if dropRefused}
+		<Notice tone="info" title="Files can't be sent through a share link." children={undefined} />
+	{/if}
 	{#if connection.kind === 'ended'}
 		<Notice tone="info" title={connection.message} children={undefined} />
 	{/if}

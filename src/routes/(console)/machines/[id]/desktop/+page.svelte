@@ -29,6 +29,7 @@
 	import { dismissHint, hintDismissed } from './gesture-hint.ts';
 	import GestureHint from './gesture-hint.svelte';
 	import { attachStageInput } from './stage-input.ts';
+	import { attachDropGuard } from './drop-guard.ts';
 	import { watchViewport } from './viewport-watch.ts';
 	import type { Geometry, TouchMode } from './touch-gestures.ts';
 	import { readTouchMode, saveTouchMode } from './touch-input.ts';
@@ -244,6 +245,9 @@
 	onMount(() => () => {
 		popOut.forget();
 	});
+
+	/** A file dropped anywhere on the page never opens in the tab instead of the session. */
+	onMount(() => attachDropGuard(window, undefined));
 
 	function putHintAway(): void {
 		hintGone = true;
