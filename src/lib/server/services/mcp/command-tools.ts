@@ -12,7 +12,14 @@ import { recordAudit } from '../audit/audit.ts';
 import { cancelPendingRun, cancelStartedRun, expireRun } from '../commands/assistant-pending.ts';
 import { requestAssistantRun } from '../commands/assistant-runs.ts';
 import type { CommandRunner } from '../commands/command-runner.ts';
-import { findRun, machinesOf, outputOf, scriptsOf, type RunRow } from '../commands/command-runs.ts';
+import {
+	findRun,
+	machinesOf,
+	outputOf,
+	scriptsOf,
+	type RunMachineRow,
+	type RunRow
+} from '../commands/command-runs.ts';
 import { originOf } from '../commands/run-views.ts';
 import { viaDetail } from '../oauth/grants.ts';
 import type { McpPrincipal } from '../oauth/tokens.ts';
@@ -22,7 +29,8 @@ import type { ToolResult } from './machine-tools.ts';
 /**
  * The command tools (SPEC-MCP 9.3–9.5, M17, M21, M23). `run_command` asks; a person approves in
  * the console; `get_command_result` reads the run. Each waits up to 45 seconds for the run to end
- * (the hybrid wait), then answers with where it is up to and a message telling the model to keep
+ * (the hybrid wait), or about 2 s after new output from the machine it returns (M45), then
+ * answers with where it is up to, the output so far, and a message telling the model to keep
  * calling. Only the person's own assistants can read or withdraw their runs.
  */
 
@@ -46,8 +54,38 @@ function approvalUrl(context: CommandToolContext, runId: string): string {
 	return `${context.origin}/commands/${runId}`;
 }
 
-/** Resolves when the run has ended, or after `ms`, whichever comes first. */
-function waitForEnd(context: CommandToolContext, runId: string, ms: number): Promise<void> {
+/**
+ * How long the wait goes on after the watched machine's first new output (M45), so a burst of
+ * output comes back as one answer rather than a line at a time.
+ */
+const SETTLE_MS = 2_000;
+
+/** The machine whose output a call returns, and what the caller has read of it already. */
+type Watched = { machineId: string; stdoutOffset: number; stderrOffset: number };
+
+/** The watched machine has output past the caller's offsets. */
+function unread(context: CommandToolContext, runId: string, watched: Watched): boolean {
+	const live = context.runner.liveOutput(runId, watched.machineId);
+	if (live === undefined) {
+		return false;
+	}
+	const text = live.read();
+	return (
+		Buffer.byteLength(text.stdout) > watched.stdoutOffset ||
+		Buffer.byteLength(text.stderr) > watched.stderrOffset
+	);
+}
+
+/**
+ * Resolves when the run has ended, about 2 s after the watched machine has new output (M45), or
+ * after `ms`, whichever comes first. Output already there past the caller's offsets counts as new.
+ */
+function waitForNews(
+	context: CommandToolContext,
+	runId: string,
+	watched: Watched | undefined,
+	ms: number
+): Promise<void> {
 	const ended = (): boolean => {
 		const run = findRun(context.database, runId);
 		return run === undefined || runHasEnded(run.status);
@@ -56,10 +94,16 @@ function waitForEnd(context: CommandToolContext, runId: string, ms: number): Pro
 		return Promise.resolve();
 	}
 	return new Promise((resolve) => {
+		let settle: ReturnType<typeof setTimeout> | undefined;
 		const finish = (): void => {
 			clearTimeout(timer);
+			clearTimeout(settle);
 			unsubscribe();
+			unsubscribeOutput();
 			resolve();
+		};
+		const news = (): void => {
+			settle ??= setTimeout(finish, SETTLE_MS);
 		};
 		const timer = setTimeout(finish, ms);
 		const unsubscribe = context.runner.onChange((changed) => {
@@ -67,6 +111,14 @@ function waitForEnd(context: CommandToolContext, runId: string, ms: number): Pro
 				finish();
 			}
 		});
+		const unsubscribeOutput = context.runner.onOutput((changedRun, machineId) => {
+			if (changedRun === runId && machineId === watched?.machineId) {
+				news();
+			}
+		});
+		if (watched !== undefined && unread(context, runId, watched)) {
+			news();
+		}
 	});
 }
 
@@ -106,6 +158,69 @@ function messageFor(run: RunRow, decision: ReturnType<typeof originOf>, more: bo
 
 type ResultInput = { machine: string; stdoutOffset: number; stderrOffset: number };
 
+/** The machine a call asks about: named by id or name, else the run's first. */
+function chosenMachine(machines: readonly RunMachineRow[], machine: string) {
+	const wanted = machine.trim().toLowerCase();
+	return wanted === ''
+		? machines[0]
+		: machines.find(
+				(candidate) =>
+					candidate.machineId === machine.trim() || candidate.machineName.toLowerCase() === wanted
+			);
+}
+
+/** What a call watches while it waits (M45): the machine it returns output for. */
+function watchedBy(context: CommandToolContext, runId: string, input: ResultInput) {
+	const chosen = chosenMachine(machinesOf(context.database, [runId]), input.machine);
+	return chosen === undefined
+		? undefined
+		: {
+				machineId: chosen.machineId,
+				stdoutOffset: input.stdoutOffset,
+				stderrOffset: input.stderrOffset
+			};
+}
+
+/**
+ * One machine's output for the result: while it runs, the output so far (M44), paged through
+ * the same offsets as the stored output it becomes.
+ */
+function outputFor(
+	context: CommandToolContext,
+	runId: string,
+	chosen: RunMachineRow | undefined,
+	input: ResultInput
+): CommandResultOutput['output'] {
+	if (chosen === undefined) {
+		return null;
+	}
+	const live = context.runner.liveOutput(runId, chosen.machineId);
+	const stored =
+		live === undefined ? outputOf(context.database, runId, chosen.machineId) : undefined;
+	const text =
+		live !== undefined
+			? { ...live.read(), deleted: false }
+			: stored === undefined || (stored.stdout === null && stored.outputDeletedAt === null)
+				? undefined
+				: {
+						stdout: stored.stdout ?? '',
+						stderr: stored.stderr ?? '',
+						stdoutTruncated: stored.stdoutTruncated,
+						stderrTruncated: stored.stderrTruncated,
+						deleted: stored.outputDeletedAt !== null
+					};
+	return text === undefined
+		? null
+		: {
+				machine: chosen.machineName,
+				stdout: pageOf(text.stdout, input.stdoutOffset),
+				stderr: pageOf(text.stderr, input.stderrOffset),
+				stdoutTruncated: text.stdoutTruncated,
+				stderrTruncated: text.stderrTruncated,
+				deleted: text.deleted
+			};
+}
+
 /** Where a run is up to, with one machine's output, as both result tools return it (M23). */
 function resultOf(
 	context: CommandToolContext,
@@ -115,30 +230,8 @@ function resultOf(
 	const scripts = scriptsOf(context.database, [run.id]);
 	const origin = originOf(context.database, run, scripts);
 	const machines = machinesOf(context.database, [run.id]);
-	const wanted = input.machine.trim().toLowerCase();
-	const chosen =
-		wanted === ''
-			? machines[0]
-			: machines.find(
-					(machine) =>
-						machine.machineId === input.machine.trim() ||
-						machine.machineName.toLowerCase() === wanted
-				);
-	const stored =
-		chosen === undefined ? undefined : outputOf(context.database, run.id, chosen.machineId);
-	const output =
-		chosen === undefined ||
-		stored === undefined ||
-		(stored.stdout === null && stored.outputDeletedAt === null)
-			? null
-			: {
-					machine: chosen.machineName,
-					stdout: pageOf(stored.stdout ?? '', input.stdoutOffset),
-					stderr: pageOf(stored.stderr ?? '', input.stderrOffset),
-					stdoutTruncated: stored.stdoutTruncated,
-					stderrTruncated: stored.stderrTruncated,
-					deleted: stored.outputDeletedAt !== null
-				};
+	const output = outputFor(context, run.id, chosenMachine(machines, input.machine), input);
+	const now = context.clock();
 	const decision = origin.kind === 'assistant' ? origin.decision : { kind: 'pending' as const };
 	const approved = decision.kind === 'approved' ? decision : undefined;
 	const [script] = scripts;
@@ -152,19 +245,39 @@ function resultOf(
 		denyNote: decision.kind === 'denied' ? decision.note : null,
 		edited: approved?.edit.kind === 'edited',
 		commandRun: approved === undefined ? null : (script?.command ?? null),
-		machines: machines.map((machine) => ({
-			id: machine.machineId,
-			name: machine.machineName,
-			status: machine.status,
-			reason:
-				run.status === 'pending-approval' && machine.status === 'waiting'
-					? 'Waiting for approval'
-					: (machine.skipReason ?? ''),
-			exitCode: machine.exitCode,
-			durationMs: machine.durationMs
-		})),
+		machines: machines.map((machine) => {
+			const live = context.runner.liveOutput(run.id, machine.machineId);
+			return {
+				id: machine.machineId,
+				name: machine.machineName,
+				status: machine.status,
+				reason:
+					run.status === 'pending-approval' && machine.status === 'waiting'
+						? 'Waiting for approval'
+						: (machine.skipReason ?? ''),
+				exitCode: machine.exitCode,
+				durationMs: machine.durationMs,
+				runningForMs: live === undefined ? null : Math.max(0, now - live.startedAt),
+				lastOutputMsAgo:
+					live?.lastOutputAt === null || live === undefined
+						? null
+						: Math.max(0, now - live.lastOutputAt)
+			};
+		}),
 		output
 	};
+}
+
+/** "running for 12 s, last output 3 s ago", for a running machine's line in the text copy. */
+function runningText(runningForMs: number | null, lastOutputMsAgo: number | null): string[] {
+	if (runningForMs === null) {
+		return [];
+	}
+	const seconds = (ms: number): string => `${String(Math.round(ms / 1000))} s`;
+	return [
+		`running for ${seconds(runningForMs)}`,
+		lastOutputMsAgo === null ? 'no output yet' : `last output ${seconds(lastOutputMsAgo)} ago`
+	];
 }
 
 /**
@@ -183,7 +296,8 @@ export function resultText(result: CommandResultOutput): string {
 		const parts = [
 			runMachineStatusLabel(machine.status),
 			...(machine.exitCode === null ? [] : [`exit ${String(machine.exitCode)}`]),
-			...(machine.reason === '' ? [] : [machine.reason])
+			...(machine.reason === '' ? [] : [machine.reason]),
+			...runningText(machine.runningForMs, machine.lastOutputMsAgo)
 		];
 		lines.push(`- ${machine.name}: ${parts.join(', ')}`);
 	}
@@ -247,7 +361,12 @@ export async function getCommandResultTool(
 		return { kind: 'error', message: NO_RUN };
 	}
 	expireRun({ database: context.database, runner: context.runner, now: context.clock() }, run.id);
-	await waitForEnd(context, run.id, Math.min(input.waitSeconds * 1000, context.waitMs));
+	await waitForNews(
+		context,
+		run.id,
+		watchedBy(context, run.id, input),
+		Math.min(input.waitSeconds * 1000, context.waitMs)
+	);
 	const now = findRun(context.database, run.id) ?? run;
 	audit(context, 'get_command_result', now);
 	return { kind: 'ok', output: resultOf(context, now, input) };
@@ -272,15 +391,18 @@ export async function runCommandTool(
 	if (requested.kind === 'refused') {
 		return { kind: 'error', message: requested.message };
 	}
-	await waitForEnd(context, requested.runId, context.waitMs);
+	const first: ResultInput = { machine: '', stdoutOffset: 0, stderrOffset: 0 };
+	await waitForNews(
+		context,
+		requested.runId,
+		watchedBy(context, requested.runId, first),
+		context.waitMs
+	);
 	const run = findRun(context.database, requested.runId);
 	if (run === undefined) {
 		throw new Error(`Command run ${requested.runId} vanished`);
 	}
-	return {
-		kind: 'ok',
-		output: resultOf(context, run, { machine: '', stdoutOffset: 0, stderrOffset: 0 })
-	};
+	return { kind: 'ok', output: resultOf(context, run, first) };
 }
 
 /** `cancel_command` (M21): a pending request is withdrawn; a started run stops machines not started. */

@@ -173,6 +173,7 @@ export const runViewSchema: z.ZodType<RunView> = z.object({
 			durationMs: z.int().nullable(),
 			output: z.discriminatedUnion('kind', [
 				z.object({ kind: z.literal('none') }),
+				z.object({ kind: z.literal('live'), bytes: z.int() }),
 				z.object({ kind: z.literal('kept'), bytes: z.int() }),
 				z.object({ kind: z.literal('deleted') })
 			])
@@ -185,6 +186,16 @@ export const runViewSchema: z.ZodType<RunView> = z.object({
 export const runOutputReplySchema: z.ZodType<RunMachineOutput> = z.discriminatedUnion('kind', [
 	z.object({ kind: z.literal('none') }),
 	z.object({ kind: z.literal('deleted') }),
+	z.object({
+		kind: z.literal('live'),
+		stdout: z.string(),
+		stderr: z.string(),
+		stdoutTruncated: z.boolean(),
+		stderrTruncated: z.boolean(),
+		bytes: z.int(),
+		runningForMs: z.int(),
+		lastOutputMsAgo: z.int().nullable()
+	}),
 	z.object({
 		kind: z.literal('kept'),
 		stdout: z.string(),

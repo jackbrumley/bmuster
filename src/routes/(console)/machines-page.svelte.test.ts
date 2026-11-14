@@ -466,4 +466,26 @@ describe('Machines list, live (SPEC-PRESENCE P5)', () => {
 		expect(line.right).toBeLessThanOrEqual(status.left);
 		expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
 	});
+
+	it('C24: on a card, a command in use links to its run with this machine’s output open', async () => {
+		const id = '44444444-4444-4444-8444-444444444444';
+		const runId = '99999999-9999-4999-8999-999999999999';
+		const screen = await renderPage([
+			machine({
+				id,
+				name: 'Busy PC',
+				inUse: [
+					{ kind: 'terminal', userName: 'Kim' },
+					{ kind: 'command', userName: 'Jack Brumley (asked via Claude Code)', runId }
+				]
+			})
+		]);
+		await screen.getByRole('button', { name: 'Cards' }).click();
+		await expect.element(screen.getByText(/terminal by Kim/u)).toBeVisible();
+		await expect
+			.element(
+				screen.getByRole('link', { name: 'command by Jack Brumley (asked via Claude Code)' })
+			)
+			.toHaveAttribute('href', `/commands/${runId}?machine=${id}`);
+	});
 });

@@ -7,11 +7,14 @@ import { runViewFor } from './run-views.ts';
 /**
  * A run's results page, live (SPEC-COMMANDS C16), as server-sent events like the Machines
  * feed (SPEC-PRESENCE P5). Each change is checked as it happens: the session must still be
- * valid, and the view holds only the machines the person can view now.
+ * valid, and the view holds only the machines the person can view now. A running machine's
+ * output never goes in the feed, only its size so far: the page reads the output itself through
+ * the machine's output endpoint, with its own access check (C22).
  */
 
 const KEEP_ALIVE_MS = 25_000;
 const RETRY_MS = 5_000;
+const OUTPUT_EVERY_MS = 1_000;
 
 export function runFeedStream(
 	database: Queryable,
@@ -36,7 +39,7 @@ export function runFeedStream(
 			/** Sends the run as the person may see it now; false when the feed should end. */
 			const send = (): boolean => {
 				const user = authenticateSession(database, token, Date.now());
-				const view = user === undefined ? undefined : runViewFor(database, user, runId);
+				const view = user === undefined ? undefined : runViewFor(database, user, runId, runner);
 				if (view === undefined) {
 					return false;
 				}
@@ -48,6 +51,21 @@ export function runFeedStream(
 					finish();
 				}
 			});
+			// Output while a machine runs (C22) changes its byte count in the view; a busy command
+			// prints many frames a second, so the view goes at most once a second for them.
+			let outputTimer: ReturnType<typeof setTimeout> | undefined;
+			const unsubscribeOutput = runner.onOutput((changed) => {
+				if (changed !== runId || outputTimer !== undefined) {
+					return;
+				}
+				outputTimer = setTimeout(() => {
+					outputTimer = undefined;
+					if (!send()) {
+						finish();
+					}
+				}, OUTPUT_EVERY_MS);
+				outputTimer.unref();
+			});
 			const keepAlive = setInterval(() => {
 				write(': keep-alive\n\n');
 			}, KEEP_ALIVE_MS);
@@ -55,6 +73,8 @@ export function runFeedStream(
 			stop = () => {
 				open = false;
 				unsubscribe();
+				unsubscribeOutput();
+				clearTimeout(outputTimer);
 				clearInterval(keepAlive);
 			};
 			write(`retry: ${String(RETRY_MS)}\n\n`);

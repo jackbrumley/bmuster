@@ -207,6 +207,7 @@ const PAGES: readonly PhonePage[] = [
 					data: {
 						...APPROVER,
 						now: NOW,
+						openMachineId: null,
 						run: {
 							id: RUN_ID,
 							startedBy: `${LONG_PERSON} via ${LONG_WORD}`,

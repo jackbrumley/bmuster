@@ -3,6 +3,7 @@ import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import {
 	emptyCounts,
+	type RunMachineOutput,
 	type RunMachineStatus,
 	type RunMachineView,
 	type RunView
@@ -67,7 +68,11 @@ describe('results (SPEC-COMMANDS C16, C18)', () => {
 			row(5, 'lost', null),
 			row(6, 'skipped', null)
 		];
-		const screen = await render(RunResults, { initial: view(machines), now: NOW });
+		const screen = await render(RunResults, {
+			initial: view(machines),
+			now: NOW,
+			openMachineId: null
+		});
 		await expect
 			.element(
 				screen.getByText('1 succeeded · 1 failed · 1 timed out · 1 offline · 1 skipped · 1 lost')
@@ -91,7 +96,8 @@ describe('results (SPEC-COMMANDS C16, C18)', () => {
 	it('C18: nothing to run again when every machine succeeded', async () => {
 		const screen = await render(RunResults, {
 			initial: view([row(1, 'succeeded', 0), row(2, 'succeeded', 0)]),
-			now: NOW
+			now: NOW,
+			openMachineId: null
 		});
 		await expect.element(screen.getByText('2 succeeded')).toBeVisible();
 		expect(
@@ -102,7 +108,8 @@ describe('results (SPEC-COMMANDS C16, C18)', () => {
 	it('C16: rows update live from the run’s events', async () => {
 		const screen = await render(RunResults, {
 			initial: view([row(1, 'running', null), row(2, 'waiting', null)], 'running'),
-			now: NOW
+			now: NOW,
+			openMachineId: null
 		});
 		await expect.element(screen.getByText('1 waiting · 1 running')).toBeVisible();
 		await expect.element(screen.getByRole('button', { name: 'Cancel run' })).toBeVisible();
@@ -137,7 +144,8 @@ describe('an AI assistant’s run on its results page (SPEC-MCP M28)', () => {
 					}
 				}
 			},
-			now: NOW
+			now: NOW,
+			openMachineId: null
 		});
 		await expect
 			.element(screen.getByText(/Started by Jack Brumley via Claude Code/u))
@@ -167,8 +175,120 @@ describe('an AI assistant’s run on its results page (SPEC-MCP M28)', () => {
 					}
 				}
 			},
-			now: NOW
+			now: NOW,
+			openMachineId: null
 		});
 		await expect.element(screen.getByText('Denied by Bea Second: Not on a Friday')).toBeVisible();
+	});
+});
+
+describe('a running machine’s output, live (SPEC-COMMANDS C23, C24)', () => {
+	/** The output endpoint, answering with whatever `state.current` holds now. */
+	function serveOutput(first: RunMachineOutput) {
+		const state = { current: first };
+		const fetch = vi.fn<typeof globalThis.fetch>(() =>
+			Promise.resolve(
+				new Response(JSON.stringify(state.current), {
+					status: 200,
+					headers: { 'content-type': 'application/json' }
+				})
+			)
+		);
+		vi.stubGlobal('fetch', fetch);
+		return { state, fetch };
+	}
+
+	function live(stdout: string, lastOutputMsAgo: number | null): RunMachineOutput {
+		return {
+			kind: 'live',
+			stdout,
+			stderr: '',
+			stdoutTruncated: false,
+			stderrTruncated: false,
+			bytes: stdout.length,
+			runningForMs: 65_000,
+			lastOutputMsAgo
+		};
+	}
+
+	function running(bytes: number): RunMachineView {
+		return { ...row(1, 'running', null), output: { kind: 'live', bytes } };
+	}
+
+	it('C23: tapping a running machine shows its output so far, and how long it has run', async () => {
+		const { fetch } = serveOutput(live('Reading package lists...\n', 3_000));
+		const screen = await render(RunResults, {
+			initial: view([running(25)], 'running'),
+			now: NOW,
+			openMachineId: null
+		});
+		await screen.getByRole('button', { name: /PC 1/u }).click();
+		await expect.element(screen.getByText('Reading package lists...')).toBeVisible();
+		await expect
+			.element(screen.getByText(/^Running for 1 min \d+ s · last output \d+ s ago$/u))
+			.toBeVisible();
+		expect(fetch).toHaveBeenCalledWith(
+			`/api/commands/runs/${RUN}/machines/00000000-0000-4000-8000-000000000001`,
+			expect.anything()
+		);
+	});
+
+	it('C23: the panel follows new output from the run’s events, then shows the final result', async () => {
+		const { state, fetch } = serveOutput(live('one\n', 1_000));
+		const screen = await render(RunResults, {
+			initial: view([running(4)], 'running'),
+			now: NOW,
+			openMachineId: null
+		});
+		await screen.getByRole('button', { name: /PC 1/u }).click();
+		await expect.element(screen.getByText('one')).toBeVisible();
+		await expect.poll(() => FakeEventSource.opened.length).toBe(1);
+
+		state.current = live(`one\n${'line\n'.repeat(200)}two\n`, 0);
+		feed().send(COMMAND_RUN_EVENT, view([running(1008)], 'running'));
+		await expect.element(screen.getByText(/two/u)).toBeInTheDocument();
+		const box = screen.getByText(/two/u).element();
+		await expect
+			.poll(() => box.scrollTop + box.clientHeight)
+			.toBeGreaterThanOrEqual(box.scrollHeight - 8);
+
+		// The same size again is not read again.
+		const reads = fetch.mock.calls.length;
+		feed().send(COMMAND_RUN_EVENT, view([running(1008)], 'running'));
+		expect(fetch.mock.calls.length).toBe(reads);
+
+		state.current = {
+			kind: 'kept',
+			stdout: 'all done\n',
+			stderr: '',
+			stdoutTruncated: false,
+			stderrTruncated: false
+		};
+		feed().send(COMMAND_RUN_EVENT, view([row(1, 'succeeded', 0)]));
+		await expect.element(screen.getByText('all done')).toBeVisible();
+		expect(screen.getByText(/^Running for/u).query()).toBeNull();
+	});
+
+	it('C24: a link to the run naming a machine opens that machine’s output on arrival', async () => {
+		serveOutput(live('Unpacking...\n', 2_000));
+		const screen = await render(RunResults, {
+			initial: view([running(13), row(2, 'waiting', null)], 'running'),
+			now: NOW,
+			openMachineId: '00000000-0000-4000-8000-000000000001'
+		});
+		await expect.element(screen.getByText('Output: PC 1')).toBeVisible();
+		await expect.element(screen.getByText('Unpacking...')).toBeVisible();
+	});
+
+	it('C24: a machine not among the person’s rows opens nothing', async () => {
+		const { fetch } = serveOutput(live('secret\n', 2_000));
+		const screen = await render(RunResults, {
+			initial: view([running(13)], 'running'),
+			now: NOW,
+			openMachineId: '00000000-0000-4000-8000-000000000009'
+		});
+		await expect.element(screen.getByText('1 running')).toBeVisible();
+		expect(screen.getByText(/^Output:/u).query()).toBeNull();
+		expect(fetch).not.toHaveBeenCalled();
 	});
 });

@@ -415,11 +415,11 @@ describe('the hybrid wait and the result (SPEC-MCP M23)', () => {
 	});
 
 	it('M28: the results page names the person via the assistant', async () => {
-		const { database, assistantOf, tools, people } = await setUpAssistantRuns();
+		const { database, runner, assistantOf, tools, people } = await setUpAssistantRuns();
 		const pat = await assistantOf('pat');
 		const asked = await runCommandTool(tools(pat), ask({ machines: ['mint'] }));
 		const runId = asked.kind === 'ok' ? asked.output.runId : '';
-		expect(runViewFor(database, people.pat, runId)).toMatchObject({
+		expect(runViewFor(database, people.pat, runId, runner)).toMatchObject({
 			startedBy: `${people.pat.name} via Claude Code`,
 			status: 'pending-approval',
 			origin: { kind: 'assistant', reason: 'Check the load', decision: { kind: 'pending' } }

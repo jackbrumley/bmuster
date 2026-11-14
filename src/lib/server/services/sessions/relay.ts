@@ -568,7 +568,7 @@ export function createRelay(limits: RelayLimits) {
 						case 'desktop':
 							return { kind: 'desktop', mode: record.mode, userName: record.userName };
 						case 'exec':
-							return { kind: 'command', userName: record.userName };
+							return { kind: 'command', userName: record.userName, runId: record.runId };
 					}
 				});
 		},
