@@ -25,6 +25,8 @@
 		IconLogin2,
 		IconLogout,
 		IconPlugConnected,
+		IconHandStop,
+		IconRobot,
 		IconTrash,
 		IconPhone,
 		IconPhoneOff,
@@ -245,6 +247,16 @@
 			case 'command-run-cancelled':
 			case 'command-run-ended':
 				return IconTerminal2;
+			case 'mcp-client-allowed':
+				return IconPlugConnected;
+			case 'mcp-client-refused':
+			case 'mcp-grant-ended':
+			case 'mcp-refresh-refused':
+				return IconPlugConnectedX;
+			case 'mcp-kill-switch':
+				return IconHandStop;
+			case 'mcp-tool-called':
+				return IconRobot;
 		}
 	}
 </script>

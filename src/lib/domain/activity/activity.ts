@@ -122,7 +122,14 @@ const AUDIT_KINDS = [
 	'command-run-started',
 	'command-run-machine',
 	'command-run-cancelled',
-	'command-run-ended'
+	'command-run-ended',
+	// SPEC-MCP
+	'mcp-client-allowed',
+	'mcp-client-refused',
+	'mcp-grant-ended',
+	'mcp-refresh-refused',
+	'mcp-kill-switch',
+	'mcp-tool-called'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -361,5 +368,17 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Cancelled a command run';
 		case 'command-run-ended':
 			return 'A command run finished';
+		case 'mcp-client-allowed':
+			return 'Connected an AI assistant';
+		case 'mcp-client-refused':
+			return 'Did not connect an AI assistant';
+		case 'mcp-grant-ended':
+			return 'An AI assistant was disconnected';
+		case 'mcp-refresh-refused':
+			return "An AI assistant's sign-in was refused";
+		case 'mcp-kill-switch':
+			return 'Stopped all AI access';
+		case 'mcp-tool-called':
+			return 'Read machines through an AI assistant';
 	}
 }

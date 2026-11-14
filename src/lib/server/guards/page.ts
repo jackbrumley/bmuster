@@ -1,4 +1,6 @@
-import type { RequestEvent } from '@sveltejs/kit';
+import { error, type RequestEvent } from '@sveltejs/kit';
+import { database } from '../database/app-database.ts';
+import { mcpEnabled } from '../services/oauth/mcp-settings.ts';
 import { requirePageAccess, type SessionContext } from './checks.ts';
 
 /**
@@ -25,5 +27,18 @@ export const page = {
 
 	admin<E extends RequestEvent, R>(fn: Guarded<E, SessionContext, R>) {
 		return (event: E): R => fn(event, requirePageAccess(event, 'admin'));
+	},
+
+	/**
+	 * The consent screen (SPEC-MCP M1, M7): pages under /oauth/ only. 404 while MCP is off, before
+	 * anything else; then a console session like `user` (sign-in first, and back afterwards).
+	 */
+	oauth<E extends RequestEvent, R>(fn: Guarded<E, SessionContext, R>) {
+		return (event: E): R => {
+			if (!mcpEnabled(database)) {
+				error(404, 'Not found');
+			}
+			return fn(event, requirePageAccess(event, 'user'));
+		};
 	}
 };

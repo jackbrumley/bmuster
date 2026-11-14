@@ -9,6 +9,7 @@ import {
 	setRole,
 	type UserChange
 } from '#lib/server/services/users/users.ts';
+import { endIneligibleGrants } from '#lib/server/services/oauth/grants.ts';
 import { invalidRequest, readJson } from '../../replies.server.ts';
 import type { RequestHandler } from './$types';
 
@@ -35,6 +36,8 @@ export const PATCH: RequestHandler = route.admin(async ({ request, params }, { u
 			break;
 		case 'disable':
 			result = disableUser(database, user.id, params.id, now);
+			// A disabled person's AI assistants are disconnected at once (SPEC-MCP M9).
+			endIneligibleGrants(database, now);
 			break;
 		case 'enable':
 			result = enableUser(database, user.id, params.id, now);

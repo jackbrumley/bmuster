@@ -252,9 +252,9 @@ describe('AI commands (SPEC-MCP M3)', () => {
 
 	it('M3: admins do not have ai-commands unless a rule gives it', async () => {
 		const { database, admin, office, server } = await setUp();
-		expect(
-			permissionsFor(database, admin, office).map((grant) => grant.permission)
-		).not.toContain('ai-commands');
+		expect(permissionsFor(database, admin, office).map((grant) => grant.permission)).not.toContain(
+			'ai-commands'
+		);
 		expect(machineIdsWith(database, admin, 'ai-commands').size).toBe(0);
 		expect(machineIdsWith(database, admin, 'run-commands')).toEqual(new Set([office, server]));
 		grantAccess(database, {
@@ -268,9 +268,9 @@ describe('AI commands (SPEC-MCP M3)', () => {
 		expect(permissionsFor(database, admin, office).map((grant) => grant.permission)).toContain(
 			'ai-commands'
 		);
-		expect(
-			permissionsFor(database, admin, server).map((grant) => grant.permission)
-		).not.toContain('ai-commands');
+		expect(permissionsFor(database, admin, server).map((grant) => grant.permission)).not.toContain(
+			'ai-commands'
+		);
 		expect(machineIdsWith(database, admin, 'ai-commands')).toEqual(new Set([office]));
 	});
 

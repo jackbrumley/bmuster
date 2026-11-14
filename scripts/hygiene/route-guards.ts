@@ -8,13 +8,17 @@ import { isTestFile } from './source-file.ts';
  * access before it runs.
  *
  * - Every HTTP method a `+server.ts` exports is built by a guard:
- *   `export const GET = route.<public|user|admin|agent|diagnostics|guest>(…)`.
+ *   `export const GET = route.<public|user|admin|agent|diagnostics|guest|oauth|mcp>(…)`.
  * - `route.diagnostics`, the one guard that takes a read-only diagnostics
  *   token (SPEC-AGENT-LOGS 4), builds only `GET` under src/routes/api/diagnostics/.
  * - `route.guest`, the one guard that takes a share link's token and guest
  *   cookie (SPEC-SHARE-LINKS), builds handlers only under src/routes/s/[token]/.
+ * - `route.oauth`, the authorisation server's guard (no session, 404 while MCP is off,
+ *   SPEC-MCP), builds handlers only under src/routes/oauth/ and src/routes/.well-known/;
+ *   `route.mcp`, the one guard that takes an AI assistant's bearer token, only under
+ *   src/routes/mcp/; `page.oauth`, the consent screen's, only under src/routes/oauth/.
  * - Every `load` and form action in `+page.server.ts` / `+layout.server.ts`
- *   is built by `page.<public|user|admin>(…)`; `actions` is an object of
+ *   is built by `page.<public|user|admin|oauth>(…)`; `actions` is an object of
  *   guarded handlers.
  * - Universal `+page.ts` / `+layout.ts` files may not export `load`: it would
  *   run without a guard. Use the matching `.server.ts` file.
@@ -34,14 +38,16 @@ const HTTP_METHODS: ReadonlySet<string> = new Set([
 	'fallback'
 ]);
 const GUARDS = {
-	route: new Set(['public', 'user', 'admin', 'agent', 'diagnostics', 'guest']),
-	page: new Set(['public', 'user', 'admin'])
+	route: new Set(['public', 'user', 'admin', 'agent', 'diagnostics', 'guest', 'oauth', 'mcp']),
+	page: new Set(['public', 'user', 'admin', 'oauth'])
 } as const;
 type GuardObject = keyof typeof GUARDS;
 
 const GUARDS_DIR = 'src/lib/server/guards/';
 const DIAGNOSTICS_ROUTES = 'src/routes/api/diagnostics/';
 const GUEST_ROUTES = 'src/routes/s/[token]/';
+const OAUTH_ROUTES = ['src/routes/oauth/', 'src/routes/.well-known/'] as const;
+const MCP_ROUTES = 'src/routes/mcp/';
 
 type RouteFileKind = 'endpoint' | 'server-load' | 'universal-load';
 
@@ -204,6 +210,19 @@ export function scanRouteGuards(relPath: string, text: string): string[] {
 		} else if (call.variant === 'guest' && !relPath.startsWith(GUEST_ROUTES)) {
 			issues.push(
 				`line ${lineOf(slot.node)}: \`route.guest\` accepts a share link's token, so it builds handlers only under ${GUEST_ROUTES}; use route.user here.`
+			);
+		} else if (
+			call.variant === 'oauth' &&
+			!(slot.guard === 'page' ? [OAUTH_ROUTES[0]] : OAUTH_ROUTES).some((prefix) =>
+				relPath.startsWith(prefix)
+			)
+		) {
+			issues.push(
+				`line ${lineOf(slot.node)}: \`${slot.guard}.oauth\` serves the authorisation server without a console session check of its own, so it builds handlers only under ${slot.guard === 'page' ? OAUTH_ROUTES[0] : OAUTH_ROUTES.join(' and ')}; use ${slot.guard}.user here.`
+			);
+		} else if (call.variant === 'mcp' && !relPath.startsWith(MCP_ROUTES)) {
+			issues.push(
+				`line ${lineOf(slot.node)}: \`route.mcp\` accepts an AI assistant's bearer token, so it builds handlers only under ${MCP_ROUTES}; use route.user here.`
 			);
 		}
 	}

@@ -8,6 +8,8 @@ import {
 } from '../audit/audit.ts';
 import { userNames } from './users.ts';
 
+const VIA_KEYS: ReadonlySet<string> = new Set(['via', 'viaClientId', 'viaVerified']);
+
 /** The Activity page: the newest audit entries with the actor's name. */
 export function activityFeed(
 	database: Queryable,
@@ -21,7 +23,11 @@ export function activityFeed(
 	return withActorNames(database, records);
 }
 
-/** Audit records as Activity shows them, with each actor's name (System when there is none). */
+/**
+ * Audit records as Activity shows them, with each actor's name (System when there is none). An
+ * entry made through an AI assistant names it after the person: "Jack Brumley via Claude Code"
+ * (SPEC-MCP M13); its `via…` detail keys are not repeated below.
+ */
 export function withActorNames(
 	database: Queryable,
 	records: readonly AuditRecord[]
@@ -34,13 +40,19 @@ export function withActorNames(
 	const names = userNames(database, actorIds);
 	return records.map((record) => {
 		const name = record.actorUserId === null ? undefined : names.get(record.actorUserId);
+		const via = record.detail['via'];
 		return {
 			id: record.id,
 			kind: record.kind,
 			atIso: record.at.toISOString(),
-			actor: name === undefined ? { kind: 'system' } : { kind: 'user', name },
+			actor:
+				name === undefined
+					? { kind: 'system' }
+					: { kind: 'user', name: via === undefined ? name : `${name} via ${via}` },
 			target: record.target,
-			detail: Object.entries(record.detail).map(([label, value]) => ({ label, value }))
+			detail: Object.entries(record.detail)
+				.filter(([label]) => !VIA_KEYS.has(label))
+				.map(([label, value]) => ({ label, value }))
 		};
 	});
 }

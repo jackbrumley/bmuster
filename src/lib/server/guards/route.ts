@@ -18,6 +18,7 @@ import {
 import { resolveShareToken, type GuestGrant } from '../services/share-links/share-links.ts';
 import { sessionRelay } from '../services/sessions/relay.ts';
 import { apiRefusal, type SessionContext } from './checks.ts';
+import { mcpRefusal, oauthRefusal, type McpContext, type OAuthContext } from './mcp-checks.ts';
 
 /**
  * Guards for `+server.ts` endpoints (SPEC-SIGN-IN S7). Every exported method
@@ -157,6 +158,28 @@ export const route = {
 	guest<E extends RequestEvent & { params: { token: string } }>(handler: Handler<E, GuestContext>) {
 		return (event: E): Response | Promise<Response> => {
 			const checked = guestRefusal(event);
+			return checked instanceof Response ? checked : handler(event, checked);
+		};
+	},
+
+	/**
+	 * The OAuth authorisation server's endpoints and discovery documents (SPEC-MCP M1, M5): routes
+	 * under /oauth/ and /.well-known/ only. No console session; 404 while MCP is off.
+	 */
+	oauth<E extends RequestEvent>(handler: Handler<E, OAuthContext>) {
+		return (event: E): Response | Promise<Response> => {
+			const checked = oauthRefusal(event);
+			return checked instanceof Response ? checked : handler(event, checked);
+		};
+	},
+
+	/**
+	 * `/mcp` only (SPEC-MCP M4): an AI assistant's bearer token, never the console cookie; 404
+	 * while MCP is off, 401 with the discovery challenge without a live token.
+	 */
+	mcp<E extends RequestEvent>(handler: Handler<E, McpContext>) {
+		return (event: E): Response | Promise<Response> => {
+			const checked = mcpRefusal(event);
 			return checked instanceof Response ? checked : handler(event, checked);
 		};
 	},

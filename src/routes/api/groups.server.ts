@@ -10,7 +10,18 @@ import {
 	type GroupKind
 } from '#lib/server/services/access/groups.ts';
 import type { RuleChange } from '#lib/server/services/access/rules.ts';
+import { endIneligibleGrants } from '#lib/server/services/oauth/grants.ts';
 import { invalidRequest, readJson } from './replies.server.ts';
+
+/**
+ * After a change to who is in a group of people: an AI assistant's grant ends at once when its
+ * person has left the group that may connect one (SPEC-MCP M9).
+ */
+export function endGrantsNoLongerAllowed(kind: GroupKind, now: number): void {
+	if (kind === 'user') {
+		endIneligibleGrants(database, now);
+	}
+}
 
 /**
  * The handlers behind /api/user-groups and /api/machine-groups (SPEC-ACCESS
@@ -58,11 +69,14 @@ export async function updateGroupHandler(
 				),
 				false
 			);
-		case 'set-members':
-			return changeReply(
+		case 'set-members': {
+			const reply = changeReply(
 				setGroupMembers(database, kind, user.id, id, parsed.data.memberIds, now),
 				false
 			);
+			endGrantsNoLongerAllowed(kind, now);
+			return reply;
+		}
 	}
 }
 
@@ -71,5 +85,8 @@ export function deleteGroupHandler(
 	id: string,
 	{ user }: SessionContext
 ): Response {
-	return changeReply(deleteGroup(database, kind, user.id, id, Date.now()), false);
+	const now = Date.now();
+	const reply = changeReply(deleteGroup(database, kind, user.id, id, now), false);
+	endGrantsNoLongerAllowed(kind, now);
+	return reply;
 }

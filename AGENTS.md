@@ -395,7 +395,9 @@ The design is in `docs/access-and-sign-in.md`.
   `route.<public|user|admin|agent>(…)` or `page.<public|user|admin>(…)` from
   src/lib/server/guards/; `route.diagnostics(…)` only for GET under
   src/routes/api/diagnostics/; `route.guest(…)` only under
-  src/routes/s/[token]/.
+  src/routes/s/[token]/; `route.oauth(…)` only under src/routes/oauth/ and
+  src/routes/.well-known/, `page.oauth(…)` only under src/routes/oauth/;
+  `route.mcp(…)` only under src/routes/mcp/.
 - `server-imports-app-modules-forbidden` (violation, §6): src/lib/server/** runs
   outside Vite (scripts, tests), where `$app/*` and `$env/*` do not exist.
   **Fix:** Take what the module needs as a parameter from the route or hook.
