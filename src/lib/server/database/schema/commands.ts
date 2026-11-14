@@ -39,7 +39,19 @@ export const commandRuns = sqliteTable(
 		/** The approver's note to the assistant when denied. */
 		denyNote: text(),
 		/** The assistant's time limit when the approver changed it. */
-		requestedTimeoutMs: integer()
+		requestedTimeoutMs: integer(),
+		/**
+		 * The saved command this run came from (SPEC-SAVED-COMMANDS SC7), copied rather than linked
+		 * so deleting or editing it later changes nothing about the run. Null for a typed command.
+		 */
+		savedCommandId: text(),
+		savedCommandName: text(),
+		savedCommandVersion: integer(),
+		savedCommandEffect: text({ enum: ['reads-only', 'changes'] }),
+		/** The parameter values, as JSON `{ name: value }`. */
+		savedCommandValues: text(),
+		/** An assistant's run of a saved command that ran without approval (SC17). */
+		preApproved: integer({ mode: 'boolean' }).notNull().default(false)
 	},
 	(table) => [index('command_runs_started').on(table.startedAt)]
 );
@@ -112,3 +124,26 @@ export const commandRunMachines = sqliteTable(
 		index('command_run_machines_ended').on(table.endedAt)
 	]
 );
+
+/**
+ * A script an admin writes once (SPEC-SAVED-COMMANDS 6). Scripts, parameters and machine groups
+ * are JSON read back through the schema that let them in; a deleted machine group simply matches
+ * nothing. `version` rises with every edit; a run copies it (SC7).
+ */
+export const savedCommands = sqliteTable('saved_commands', {
+	id: text().primaryKey(),
+	name: text().notNull().unique(),
+	description: text().notNull(),
+	scripts: text().notNull(),
+	parameters: text().notNull(),
+	machineGroupIds: text().notNull(),
+	effect: text({ enum: ['reads-only', 'changes'] }).notNull(),
+	enabled: integer({ mode: 'boolean' }).notNull(),
+	aiUnattended: integer({ mode: 'boolean' }).notNull(),
+	timeoutMs: integer().notNull(),
+	version: integer().notNull(),
+	createdAt: integer({ mode: 'timestamp_ms' }).notNull(),
+	updatedAt: integer({ mode: 'timestamp_ms' }).notNull(),
+	/** Who last wrote it; null for the starter set. */
+	updatedBy: text().references(() => users.id)
+});
