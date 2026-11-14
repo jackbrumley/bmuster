@@ -11,7 +11,9 @@
 	import ListCard from '#lib/ui/list-card.svelte';
 	import ListRow from '#lib/ui/list-row.svelte';
 	import PageHeader from '#lib/ui/page-header.svelte';
+	import SavedRunTag from '#lib/ui/saved-run-tag.svelte';
 	import { formatRelative } from '#lib/utils/format.ts';
+	import CommandsTabs from './commands-tabs.svelte';
 	import type { PageProps } from './$types';
 
 	/**
@@ -31,9 +33,11 @@
 
 <PageHeader
 	title="Commands"
-	summary="Commands run on many machines at once. Start one from Machines: Select, then Run command."
+	summary="Commands run on many machines at once. Start one from Machines (Select, then Run command), or run a saved command."
 	actions={undefined}
 />
+
+<CommandsTabs />
 
 {#if data.runs.length === 0}
 	<EmptyState
@@ -58,7 +62,11 @@
 				dimmed={false}
 			>
 				<span class="run">
-					<code class="command">{commandText(run)}</code>
+					{#if run.saved.kind === 'saved'}
+						<SavedRunTag mark={run.saved} />
+					{:else}
+						<code class="command">{commandText(run)}</code>
+					{/if}
 					<span class="meta">
 						{run.startedBy} · {formatRelative(run.startedIso, data.now)} · {runStatusLabel(
 							run.status

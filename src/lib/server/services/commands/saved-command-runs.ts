@@ -9,7 +9,7 @@ import {
 	composeCommand,
 	parameterValueProblem,
 	type ParameterValues,
-	type SavedCommandSummary,
+	type SavedCommandEntry,
 	type SavedCommandView,
 	type SavedRunMachine
 } from '#lib/domain/commands/saved-commands.ts';
@@ -54,8 +54,13 @@ export function machinesInGroups(database: Queryable, groupIds: readonly string[
 	);
 }
 
-function summaryOf(command: SavedCommandView): SavedCommandSummary {
+function entryOf(
+	database: Queryable,
+	user: ConsoleUser,
+	command: SavedCommandView
+): SavedCommandEntry {
 	return {
+		machineIds: savedRunMachines(database, user, command).map((machine) => machine.id),
 		id: command.id,
 		name: command.name,
 		description: command.description,
@@ -97,17 +102,20 @@ export function savedRunMachines(
  * Saved commands on the Saved commands tab (SC1): every one for an admin; for anyone else the
  * switched-on ones they could run somewhere.
  */
-export function savedCommandsFor(database: Queryable, user: ConsoleUser): SavedCommandSummary[] {
-	const all = allSavedCommands(database);
+export function savedCommandsFor(database: Queryable, user: ConsoleUser): SavedCommandEntry[] {
+	const entries = allSavedCommands(database).map((command) => entryOf(database, user, command));
+	return canWriteSavedCommands(user)
+		? entries
+		: entries.filter((entry) => entry.enabled && entry.machineIds.length > 0);
+}
+
+/** Admins write saved commands and see every one, switched off or not (SC1, SC4). */
+export function canWriteSavedCommands(user: ConsoleUser): boolean {
 	switch (user.role) {
 		case 'admin':
-			return all.map(summaryOf);
+			return true;
 		case 'member':
-			return all
-				.filter(
-					(command) => command.enabled && savedRunMachines(database, user, command).length > 0
-				)
-				.map(summaryOf);
+			return false;
 	}
 }
 

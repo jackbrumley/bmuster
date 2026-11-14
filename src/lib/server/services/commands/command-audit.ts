@@ -163,7 +163,7 @@ export type ApprovalDetail =
 	| { kind: 'pre-approved'; via: Record<string, string>; savedName: string };
 
 /** "Service status (version 3)", its label and the values a run filled in. */
-export function savedDetail(saved: NewRunSaved): Record<string, string> {
+function savedDetail(saved: NewRunSaved): Record<string, string> {
 	switch (saved.kind) {
 		case 'none':
 			return {};

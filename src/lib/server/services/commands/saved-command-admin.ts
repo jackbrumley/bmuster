@@ -1,4 +1,9 @@
-import { commandOsLabel, commandShellLabel } from '#lib/domain/commands/commands.ts';
+import type { SignInCheck } from '#lib/domain/auth/sign-in-check.ts';
+import {
+	COMMAND_LIMITS,
+	commandOsLabel,
+	commandShellLabel
+} from '#lib/domain/commands/commands.ts';
 import {
 	savedEffectLabel,
 	textPatternLabel,
@@ -13,7 +18,9 @@ import type {
 import type { Queryable } from '../../database/connection.ts';
 import { listMachineGroups } from '../access/groups.ts';
 import { recordAudit } from '../audit/audit.ts';
+import { signInCheck } from '../auth/recent-sign-in.ts';
 import { checkRecentSignIn, type CommandContext, type Refused } from './commands.ts';
+import { canWriteSavedCommands } from './saved-command-runs.ts';
 import {
 	deleteSavedCommand,
 	findSavedCommand,
@@ -37,12 +44,9 @@ const NOT_FOUND: Refused = {
 };
 
 function adminRefusal(context: CommandContext): Refused | undefined {
-	switch (context.user.role) {
-		case 'admin':
-			return undefined;
-		case 'member':
-			return { kind: 'refused', status: 403, message: 'Only admins write saved commands.' };
-	}
+	return canWriteSavedCommands(context.user)
+		? undefined
+		: { kind: 'refused', status: 403, message: 'Only admins write saved commands.' };
 }
 
 /** The name is free and every group still exists. */
@@ -67,6 +71,19 @@ function fieldsRefusal(
 		};
 	}
 	return undefined;
+}
+
+/** What the saved command form needs besides the command: the groups to pick, and the sign-in check. */
+export function savedFormData(
+	database: Queryable,
+	userId: string,
+	sessionToken: string,
+	now: number
+): { groups: { id: string; name: string }[]; signIn: SignInCheck } {
+	return {
+		groups: listMachineGroups(database).map((group) => ({ id: group.id, name: group.name })),
+		signIn: signInCheck(database, sessionToken, userId, COMMAND_LIMITS.recentSignInMs, now)
+	};
 }
 
 function parameterText(parameter: SavedParameter): string {

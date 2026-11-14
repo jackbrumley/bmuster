@@ -2,13 +2,18 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import type * as AssistantRuns from '#lib/domain/commands/assistant-runs.ts';
-import { cancelCommandOutput, commandResultOutput } from '#lib/schemas/mcp/tools.ts';
+import {
+	cancelCommandOutput,
+	commandResultOutput,
+	listSavedCommandsOutput
+} from '#lib/schemas/mcp/tools.ts';
 import { database } from '#lib/server/database/app-database.ts';
 import { machines } from '#lib/server/database/schema.ts';
 import { startSession } from '#lib/server/services/auth/sessions.ts';
 import { appRunner } from '#lib/server/services/commands/app-runner.ts';
 import { expirePendingRuns } from '#lib/server/services/commands/assistant-pending.ts';
 import { pendingFor } from '#lib/server/services/commands/approvers.ts';
+import { scriptsOf } from '#lib/server/services/commands/command-runs.ts';
 import { sessionRelay } from '#lib/server/services/sessions/relay.ts';
 import { toConsoleUser } from '#lib/server/services/users/users.ts';
 import { grantAccess } from '#tests/helpers/access.ts';
@@ -28,6 +33,7 @@ import {
 	type EventOptions
 } from '#tests/helpers/mcp.ts';
 import { addTestUser, NOW, PASSWORD } from '#tests/helpers/people.ts';
+import { addSaved, savedFields } from '#tests/helpers/saved-commands.ts';
 import { POST as approvePost } from '../../src/routes/api/commands/runs/[id=uuid]/approve/+server.ts';
 import { POST as denyPost } from '../../src/routes/api/commands/runs/[id=uuid]/deny/+server.ts';
 import { POST as mcpPost } from '../../src/routes/mcp/+server.ts';
@@ -35,6 +41,7 @@ import { POST as mcpPost } from '../../src/routes/mcp/+server.ts';
 /**
  * SPEC-MCP 14.1 and 14.2 for step 2: a scripted MCP client asks for commands through `/mcp`; a
  * person approves, edits or denies them through the console's own routes; a fake agent answers.
+ * Saved commands too (SPEC-SAVED-COMMANDS SC18): listed, run without approval, and held for one.
  * The hybrid wait is shortened to 1.5 s (45 s on a real server).
  */
 
@@ -82,6 +89,27 @@ beforeAll(async () => {
 		consent: 'unattended'
 	});
 	enableMcp(database, admin.id, [pat.id]);
+	const saved = { parameters: [], timeoutMs: 60_000 };
+	addSaved(
+		database,
+		admin.id,
+		savedFields({
+			...saved,
+			name: 'Uptime',
+			scripts: [{ osFamily: 'linux', shell: 'sh', script: 'uptime -p' }]
+		})
+	);
+	addSaved(
+		database,
+		admin.id,
+		savedFields({
+			...saved,
+			name: 'Restart cups',
+			effect: 'changes',
+			aiUnattended: false,
+			scripts: [{ osFamily: 'linux', shell: 'sh', script: 'systemctl restart cups' }]
+		})
+	);
 	accessToken = (await connectAssistant(database, pat.id, 'claude-code', Date.now())).accessToken;
 	sessionToken = startSession(
 		database,
@@ -317,5 +345,61 @@ describe('MCP conformance, step 2 (SPEC-MCP 14.1, 14.2)', () => {
 		expect(withToken.status).toBe(401);
 		await call('cancel_command', { runId: second.runId });
 		expect(reception).not.toBe('');
+	});
+});
+
+describe('MCP conformance, saved commands (SPEC-SAVED-COMMANDS SC15, SC18)', () => {
+	it('SC15: list_saved_commands lists what the assistant may run, never the scripts', async () => {
+		const result = await call('list_saved_commands', {});
+		const output = listSavedCommandsOutput.parse(result.structuredContent);
+		expect(output.commands.map((command) => [command.name, command.runsWithoutApproval])).toEqual([
+			['Restart cups', false],
+			['Uptime', true]
+		]);
+		expect(JSON.stringify(result)).not.toContain('uptime -p');
+		expect(JSON.stringify(result)).not.toContain('systemctl restart cups');
+	});
+
+	it('SC18: unattended: run_saved_command runs at once and returns the output, script unseen', async () => {
+		const tickets = connect(mint);
+		const asked = call('run_saved_command', { command: 'Uptime', machines: ['mint'] });
+		await answer(tickets, 'up 3 days\n');
+		const result = await asked;
+		const output = commandResultOutput.parse(result.structuredContent);
+		expect(output).toMatchObject({
+			status: 'finished',
+			commandRun: null,
+			savedCommand: { name: 'Uptime', version: 1, label: 'Reads only', ranWithoutApproval: true },
+			output: { machine: 'mint', stdout: { text: 'up 3 days\n' } }
+		});
+		expect(JSON.stringify(result)).not.toContain('uptime -p');
+		expect(pendingFor(database, pat)).toEqual([]);
+	});
+
+	it('SC18: needing approval: it waits on Approvals, then runs as approved', async () => {
+		const tickets = connect(mint);
+		const asked = call('run_saved_command', {
+			command: 'Restart cups',
+			machines: ['mint'],
+			reason: 'cups is stuck'
+		});
+		const runId = await waitingRun();
+		expect(tickets).toEqual([]);
+		const command = scriptsOf(database, [runId])[0]?.command ?? '';
+		expect(command).toBe('systemctl restart cups');
+		expect((await approve(runId, `${command} --now`)).status).toBe(400);
+		expect((await approve(runId, command)).status).toBe(200);
+		await answer(tickets, '');
+		const output = commandResultOutput.parse((await asked).structuredContent);
+		expect(output).toMatchObject({
+			status: 'finished',
+			decidedBy: pat.name,
+			commandRun: null,
+			savedCommand: {
+				name: 'Restart cups',
+				label: 'Changes the machine',
+				ranWithoutApproval: false
+			}
+		});
 	});
 });

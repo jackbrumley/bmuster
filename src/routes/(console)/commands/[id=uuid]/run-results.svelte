@@ -26,6 +26,7 @@
 	import ListRow from '#lib/ui/list-row.svelte';
 	import LoadingVeil from '#lib/ui/loading-veil.svelte';
 	import Panel from '#lib/ui/panel.svelte';
+	import SavedRunTag from '#lib/ui/saved-run-tag.svelte';
 	import { showToast } from '#lib/ui/toast.svelte.ts';
 	import { apiEvents, apiRequest } from '#lib/utils/api-client.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
@@ -127,7 +128,12 @@
 		};
 	});
 
-	const again = $derived(run.machines.filter((machine) => needsRunAgain(machine.status)));
+	/** A saved command's run is run again from the saved command, so its values are checked again. */
+	const again = $derived(
+		run.saved.kind === 'saved'
+			? []
+			: run.machines.filter((machine) => needsRunAgain(machine.status))
+	);
 
 	function runAgain(): void {
 		const commandDraft: CommandDraft = {
@@ -325,6 +331,8 @@
 		switch (decision.kind) {
 			case 'pending':
 				return 'Waiting for approval';
+			case 'pre-approved':
+				return 'Ran without approval: a saved command an admin let AI run';
 			case 'approved':
 				return `Approved by ${decision.by}${decision.edit.kind === 'edited' ? ', edited' : ''}`;
 			case 'denied':
@@ -351,9 +359,17 @@
 			<p class="meta">
 				{startedText}{ago > 0 ? ` (${ago} min ago)` : ''} · time limit {run.timeoutMs / 1000} s
 			</p>
+			<SavedRunTag mark={run.saved} />
+			{#if run.saved.kind === 'saved' && run.saved.values.length > 0}
+				<p class="meta">
+					{run.saved.values.map((value) => `${value.label}: ${value.value}`).join(' · ')}
+				</p>
+			{/if}
 			{#if run.origin.kind === 'assistant'}
 				<p class="decision">{decisionText}</p>
-				<p class="meta">{run.origin.assistant} said: {run.origin.reason}</p>
+				{#if run.origin.reason !== ''}
+					<p class="meta">{run.origin.assistant} said: {run.origin.reason}</p>
+				{/if}
 				{#if run.origin.decision.kind === 'approved' && run.origin.decision.edit.kind === 'edited'}
 					<p class="shell">Asked for (before the edit)</p>
 					<pre class="command">{run.origin.decision.edit.requestedCommand}</pre>

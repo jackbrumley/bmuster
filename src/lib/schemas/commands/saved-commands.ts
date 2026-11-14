@@ -158,7 +158,7 @@ export const savedCommandWrittenSchema = z.object({ id: z.uuid(), version: z.int
 export const savedCommandDeletedSchema = z.object({ deleted: z.literal(true) });
 
 /** A run's values, by parameter name: checked against the parameters on the server (SC12). */
-export const parameterValuesSchema = z.record(
+const parameterValuesSchema = z.record(
 	z.string().max(32),
 	z.union([z.string().max(300), z.number()])
 );
@@ -187,6 +187,23 @@ export const savedRunRequestSchema = savedPlanRequestSchema.extend({
 });
 
 export type SavedRunRequest = z.infer<typeof savedRunRequestSchema>;
+
+/** GET /api/commands/saved (SC1, SC9): the saved commands, each with the machines the person may run it on. */
+export const savedCommandListSchema = z.object({
+	commands: z.array(
+		z.object({
+			id: z.uuid(),
+			name: z.string(),
+			description: z.string(),
+			effect: z.enum(SAVED_EFFECTS),
+			systems: z.array(z.enum(['windows', 'linux'])),
+			enabled: z.boolean(),
+			aiUnattended: z.boolean(),
+			version: z.int(),
+			machineIds: z.array(z.uuid())
+		})
+	)
+});
 
 /** What a saved command's run screen opens with from Machines (SC9): the machines ticked. */
 export const savedRunDraftSchema = z.object({ machineIds: z.array(z.uuid()) });

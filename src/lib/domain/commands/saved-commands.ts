@@ -102,7 +102,7 @@ export type SavedScript = { osFamily: CommandOsFamily; shell: CommandShell; scri
 export type ParameterValues = Record<string, string | number>;
 
 /** "BMUSTER_PARAM_SERVICE" for `service`. */
-export function parameterEnvName(name: string): string {
+function parameterEnvName(name: string): string {
 	return `BMUSTER_PARAM_${name.toUpperCase()}`;
 }
 
@@ -195,7 +195,7 @@ export function composeCommand(
 }
 
 /** A saved command as the console lists it (SC1). */
-export type SavedCommandSummary = {
+type SavedCommandSummary = {
 	id: string;
 	name: string;
 	description: string;
@@ -205,6 +205,12 @@ export type SavedCommandSummary = {
 	aiUnattended: boolean;
 	version: number;
 };
+
+/**
+ * A saved command on the Saved commands tab and the Run command screen's choice (SC1, SC9), with
+ * the machines this person may run it on.
+ */
+export type SavedCommandEntry = SavedCommandSummary & { machineIds: string[] };
 
 /** A saved command in full, for its form (admins) and its run screen. */
 export type SavedCommandView = SavedCommandSummary & {
@@ -228,8 +234,3 @@ export type SavedRunMark =
 
 /** One machine a person may pick on a saved command's run screen (SC10). */
 export type SavedRunMachine = { id: string; name: string; osFamily: CommandOsFamily };
-
-/** "Service status (version 3) · Reads only". */
-export function savedRunText(mark: Extract<SavedRunMark, { kind: 'saved' }>): string {
-	return `${mark.name} (version ${String(mark.version)}) · ${savedEffectLabel(mark.effect)}`;
-}

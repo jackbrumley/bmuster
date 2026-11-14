@@ -115,7 +115,11 @@ describe('writing saved commands (SC1, SC4, SC5, SC7)', () => {
 				command: savedFields(),
 				recheck: NO_RECHECK
 			})
-		).toMatchObject({ kind: 'refused', status: 403, message: expect.stringContaining('password') as unknown });
+		).toMatchObject({
+			kind: 'refused',
+			status: 403,
+			message: expect.stringContaining('password') as unknown
+		});
 		const created = await createSavedCommand(setup.consoleAs('admin'), {
 			command: savedFields(),
 			recheck: { kind: 'password', password: PASSWORD }
@@ -253,7 +257,10 @@ describe('people running a saved command (SC1, SC10, SC12, SC13)', () => {
 		expect(planSavedRun(setup.consoleAs('pat'), id, request)).toMatchObject({
 			kind: 'planned',
 			commands: [
-				{ osFamily: 'linux', command: expect.stringContaining("BMUSTER_PARAM_MOUNT='C:\\Data'") as unknown },
+				{
+					osFamily: 'linux',
+					command: expect.stringContaining("BMUSTER_PARAM_MOUNT='C:\\Data'") as unknown
+				},
 				{ osFamily: 'windows', command: expect.stringContaining('FromBase64String(') as unknown }
 			]
 		});

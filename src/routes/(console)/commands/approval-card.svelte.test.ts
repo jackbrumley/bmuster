@@ -30,6 +30,7 @@ function view(overrides: Partial<ApprovalView> = {}): ApprovalView {
 			{ id: '00000000-0000-4000-8000-000000000002', name: 'reception', plan: 'offline' }
 		],
 		decide: { kind: 'yes', signIn: { kind: 'recent' } },
+		saved: { kind: 'none' },
 		...overrides
 	};
 }
@@ -159,5 +160,32 @@ describe('the approval card (SPEC-MCP M25)', () => {
 			url: `/api/commands/runs/${RUN}/deny`,
 			body: { note: 'Not today' }
 		});
+	});
+});
+
+describe('a saved command waiting for approval (SPEC-SAVED-COMMANDS SC23)', () => {
+	it('SC23: names the saved command, its version and label, and offers no Edit', async () => {
+		stubServer();
+		const screen = await render(ApprovalCard, {
+			view: view({
+				reason: '',
+				saved: {
+					kind: 'saved',
+					name: 'Service status',
+					version: 3,
+					effect: 'reads-only',
+					values: [{ label: 'service', value: 'nginx' }],
+					preApproved: false
+				}
+			}),
+			now: NOW
+		});
+		await expect
+			.element(screen.getByText('Saved command: Service status (version 3)'))
+			.toBeVisible();
+		await expect.element(screen.getByText('Reads only')).toBeVisible();
+		await expect.element(screen.getByRole('button', { name: 'Approve' })).toBeVisible();
+		expect(screen.getByRole('button', { name: 'Edit' }).query()).toBeNull();
+		expect(screen.getByText('Claude Code says:').query()).toBeNull();
 	});
 });

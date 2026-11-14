@@ -9,6 +9,7 @@ import { expirePendingRuns } from './assistant-pending.ts';
 import { machinePlans } from './assistant-runs.ts';
 import { findRun, machinesOf, scriptsOf } from './command-runs.ts';
 import type { CommandContext } from './commands.ts';
+import { savedMarkOf } from './run-views.ts';
 
 /**
  * What the Approvals page and the approval card show (SPEC-MCP M25, M26): pending requests the
@@ -73,6 +74,7 @@ export function approvalViewFor(context: ViewContext, runId: string): ApprovalVi
 		command: script.command,
 		timeoutMs: run.timeoutMs,
 		machines: plans,
-		decide
+		decide,
+		saved: savedMarkOf(run)
 	};
 }

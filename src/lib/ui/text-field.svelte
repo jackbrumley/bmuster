@@ -69,6 +69,9 @@
 <style>
 	.field {
 		display: grid;
+		/* A long label (a saved command's parameter, SPEC-SAVED-COMMANDS SC26) wraps, never widens the page. */
+		grid-template-columns: minmax(0, 1fr);
+		overflow-wrap: anywhere;
 		gap: var(--space-1);
 		color: var(--text-soft);
 		font-size: var(--text-sm);

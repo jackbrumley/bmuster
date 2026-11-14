@@ -26,11 +26,13 @@ declare global {
 		}
 		/**
 		 * Shallow-routing state. `commandDraft` carries the machines (and, to run again, the
-		 * commands) to Run command (SPEC-COMMANDS 5). Optional because a fresh page has none;
+		 * commands) to Run command (SPEC-COMMANDS 5); `savedRunDraft` the machines to a saved
+		 * command's run screen (SPEC-SAVED-COMMANDS SC9). Optional because a fresh page has none;
 		 * the page parses it with zod and the server checks everything again.
 		 */
 		interface PageState {
 			commandDraft?: unknown;
+			savedRunDraft?: unknown;
 		}
 		// interface Platform {}
 	}

@@ -157,7 +157,7 @@ const runOriginSchema: z.ZodType<RunOrigin> = z.discriminatedUnion('kind', [
 ]);
 
 /** The saved command a run came from (SPEC-SAVED-COMMANDS SC14). */
-export const savedRunMarkSchema: z.ZodType<SavedRunMark> = z.discriminatedUnion('kind', [
+const savedRunMarkSchema: z.ZodType<SavedRunMark> = z.discriminatedUnion('kind', [
 	z.object({ kind: z.literal('none') }),
 	z.object({
 		kind: z.literal('saved'),

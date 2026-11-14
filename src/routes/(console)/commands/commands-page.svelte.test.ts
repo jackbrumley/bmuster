@@ -131,3 +131,40 @@ describe('AI assistants’ runs on the Commands tab (SPEC-MCP M28)', () => {
 		expect(text).toContain('Waiting for approval');
 	});
 });
+
+describe('saved commands on the Commands tab (SPEC-SAVED-COMMANDS SC14)', () => {
+	it('SC14: a saved command’s run is named by the saved command and its label', async () => {
+		const screen = await render(CommandsPage, {
+			params: {},
+			form: undefined,
+			data: {
+				user: MEMBER,
+				localNetworkMode: false,
+				serverUpdate: null,
+				runCommands: true,
+				assistant: { kind: 'none' },
+				approvals: { kind: 'hidden' },
+				signedIn: true,
+				now: NOW,
+				runs: [
+					{
+						...NEWER,
+						saved: {
+							kind: 'saved',
+							name: 'Disk space',
+							version: 2,
+							effect: 'reads-only',
+							values: [],
+							preApproved: false
+						}
+					}
+				]
+			}
+		});
+		const link = screen.getByRole('list', { name: 'Command runs, newest first' }).getByRole('link');
+		await expect.element(link).toBeVisible();
+		expect(link.element().textContent).toContain('Saved command: Disk space (version 2)');
+		expect(link.element().textContent).toContain('Reads only');
+		expect(link.element().textContent).not.toContain('Restart-Service Spooler');
+	});
+});
