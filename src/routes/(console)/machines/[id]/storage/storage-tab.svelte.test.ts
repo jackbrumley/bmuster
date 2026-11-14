@@ -152,6 +152,7 @@ async function openTab(
 				localNetworkMode: false,
 				serverUpdate: null,
 				runCommands: false,
+				assistant: { kind: 'none' },
 				signedIn: true,
 				now,
 				machine,

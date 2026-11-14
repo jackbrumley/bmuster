@@ -80,6 +80,7 @@ async function connect(button: 'Connect' | 'Watch only') {
 				localNetworkMode: false,
 				serverUpdate: null,
 				runCommands: false,
+				assistant: { kind: 'none' },
 				signedIn: true,
 				now: loadedAt,
 				machine: TEST_MACHINE,

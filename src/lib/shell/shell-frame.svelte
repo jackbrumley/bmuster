@@ -2,7 +2,8 @@
 	import type { Snippet } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { IconCertificate, IconDots } from '@tabler/icons-svelte-runes';
+	import { IconCertificate, IconDots, IconPlugConnected } from '@tabler/icons-svelte-runes';
+	import type { AssistantStatus } from '#lib/domain/mcp/mcp.ts';
 	import type { ConsoleUser } from '#lib/domain/users/user.ts';
 	import ConfirmDialog from '#lib/ui/confirm-dialog.svelte';
 	import Logo from '#lib/ui/logo.svelte';
@@ -20,12 +21,15 @@
 		user,
 		localNetworkMode,
 		runCommands,
+		assistant,
 		children
 	}: {
 		user: ConsoleUser;
 		localNetworkMode: boolean;
 		/** The person may run commands somewhere: the Commands tab shows (SPEC-COMMANDS C20). */
 		runCommands: boolean;
+		/** An AI assistant used as this person in the last 10 minutes (SPEC-MCP M15). */
+		assistant: AssistantStatus;
 		children: Snippet;
 	} = $props();
 
@@ -82,6 +86,12 @@
 				<IconCertificate size={16} stroke={1.75} />
 				Local network mode: self-signed certificate
 			</p>
+		{/if}
+		{#if assistant.kind === 'connected'}
+			<a class="assistant-banner" href={resolve('/(console)/account')}>
+				<IconPlugConnected size={16} stroke={1.75} />
+				<span>{assistant.name} is connected as you</span>
+			</a>
 		{/if}
 		{@render children()}
 	</main>
@@ -146,6 +156,20 @@
 		color: var(--warning);
 		font-size: var(--text-xs);
 		font-weight: var(--weight-medium);
+	}
+
+	.assistant-banner {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		min-width: 0;
+		padding: var(--space-1) var(--space-3);
+		border-radius: var(--radius-pill);
+		background: var(--brand-tint);
+		color: var(--brand);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
+		overflow-wrap: anywhere;
 	}
 
 	.tabbar {

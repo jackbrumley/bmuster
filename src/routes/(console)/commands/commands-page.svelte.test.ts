@@ -45,6 +45,7 @@ describe('the Commands tab (SPEC-COMMANDS C20)', () => {
 				localNetworkMode: false,
 				serverUpdate: null,
 				runCommands: true,
+				assistant: { kind: 'none' },
 				signedIn: true,
 				now: NOW,
 				runs: [NEWER, OLDER]
@@ -68,6 +69,7 @@ describe('the Commands tab (SPEC-COMMANDS C20)', () => {
 			user: MEMBER,
 			localNetworkMode: false,
 			runCommands: true,
+			assistant: { kind: 'none' },
 			children
 		});
 		await expect
@@ -83,6 +85,7 @@ describe('the Commands tab (SPEC-COMMANDS C20)', () => {
 			user: MEMBER,
 			localNetworkMode: false,
 			runCommands: false,
+			assistant: { kind: 'none' },
 			children
 		});
 		await expect.element(without.getByText('Page')).toBeVisible();

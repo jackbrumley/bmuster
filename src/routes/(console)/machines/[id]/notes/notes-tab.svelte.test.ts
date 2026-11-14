@@ -56,6 +56,7 @@ function renderTab(notes: NoteView[]) {
 			localNetworkMode: false,
 			serverUpdate: null,
 			runCommands: false,
+			assistant: { kind: 'none' },
 			signedIn: true,
 			now: NOW,
 			machine: MACHINE,

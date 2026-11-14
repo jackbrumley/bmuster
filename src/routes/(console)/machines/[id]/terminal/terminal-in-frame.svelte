@@ -11,6 +11,11 @@
 	let { pageProps }: { pageProps: PageProps } = $props();
 </script>
 
-<ShellFrame user={pageProps.data.user} localNetworkMode={false} runCommands={false}>
+<ShellFrame
+	user={pageProps.data.user}
+	localNetworkMode={false}
+	runCommands={false}
+	assistant={{ kind: 'none' }}
+>
 	<TerminalTab {...pageProps} />
 </ShellFrame>

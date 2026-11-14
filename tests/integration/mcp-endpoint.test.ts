@@ -37,8 +37,8 @@ const INITIALIZE = JSON.stringify({
 	}
 });
 
-function post(headers: Record<string, string>, signedIn: boolean): Promise<Response> {
-	return invoke(
+async function post(headers: Record<string, string>, signedIn: boolean): Promise<Response> {
+	return await invoke(
 		mcpPost,
 		'/mcp',
 		{

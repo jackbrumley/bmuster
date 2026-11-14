@@ -20,6 +20,7 @@ export const CONSOLE = {
 	localNetworkMode: true,
 	serverUpdate: null,
 	runCommands: true,
+	assistant: { kind: 'none' as const },
 	signedIn: true
 };
 const GRANTS: Grant[] = PERMISSIONS.map((permission) => ({ permission, consent: 'unattended' }));

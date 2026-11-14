@@ -109,6 +109,7 @@ function renderPage(overrides: Partial<Data>) {
 			localNetworkMode: false,
 			serverUpdate: null,
 			runCommands: false,
+			assistant: { kind: 'none' },
 			signedIn: true,
 			now: NOW,
 			server: {

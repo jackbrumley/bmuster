@@ -72,9 +72,8 @@ export type McpGroupChoice =
 
 export type McpSettingsView = { enabled: boolean; userGroup: McpGroupChoice };
 
-/** Whether this person may connect an assistant now, for the Account page's help. */
-export type ConnectState =
-	{ kind: 'off' } | { kind: 'not-allowed' } | { kind: 'allowed'; serverUrl: string };
+/** Whether AI assistants can connect now, and whether this person may connect one. */
+export type ConnectState = 'on' | 'off' | 'not-allowed';
 
 /** The address people paste into their assistant: this server's own `/mcp`. */
 export function mcpServerUrl(origin: string): string {

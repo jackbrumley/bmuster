@@ -10,6 +10,7 @@
 	user={data.user}
 	localNetworkMode={data.localNetworkMode}
 	runCommands={data.runCommands}
+	assistant={data.assistant}
 >
 	<ServerUpdateNotice initial={data.serverUpdate} />
 	{@render children()}

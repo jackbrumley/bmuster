@@ -530,6 +530,7 @@ describe('the desktop tab', () => {
 					localNetworkMode: false,
 					serverUpdate: null,
 					runCommands: false,
+					assistant: { kind: 'none' },
 					signedIn: true,
 					now: Date.parse('2026-11-07T12:00:00.000Z'),
 					machine: TEST_MACHINE,

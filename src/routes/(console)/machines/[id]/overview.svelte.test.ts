@@ -93,6 +93,7 @@ function renderOverview(
 				localNetworkMode: false,
 				serverUpdate: null,
 				runCommands: false,
+				assistant: { kind: 'none' },
 				signedIn: true,
 				now: NOW,
 				machine,

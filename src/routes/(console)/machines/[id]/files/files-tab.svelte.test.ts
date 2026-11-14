@@ -111,6 +111,7 @@ async function openTab(machine: Machine, grants: Grant[] = GRANTS) {
 			localNetworkMode: false,
 			serverUpdate: null,
 			runCommands: false,
+			assistant: { kind: 'none' as const },
 			signedIn: true,
 			now: Date.parse('2026-11-07T12:00:00.000Z'),
 			machine,

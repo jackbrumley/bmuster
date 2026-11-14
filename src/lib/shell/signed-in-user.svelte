@@ -17,7 +17,7 @@
 	<div class="who">
 		<span class="avatar">{user.name.slice(0, 1)}</span>
 		<div class="names">
-			<p class="name">{user.name}</p>
+			<p class="name"><a href={resolve('/(console)/account')}>{user.name}</a></p>
 			<p class="role">{roleLabel(user.role)} · {user.email}</p>
 		</div>
 		<form method="POST" action={resolve('/logout')}>
@@ -78,6 +78,15 @@
 	.name {
 		font-size: var(--text-sm);
 		font-weight: var(--weight-semibold);
+	}
+
+	.name a {
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.name a:hover {
+		color: var(--brand);
 	}
 
 	.role {

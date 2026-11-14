@@ -74,6 +74,7 @@ function renderPage(machines: Machine[] = MACHINES, rollout: Rollout = { kind: '
 			localNetworkMode: false,
 			serverUpdate: null,
 			runCommands: false,
+			assistant: { kind: 'none' },
 			signedIn: true,
 			now: NOW,
 			rollout,

@@ -58,6 +58,7 @@ function renderPage(commands: CommandSelection = ALLOWED) {
 			localNetworkMode: false,
 			serverUpdate: null,
 			runCommands: commands.kind === 'allowed',
+			assistant: { kind: 'none' },
 			signedIn: true,
 			now: NOW,
 			rollout: { kind: 'none' },

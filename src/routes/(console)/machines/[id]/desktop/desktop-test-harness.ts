@@ -98,6 +98,7 @@ export function renderTab(grants: Grant[], machine = TEST_MACHINE) {
 				localNetworkMode: false,
 				serverUpdate: null,
 				runCommands: false,
+				assistant: { kind: 'none' },
 				signedIn: true,
 				now,
 				machine,

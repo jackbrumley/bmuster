@@ -58,6 +58,7 @@ function openFiles(machine: Machine) {
 				localNetworkMode: false,
 				serverUpdate: null,
 				runCommands: false,
+				assistant: { kind: 'none' },
 				signedIn: true,
 				now: NOW,
 				machine,

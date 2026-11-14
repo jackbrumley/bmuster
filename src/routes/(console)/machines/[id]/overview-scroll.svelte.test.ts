@@ -56,6 +56,7 @@ function dataFor(machine: Machine) {
 		localNetworkMode: false,
 		serverUpdate: null,
 		runCommands: false,
+		assistant: { kind: 'none' as const },
 		signedIn: true as const,
 		now: NOW,
 		machine,

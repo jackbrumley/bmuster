@@ -26,6 +26,7 @@ describe('console frame (S14)', () => {
 			user: ADMIN,
 			localNetworkMode: false,
 			runCommands: false,
+			assistant: { kind: 'none' },
 			children
 		});
 		await expect.element(screen.getByText('Ada Lovelace')).toBeInTheDocument();
@@ -42,6 +43,7 @@ describe('console frame (S14)', () => {
 			user: MEMBER,
 			localNetworkMode: false,
 			runCommands: false,
+			assistant: { kind: 'none' },
 			children
 		});
 		await expect.element(screen.getByText('Mo Member')).toBeInTheDocument();
@@ -51,6 +53,7 @@ describe('console frame (S14)', () => {
 			user: ADMIN,
 			localNetworkMode: false,
 			runCommands: false,
+			assistant: { kind: 'none' },
 			children
 		});
 		expect(admin.container.querySelector('nav[aria-label="Administration"]')).not.toBeNull();
@@ -61,6 +64,7 @@ describe('console frame (S14)', () => {
 			user: MEMBER,
 			localNetworkMode: false,
 			runCommands: false,
+			assistant: { kind: 'none' },
 			children
 		});
 		expect(off.container.textContent).not.toContain('Local network mode');
@@ -69,6 +73,7 @@ describe('console frame (S14)', () => {
 			user: MEMBER,
 			localNetworkMode: true,
 			runCommands: false,
+			assistant: { kind: 'none' },
 			children
 		});
 		await expect
@@ -76,5 +81,27 @@ describe('console frame (S14)', () => {
 				on.getByRole('status').filter({ hasText: 'Local network mode: self-signed certificate' })
 			)
 			.toBeVisible();
+	});
+
+	it('M15: while an AI assistant is working as the person, the header names it and links to Account', async () => {
+		const none = await render(ShellFrame, {
+			user: MEMBER,
+			localNetworkMode: false,
+			runCommands: false,
+			assistant: { kind: 'none' },
+			children
+		});
+		expect(none.container.textContent).not.toContain('is connected as you');
+		await none.unmount();
+		const connected = await render(ShellFrame, {
+			user: MEMBER,
+			localNetworkMode: false,
+			runCommands: false,
+			assistant: { kind: 'connected', name: 'Claude Code' },
+			children
+		});
+		const banner = connected.getByRole('link', { name: 'Claude Code is connected as you' });
+		await expect.element(banner).toBeVisible();
+		expect(banner.element().getAttribute('href')).toBe('/account');
 	});
 });

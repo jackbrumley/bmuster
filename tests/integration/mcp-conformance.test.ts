@@ -199,7 +199,7 @@ async function tokens(response: Response): Promise<Tokens> {
 	expect(body.token_type).toBe('Bearer');
 	expect(body.expires_in).toBe(3600);
 	expect(body.access_token.startsWith('bmat_')).toBe(true);
-	return body;
+	return { access_token: body.access_token, refresh_token: body.refresh_token };
 }
 
 /** A full connection as Claude Code makes it, on a loopback port. */

@@ -23,7 +23,12 @@ describe('console error (SPEC-ERROR-PAGES E2, E3)', () => {
 	it('E2: shows inside the console frame, with the sidebar still there', async () => {
 		const shell = await render(ConsoleError, props(404, 'page', 'page'), {
 			wrapper: ShellFrame,
-			wrapperProps: { user: MEMBER, localNetworkMode: false, runCommands: false }
+			wrapperProps: {
+				user: MEMBER,
+				localNetworkMode: false,
+				runCommands: false,
+				assistant: { kind: 'none' }
+			}
 		});
 		await expect.element(shell.getByText('Mo Member')).toBeInTheDocument();
 		const heading = shell.getByRole('heading', { level: 1, name: 'Page not found' });
