@@ -15,6 +15,24 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.27',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Settings, AI assistants: make a user group with you in it, choose it, turn it on; read the help panel and copy the address',
+				'Access: add a rule giving your group AI commands on one machine group (admins do not get it automatically)',
+				'Claude Code: claude mcp add --transport http bmuster https://bmuster.brumley.info/mcp, then /mcp to sign in; the consent screen names the assistant; ask it to list your machines',
+				'claude.ai (or another assistant): add https://bmuster.brumley.info/mcp as a custom connector, sign in, ask about one machine; only machines your rule opens appear',
+				'Activity shows the connection and each tool call as you via the assistant; Account, Disconnect ends it at once; Settings, Stop all AI access ends every connection'
+			]
+		},
+		changes: [
+			'AI assistants (MCP): connect Claude, ChatGPT or any other assistant that supports MCP to BMuster, so it can list your machines and read their details. Off by default: turn it on in Settings, AI assistants',
+			'AI assistants: an assistant only sees machines an access rule opens to AI (the new AI commands permission), signs in through BMuster with your approval, and can be disconnected from your Account page or stopped for everyone in Settings',
+			'AI assistants: Activity shows what each assistant did as you, and a banner shows while one is connected. Asking to run commands, with your approval each time, comes next'
+		]
+	},
+	{
 		version: '0.4.26',
 		testing: {
 			kind: 'steps',

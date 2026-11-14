@@ -1,6 +1,6 @@
 # SPEC-MCP: Claude as an administrator, with a person approving every command
 
-**Status:** step 1 `IMPLEMENTED (pending release)` (As built: section 17) · step 2 `APPROVED (2026-11-14)`, not built; reworked onto SPEC-COMMANDS · **Date:** 2026-11-07, reworked 2026-11-14 · Design inputs: `docs/mcp.md` (the earlier note: "explicit approvals for every action"), SPEC-COMMANDS (runs, the runner, recent sign-in, `run-commands`; IMPLEMENTED v0.4.26), SPEC-ACCESS and `docs/access-and-sign-in.md` (permissions, rules), SPEC-SIGN-IN (users, sessions), SPEC-EMAIL (notifications). Research on Claude's clients: section 4.
+**Status:** step 1 `IMPLEMENTED (v0.4.27)` (As built: section 17) · step 2 `APPROVED (2026-11-14)`, not built; reworked onto SPEC-COMMANDS · **Date:** 2026-11-07, reworked 2026-11-14 · Design inputs: `docs/mcp.md` (the earlier note: "explicit approvals for every action"), SPEC-COMMANDS (runs, the runner, recent sign-in, `run-commands`; IMPLEMENTED v0.4.26), SPEC-ACCESS and `docs/access-and-sign-in.md` (permissions, rules), SPEC-SIGN-IN (users, sessions), SPEC-EMAIL (notifications). Research on Claude's clients: section 4.
 
 > **Security work.** This adds a second way in (OAuth tokens held by an AI client), a new permission, and a new way to start a Commands run. Commands run as root or SYSTEM. Nothing in this spec weakens a check that SPEC-COMMANDS built: a command Claude asks for runs only through the Commands runner, after a person approves it in the console, with a ticket the agent checks for `run-commands`.
 
