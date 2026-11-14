@@ -12,7 +12,9 @@ import { copyText, readGranted, readText } from '#lib/utils/clipboard.ts';
  * machine copies is written to this device's clipboard by itself (or on the
  * next tap or key press, where the browser needs one), and on desktop
  * browsers that already allow reading the clipboard, this device's text goes
- * to the machine whenever the page comes back into focus.
+ * to the machine whenever the page comes back into focus. In every browser,
+ * Ctrl+V into the screen carries the text of that paste (21.12,
+ * paste-shortcut.ts, through `syncForPaste`).
  */
 
 /** A message the panel shows under its buttons. */
@@ -32,8 +34,8 @@ export const COPIED_FROM_MACHINE = 'Copied from the machine';
 
 /** An agent from before copy and paste drops both requests: say so after this long. */
 export const CLIPBOARD_REPLY_MS = 10_000;
-/** Ctrl+V waits this long for the push before sending the key anyway. */
-export const SHORTCUT_PUSH_MS = 2_000;
+/** Ctrl+V into the screen waits this long for the machine to have the text before sending the keys anyway. */
+export const PASTE_SYNC_MS = 2_000;
 
 const encoder = new TextEncoder();
 
@@ -64,8 +66,11 @@ export class DesktopClipboard {
 
 	readonly #send: (message: ClipboardRequest) => void;
 	#timer: ReturnType<typeof setTimeout> | undefined;
-	/** Ctrl+V pushes waiting for the agent's answer: true once it is on the machine. */
-	#pushed: ((ok: boolean) => void)[] = [];
+	/** Device syncs sent, and answered (`clipboard-synced` or a failure): the agent answers in order. */
+	#syncsSent = 0;
+	#syncsAnswered = 0;
+	/** Pastes waiting for their own sync's answer (SPEC-DESKTOP 21.12). */
+	#syncWaiters: { sync: number; answered: () => void }[] = [];
 	#sharing = $state(true);
 	/** A control session is running: sharing messages reach an agent that answers them. */
 	#live = false;
@@ -190,8 +195,57 @@ export class DesktopClipboard {
 		if (text === '' || text === this.#lastShared || utf8Bytes(text) > MAX_CLIPBOARD_BYTES) {
 			return;
 		}
+		this.#sendSync(text);
+	}
+
+	#sendSync(text: string): number {
 		this.#lastShared = text;
+		this.#syncsSent += 1;
 		this.#send({ type: 'clipboard-sync', text });
+		return this.#syncsSent;
+	}
+
+	/**
+	 * Ctrl+V into the screen brought this text (SPEC-DESKTOP 21.12): it goes to the machine's
+	 * clipboard, and the answer says when to send the keys. `paste` once the machine has it, has
+	 * refused it or has not answered within 2 s (the keys then paste what the machine holds);
+	 * `too-long` past 1 MiB, after saying so, and then nothing is sent.
+	 */
+	syncForPaste(text: string): Promise<'paste' | 'too-long'> {
+		if (utf8Bytes(text) > MAX_CLIPBOARD_BYTES) {
+			showToast(TOO_LONG, 'error');
+			return Promise.resolve('too-long');
+		}
+		const sync = this.#sendSync(text);
+		return new Promise((resolve) => {
+			const waiter = {
+				sync,
+				answered: () => {
+					clearTimeout(timer);
+					this.#syncWaiters = this.#syncWaiters.filter((item) => item !== waiter);
+					resolve('paste');
+				}
+			};
+			const timer = setTimeout(waiter.answered, PASTE_SYNC_MS);
+			this.#syncWaiters.push(waiter);
+		});
+	}
+
+	/** The agent's `clipboard-synced`: the oldest sync not yet answered is on the machine. */
+	synced(): void {
+		this.#syncAnswered();
+	}
+
+	/** The agent's `clipboard-sync-failed`: quiet (21.11), but a paste waiting for it goes on. */
+	syncFailed(): void {
+		this.#syncAnswered();
+	}
+
+	#syncAnswered(): void {
+		this.#syncsAnswered = Math.min(this.#syncsAnswered + 1, this.#syncsSent);
+		for (const waiter of this.#syncWaiters.filter((item) => item.sync <= this.#syncsAnswered)) {
+			waiter.answered();
+		}
 	}
 
 	/** Asks for the machine's clipboard; the reply fills the box. */
@@ -223,7 +277,6 @@ export class DesktopClipboard {
 	sent(): void {
 		this.#settle();
 		this.note = { kind: 'info', message: "Sent to the machine's clipboard." };
-		this.#answerPushes(true);
 		if (this.#keyboardPaste) {
 			this.#keyboardPaste = false;
 			showToast(READY_TO_PASTE, 'success');
@@ -234,7 +287,6 @@ export class DesktopClipboard {
 	failed(message: string): void {
 		this.#settle();
 		this.note = { kind: 'error', message };
-		this.#answerPushes(false);
 		if (this.#keyboardPaste) {
 			this.#keyboardPaste = false;
 			showToast(message, 'error');
@@ -264,35 +316,13 @@ export class DesktopClipboard {
 		this.note = { kind: 'none' };
 	}
 
-	/**
-	 * Ctrl+V on the picture: this device's clipboard to the machine's, then
-	 * true once the agent has it. False when the browser would not read it,
-	 * the text is too long, or the machine refused or did not answer in time.
-	 */
-	async pushFromDevice(): Promise<boolean> {
-		const pasted = await readText();
-		if (!pasted.ok || utf8Bytes(pasted.text) > MAX_CLIPBOARD_BYTES) {
-			return false;
-		}
-		return new Promise((resolve) => {
-			const done = (ok: boolean) => {
-				clearTimeout(timer);
-				this.#pushed = this.#pushed.filter((waiter) => waiter !== done);
-				resolve(ok);
-			};
-			const timer = setTimeout(() => {
-				done(false);
-			}, SHORTCUT_PUSH_MS);
-			this.#pushed.push(done);
-			this.#lastShared = pasted.text;
-			this.#send({ type: 'clipboard-push', text: pasted.text });
-		});
-	}
-
 	/** The session ended or the page is going: stop waiting. */
 	stop(): void {
 		this.#settle();
-		this.#answerPushes(false);
+		for (const waiter of this.#syncWaiters) {
+			waiter.answered();
+		}
+		this.#syncsAnswered = this.#syncsSent;
 		this.#live = false;
 		this.#keyboardPaste = false;
 		this.pending = undefined;
@@ -318,12 +348,6 @@ export class DesktopClipboard {
 		clearTimeout(this.#timer);
 		this.#timer = undefined;
 		this.waiting = 'none';
-	}
-
-	#answerPushes(ok: boolean): void {
-		for (const answer of this.#pushed.splice(0)) {
-			answer(ok);
-		}
 	}
 }
 
@@ -354,97 +378,5 @@ export function attachClipboardSharing(clipboard: DesktopClipboard): () => void 
 		document.removeEventListener('visibilitychange', visible);
 		window.removeEventListener('pointerdown', land, { capture: true });
 		window.removeEventListener('keydown', land, { capture: true });
-	};
-}
-
-/** Ctrl+V and nothing else: no Alt (AltGr), Shift or Meta, not a repeat. */
-function isPasteChord(event: KeyboardEvent): boolean {
-	return (
-		event.code === 'KeyV' &&
-		event.ctrlKey &&
-		!event.altKey &&
-		!event.shiftKey &&
-		!event.metaKey &&
-		!event.repeat
-	);
-}
-
-function isControl(code: string): boolean {
-	return code === 'ControlLeft' || code === 'ControlRight';
-}
-
-/**
- * Ctrl+V on the picture with clipboard reading already granted (SPEC-DESKTOP
- * 21.2): pushes this device's clipboard to the machine, then sends Ctrl+V,
- * so the machine pastes what the viewer copied. Without the permission the
- * key goes on to the screen's own input untouched. Listens in the capture
- * phase so it decides before the screen's key handler sees the key. Returns
- * the detach function.
- */
-export function attachPasteShortcut(
-	surface: HTMLElement,
-	host: {
-		clipboard: DesktopClipboard;
-		send: (message: Extract<ViewerMessage, { type: 'key' }>) => void;
-		controlling: () => boolean;
-		/** Whether the browser already lets the page read its clipboard (`readGranted`). */
-		readAllowed: () => Promise<boolean>;
-	}
-): () => void {
-	let granted = false;
-	let controlHeld = false;
-	/** The V key's release that belongs to a handled Ctrl+V. */
-	let swallowRelease = false;
-	const refresh = () => {
-		void host.readAllowed().then((answer) => {
-			granted = answer;
-		});
-	};
-	const key = (code: string, key: string, down: boolean) => {
-		host.send({ type: 'key', code, key, down, altGr: false });
-	};
-	const paste = async () => {
-		await host.clipboard.pushFromDevice();
-		// The screen's input already sent Ctrl down; let go meanwhile, press it for the paste.
-		const pressControl = !controlHeld;
-		if (pressControl) {
-			key('ControlLeft', 'Control', true);
-		}
-		key('KeyV', 'v', true);
-		key('KeyV', 'v', false);
-		if (pressControl) {
-			key('ControlLeft', 'Control', false);
-		}
-	};
-	const onKeyDown = (event: KeyboardEvent) => {
-		if (isControl(event.code)) {
-			controlHeld = true;
-		}
-		if (event.target !== surface || !granted || !host.controlling() || !isPasteChord(event)) {
-			return;
-		}
-		event.preventDefault();
-		event.stopImmediatePropagation();
-		swallowRelease = true;
-		void paste();
-	};
-	const onKeyUp = (event: KeyboardEvent) => {
-		if (isControl(event.code)) {
-			controlHeld = false;
-		}
-		if (swallowRelease && event.code === 'KeyV') {
-			swallowRelease = false;
-			event.preventDefault();
-			event.stopImmediatePropagation();
-		}
-	};
-	refresh();
-	surface.addEventListener('focus', refresh);
-	surface.addEventListener('keydown', onKeyDown, { capture: true });
-	surface.addEventListener('keyup', onKeyUp, { capture: true });
-	return () => {
-		surface.removeEventListener('focus', refresh);
-		surface.removeEventListener('keydown', onKeyDown, { capture: true });
-		surface.removeEventListener('keyup', onKeyUp, { capture: true });
 	};
 }

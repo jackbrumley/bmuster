@@ -370,6 +370,7 @@ export class DesktopSession {
 				void this.clipboard.changed(message.text);
 				return;
 			case 'clipboard-synced':
+				this.clipboard.synced();
 				return;
 			case 'error':
 				if (message.code === 'clipboard-failed') {
@@ -378,6 +379,7 @@ export class DesktopSession {
 				}
 				// A device sync that did not land stays quiet (SPEC-DESKTOP 21.11).
 				if (message.code === 'clipboard-sync-failed') {
+					this.clipboard.syncFailed();
 					return;
 				}
 				this.#clearApprovalTimer();
