@@ -27,7 +27,8 @@ describe('console error (SPEC-ERROR-PAGES E2, E3)', () => {
 				user: MEMBER,
 				localNetworkMode: false,
 				runCommands: false,
-				assistant: { kind: 'none' }
+				assistant: { kind: 'none' },
+				approvals: { kind: 'hidden' }
 			}
 		});
 		await expect.element(shell.getByText('Mo Member')).toBeInTheDocument();

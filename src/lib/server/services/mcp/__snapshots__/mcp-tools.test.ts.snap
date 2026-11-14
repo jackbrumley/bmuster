@@ -2,6 +2,35 @@
 
 exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code, secret, key, ticket, token, note or email address 1`] = `
 {
+  "cancel_command": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "type": "string",
+      },
+      "runId": {
+        "type": "string",
+      },
+      "status": {
+        "enum": [
+          "pending-approval",
+          "running",
+          "finished",
+          "cancelled",
+          "denied",
+          "expired",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "runId",
+      "status",
+      "message",
+    ],
+    "type": "object",
+  },
   "get_machine": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "additionalProperties": false,
@@ -259,6 +288,238 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
     "required": [
       "machines",
       "total",
+    ],
+    "type": "object",
+  },
+  "run_command": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "approvalUrl": {
+        "type": "string",
+      },
+      "commandRun": {
+        "type": [
+          "string",
+          "null",
+        ],
+      },
+      "decidedBy": {
+        "type": [
+          "string",
+          "null",
+        ],
+      },
+      "denyNote": {
+        "type": [
+          "string",
+          "null",
+        ],
+      },
+      "edited": {
+        "type": "boolean",
+      },
+      "expiresAt": {
+        "type": [
+          "string",
+          "null",
+        ],
+      },
+      "machines": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "durationMs": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+            "exitCode": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+            "id": {
+              "type": "string",
+            },
+            "name": {
+              "type": "string",
+            },
+            "reason": {
+              "type": "string",
+            },
+            "status": {
+              "enum": [
+                "waiting",
+                "running",
+                "succeeded",
+                "failed",
+                "timed-out",
+                "offline",
+                "skipped",
+                "lost",
+                "cancelled",
+              ],
+              "type": "string",
+            },
+          },
+          "required": [
+            "id",
+            "name",
+            "status",
+            "reason",
+            "exitCode",
+            "durationMs",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "message": {
+        "type": "string",
+      },
+      "output": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "deleted": {
+                "type": "boolean",
+              },
+              "machine": {
+                "type": "string",
+              },
+              "stderr": {
+                "additionalProperties": false,
+                "properties": {
+                  "more": {
+                    "type": "boolean",
+                  },
+                  "nextOffset": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer",
+                  },
+                  "offset": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer",
+                  },
+                  "text": {
+                    "type": "string",
+                  },
+                  "totalBytes": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer",
+                  },
+                },
+                "required": [
+                  "text",
+                  "offset",
+                  "nextOffset",
+                  "totalBytes",
+                  "more",
+                ],
+                "type": "object",
+              },
+              "stderrTruncated": {
+                "type": "boolean",
+              },
+              "stdout": {
+                "additionalProperties": false,
+                "properties": {
+                  "more": {
+                    "type": "boolean",
+                  },
+                  "nextOffset": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer",
+                  },
+                  "offset": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer",
+                  },
+                  "text": {
+                    "type": "string",
+                  },
+                  "totalBytes": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer",
+                  },
+                },
+                "required": [
+                  "text",
+                  "offset",
+                  "nextOffset",
+                  "totalBytes",
+                  "more",
+                ],
+                "type": "object",
+              },
+              "stdoutTruncated": {
+                "type": "boolean",
+              },
+            },
+            "required": [
+              "machine",
+              "stdout",
+              "stderr",
+              "stdoutTruncated",
+              "stderrTruncated",
+              "deleted",
+            ],
+            "type": "object",
+          },
+          {
+            "type": "null",
+          },
+        ],
+      },
+      "runId": {
+        "type": "string",
+      },
+      "status": {
+        "enum": [
+          "pending-approval",
+          "running",
+          "finished",
+          "cancelled",
+          "denied",
+          "expired",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "runId",
+      "status",
+      "message",
+      "approvalUrl",
+      "expiresAt",
+      "decidedBy",
+      "denyNote",
+      "edited",
+      "commandRun",
+      "machines",
+      "output",
     ],
     "type": "object",
   },

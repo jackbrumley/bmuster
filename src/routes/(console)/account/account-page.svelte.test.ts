@@ -42,6 +42,7 @@ function renderAccount(grants: GrantView[]) {
 			serverUpdate: null,
 			runCommands: false,
 			assistant: { kind: 'connected', name: 'Claude Code' },
+			approvals: { kind: 'hidden' },
 			signedIn: true,
 			now: NOW,
 			signIn: ['Password'],

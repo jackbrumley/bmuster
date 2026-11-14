@@ -2,6 +2,8 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+	cancelCommandOutput,
+	commandResultOutput,
 	getMachineInput,
 	getMachineOutput,
 	listMachinesInput,
@@ -150,13 +152,15 @@ describe('never exposed (SPEC-MCP M12)', () => {
 	it('M12: no output field could carry a code, secret, key, ticket, token, note or email address', () => {
 		const schemas = {
 			list_machines: z.toJSONSchema(listMachinesOutput),
-			get_machine: z.toJSONSchema(getMachineOutput)
+			get_machine: z.toJSONSchema(getMachineOutput),
+			run_command: z.toJSONSchema(commandResultOutput),
+			cancel_command: z.toJSONSchema(cancelCommandOutput)
 		};
 		const keys = JSON.stringify(schemas).match(/"([A-Za-z]+)":/g) ?? [];
 		const forbidden = /code|secret|key|ticket|token|note|email|password|share|link/i;
-		expect(keys.filter((key) => forbidden.test(key) && key !== '"additionalProperties":')).toEqual(
-			[]
-		);
+		// A command's exit code, and the approver's note to the assistant when they deny (M20).
+		const meant = new Set(['"additionalProperties":', '"exitCode":', '"denyNote":']);
+		expect(keys.filter((key) => forbidden.test(key) && !meant.has(key))).toEqual([]);
 		expect(schemas).toMatchSnapshot();
 	});
 

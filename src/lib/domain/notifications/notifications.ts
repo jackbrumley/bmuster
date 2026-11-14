@@ -11,7 +11,8 @@ export const NOTIFICATION_EVENT_KINDS = [
 	'machine-removed',
 	'machine-offline',
 	'machine-online',
-	'disk-nearly-full'
+	'disk-nearly-full',
+	'command-approval-requested'
 ] as const;
 
 /** The events a rule can pick. The test notification is sent from a rule itself. */
@@ -51,6 +52,12 @@ export const NOTIFICATION_CATALOGUE: Record<NotificationEventKind | 'test', Cata
 		description:
 			"A machine's drive reaches 90 % used. Sent once; again only after the drive drops below 85 % and fills up again.",
 		carries: ['Machine name', 'Host name', 'Drive', 'Percent used', 'Free space']
+	},
+	'command-approval-requested': {
+		label: 'AI command waiting for approval',
+		description:
+			'An AI assistant asks to run a command. The email links to the request; approving still happens in BMuster, never from the email.',
+		carries: ['Machines', 'Who it acts as', 'The assistant', "The command's first line"]
 	},
 	test: {
 		label: 'Test notification',

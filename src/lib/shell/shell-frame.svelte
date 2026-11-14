@@ -1,13 +1,16 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { IconCertificate, IconDots, IconPlugConnected } from '@tabler/icons-svelte-runes';
+	import type { ApprovalsNav } from '#lib/domain/commands/assistant-runs.ts';
 	import type { AssistantStatus } from '#lib/domain/mcp/mcp.ts';
+	import { connectLive, live } from '#lib/runes/live-events.svelte.ts';
 	import type { ConsoleUser } from '#lib/domain/users/user.ts';
 	import ConfirmDialog from '#lib/ui/confirm-dialog.svelte';
 	import Logo from '#lib/ui/logo.svelte';
 	import ToastHost from '#lib/ui/toast-host.svelte';
+	import ApprovalNotice from './approval-notice.svelte';
 	import { adminNav, isCurrent, mainNav } from './console-nav.ts';
 	import SignedInUser from './signed-in-user.svelte';
 
@@ -22,6 +25,7 @@
 		localNetworkMode,
 		runCommands,
 		assistant,
+		approvals,
 		children
 	}: {
 		user: ConsoleUser;
@@ -30,10 +34,27 @@
 		runCommands: boolean;
 		/** An AI assistant used as this person in the last 10 minutes (SPEC-MCP M15). */
 		assistant: AssistantStatus;
+		/** Approvals in the navigation, for people who may approve AI commands (SPEC-MCP M26). */
+		approvals: ApprovalsNav;
 		children: Snippet;
 	} = $props();
 
-	const main = $derived(mainNav(user.role, runCommands));
+	/** The count as loaded, then as the live channel reports it. */
+	const approvalsNow = $derived<ApprovalsNav>(
+		approvals.kind === 'shown'
+			? { kind: 'shown', pending: live.pending ?? approvals.pending }
+			: approvals
+	);
+	const main = $derived(mainNav(user.role, runCommands, approvalsNow));
+
+	/** M26: people who may approve hear of each request live, in every open tab. */
+	onMount(() => {
+		if (approvals.kind !== 'shown') {
+			return undefined;
+		}
+		live.pending = null;
+		return connectLive(resolve('/api/live'));
+	});
 	const admin = $derived(adminNav(user.role));
 	const moreHref = resolve('/(console)/more');
 	const moreCurrent = $derived(
@@ -57,6 +78,9 @@
 				>
 					<item.icon size={20} stroke={1.75} />
 					{item.label}
+					{#if item.badge > 0}
+						<span class="badge" aria-label="{item.badge} waiting">{item.badge}</span>
+					{/if}
 				</a>
 			{/each}
 		</nav>
@@ -103,7 +127,12 @@
 				href={resolve(item.route)}
 				aria-current={isCurrent(page.url.pathname, item.route) ? 'page' : undefined}
 			>
-				<item.icon size={22} stroke={1.75} />
+				<span class="tab-icon">
+					<item.icon size={22} stroke={1.75} />
+					{#if item.badge > 0}
+						<span class="badge dot" aria-label="{item.badge} waiting">{item.badge}</span>
+					{/if}
+				</span>
 				<span>{item.label}</span>
 			</a>
 		{/each}
@@ -115,6 +144,9 @@
 
 	<ConfirmDialog />
 	<ToastHost />
+	{#if approvals.kind === 'shown'}
+		<ApprovalNotice />
+	{/if}
 </div>
 
 <style>
@@ -200,6 +232,32 @@
 
 	.tab[aria-current='page'] {
 		color: var(--brand);
+	}
+
+	.tab-icon {
+		position: relative;
+		display: inline-flex;
+	}
+
+	.badge {
+		min-width: 20px;
+		margin-left: auto;
+		padding: 0 var(--space-1);
+		border-radius: var(--radius-pill);
+		background: var(--danger);
+		color: var(--brand-contrast);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-semibold);
+		line-height: 20px;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.badge.dot {
+		position: absolute;
+		top: -6px;
+		left: 14px;
+		margin-left: 0;
 	}
 
 	@media (min-width: 900px) {

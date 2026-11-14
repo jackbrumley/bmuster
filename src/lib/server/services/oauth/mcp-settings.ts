@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { McpSettingsView } from '#lib/domain/mcp/mcp.ts';
+import { APPROVER_MODES } from '#lib/domain/commands/assistant-runs.ts';
+import type { ApproverSettingsView, McpSettingsView } from '#lib/domain/mcp/mcp.ts';
 import { settings, userGroupMembers, userGroups, users } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
@@ -166,4 +167,130 @@ export function turnMcpOff(database: AppDatabase, actorUserId: string, now: numb
 		{ enabled: false, userGroupId: current.userGroupId },
 		now
 	);
+}
+
+/**
+ * Who may approve an assistant's request (SPEC-MCP M19): the person it acts as (the default),
+ * that person or the approvers group, or only the approvers group. Stored as `mcp.approvers` and
+ * `mcp.approverGroupId`.
+ */
+export type ApproverSettings =
+	{ mode: 'requester' } | { mode: 'requester-or-group' | 'group-only'; groupId: string };
+
+const APPROVER_KEYS = { mode: 'mcp.approvers', groupId: 'mcp.approverGroupId' } as const;
+
+const approverModeSchema = z.enum(APPROVER_MODES);
+
+export function readApproverSettings(database: Queryable): ApproverSettings {
+	const mode = stored(database, APPROVER_KEYS.mode);
+	const group = stored(database, APPROVER_KEYS.groupId);
+	const parsedMode = mode === undefined ? 'requester' : approverModeSchema.parse(mode);
+	const groupId = group === undefined ? null : groupSchema.parse(group);
+	return parsedMode === 'requester' || groupId === null
+		? { mode: 'requester' }
+		: { mode: parsedMode, groupId };
+}
+
+export function approverSettingsView(database: Queryable): ApproverSettingsView {
+	const current = readApproverSettings(database);
+	if (current.mode === 'requester') {
+		return { mode: 'requester', group: { kind: 'none' } };
+	}
+	const group = database
+		.select({ name: userGroups.name })
+		.from(userGroups)
+		.where(eq(userGroups.id, current.groupId))
+		.get();
+	return {
+		mode: current.mode,
+		group:
+			group === undefined
+				? { kind: 'missing', id: current.groupId }
+				: { kind: 'group', id: current.groupId, name: group.name }
+	};
+}
+
+/** True when this person is in the approvers group the settings name. */
+export function inApproverGroup(
+	database: Queryable,
+	approvers: ApproverSettings,
+	userId: string
+): boolean {
+	if (approvers.mode === 'requester') {
+		return false;
+	}
+	return (
+		database
+			.select({ userId: userGroupMembers.userId })
+			.from(userGroupMembers)
+			.where(
+				and(
+					eq(userGroupMembers.userGroupId, approvers.groupId),
+					eq(userGroupMembers.userId, userId)
+				)
+			)
+			.get() !== undefined
+	);
+}
+
+/** Saves who may approve, for an admin, and audits each real change. The group must exist. */
+export function writeApproverSettings(
+	database: AppDatabase,
+	actorUserId: string,
+	next: ApproverSettings,
+	now: number
+): { kind: 'changed' } | { kind: 'refused'; message: string } {
+	if (
+		next.mode !== 'requester' &&
+		database
+			.select({ id: userGroups.id })
+			.from(userGroups)
+			.where(eq(userGroups.id, next.groupId))
+			.get() === undefined
+	) {
+		return { kind: 'refused', message: 'That group no longer exists. Choose another.' };
+	}
+	const values = {
+		mode: next.mode,
+		groupId: next.mode === 'requester' ? null : next.groupId
+	};
+	const labels = { mode: 'Who may approve AI commands', groupId: 'Approvers group' } as const;
+	database.transaction((transaction) => {
+		const current = readApproverSettings(transaction);
+		const before = {
+			mode: current.mode,
+			groupId: current.mode === 'requester' ? null : current.groupId
+		};
+		for (const key of ['mode', 'groupId'] as const) {
+			if (before[key] === values[key]) {
+				continue;
+			}
+			const value = JSON.stringify(values[key]);
+			transaction
+				.insert(settings)
+				.values({
+					key: APPROVER_KEYS[key],
+					value,
+					updatedAt: new Date(now),
+					updatedBy: actorUserId
+				})
+				.onConflictDoUpdate({
+					target: settings.key,
+					set: { value, updatedAt: new Date(now), updatedBy: actorUserId }
+				})
+				.run();
+			recordAudit(
+				transaction,
+				{
+					actor: { kind: 'user', userId: actorUserId },
+					kind: 'setting-changed',
+					target: labels[key],
+					machineId: null,
+					detail: { from: String(before[key]), to: String(values[key]) }
+				},
+				now
+			);
+		}
+	});
+	return { kind: 'changed' };
 }

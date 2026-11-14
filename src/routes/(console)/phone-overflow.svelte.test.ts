@@ -165,7 +165,7 @@ const PAGES: PhonePage[] = [
 				{
 					params: { id: COMMAND_RUN.id },
 					form: undefined,
-					data: { ...CONSOLE, now: NOW, run: COMMAND_RUN }
+					data: { ...CONSOLE, now: NOW, run: COMMAND_RUN, approval: { kind: 'none' } }
 				},
 				IN_CONSOLE
 			)

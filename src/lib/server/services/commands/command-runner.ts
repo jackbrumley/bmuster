@@ -1,3 +1,4 @@
+import { assistantLabel } from '#lib/domain/mcp/mcp.ts';
 import {
 	COMMAND_LIMITS,
 	emptyCounts,
@@ -9,6 +10,8 @@ import { permissionsFor } from '../access/access.ts';
 import { isAgentConnected } from '../agents/live-agents.ts';
 import { activeMachineBasics } from '../machines/machine-views.ts';
 import type { Relay } from '../sessions/relay.ts';
+import { findGrant, viaDetail } from '../oauth/grants.ts';
+import { mcpEnabled } from '../oauth/mcp-settings.ts';
 import { findUserById, toConsoleUser } from '../users/users.ts';
 import { auditMachineResult, auditRunEnded } from './command-audit.ts';
 import { runOnMachine } from './command-exec.ts';
@@ -38,9 +41,20 @@ export type RunnerDeps = {
 	clock: () => number;
 };
 
+/**
+ * An assistant's run (SPEC-MCP M18) is checked again at each machine's turn: the person it acts
+ * as still holds `ai-commands` there, the assistant is still connected, and AI assistants are on.
+ */
+type RunOrigin =
+	| { kind: 'person' }
+	| { kind: 'assistant'; grantId: string; label: string; via: Record<string, string> };
+
 type ActiveRun = {
 	running: number;
 	startedBy: string;
+	/** Whose permissions the tickets carry: the approver for an assistant's run, else the starter. */
+	runAs: string;
+	origin: RunOrigin;
 	startedAt: number;
 	timeoutMs: number;
 	scripts: CommandScript[];
@@ -83,7 +97,8 @@ export function createCommandRunner(deps: RunnerDeps) {
 				runId,
 				startedBy: run.startedBy,
 				counts: countsOf(runId),
-				durationMs: now - run.startedAt
+				durationMs: now - run.startedAt,
+				via: viaOf(run)
 			},
 			now
 		);
@@ -112,10 +127,32 @@ export function createCommandRunner(deps: RunnerDeps) {
 				durationMs: null,
 				outputBytes: null,
 				outputSha256: null,
-				sessionId: null
+				sessionId: null,
+				via: viaOf(run)
 			},
 			now
 		);
+	}
+
+	/** Why an assistant's run may no longer go ahead on this machine, or undefined when it may. */
+	function assistantRefusal(run: ActiveRun, machineId: string): string | undefined {
+		if (run.origin.kind === 'person') {
+			return undefined;
+		}
+		if (!mcpEnabled(database)) {
+			return 'AI assistants were turned off before its turn.';
+		}
+		if (findGrant(database, run.origin.grantId)?.endedAt !== null) {
+			return 'The assistant was disconnected before its turn.';
+		}
+		const requester = findUserById(database, run.startedBy);
+		if (requester?.disabledAt !== null) {
+			return 'The person the assistant acts as was disabled.';
+		}
+		const allowed = permissionsFor(database, toConsoleUser(requester), machineId).some(
+			(grant) => grant.permission === 'ai-commands'
+		);
+		return allowed ? undefined : 'AI commands was taken away before its turn.';
 	}
 
 	/** Starts one machine, or records why it cannot start. */
@@ -127,9 +164,22 @@ export function createCommandRunner(deps: RunnerDeps) {
 			notRun(runId, run, machine, 'skipped', 'The machine was removed.');
 			return;
 		}
-		const owner = findUserById(database, run.startedBy);
+		const owner = findUserById(database, run.runAs);
 		if (owner?.disabledAt !== null) {
-			notRun(runId, run, machine, 'skipped', 'The person who started the run was disabled.');
+			notRun(
+				runId,
+				run,
+				machine,
+				'skipped',
+				run.origin.kind === 'person'
+					? 'The person who started the run was disabled.'
+					: 'The person who approved the run was disabled.'
+			);
+			return;
+		}
+		const refusal = assistantRefusal(run, machineId);
+		if (refusal !== undefined) {
+			notRun(runId, run, machine, 'skipped', refusal);
 			return;
 		}
 		const user = toConsoleUser(owner);
@@ -156,6 +206,8 @@ export function createCommandRunner(deps: RunnerDeps) {
 				runId,
 				machineId,
 				user: { id: user.id, name: user.name },
+				inUseName:
+					run.origin.kind === 'person' ? user.name : `${user.name} (asked via ${run.origin.label})`,
 				permissions: grants.map((grant) => grant.permission),
 				shell: script.shell,
 				command: script.command,
@@ -179,7 +231,8 @@ export function createCommandRunner(deps: RunnerDeps) {
 						durationMs: result.durationMs,
 						outputBytes: result.outputBytes,
 						outputSha256: result.outputSha256,
-						sessionId: result.sessionId
+						sessionId: result.sessionId,
+						via: viaOf(run)
 					},
 					ended
 				);
@@ -196,6 +249,10 @@ export function createCommandRunner(deps: RunnerDeps) {
 				run.running += 1;
 				return;
 		}
+	}
+
+	function viaOf(run: ActiveRun): Record<string, string> {
+		return run.origin.kind === 'assistant' ? run.origin.via : {};
 	}
 
 	/** Starts machines until 10 are running or none is waiting. */
@@ -222,9 +279,22 @@ export function createCommandRunner(deps: RunnerDeps) {
 			if (row === undefined) {
 				throw new Error(`No command run ${runId} to begin`);
 			}
+			const grant = row.oauthGrantId === null ? undefined : findGrant(database, row.oauthGrantId);
+			const origin: RunOrigin =
+				row.requester === 'assistant' && row.oauthGrantId !== null
+					? {
+							kind: 'assistant',
+							grantId: row.oauthGrantId,
+							label: grant === undefined ? 'an AI assistant' : assistantLabel(grant.assistant),
+							via: grant === undefined ? {} : viaDetail(grant.assistant, grant.clientId)
+						}
+					: { kind: 'person' };
 			active.set(runId, {
 				running: 0,
 				startedBy: row.startedBy,
+				runAs:
+					origin.kind === 'assistant' && row.decidedBy !== null ? row.decidedBy : row.startedBy,
+				origin,
 				startedAt: row.startedAt.getTime(),
 				timeoutMs: row.timeoutMs,
 				scripts: scriptsOf(database, [runId]).map((script) => ({
@@ -240,6 +310,11 @@ export function createCommandRunner(deps: RunnerDeps) {
 		/** After a cancel: a run with nothing running ends now. */
 		settle(runId: string): void {
 			pump(runId);
+		},
+
+		/** A run changed outside the runner (approved, denied, expired): its listeners hear it. */
+		announce(runId: string): void {
+			changed(runId);
 		},
 
 		/** Listens for changes to any run until the returned function is called. */

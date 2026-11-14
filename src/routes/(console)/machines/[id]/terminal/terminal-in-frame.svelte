@@ -16,6 +16,7 @@
 	localNetworkMode={false}
 	runCommands={false}
 	assistant={{ kind: 'none' }}
+	approvals={{ kind: 'hidden' }}
 >
 	<TerminalTab {...pageProps} />
 </ShellFrame>

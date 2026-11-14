@@ -11,6 +11,7 @@
 	localNetworkMode={data.localNetworkMode}
 	runCommands={data.runCommands}
 	assistant={data.assistant}
+	approvals={data.approvals}
 >
 	<ServerUpdateNotice initial={data.serverUpdate} />
 	{@render children()}

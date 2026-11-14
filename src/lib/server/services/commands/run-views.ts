@@ -1,6 +1,8 @@
 import {
 	emptyCounts,
 	firstLine,
+	requesterText,
+	type RunOrigin,
 	type CommandScript,
 	type RunMachineOutput,
 	type RunMachineView,
@@ -10,7 +12,10 @@ import {
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
 import { commandScriptSchema } from '#lib/schemas/commands/commands.ts';
 import type { Queryable } from '../../database/connection.ts';
+import { assistantLabel } from '#lib/domain/mcp/mcp.ts';
 import { visibleMachineIds } from '../access/access.ts';
+import { findGrant } from '../oauth/grants.ts';
+import { findUserById } from '../users/users.ts';
 import {
 	findRun,
 	machinesOf,
@@ -57,6 +62,62 @@ function machineView(row: RunMachineRow): RunMachineView {
 	};
 }
 
+type ScriptRow = ReturnType<typeof scriptsOf>[number];
+
+/** Who asked for the run, and for an assistant's run what the approver decided (SPEC-MCP M28). */
+export function originOf(
+	database: Queryable,
+	run: RunRow,
+	scripts: readonly ScriptRow[]
+): RunOrigin {
+	if (run.requester === 'person' || run.oauthGrantId === null) {
+		return { kind: 'person' };
+	}
+	const grant = findGrant(database, run.oauthGrantId);
+	const decidedBy =
+		run.decidedBy === null ? '' : (findUserById(database, run.decidedBy)?.name ?? '');
+	const decidedIso = (run.decidedAt ?? run.startedAt).toISOString();
+	const script = scripts.find((row) => row.runId === run.id);
+	const requestedCommand = script?.requestedCommand ?? null;
+	const decision = ((): Extract<RunOrigin, { kind: 'assistant' }>['decision'] => {
+		switch (run.status) {
+			case 'pending-approval':
+				return { kind: 'pending' };
+			case 'denied':
+				return { kind: 'denied', by: decidedBy, atIso: decidedIso, note: run.denyNote ?? '' };
+			case 'expired':
+				return { kind: 'expired' };
+			case 'running':
+			case 'finished':
+			case 'cancelled':
+				if (run.decidedBy === null) {
+					return { kind: 'cancelled' };
+				}
+				return {
+					kind: 'approved',
+					by: decidedBy,
+					atIso: decidedIso,
+					edit:
+						requestedCommand === null && run.requestedTimeoutMs === null
+							? { kind: 'unchanged' }
+							: {
+									kind: 'edited',
+									requestedCommand: requestedCommand ?? script?.command ?? '',
+									requestedTimeoutMs: run.requestedTimeoutMs ?? run.timeoutMs
+								}
+				};
+		}
+	})();
+	return {
+		kind: 'assistant',
+		assistant: grant === undefined ? 'an AI assistant' : assistantLabel(grant.assistant),
+		verified: grant?.assistant.identity.kind === 'verified',
+		reason: run.reason ?? '',
+		expiresIso: (run.expiresAt ?? run.startedAt).toISOString(),
+		decision
+	};
+}
+
 function countsOf(rows: readonly RunMachineRow[]) {
 	const counts = emptyCounts();
 	for (const row of rows) {
@@ -80,7 +141,14 @@ export function listRunsFor(database: Queryable, user: ConsoleUser): RunSummary[
 		return [
 			{
 				id: run.id,
-				startedBy: run.startedByName,
+				startedBy: requesterText(
+					run.startedByName,
+					originOf(
+						database,
+						run,
+						scripts.filter((script) => script.runId === run.id)
+					)
+				),
 				startedIso: run.startedAt.toISOString(),
 				status: run.status,
 				commands: scripts
@@ -92,10 +160,17 @@ export function listRunsFor(database: Queryable, user: ConsoleUser): RunSummary[
 	});
 }
 
-function viewOf(run: RunRow, rows: RunMachineRow[], scripts: CommandScript[], user: ConsoleUser) {
+function viewOf(
+	run: RunRow,
+	origin: RunOrigin,
+	rows: RunMachineRow[],
+	scripts: CommandScript[],
+	user: ConsoleUser
+) {
 	return {
 		id: run.id,
-		startedBy: run.startedByName,
+		startedBy: requesterText(run.startedByName, origin),
+		origin,
 		startedIso: run.startedAt.toISOString(),
 		endedIso: run.endedAt === null ? null : run.endedAt.toISOString(),
 		status: run.status,
@@ -103,7 +178,9 @@ function viewOf(run: RunRow, rows: RunMachineRow[], scripts: CommandScript[], us
 		scripts,
 		machines: rows.map(machineView),
 		counts: countsOf(rows),
-		canCancel: run.status === 'running' && mayCancel(user, run.startedBy)
+		canCancel:
+			(run.status === 'running' || run.status === 'pending-approval') &&
+			mayCancel(user, run.startedBy)
 	} satisfies RunView;
 }
 
@@ -122,8 +199,8 @@ export function runViewFor(
 	if (rows.length === 0) {
 		return undefined;
 	}
-	const scripts = scriptsOf(database, [runId]).map(scriptView);
-	return viewOf(run, rows, scripts, user);
+	const scriptRows = scriptsOf(database, [runId]);
+	return viewOf(run, originOf(database, run, scriptRows), rows, scriptRows.map(scriptView), user);
 }
 
 /** One machine's output, for a person who can view the machine; undefined otherwise. */

@@ -38,6 +38,13 @@ export const EVENT_DETAIL_SCHEMAS = {
 		drive: z.string(),
 		used: z.string(),
 		free: z.string()
+	}),
+	'command-approval-requested': z.object({
+		runId: z.string(),
+		machines: z.string(),
+		requestedBy: z.string(),
+		assistant: z.string(),
+		firstLine: z.string()
 	})
 } satisfies Record<NotificationEventKind, z.ZodType<Record<string, string>>>;
 

@@ -6,6 +6,9 @@
 	 * tall. `primary` is the page's main action in the brand colour;
 	 * `secondary` is a quieter outlined action; `danger` confirms something
 	 * destructive. `large` fills its row at 48px, for the main action of a form.
+	 * A `button` with no `onclick` has nothing to do yet, so it is disabled
+	 * (Approve on an AI assistant's request, SPEC-MCP M25); a `submit` button
+	 * submits its form.
 	 */
 	let {
 		variant,
@@ -22,7 +25,12 @@
 	} = $props();
 </script>
 
-<button {type} class="button {variant} {size}" {onclick}>
+<button
+	{type}
+	class="button {variant} {size}"
+	{onclick}
+	disabled={type === 'button' && onclick === undefined}
+>
 	{@render children()}
 </button>
 
@@ -71,6 +79,11 @@
 
 	.secondary:hover {
 		background: var(--surface-muted);
+	}
+
+	.button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.large {

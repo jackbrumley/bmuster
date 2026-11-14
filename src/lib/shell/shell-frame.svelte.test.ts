@@ -27,6 +27,7 @@ describe('console frame (S14)', () => {
 			localNetworkMode: false,
 			runCommands: false,
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			children
 		});
 		await expect.element(screen.getByText('Ada Lovelace')).toBeInTheDocument();
@@ -44,6 +45,7 @@ describe('console frame (S14)', () => {
 			localNetworkMode: false,
 			runCommands: false,
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			children
 		});
 		await expect.element(screen.getByText('Mo Member')).toBeInTheDocument();
@@ -54,6 +56,7 @@ describe('console frame (S14)', () => {
 			localNetworkMode: false,
 			runCommands: false,
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			children
 		});
 		expect(admin.container.querySelector('nav[aria-label="Administration"]')).not.toBeNull();
@@ -65,6 +68,7 @@ describe('console frame (S14)', () => {
 			localNetworkMode: false,
 			runCommands: false,
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			children
 		});
 		expect(off.container.textContent).not.toContain('Local network mode');
@@ -74,6 +78,7 @@ describe('console frame (S14)', () => {
 			localNetworkMode: true,
 			runCommands: false,
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			children
 		});
 		await expect
@@ -89,6 +94,7 @@ describe('console frame (S14)', () => {
 			localNetworkMode: false,
 			runCommands: false,
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			children
 		});
 		expect(none.container.textContent).not.toContain('is connected as you');
@@ -98,6 +104,7 @@ describe('console frame (S14)', () => {
 			localNetworkMode: false,
 			runCommands: false,
 			assistant: { kind: 'connected', name: 'Claude Code' },
+			approvals: { kind: 'hidden' },
 			children
 		});
 		const banner = connected.getByRole('link', { name: 'Claude Code is connected as you' });

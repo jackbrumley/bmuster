@@ -35,6 +35,7 @@ function view(machines: RunMachineView[], status: RunView['status'] = 'finished'
 	return {
 		id: RUN,
 		startedBy: 'Ada',
+		origin: { kind: 'person' },
 		startedIso: '2026-11-14T11:58:00.000Z',
 		endedIso: status === 'running' ? null : '2026-11-14T11:59:00.000Z',
 		status,
@@ -109,5 +110,65 @@ describe('results (SPEC-COMMANDS C16, C18)', () => {
 		feed().send(COMMAND_RUN_EVENT, view([row(1, 'succeeded', 0), row(2, 'failed', 2)]));
 		await expect.element(screen.getByText('1 succeeded · 1 failed')).toBeVisible();
 		expect(screen.getByRole('button', { name: 'Cancel run' }).query()).toBeNull();
+	});
+});
+
+describe('an AI assistant’s run on its results page (SPEC-MCP M28)', () => {
+	it('M28: who asked via which assistant, who approved, the reason and the requested command', async () => {
+		const screen = await render(RunResults, {
+			initial: {
+				...view([row(1, 'succeeded', 0)]),
+				startedBy: 'Jack Brumley via Claude Code',
+				origin: {
+					kind: 'assistant',
+					assistant: 'Claude Code',
+					verified: true,
+					reason: 'Check the print spooler',
+					expiresIso: '2026-11-14T12:08:00.000Z',
+					decision: {
+						kind: 'approved',
+						by: 'Bea Second',
+						atIso: '2026-11-14T11:58:30.000Z',
+						edit: {
+							kind: 'edited',
+							requestedCommand: 'Restart-Service Spooler -Force',
+							requestedTimeoutMs: 60_000
+						}
+					}
+				}
+			},
+			now: NOW
+		});
+		await expect
+			.element(screen.getByText(/Started by Jack Brumley via Claude Code/u))
+			.toBeVisible();
+		await expect.element(screen.getByText('Approved by Bea Second, edited')).toBeVisible();
+		await expect
+			.element(screen.getByText('Claude Code said: Check the print spooler'))
+			.toBeVisible();
+		await expect.element(screen.getByText('Restart-Service Spooler -Force')).toBeVisible();
+	});
+
+	it('M28: a denied request shows who denied it and the note', async () => {
+		const screen = await render(RunResults, {
+			initial: {
+				...view([row(1, 'cancelled', null)], 'denied'),
+				origin: {
+					kind: 'assistant',
+					assistant: 'Claude Code',
+					verified: true,
+					reason: 'Clean up',
+					expiresIso: '2026-11-14T12:08:00.000Z',
+					decision: {
+						kind: 'denied',
+						by: 'Bea Second',
+						atIso: '2026-11-14T11:58:30.000Z',
+						note: 'Not on a Friday'
+					}
+				}
+			},
+			now: NOW
+		});
+		await expect.element(screen.getByText('Denied by Bea Second: Not on a Friday')).toBeVisible();
 	});
 });

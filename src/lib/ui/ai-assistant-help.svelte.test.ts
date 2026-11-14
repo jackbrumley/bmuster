@@ -30,6 +30,21 @@ describe('Connect an AI assistant help', () => {
 		expect(screen.container.textContent).not.toContain('turned off');
 	});
 
+	it('SPEC-MCP step 2: explains how approving a command works', async () => {
+		const screen = await render(AiAssistantHelp, {
+			serverUrl: 'https://bmuster.example.com/mcp',
+			state: 'on'
+		});
+		await expect.element(screen.getByRole('heading', { name: 'Approving commands' })).toBeVisible();
+		const text = screen.container.textContent;
+		expect(text).toContain('Approvals page');
+		expect(text).toContain('Approve, Edit or Deny');
+		expect(text).toContain('expires after 10 minutes');
+		expect(text).toContain('Run commands');
+		expect(text).toContain('runs as root or SYSTEM');
+		expect(text).toContain('data from the machine');
+	});
+
 	it('says when assistants are off, or the person may not connect one', async () => {
 		const off = await render(AiAssistantHelp, {
 			serverUrl: 'https://bmuster.example.com/mcp',

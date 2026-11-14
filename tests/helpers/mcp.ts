@@ -109,10 +109,21 @@ export function invoke<E extends RequestEvent, R>(
 	params: E['params']
 ): R {
 	const url = new URL(pathAndQuery, ORIGIN);
+	// Cookies as a browser sends them, read from the request's cookie header.
+	const cookieJar = new Map(
+		(options.headers['cookie'] ?? '')
+			.split(';')
+			.map((pair) => pair.trim().split('='))
+			.flatMap(([name, value]) =>
+				name === undefined || value === undefined ? [] : [[name, value] as const]
+			)
+	);
+	const cookies: Pick<RequestEvent['cookies'], 'get'> = { get: (name) => cookieJar.get(name) };
 	const partial: Pick<
 		RequestEvent,
 		'request' | 'url' | 'getClientAddress' | 'locals' | 'params' | 'route'
-	> = {
+	> & { cookies: Pick<RequestEvent['cookies'], 'get'> } = {
+		cookies,
 		url,
 		request: new Request(url, {
 			method: options.method,

@@ -39,7 +39,7 @@ describe('who may connect (SPEC-MCP M2)', () => {
 			kind: 'ask',
 			assistant: { name: 'Claude Code' },
 			redirect: { kind: 'loopback' },
-			scopes: ['machines:read']
+			scopes: ['machines:read', 'commands:run']
 		});
 	});
 

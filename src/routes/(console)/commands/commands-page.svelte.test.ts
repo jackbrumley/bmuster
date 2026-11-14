@@ -46,6 +46,7 @@ describe('the Commands tab (SPEC-COMMANDS C20)', () => {
 				serverUpdate: null,
 				runCommands: true,
 				assistant: { kind: 'none' },
+				approvals: { kind: 'hidden' },
 				signedIn: true,
 				now: NOW,
 				runs: [NEWER, OLDER]
@@ -70,6 +71,7 @@ describe('the Commands tab (SPEC-COMMANDS C20)', () => {
 			localNetworkMode: false,
 			runCommands: true,
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			children
 		});
 		await expect
@@ -86,9 +88,45 @@ describe('the Commands tab (SPEC-COMMANDS C20)', () => {
 			localNetworkMode: false,
 			runCommands: false,
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			children
 		});
 		await expect.element(without.getByText('Page')).toBeVisible();
 		expect(without.getByRole('link', { name: 'Commands' }).query()).toBeNull();
+	});
+});
+
+describe('AI assistants’ runs on the Commands tab (SPEC-MCP M28)', () => {
+	it('M28: an assistant’s run names the person via the assistant, with its status', async () => {
+		const screen = await render(CommandsPage, {
+			params: {},
+			form: undefined,
+			data: {
+				user: MEMBER,
+				localNetworkMode: false,
+				serverUpdate: null,
+				runCommands: true,
+				assistant: { kind: 'none' },
+				approvals: { kind: 'shown', pending: 1 },
+				signedIn: true,
+				now: NOW,
+				runs: [
+					{
+						...NEWER,
+						startedBy: 'Jack Brumley via Claude Code',
+						status: 'pending-approval',
+						counts: { ...emptyCounts(), waiting: 1 }
+					}
+				]
+			}
+		});
+		const link = screen
+			.getByRole('list', { name: 'Command runs, newest first' })
+			.getByRole('link')
+			.first();
+		await expect.element(link).toBeVisible();
+		const text = link.element().textContent;
+		expect(text).toContain('Jack Brumley via Claude Code');
+		expect(text).toContain('Waiting for approval');
 	});
 });

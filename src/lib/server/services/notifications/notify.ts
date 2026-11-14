@@ -198,6 +198,23 @@ function renderEvent(
 				ruleDescription: rule
 			});
 		}
+		case 'command-approval-requested': {
+			const detail = EVENT_DETAIL_SCHEMAS[kind].parse(raw);
+			return notificationEmail({
+				subject: `Approval needed: a command on ${detail.machines}`,
+				heading: 'An AI assistant asks to run a command',
+				summary: `${detail.requestedBy} via ${detail.assistant} asks to run a command on ${detail.machines}. Nothing runs until a person approves it in BMuster.`,
+				facts: [
+					{ label: 'Machines', value: detail.machines },
+					{ label: 'Acts as', value: detail.requestedBy },
+					{ label: 'Assistant', value: detail.assistant },
+					{ label: 'Command', value: detail.firstLine },
+					{ label: 'When', value: event.at.toISOString() }
+				],
+				url: `${consoleUrl}/commands/${detail.runId}`,
+				ruleDescription: rule
+			});
+		}
 	}
 }
 

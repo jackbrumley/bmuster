@@ -2,6 +2,7 @@ import { resolve } from '$app/paths';
 import {
 	IconActivity,
 	IconAdjustments,
+	IconChecklist,
 	IconCloudDownload,
 	IconDevices,
 	IconLock,
@@ -11,6 +12,7 @@ import {
 	IconUsers,
 	IconUsersGroup
 } from '@tabler/icons-svelte-runes';
+import type { ApprovalsNav } from '#lib/domain/commands/assistant-runs.ts';
 import type { ConsoleRole } from '#lib/domain/users/user.ts';
 
 /**
@@ -23,6 +25,7 @@ type NavRoute =
 	| '/(console)'
 	| '/(console)/activity'
 	| '/(console)/commands'
+	| '/(console)/approvals'
 	| '/(console)/add'
 	| '/(console)/users'
 	| '/(console)/groups'
@@ -31,28 +34,43 @@ type NavRoute =
 	| '/(console)/updates'
 	| '/(console)/settings';
 
-export type NavItem = { route: NavRoute; label: string; icon: typeof IconDevices };
+/** `badge`: how many things wait there for the person (0 shows none). */
+export type NavItem = { route: NavRoute; label: string; icon: typeof IconDevices; badge: number };
+
+function item(route: NavRoute, label: string, icon: typeof IconDevices): NavItem {
+	return { route, label, icon, badge: 0 };
+}
 
 /**
  * The main pages. Commands (SPEC-COMMANDS C20) is shown to people who may run commands on
- * at least one machine; the server checks every run again.
+ * at least one machine; Approvals (SPEC-MCP M26) to people who may approve an AI assistant's
+ * command, with how many wait. The server checks everything again.
  */
-export function mainNav(role: ConsoleRole, runCommands: boolean): NavItem[] {
-	const machines: NavItem = { route: '/(console)', label: 'Machines', icon: IconDevices };
-	const activity: NavItem = { route: '/(console)/activity', label: 'Activity', icon: IconActivity };
+export function mainNav(
+	role: ConsoleRole,
+	runCommands: boolean,
+	approvals: ApprovalsNav
+): NavItem[] {
+	const machines = item('/(console)', 'Machines', IconDevices);
+	const activity = item('/(console)/activity', 'Activity', IconActivity);
 	const commands: NavItem[] = runCommands
-		? [{ route: '/(console)/commands', label: 'Commands', icon: IconTerminal2 }]
+		? [item('/(console)/commands', 'Commands', IconTerminal2)]
 		: [];
+	const approving: NavItem[] =
+		approvals.kind === 'shown'
+			? [{ ...item('/(console)/approvals', 'Approvals', IconChecklist), badge: approvals.pending }]
+			: [];
 	switch (role) {
 		case 'admin':
 			return [
 				machines,
 				activity,
 				...commands,
-				{ route: '/(console)/add', label: 'Add machine', icon: IconPlus }
+				...approving,
+				item('/(console)/add', 'Add machine', IconPlus)
 			];
 		case 'member':
-			return [machines, activity, ...commands];
+			return [machines, activity, ...commands, ...approving];
 	}
 }
 
@@ -60,12 +78,12 @@ export function adminNav(role: ConsoleRole): NavItem[] {
 	switch (role) {
 		case 'admin':
 			return [
-				{ route: '/(console)/users', label: 'Users', icon: IconUsers },
-				{ route: '/(console)/groups', label: 'Groups', icon: IconUsersGroup },
-				{ route: '/(console)/access', label: 'Access rules', icon: IconLock },
-				{ route: '/(console)/sign-in', label: 'Sign-in', icon: IconLogin2 },
-				{ route: '/(console)/updates', label: 'Updates', icon: IconCloudDownload },
-				{ route: '/(console)/settings', label: 'Settings', icon: IconAdjustments }
+				item('/(console)/users', 'Users', IconUsers),
+				item('/(console)/groups', 'Groups', IconUsersGroup),
+				item('/(console)/access', 'Access rules', IconLock),
+				item('/(console)/sign-in', 'Sign-in', IconLogin2),
+				item('/(console)/updates', 'Updates', IconCloudDownload),
+				item('/(console)/settings', 'Settings', IconAdjustments)
 			];
 		case 'member':
 			return [];

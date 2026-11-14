@@ -119,9 +119,51 @@ export function needsRunAgain(status: RunMachineStatus): boolean {
 	}
 }
 
-export const RUN_STATUSES = ['running', 'finished', 'cancelled'] as const;
+/**
+ * A run's status. `pending-approval`, `denied` and `expired` are for runs an AI assistant asked
+ * for (SPEC-MCP 10.1): nothing runs until a person approves.
+ */
+export const RUN_STATUSES = [
+	'pending-approval',
+	'running',
+	'finished',
+	'cancelled',
+	'denied',
+	'expired'
+] as const;
 
 export type RunStatus = (typeof RUN_STATUSES)[number];
+
+export function runStatusLabel(status: RunStatus): string {
+	switch (status) {
+		case 'pending-approval':
+			return 'Waiting for approval';
+		case 'running':
+			return 'Running';
+		case 'finished':
+			return 'Finished';
+		case 'cancelled':
+			return 'Cancelled';
+		case 'denied':
+			return 'Denied';
+		case 'expired':
+			return 'Expired';
+	}
+}
+
+/** Whether a run is over: nothing more will run or change. */
+export function runHasEnded(status: RunStatus): boolean {
+	switch (status) {
+		case 'pending-approval':
+		case 'running':
+			return false;
+		case 'finished':
+		case 'cancelled':
+		case 'denied':
+		case 'expired':
+			return true;
+	}
+}
 
 /** Why a machine will not run, as Review shows it (C8). */
 export type SkipReason = 'offline' | 'agent-too-old' | 'unsupported-system' | 'no-permission';
@@ -180,9 +222,47 @@ export function firstLine(command: string): string {
 	return command.split(/\r?\n/, 1)[0] ?? '';
 }
 
+/**
+ * Who asked for a run (SPEC-MCP M28): a person on the Commands tab, or an AI assistant acting as
+ * a person, with what the approver decided.
+ */
+export type RunOrigin =
+	| { kind: 'person' }
+	| {
+			kind: 'assistant';
+			/** "Claude Code", or "unverified client Foo". */
+			assistant: string;
+			verified: boolean;
+			reason: string;
+			expiresIso: string;
+			decision: RunDecision;
+	  };
+
+type RunDecision =
+	| { kind: 'pending' }
+	| { kind: 'approved'; by: string; atIso: string; edit: RunEdit }
+	| { kind: 'denied'; by: string; atIso: string; note: string }
+	| { kind: 'expired' }
+	| { kind: 'cancelled' };
+
+/** What the approver changed before approving (M20). */
+type RunEdit =
+	{ kind: 'unchanged' } | { kind: 'edited'; requestedCommand: string; requestedTimeoutMs: number };
+
+/** "Jack Brumley", or "Jack Brumley via Claude Code" for an assistant's run (M28). */
+export function requesterText(name: string, origin: RunOrigin): string {
+	switch (origin.kind) {
+		case 'person':
+			return name;
+		case 'assistant':
+			return `${name} via ${origin.assistant}`;
+	}
+}
+
 /** One run on the Commands tab (C20). */
 export type RunSummary = {
 	id: string;
+	/** Who started it, "via" the assistant for an assistant's run (SPEC-MCP M28). */
 	startedBy: string;
 	startedIso: string;
 	status: RunStatus;
@@ -206,7 +286,9 @@ export type RunMachineView = {
 /** A run's results page (C16). */
 export type RunView = {
 	id: string;
+	/** Who started it, "via" the assistant for an assistant's run (SPEC-MCP M28). */
 	startedBy: string;
+	origin: RunOrigin;
 	startedIso: string;
 	endedIso: string | null;
 	status: RunStatus;

@@ -69,7 +69,7 @@ describe('the MCP endpoint (SPEC-MCP M4)', () => {
 				`resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource/mcp"`
 			);
 			expect(answer.headers.get('www-authenticate')).toContain(
-				'scope="machines:read offline_access"'
+				'scope="machines:read commands:run offline_access"'
 			);
 		}
 	});

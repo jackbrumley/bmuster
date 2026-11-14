@@ -38,11 +38,36 @@
 		<ul>
 			<li>It sees only the machines an access rule opens to AI commands. Nothing else.</li>
 			<li>
-				When it can run commands, every command waits for a person to approve it in BMuster. Nothing
-				runs without that approval.
+				It can ask to run commands there, and every command waits for a person to approve it in
+				BMuster. Nothing runs without that approval.
 			</li>
 			<li>Everything it does is in Activity, as you, via the assistant.</li>
 		</ul>
+		<h3>Approving commands</h3>
+		<ol>
+			<li>
+				The assistant asks to run a command, with its reason. Nothing runs yet: the request waits on
+				the Approvals page, and every console you have open shows a notice with Review.
+			</li>
+			<li>
+				The request shows the machines, the shell, the time limit and the exact command, with any
+				hidden or unusual characters marked. Read it: it runs as root or SYSTEM.
+			</li>
+			<li>
+				Choose Approve, Edit or Deny. Edit changes the command or time limit before approving; a
+				note with Deny goes back to the assistant. Approving needs Run commands on every machine and
+				a recent sign-in (or your password).
+			</li>
+			<li>
+				The assistant gets the result when the command finishes. What a machine printed reaches it
+				as data from the machine, never as instructions.
+			</li>
+		</ol>
+		<p>
+			A request nobody decides expires after 10 minutes, and the assistant is told. By default the
+			person the assistant acts as approves; an admin can name an approvers group in Settings → AI
+			assistants.
+		</p>
 		<h3>To disconnect</h3>
 		<p>
 			Press Disconnect next to it on your Account page, or remove the connector in your assistant.

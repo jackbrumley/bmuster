@@ -57,6 +57,7 @@ function renderTab(notes: NoteView[]) {
 			serverUpdate: null,
 			runCommands: false,
 			assistant: { kind: 'none' },
+			approvals: { kind: 'hidden' },
 			signedIn: true,
 			now: NOW,
 			machine: MACHINE,

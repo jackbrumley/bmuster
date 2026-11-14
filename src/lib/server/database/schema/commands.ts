@@ -1,8 +1,13 @@
 import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { machines } from './machines.ts';
+import { oauthGrants } from './oauth.ts';
 import { users } from './users.ts';
 
-/** One command run on many machines (SPEC-COMMANDS 4). */
+/**
+ * One command run on many machines (SPEC-COMMANDS 4). A run an AI assistant asked for
+ * (SPEC-MCP 13.2) starts as `pending-approval` and runs only after a person approves it;
+ * `startedBy` is the person the assistant acts as, `decidedBy` the person who approved or denied.
+ */
 export const commandRuns = sqliteTable(
 	'command_runs',
 	{
@@ -12,10 +17,29 @@ export const commandRuns = sqliteTable(
 			.references(() => users.id),
 		startedAt: integer({ mode: 'timestamp_ms' }).notNull(),
 		endedAt: integer({ mode: 'timestamp_ms' }),
-		status: text({ enum: ['running', 'finished', 'cancelled'] }).notNull(),
+		status: text({
+			enum: ['pending-approval', 'running', 'finished', 'cancelled', 'denied', 'expired']
+		}).notNull(),
 		timeoutMs: integer().notNull(),
 		/** The run this one ran again on failed and offline machines (C18). */
-		rerunOf: text()
+		rerunOf: text(),
+		/** Who asked for it: a person on the Commands tab, or an AI assistant (SPEC-MCP M17). */
+		requester: text({ enum: ['person', 'assistant'] })
+			.notNull()
+			.default('person'),
+		/** The assistant's connection, for an assistant's run. */
+		oauthGrantId: text().references(() => oauthGrants.id),
+		/** The assistant's reason, shown on the approval card. */
+		reason: text(),
+		/** A pending run can no longer be approved after this (M21). */
+		expiresAt: integer({ mode: 'timestamp_ms' }),
+		/** Who approved or denied it, and when (M19, M20). */
+		decidedBy: text().references(() => users.id),
+		decidedAt: integer({ mode: 'timestamp_ms' }),
+		/** The approver's note to the assistant when denied. */
+		denyNote: text(),
+		/** The assistant's time limit when the approver changed it. */
+		requestedTimeoutMs: integer()
 	},
 	(table) => [index('command_runs_started').on(table.startedAt)]
 );
@@ -29,7 +53,10 @@ export const commandRunScripts = sqliteTable(
 			.references(() => commandRuns.id),
 		osFamily: text({ enum: ['windows', 'linux'] }).notNull(),
 		shell: text({ enum: ['powershell', 'cmd', 'sh', 'bash'] }).notNull(),
-		command: text().notNull()
+		/** What runs: the approver's edit, when they edited it. */
+		command: text().notNull(),
+		/** The assistant's command, when the approver edited it (SPEC-MCP M20). */
+		requestedCommand: text()
 	},
 	(table) => [primaryKey({ columns: [table.runId, table.osFamily] })]
 );
