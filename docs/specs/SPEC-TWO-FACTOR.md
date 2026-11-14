@@ -1,6 +1,6 @@
 # SPEC-TWO-FACTOR: Two-factor sign-in (authenticator app and recovery codes)
 
-**Status:** `DRAFT` · **Date:** 2026-11-14 · Decisions: Jack, 2026-11-14 (section 3) · Builds on SPEC-SIGN-IN (passwords, sessions, sign-in limits, `admin:reset`), SPEC-COMMANDS C10 (recent sign-in) and SPEC-MCP (approvals), `docs/access-and-sign-in.md` section 2.
+**Status:** `IMPLEMENTED (pending release)` (As built: section 11) · **Date:** 2026-11-14 · Decisions: Jack, 2026-11-14 (section 3) · Builds on SPEC-SIGN-IN (passwords, sessions, sign-in limits, `admin:reset`), SPEC-COMMANDS C10 (recent sign-in) and SPEC-MCP (approvals), `docs/access-and-sign-in.md` section 2.
 
 > **Security work.** This changes password sign-in, adds a half-signed-in state, changes the recent sign-in check used by Commands runs and AI approvals, adds an admin reset and a host command. Nothing here weakens a check: every new step is in addition to the password, wrong codes count toward the existing pauses, and admins can still always sign in with a password (with their code when two-factor is on for them).
 
@@ -202,3 +202,37 @@ The step pages are form actions under `PublicPage`; the Account page uses the AP
 ## 10. Later: passkeys (step 2)
 
 Not built. Room left: the second step is chosen in one function (`secondStepFor`), the challenge carries a `step`, and a `passkeys` table can sit beside `totp_authenticators`. A passkey would count as "two-factor on" and as an answer to the recent sign-in check.
+
+## 11. As built
+
+Built as specified unless listed here. Version bump and changelog are left for the release step.
+
+**Code**
+
+- Services in `src/lib/server/services/auth/`: `two-factor.ts` (keys, codes, recovery codes, turning on and off, new codes, status), `sign-in-challenges.ts` (the half-signed-in state), `sign-in-steps.ts` (`secondStepFor`, `sessionOrChallenge`, `finishSignIn`: the one place that decides the step after a password), `two-factor-sign-in.ts` (the two step pages), `two-factor-reset.ts` (admin and host reset), `two-factor-qr.ts` (the QR path). `crypto/base32.ts` encodes the key; `crypto/totp.ts` now exports its step length.
+- Migration `0024_goofy_mentallo.sql` (generated) adds the three tables.
+- Pages: `/login/two-factor`, `/login/two-factor/set-up` (form actions under `PublicPage`); `src/routes/login/sign-in-next.server.ts` sets the session or challenge cookie for `/login`, `/setup` and `/invite/[token]`. Account: `two-factor-panel.svelte`. Shared UI: `src/lib/ui/two-factor-key.svelte`, `src/lib/ui/recovery-codes.svelte`.
+- Host command: `scripts/two-factor-reset.ts`, `npm run two-factor:reset -- --email <email>`; documented in `docs/hosting.md` section 7 with `admin:reset`, including the Docker and server-install cases.
+
+**Different from or added to the spec**
+
+- **Pauses everywhere a code or password is typed.** Wrong codes and passwords at the set-up step, on the Account page (turning on, turning off, new codes) and at the recent sign-in check all count toward the SPEC-SIGN-IN pauses and are audited as `sign-in-failed` with a `method` naming where. A paused email or address is refused before anything is checked. A right code at the re-check clears the email's failures, as a right password did.
+- **Pending key reuse** (TF9) applies to the Account page's Set up too, not only the set-up step.
+- **The sign-in after set-up** is audited as `sign-in` with `method: password, then set up two-factor`.
+- **Set-up step page.** After the first code the page shows the recovery codes with an "I have saved my recovery codes" tick box; **Continue** appears once it is ticked. Continue goes through `/login/two-factor`, whose `load` sends a signed-in person on to `returnTo` (so the link goes through `resolve()`). A step page reached without a live challenge says the sign-in timed out (set-up) or sends the person to `/login?timedOut=1`, which says so (code step).
+- **Turn off** asks the shared `confirmAction` after the password and code, as the hygiene rule `destructive-request-confirmation` requires for a `DELETE`.
+- **Admin reset** is refused (409) for someone without two-factor on, and for the admin's own. **Host reset** accepts any account, on or not (it clears a pending set-up too), and says which.
+- **Users page.** `UserView` is unchanged: the page's `load` adds `twoFactorOn` (user id → ISO time) from `twoFactorOnSince`, which keeps the users service from importing the auth service (no import cycle). The Users CSV export does not include two-factor.
+- **Recent sign-in.** `SignInCheck` gains `{ kind: 'code' }`; `reconfirmPassword` became `reconfirmSignIn` with a `Recheck` (password or code). The request field is `recheck` (`src/lib/schemas/auth/recheck.ts`) on both endpoints; `confirmWithChecks` takes `recheck: 'none' | 'password' | 'code'` and `ConfirmAnswer` carries `recheck`. `CommandContext` carries `secretsKey` to open the key. A password sent when a code is due (or the other way round) is a wrong answer.
+- **Text fields.** `TextField` has a `one-time-code` type: a text box with the phone's number pad (`inputmode="numeric"`).
+- **QR colours.** Two fixed tokens, `--qr-light` and `--qr-dark`, keep the code black on white in the dark theme.
+- **Setting writes.** `updateSettingAsSystem` takes a transaction, so first-run setup writes the setting in the same transaction as the first admin. `updateSetting` wraps its own.
+- **`PAUSED`** moved from `password-sign-in.ts` to `sign-in-limits.ts` so the new modules need not import password sign-in.
+- **Tests.** TF13 is also covered in the browser by `run-command.svelte.test.ts` (the dialog asks for a code). TF16's label test is `src/lib/domain/activity/activity.test.ts`. The phone-width overflow tests render the Account panel and the Users badge.
+
+**Needs `npm install`** in an existing checkout for `qrcode-generator`.
+
+**Not done**
+
+- Open question 3: host commands still need a source checkout.
+- Passkeys (section 10).

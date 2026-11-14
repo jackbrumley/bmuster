@@ -153,3 +153,33 @@ Add a proxy host:
 3. Watch the logs. The new container prints `another server is using /data/bmuster.db … Waiting`. The old one stops, the new one prints `the other server has stopped`, applies any migrations and starts listening.
 4. The image carries the agents for its version, so Add machine hands out the new agents.
 5. **Rolling back:** set the old tag and deploy. Migrations only ever add, so an older server normally runs on a newer database. If not, restore the snapshot from before the upgrade (section 5).
+
+## 7. Locked out: host commands
+
+Two commands get an admin back in. They run on the server's machine, against its database, as someone who can read the database and `SECRETS_KEY`. Both are recorded on the Activity page with the actor _System_.
+
+| Command                                        | Does                                                                                                                                                                                                                              |
+| :--------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run admin:reset -- --email <admin email>` | Sets a new password for an enabled admin, prints it once and ends their sessions ([SPEC-SIGN-IN](specs/SPEC-SIGN-IN.md) S19).                                                                                                     |
+| `npm run two-factor:reset -- --email <email>`  | Turns off two-factor sign-in for any account, for someone who lost their phone and their recovery codes ([SPEC-TWO-FACTOR](specs/SPEC-TWO-FACTOR.md) 2.9). If it is required, they set it up again straight after their password. |
+
+Try the gentler ways first: a recovery code at sign-in, or another admin's **Reset two-factor** on the Users page.
+
+Both are `npm run` scripts, so they need a **source checkout** of the same version, with Node and `npm ci`; the image and the server install do not carry them yet ([SPEC-TWO-FACTOR](specs/SPEC-TWO-FACTOR.md) open question 3).
+
+**On Coolify (Docker),** run them on the Coolify host, pointing at the volume:
+
+1. Check out the tag the server runs: `git clone --branch vX.Y.Z https://github.com/jackbrumley/bmuster.git && cd bmuster && npm ci`.
+2. Run the command as uid 1000, the image's user, so any `-wal` or `-shm` file it makes keeps the owner the server needs. Pass the three settings the scripts read:
+
+   ```bash
+   sudo -u '#1000' env \
+     DATABASE_PATH=/var/lib/docker/volumes/<name>/_data/bmuster.db \
+     SECRETS_KEY='<from your password manager>' \
+     RELEASES_PATH=/tmp \
+     npm run two-factor:reset -- --email you@example.com
+   ```
+
+   The server can keep running: SQLite lets both write, and the change applies to the next sign-in.
+
+**On a server install** (Linux, `bmuster-server`), the database is `/var/lib/bmuster-server/bmuster.db` and `SECRETS_KEY` is in `/var/lib/bmuster-server/server.env`. Run the same command from a checkout as the `bmuster-server` user (`sudo -u bmuster-server env DATABASE_PATH=… SECRETS_KEY=… RELEASES_PATH=/tmp npm run …`), with the checkout readable by that user.

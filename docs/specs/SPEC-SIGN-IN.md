@@ -88,7 +88,7 @@ Guards follow the portal's pattern: `route.public`, `route.user`, `route.admin`,
 
 ## 8. Decisions (2026-11-07)
 
-1. **Two-factor (TOTP):** later, but before the first public release.
+1. **Two-factor (TOTP):** later, but before the first public release. Specified and built in [SPEC-TWO-FACTOR](SPEC-TWO-FACTOR.md): an authenticator app and recovery codes after the password, required for admins on a new server.
 2. **Members before SPEC-ACCESS:** they can sign in and see an empty console, so invites can be tested.
 3. **Session lengths:** 12 hours idle, 30 days at most.
 4. **Notice while connected:** on by default, with a server setting to turn it off (audited).

@@ -61,6 +61,7 @@ BMuster's main job is unattended access: an IT admin gets onto a machine at lunc
 - Hashes with Argon2id (`@node-rs/argon2`, as in the portal).
 - The first admin is made at setup with a password.
 - **Break-glass:** admins can always sign in with a password, so a broken provider never locks the owner out. Members get a password only if an admin gives them one.
+- **Two-factor sign-in** ([SPEC-TWO-FACTOR](specs/SPEC-TWO-FACTOR.md)): a code from an authenticator app after the password, with single-use recovery codes. A server setting requires it for admins (the default on a new server) or for everyone who signs in with a password. Provider sign-ins are never asked; the provider handles it. The break-glass password still works, followed by the code when two-factor is on.
 
 ### Identity providers (OpenID Connect)
 
