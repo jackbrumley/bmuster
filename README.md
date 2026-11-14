@@ -46,6 +46,7 @@ BMuster is one place to reach and look after a fleet of computers, from a handfu
 - Inventory for every machine: hardware, operating system, GPUs and who is signed in
 - Users, groups and access rules that decide who can reach which machines
 - Sign in with a password, or with Microsoft 365 or Authentik, and an activity log of who did what
+- Connect an AI assistant such as Claude, Codex or ChatGPT to look at machines and ask to run commands, with a person approving every command ([how to connect](https://bmuster.com/ai-assistants))
 - Works on a private network too, with its own pinned certificate when there is no public domain
 
 ## Build from source
