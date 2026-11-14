@@ -23,3 +23,13 @@ export const approverSettingsRequestSchema = z.discriminatedUnion('mode', [
 ]);
 
 export const approverSettingsReplySchema = z.object({ saved: z.literal(true) });
+
+/** PUT /api/mcp/unattended: Allow AI to run saved commands without approval (SPEC-SAVED-COMMANDS SC21). */
+export const unattendedRequestSchema = z.object({ allowed: z.boolean() });
+
+export const unattendedReplySchema = z.object({ allowed: z.boolean() });
+
+/** POST /api/mcp/ai-access: one-tap AI access on All machines (SPEC-SAVED-COMMANDS SC25). */
+export const aiAccessRequestSchema = z.object({ level: z.enum(['view', 'commands']) });
+
+export const aiAccessReplySchema = z.object({ granted: z.literal(true) });

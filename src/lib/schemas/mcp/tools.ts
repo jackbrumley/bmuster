@@ -144,7 +144,20 @@ export const commandResultOutput = z.object({
 	decidedBy: z.string().nullable(),
 	denyNote: z.string().nullable(),
 	edited: z.boolean(),
-	commandRun: z.string().nullable(),
+	commandRun: z
+		.string()
+		.nullable()
+		.describe('The command that ran, when the approver edited it. Null for saved commands.'),
+	savedCommand: z
+		.object({
+			id: z.string(),
+			name: z.string(),
+			version: z.int(),
+			label: z.enum(['Reads only', 'Changes the machine']),
+			ranWithoutApproval: z.boolean()
+		})
+		.nullable()
+		.describe('The saved command this run came from (run_saved_command); null for run_command.'),
 	machines: z.array(
 		z.object({
 			id: z.string(),
@@ -186,3 +199,77 @@ export const cancelCommandOutput = z.object({
 });
 
 export type CancelCommandOutput = z.infer<typeof cancelCommandOutput>;
+
+/** Saved commands (SPEC-SAVED-COMMANDS SC15, SC16): never the script text, only what it is for. */
+
+export const listSavedCommandsInput = z.object({});
+
+const savedLabel = z.enum(['Reads only', 'Changes the machine']);
+
+export const listSavedCommandsOutput = z.object({
+	commands: z.array(
+		z.object({
+			id: z.string(),
+			name: z.string(),
+			description: z.string(),
+			label: savedLabel,
+			systems: z.array(z.enum(['windows', 'linux'])),
+			parameters: z.array(
+				z.object({
+					name: z.string(),
+					label: z.string(),
+					type: z.enum(['whole-number', 'choice', 'text']),
+					min: z.int().nullable(),
+					max: z.int().nullable(),
+					choices: z.array(z.string()),
+					pattern: z
+						.string()
+						.nullable()
+						.describe('For text: the regular expression a value must match.')
+				})
+			),
+			runsWithoutApproval: z
+				.boolean()
+				.describe(
+					'True when it may run at once on the machines marked so; otherwise each run waits for a person to approve it.'
+				),
+			machines: z.array(
+				z.object({
+					id: z.string(),
+					name: z.string(),
+					system: z.enum(['windows', 'linux']),
+					runsWithoutApproval: z.boolean()
+				})
+			)
+		})
+	),
+	runsWithoutApprovalLeftThisHour: z
+		.int()
+		.describe('How many more runs this connection may start without approval this hour.')
+});
+
+export type ListSavedCommandsOutput = z.infer<typeof listSavedCommandsOutput>;
+
+export const runSavedCommandInput = z.object({
+	command: z
+		.string()
+		.min(1)
+		.max(200)
+		.describe("The saved command's id or name, from list_saved_commands."),
+	machines: z
+		.array(z.string().min(1).max(200))
+		.min(1)
+		.max(ASSISTANT_RUN_LIMITS.maxMachines)
+		.describe(
+			'1 to 10 machines, each by id or by a name, all on one system (Windows or Linux); ask for the others in another call.'
+		),
+	parameters: z
+		.record(z.string().max(32), z.union([z.string().max(300), z.number()]))
+		.default({})
+		.describe('A value for every parameter the saved command lists, by name.'),
+	reason: z
+		.string()
+		.max(ASSISTANT_RUN_LIMITS.maxReasonChars)
+		.default('')
+		.describe('Why you want to run it, in a sentence. Shown to the person if it needs approval.')
+});

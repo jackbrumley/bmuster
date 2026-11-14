@@ -291,6 +291,172 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
     ],
     "type": "object",
   },
+  "list_saved_commands": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "commands": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "type": "string",
+            },
+            "id": {
+              "type": "string",
+            },
+            "label": {
+              "enum": [
+                "Reads only",
+                "Changes the machine",
+              ],
+              "type": "string",
+            },
+            "machines": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                  },
+                  "name": {
+                    "type": "string",
+                  },
+                  "runsWithoutApproval": {
+                    "type": "boolean",
+                  },
+                  "system": {
+                    "enum": [
+                      "windows",
+                      "linux",
+                    ],
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "system",
+                  "runsWithoutApproval",
+                ],
+                "type": "object",
+              },
+              "type": "array",
+            },
+            "name": {
+              "type": "string",
+            },
+            "parameters": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "choices": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                  "label": {
+                    "type": "string",
+                  },
+                  "max": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer",
+                      },
+                      {
+                        "type": "null",
+                      },
+                    ],
+                  },
+                  "min": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer",
+                      },
+                      {
+                        "type": "null",
+                      },
+                    ],
+                  },
+                  "name": {
+                    "type": "string",
+                  },
+                  "pattern": {
+                    "description": "For text: the regular expression a value must match.",
+                    "type": [
+                      "string",
+                      "null",
+                    ],
+                  },
+                  "type": {
+                    "enum": [
+                      "whole-number",
+                      "choice",
+                      "text",
+                    ],
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "type",
+                  "min",
+                  "max",
+                  "choices",
+                  "pattern",
+                ],
+                "type": "object",
+              },
+              "type": "array",
+            },
+            "runsWithoutApproval": {
+              "description": "True when it may run at once on the machines marked so; otherwise each run waits for a person to approve it.",
+              "type": "boolean",
+            },
+            "systems": {
+              "items": {
+                "enum": [
+                  "windows",
+                  "linux",
+                ],
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "id",
+            "name",
+            "description",
+            "label",
+            "systems",
+            "parameters",
+            "runsWithoutApproval",
+            "machines",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "runsWithoutApprovalLeftThisHour": {
+        "description": "How many more runs this connection may start without approval this hour.",
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer",
+      },
+    },
+    "required": [
+      "commands",
+      "runsWithoutApprovalLeftThisHour",
+    ],
+    "type": "object",
+  },
   "run_command": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "additionalProperties": false,
@@ -299,6 +465,7 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
         "type": "string",
       },
       "commandRun": {
+        "description": "The command that ran, when the approver edited it. Null for saved commands.",
         "type": [
           "string",
           "null",
@@ -524,6 +691,48 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
       "runId": {
         "type": "string",
       },
+      "savedCommand": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+              },
+              "label": {
+                "enum": [
+                  "Reads only",
+                  "Changes the machine",
+                ],
+                "type": "string",
+              },
+              "name": {
+                "type": "string",
+              },
+              "ranWithoutApproval": {
+                "type": "boolean",
+              },
+              "version": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer",
+              },
+            },
+            "required": [
+              "id",
+              "name",
+              "version",
+              "label",
+              "ranWithoutApproval",
+            ],
+            "type": "object",
+          },
+          {
+            "type": "null",
+          },
+        ],
+        "description": "The saved command this run came from (run_saved_command); null for run_command.",
+      },
       "status": {
         "enum": [
           "pending-approval",
@@ -546,6 +755,7 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
       "denyNote",
       "edited",
       "commandRun",
+      "savedCommand",
       "machines",
       "output",
     ],

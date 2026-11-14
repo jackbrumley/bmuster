@@ -1,21 +1,29 @@
 import type { z } from 'zod';
 import { runHasEnded, runMachineStatusLabel } from '#lib/domain/commands/commands.ts';
+import { savedEffectLabel } from '#lib/domain/commands/saved-commands.ts';
 import type {
 	CancelCommandOutput,
 	CommandResultOutput,
 	cancelCommandInput,
 	getCommandResultInput,
-	runCommandInput
+	ListSavedCommandsOutput,
+	runCommandInput,
+	runSavedCommandInput
 } from '#lib/schemas/mcp/tools.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { cancelPendingRun, cancelStartedRun, expireRun } from '../commands/assistant-pending.ts';
 import { requestAssistantRun } from '../commands/assistant-runs.ts';
+import {
+	listSavedForAssistant,
+	runSavedForAssistant
+} from '../commands/saved-command-assistant.ts';
 import type { CommandRunner } from '../commands/command-runner.ts';
 import {
 	findRun,
 	machinesOf,
 	outputOf,
+	savedOfRun,
 	scriptsOf,
 	type RunMachineRow,
 	type RunRow
@@ -135,7 +143,9 @@ function messageFor(run: RunRow, decision: ReturnType<typeof originOf>, more: bo
 		case 'pending-approval':
 			return `Waiting for a person to approve this in BMuster (or for it to finish). ${KEEP_CALLING(run.id)}`;
 		case 'running':
-			return `Approved and running. ${KEEP_CALLING(run.id)}`;
+			return run.preApproved
+				? `Running without approval: a pre-approved saved command. ${KEEP_CALLING(run.id)}`
+				: `Approved and running. ${KEEP_CALLING(run.id)}`;
 		case 'denied': {
 			const note =
 				decision.kind === 'assistant' && decision.decision.kind === 'denied'
@@ -244,7 +254,10 @@ function resultOf(
 		decidedBy: decision.kind === 'approved' || decision.kind === 'denied' ? decision.by : null,
 		denyNote: decision.kind === 'denied' ? decision.note : null,
 		edited: approved?.edit.kind === 'edited',
-		commandRun: approved === undefined ? null : (script?.command ?? null),
+		// A saved command's script is never shown to the assistant (SPEC-SAVED-COMMANDS 3.2).
+		commandRun:
+			approved === undefined || run.savedCommandId !== null ? null : (script?.command ?? null),
+		savedCommand: savedCommandOf(run),
 		machines: machines.map((machine) => {
 			const live = context.runner.liveOutput(run.id, machine.machineId);
 			return {
@@ -268,6 +281,23 @@ function resultOf(
 	};
 }
 
+/** The saved command a run came from, as the result names it (SPEC-SAVED-COMMANDS SC18). */
+function savedCommandOf(run: RunRow): CommandResultOutput['savedCommand'] {
+	const saved = savedOfRun(run);
+	switch (saved.kind) {
+		case 'none':
+			return null;
+		case 'saved':
+			return {
+				id: saved.id,
+				name: saved.name,
+				version: saved.version,
+				label: savedEffectLabel(saved.effect),
+				ranWithoutApproval: run.preApproved
+			};
+	}
+}
+
 /** "running for 12 s, last output 3 s ago", for a running machine's line in the text copy. */
 function runningText(runningForMs: number | null, lastOutputMsAgo: number | null): string[] {
 	if (runningForMs === null) {
@@ -286,6 +316,11 @@ function runningText(runningForMs: number | null, lastOutputMsAgo: number | null
  */
 export function resultText(result: CommandResultOutput): string {
 	const lines = [`Run ${result.runId}: ${result.status}. ${result.message}`];
+	if (result.savedCommand !== null) {
+		lines.push(
+			`Saved command: ${result.savedCommand.name} (version ${String(result.savedCommand.version)}, ${result.savedCommand.label}).`
+		);
+	}
 	if (result.status === 'pending-approval') {
 		lines.push(`A person can review it at ${result.approvalUrl}`);
 	}
@@ -372,6 +407,29 @@ export async function getCommandResultTool(
 	return { kind: 'ok', output: resultOf(context, now, input) };
 }
 
+function assistantContext(context: CommandToolContext) {
+	return {
+		database: context.database,
+		runner: context.runner,
+		principal: context.principal,
+		now: context.clock()
+	};
+}
+
+/** The hybrid wait for a run just made, then its result (M23), as both asking tools answer. */
+async function firstResult(
+	context: CommandToolContext,
+	runId: string
+): Promise<ToolResult<CommandResultOutput>> {
+	const first: ResultInput = { machine: '', stdoutOffset: 0, stderrOffset: 0 };
+	await waitForNews(context, runId, watchedBy(context, runId, first), context.waitMs);
+	const run = findRun(context.database, runId);
+	if (run === undefined) {
+		throw new Error(`Command run ${runId} vanished`);
+	}
+	return { kind: 'ok', output: resultOf(context, run, first) };
+}
+
 export async function runCommandTool(
 	context: CommandToolContext,
 	input: z.infer<typeof runCommandInput>
@@ -379,30 +437,46 @@ export async function runCommandTool(
 	if (!context.principal.scopes.includes('commands:run')) {
 		return { kind: 'error', message: NEEDS_SCOPE };
 	}
-	const requested = requestAssistantRun(
-		{
-			database: context.database,
-			runner: context.runner,
-			principal: context.principal,
-			now: context.clock()
-		},
-		input
-	);
+	const requested = requestAssistantRun(assistantContext(context), input);
 	if (requested.kind === 'refused') {
 		return { kind: 'error', message: requested.message };
 	}
-	const first: ResultInput = { machine: '', stdoutOffset: 0, stderrOffset: 0 };
-	await waitForNews(
-		context,
-		requested.runId,
-		watchedBy(context, requested.runId, first),
-		context.waitMs
-	);
-	const run = findRun(context.database, requested.runId);
-	if (run === undefined) {
-		throw new Error(`Command run ${requested.runId} vanished`);
+	return firstResult(context, requested.runId);
+}
+
+/** `list_saved_commands` (SPEC-SAVED-COMMANDS SC15). */
+export function listSavedCommandsTool(
+	context: CommandToolContext
+): ToolResult<ListSavedCommandsOutput> {
+	if (!context.principal.scopes.includes('commands:run')) {
+		return { kind: 'error', message: NEEDS_SCOPE };
 	}
-	return { kind: 'ok', output: resultOf(context, run, first) };
+	return { kind: 'ok', output: listSavedForAssistant(assistantContext(context)) };
+}
+
+/**
+ * `run_saved_command` (SC16–SC18): runs at once when every unattended condition holds, else waits
+ * for approval like `run_command`; either way the same hybrid wait and result.
+ */
+export async function runSavedCommandTool(
+	context: CommandToolContext,
+	input: z.infer<typeof runSavedCommandInput>
+): Promise<ToolResult<CommandResultOutput>> {
+	if (!context.principal.scopes.includes('commands:run')) {
+		return { kind: 'error', message: NEEDS_SCOPE };
+	}
+	const requested = runSavedForAssistant(assistantContext(context), input);
+	if (requested.kind === 'refused') {
+		return { kind: 'error', message: requested.message };
+	}
+	const result = await firstResult(context, requested.runId);
+	if (requested.kind === 'requested' && result.kind === 'ok') {
+		return {
+			kind: 'ok',
+			output: { ...result.output, message: `${requested.whyApproval} ${result.output.message}` }
+		};
+	}
+	return result;
 }
 
 /** `cancel_command` (M21): a pending request is withdrawn; a started run stops machines not started. */

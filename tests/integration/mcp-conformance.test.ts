@@ -297,6 +297,8 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 					{ name: 'list_machines' },
 					{ name: 'get_machine' },
 					{ name: 'run_command' },
+					{ name: 'list_saved_commands' },
+					{ name: 'run_saved_command' },
 					{ name: 'get_command_result' },
 					{ name: 'cancel_command' }
 				]
