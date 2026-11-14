@@ -15,6 +15,25 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.29',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'With an assistant connected (0.4.27 steps), ask it to check something on one machine, such as uptime: a notice appears in BMuster; open it, check the command and machine, Approve within 45 s; the assistant answers with the output',
+				'Ask for another command and wait over a minute before approving: the assistant keeps checking and still gets the output',
+				'Deny one with a note: the assistant reads the note; Edit one then approve: the assistant sees what actually ran',
+				'Leave one for 10 minutes: it expires and the assistant is told; Activity shows each request and decision as you via the assistant',
+				'Approve from your phone: the card fits, the decision bar sits above the home bar, and it asks for your password after 10 minutes'
+			]
+		},
+		changes: [
+			'AI assistants can now ask to run commands on your machines. Nothing runs until a person approves it in BMuster: the Approvals page shows the exact command, every machine, the shell and the assistant’s reason, with Approve, Edit then approve, or Deny with a note the assistant reads',
+			'Approving asks for your password if you signed in more than 10 minutes ago; requests nobody decides expire after 10 minutes; at most 10 machines per request; every request, decision and result is in Activity as you via the assistant',
+			'A notice appears in every open BMuster tab when a request arrives, and an optional email notification rule can tell you too. If you approve within 45 seconds the assistant gets the output straight away; otherwise it keeps checking until the command finishes',
+			'Settings, AI assistants: choose who may approve (the person who asked, an approvers group, or both)'
+		]
+	},
+	{
 		version: '0.4.28',
 		testing: {
 			kind: 'steps',
