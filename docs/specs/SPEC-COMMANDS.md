@@ -1,6 +1,6 @@
 # SPEC-COMMANDS: Run a command on many machines at once
 
-**Status:** `IMPLEMENTED (pending release)` · approved 2026-11-14 (Commands; no notice at the machine in v1; typed count above 10; output kept 30 days; offline machines skipped) · **Date:** 2026-11-14 · Design inputs: Jack's request (2026-11-14), SPEC-SESSIONS (the agent's `exec` purpose, built and tested but not yet used by the server), SPEC-MCP (draft: Claude's commands, approved by a person), SPEC-ACCESS (permissions, machine groups, rules).
+**Status:** `IMPLEMENTED (v0.4.26)` · approved 2026-11-14 (Commands; no notice at the machine in v1; typed count above 10; output kept 30 days; offline machines skipped) · **Date:** 2026-11-14 · Design inputs: Jack's request (2026-11-14), SPEC-SESSIONS (the agent's `exec` purpose, built and tested but not yet used by the server), SPEC-MCP (draft: Claude's commands, approved by a person), SPEC-ACCESS (permissions, machine groups, rules).
 
 > **Security work.** This feature runs commands as root or SYSTEM on many machines with one click. It changes the access model (a new permission), the session ticket the agent checks, and the audit log. Every check below is checked twice: by the server when the run starts, and by each agent from its own signed ticket.
 

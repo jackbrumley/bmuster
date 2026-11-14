@@ -15,6 +15,26 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.4.26',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Update the server, then wait until both machines report 0.4.26 (older agents are skipped as too old)',
+				'Machines: press Select, tap a group chip, Select all, untick one; the bottom bar shows the right count on desktop and phone',
+				'Run hostname on Windows and Fedora together: one box per system, Review lists both, the confirm names the count; both rows end succeeded with the right output',
+				'Run a failing command (exit 1) and one with a 5 s time limit that sleeps 30 s: rows show failed and timed out; Run again on failed and offline opens with just those',
+				'Wait 10 minutes after signing in, start a run: it asks for your password first; a wrong password is refused',
+				'Switch a machine off, run on it: its row shows Offline; Activity shows the run start, each result and the end'
+			]
+		},
+		changes: [
+			'Commands: run one command on many machines at once. On Machines, press Select, tick machines or pick groups (and Windows, Linux, Online), Select all, then Run command',
+			'Commands: review every machine and the exact command before it runs, confirm with the machine count, and enter your password if you signed in more than 10 minutes ago',
+			'Commands: watch each machine’s result live, see its output, cancel, or run again on the ones that failed or were offline; past runs are on the new Commands tab',
+			'Access: a new Run commands permission, separate from Terminal; admins have it everywhere, anyone else needs an access rule'
+		]
+	},
+	{
 		version: '0.4.25',
 		testing: {
 			kind: 'steps',
