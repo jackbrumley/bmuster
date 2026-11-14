@@ -20,7 +20,8 @@ import { enabledAdmins } from '../users/users.ts';
 /**
  * The one answer to "what may this person do on this machine" (SPEC-ACCESS
  * A5, AGENTS.md §11). Admins have every permission on every machine and
- * connect unattended. A member has the union of every rule whose user group
+ * connect unattended, except `ai-commands` (SPEC-MCP M3): an AI assistant sees a machine only
+ * where a rule says so, admins included. A member has the union of every rule whose user group
  * they are in and whose machine group holds the machine; a permission is
  * unattended when any rule giving it says so. Removed machines give nothing.
  */
@@ -32,10 +33,12 @@ type MemberRule = {
 	consent: Consent;
 };
 
-const EVERYTHING: Grant[] = PERMISSIONS.map((permission) => ({
-	permission,
-	consent: 'unattended'
-}));
+/** Permissions that come only from rules, for admins too (SPEC-MCP M3). */
+const RULES_ONLY: readonly Permission[] = ['ai-commands'];
+
+const ADMIN_DEFAULTS: Grant[] = PERMISSIONS.filter(
+	(permission) => !RULES_ONLY.includes(permission)
+).map((permission) => ({ permission, consent: 'unattended' }));
 
 /** Every rule that applies to this member, through any of their user groups. */
 function rulesFor(database: Queryable, userId: string): MemberRule[] {
@@ -73,25 +76,36 @@ function unionOf(rules: MemberRule[]): Grant[] {
 	});
 }
 
+/** The union of the person's own rules that reach this machine; nothing for a removed one. */
+function rulesGrantsFor(database: Queryable, userId: string, machineId: string): Grant[] {
+	const rules = rulesFor(database, userId);
+	if (rules.length === 0 || !isActiveMachine(database, machineId)) {
+		return [];
+	}
+	const groupIds = new Set(
+		database
+			.select({ id: machineGroupMembers.machineGroupId })
+			.from(machineGroupMembers)
+			.where(eq(machineGroupMembers.machineId, machineId))
+			.all()
+			.map((row) => row.id)
+	);
+	return unionOf(rules.filter((rule) => rule.allMachines || groupIds.has(rule.machineGroupId)));
+}
+
 export function permissionsFor(database: Queryable, user: ConsoleUser, machineId: string): Grant[] {
 	switch (user.role) {
-		case 'admin':
-			return EVERYTHING;
-		case 'member': {
-			const rules = rulesFor(database, user.id);
-			if (rules.length === 0 || !isActiveMachine(database, machineId)) {
-				return [];
-			}
-			const groupIds = new Set(
-				database
-					.select({ id: machineGroupMembers.machineGroupId })
-					.from(machineGroupMembers)
-					.where(eq(machineGroupMembers.machineId, machineId))
-					.all()
-					.map((row) => row.id)
+		case 'admin': {
+			const fromRules = rulesGrantsFor(database, user.id, machineId).filter((grant) =>
+				RULES_ONLY.includes(grant.permission)
 			);
-			return unionOf(rules.filter((rule) => rule.allMachines || groupIds.has(rule.machineGroupId)));
+			return PERMISSIONS.flatMap((permission) => [
+				...ADMIN_DEFAULTS.filter((grant) => grant.permission === permission),
+				...fromRules.filter((grant) => grant.permission === permission)
+			]);
 		}
+		case 'member':
+			return rulesGrantsFor(database, user.id, machineId);
 	}
 }
 
@@ -131,7 +145,8 @@ export function commandGroupIdsFor(
 
 /**
  * Every machine on which the person holds `permission`: `view` for the Machines list,
- * `run-commands` for the Machines page's select mode (SPEC-COMMANDS C5).
+ * `run-commands` for the Machines page's select mode (SPEC-COMMANDS C5), `ai-commands` for what
+ * an AI assistant may see (SPEC-MCP M11), which admins hold only through rules.
  */
 export function machineIdsWith(
 	database: Queryable,
@@ -139,32 +154,27 @@ export function machineIdsWith(
 	permission: Permission
 ): Set<string> {
 	const active = activeMachineNames(database);
-	switch (user.role) {
-		case 'admin':
-			return new Set(active.keys());
-		case 'member': {
-			const rules = rulesFor(database, user.id).filter((rule) =>
-				rule.permissions.includes(permission)
-			);
-			if (rules.some((rule) => rule.allMachines)) {
-				return new Set(active.keys());
-			}
-			if (rules.length === 0) {
-				return new Set();
-			}
-			const members = database
-				.select({ machineId: machineGroupMembers.machineId })
-				.from(machineGroupMembers)
-				.where(
-					inArray(
-						machineGroupMembers.machineGroupId,
-						rules.map((rule) => rule.machineGroupId)
-					)
-				)
-				.all();
-			return new Set(members.map((row) => row.machineId).filter((id) => active.has(id)));
-		}
+	if (user.role === 'admin' && !RULES_ONLY.includes(permission)) {
+		return new Set(active.keys());
 	}
+	const rules = rulesFor(database, user.id).filter((rule) => rule.permissions.includes(permission));
+	if (rules.some((rule) => rule.allMachines)) {
+		return new Set(active.keys());
+	}
+	if (rules.length === 0) {
+		return new Set();
+	}
+	const members = database
+		.select({ machineId: machineGroupMembers.machineId })
+		.from(machineGroupMembers)
+		.where(
+			inArray(
+				machineGroupMembers.machineGroupId,
+				rules.map((rule) => rule.machineGroupId)
+			)
+		)
+		.all();
+	return new Set(members.map((row) => row.machineId).filter((id) => active.has(id)));
 }
 
 /**

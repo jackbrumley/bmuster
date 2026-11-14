@@ -39,7 +39,10 @@ describe('the access service (A5)', () => {
 	it('A5: admins have every permission on every machine, unattended', async () => {
 		const { database, admin, office } = await setUp();
 		expect(permissionsFor(database, admin, office)).toEqual(
-			PERMISSIONS.map((permission) => ({ permission, consent: 'unattended' }))
+			PERMISSIONS.filter((permission) => permission !== 'ai-commands').map((permission) => ({
+				permission,
+				consent: 'unattended'
+			}))
 		);
 		expect(canSeeMachine(database, admin, office)).toBe(true);
 	});
@@ -234,5 +237,62 @@ describe('running commands (SPEC-COMMANDS C11)', () => {
 		});
 		expect(machineIdsWith(database, pat, 'run-commands')).toEqual(new Set([server]));
 		expect(machineIdsWith(database, pat, 'view')).toEqual(visibleMachineIds(database, pat));
+	});
+});
+
+describe('AI commands (SPEC-MCP M3)', () => {
+	it('M3: ai-commands includes view and nothing else, and nothing includes it', () => {
+		expect(permissionLabel('ai-commands')).toBe('AI commands (with approval)');
+		expect(togglePermission([], 'ai-commands', true)).toEqual(['view', 'ai-commands']);
+		for (const other of PERMISSIONS.filter((permission) => permission !== 'ai-commands')) {
+			expect(togglePermission([], other, true)).not.toContain('ai-commands');
+		}
+		expect(togglePermission(['view', 'ai-commands'], 'view', false)).toEqual([]);
+	});
+
+	it('M3: admins do not have ai-commands unless a rule gives it', async () => {
+		const { database, admin, office, server } = await setUp();
+		expect(
+			permissionsFor(database, admin, office).map((grant) => grant.permission)
+		).not.toContain('ai-commands');
+		expect(machineIdsWith(database, admin, 'ai-commands').size).toBe(0);
+		expect(machineIdsWith(database, admin, 'run-commands')).toEqual(new Set([office, server]));
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'AI admins',
+			memberIds: [admin.id],
+			machineIds: [office],
+			permissions: ['view', 'ai-commands'],
+			consent: 'unattended'
+		});
+		expect(permissionsFor(database, admin, office).map((grant) => grant.permission)).toContain(
+			'ai-commands'
+		);
+		expect(
+			permissionsFor(database, admin, server).map((grant) => grant.permission)
+		).not.toContain('ai-commands');
+		expect(machineIdsWith(database, admin, 'ai-commands')).toEqual(new Set([office]));
+	});
+
+	it('M3: a member gets ai-commands only from a rule', async () => {
+		const { database, admin, pat, office, server } = await setUp();
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'Helpers',
+			memberIds: [pat.id],
+			machineIds: [office, server],
+			permissions: ['view', 'terminal', 'run-commands'],
+			consent: 'unattended'
+		});
+		expect(machineIdsWith(database, pat, 'ai-commands').size).toBe(0);
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'AI helpers',
+			memberIds: [pat.id],
+			machineIds: [server],
+			permissions: ['view', 'ai-commands'],
+			consent: 'unattended'
+		});
+		expect(machineIdsWith(database, pat, 'ai-commands')).toEqual(new Set([server]));
 	});
 });

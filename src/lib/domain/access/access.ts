@@ -5,7 +5,7 @@
  * An access rule joins one user group to one machine group with a set of
  * permissions. A person's permissions on a machine are the union of every
  * rule that matches them both; there are no deny rules. Admins have every
- * permission on every machine.
+ * permission on every machine except `ai-commands`, which comes only from rules (SPEC-MCP M3).
  */
 
 /** Every permission, in the order the console lists them. A new one is added here only. */
@@ -17,7 +17,10 @@ export const PERMISSIONS = [
 	'files',
 	'share-links',
 	// SPEC-COMMANDS C11: one command on many machines as root or SYSTEM. Nothing includes it.
-	'run-commands'
+	'run-commands',
+	// SPEC-MCP M3: what an AI assistant acting as the person may see (and, later, ask to run on).
+	// Server-side only: the agent never checks it. Admins hold it only through rules.
+	'ai-commands'
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -38,6 +41,8 @@ export function permissionLabel(permission: Permission): string {
 			return 'Share links';
 		case 'run-commands':
 			return 'Run commands';
+		case 'ai-commands':
+			return 'AI commands (with approval)';
 	}
 }
 
@@ -53,6 +58,7 @@ function includedBy(permission: Permission): Permission[] {
 		case 'files':
 		case 'share-links':
 		case 'run-commands':
+		case 'ai-commands':
 			return ['view'];
 	}
 }
