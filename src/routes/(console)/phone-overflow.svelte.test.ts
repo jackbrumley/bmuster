@@ -34,6 +34,7 @@ import AccessPage from './access/+page.svelte';
 import ActivityPage from './activity/+page.svelte';
 import AddPage from './add/+page.svelte';
 import GroupsPage from './groups/+page.svelte';
+import GroupsMachinesPage from './groups/machines/+page.svelte';
 import MachinesPage from './+page.svelte';
 import MorePage from './more/+page.svelte';
 import DiagnosticsPage from './settings/diagnostics/+page.svelte';
@@ -248,6 +249,27 @@ const PAGES: PhonePage[] = [
 		open: () =>
 			render(
 				GroupsPage,
+				{
+					params: {},
+					form: undefined,
+					data: {
+						...CONSOLE,
+						userGroups: USER_GROUPS,
+						machineGroups: MACHINE_GROUPS,
+						rules: RULES,
+						people: [{ id: ADMIN.id, label: LONG_PERSON, detail: LONG_EMAIL }],
+						machines: MACHINES.map((each) => ({ id: each.id, label: each.name, detail: '' }))
+					}
+				},
+				IN_CONSOLE
+			)
+	},
+	{
+		name: 'Groups, Machines tab',
+		ready: LONG_GROUP,
+		open: () =>
+			render(
+				GroupsMachinesPage,
 				{
 					params: {},
 					form: undefined,

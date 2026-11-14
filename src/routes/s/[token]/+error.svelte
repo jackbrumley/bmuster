@@ -14,7 +14,7 @@
 
 <svelte:head>
 	<title>{paused ? 'Too many tries' : 'This link has ended'} · BMuster</title>
-	<meta name="referrer" content="no-referrer" />
+	<meta name="referrer" content="same-origin" />
 </svelte:head>
 
 <PublicPage width="compact">

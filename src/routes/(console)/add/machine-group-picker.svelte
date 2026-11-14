@@ -30,7 +30,7 @@
 	{#if groups.length === 0}
 		<p class="hint">
 			No machine groups yet. It joins All machines;
-			<a href={resolve('/(console)/groups')}>make a group</a> to give people access to it.
+			<a href={resolve('/(console)/groups/machines')}>make a group</a> to give people access to it.
 		</p>
 	{:else}
 		<div class="options">

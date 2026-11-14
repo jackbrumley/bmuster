@@ -199,12 +199,18 @@
 		font-size: var(--text-sm);
 	}
 
+	/* Centred like the enrolment code above it: label, code, expiry, status, then New code. */
 	.code-row {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-4);
+		display: grid;
+		justify-items: center;
+		gap: var(--space-3);
+		text-align: center;
+	}
+
+	.code-row > div {
+		display: grid;
+		justify-items: center;
+		gap: var(--space-1);
 	}
 
 	.label {

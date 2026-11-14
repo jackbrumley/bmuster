@@ -26,7 +26,7 @@
 	/** Opens the Test group on the Groups page. */
 	const groupHref = $derived(
 		resolve(
-			`/(console)/groups?${new URLSearchParams({ machineGroup: channel.group.id }).toString()}`
+			`/(console)/groups/machines?${new URLSearchParams({ machineGroup: channel.group.id }).toString()}`
 		)
 	);
 </script>

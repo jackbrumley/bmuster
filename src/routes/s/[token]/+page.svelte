@@ -8,7 +8,7 @@
 
 <svelte:head>
 	<title>{data.guest.machineName} · BMuster</title>
-	<meta name="referrer" content="no-referrer" />
+	<meta name="referrer" content="same-origin" />
 </svelte:head>
 
 <GuestPage token={data.token} guest={data.guest} loadedAtMs={data.nowMs} />
