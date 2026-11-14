@@ -1,49 +1,78 @@
-<h1 align="center">BMuster</h1>
-
-<p align="center">Self-hosted remote desktop, terminal and inventory for every computer you look after.</p>
-
 <p align="center">
-  <a href="https://www.gnu.org/licenses/agpl-3.0.html"><img src="https://img.shields.io/badge/License-AGPLv3-blue.svg" alt="AGPL v3 License" /></a>
-  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-4f46e5" alt="Platform: Windows and Linux" />
-  <a href="https://github.com/jackbrumley/bmuster/releases"><img src="https://img.shields.io/github/v/release/jackbrumley/bmuster" alt="Latest release" /></a>
+  <img src="static/brand/icon-192.png" alt="" width="96" height="96" />
 </p>
 
-> **Status:** in active development and used in production on Windows and Linux machines. Website: [bmuster.com](https://bmuster.com). Downloads: [Releases](https://github.com/jackbrumley/bmuster/releases).
+<h1 align="center">BMuster</h1>
 
-BMuster rounds up your machines. You host one small server (a Docker container, or a Raspberry Pi). Each computer runs a small agent, installed with one command and a join code. The agent phones home over ordinary HTTPS, and from a web page you can:
+<p align="center">Self-hosted remote access for every machine you look after.<br />Reach the desktop and terminal of your Windows and Linux machines from any browser, phone included, on a server you run yourself.</p>
 
-- open a terminal on the machine (PowerShell, cmd or a shell), with no SSH server needed;
-- see and control its desktop, on every screen;
-- send and fetch files, and share the clipboard both ways;
-- see its inventory (operating system, hardware, disks, GPUs and who is signed in);
-- give someone outside your team a time-limited share link to one machine;
-- decide who can reach which machines with users, groups and access rules, and see who connected when.
+<p align="center">
+  <a href="https://github.com/jackbrumley/bmuster/releases/latest"><img src="https://img.shields.io/github/v/release/jackbrumley/bmuster?label=release&color=65a30d" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-65a30d" alt="Windows and Linux" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-65a30d" alt="AGPL-3.0" /></a>
+</p>
+
+<p align="center">
+  <a href="https://bmuster.com/">Website</a> ·
+  <a href="https://github.com/jackbrumley/bmuster/releases/latest">Downloads</a> ·
+  <a href="docs/hosting.md">Hosting guide</a> ·
+  <a href="https://github.com/jackbrumley/bmuster/issues">Report an issue</a>
+</p>
 
 ## Install
 
-Install the server with one command on a Raspberry Pi, a virtual machine or a spare PC:
+Install the server on a Raspberry Pi, a virtual machine or a spare PC.
 
-```sh
-curl -fsSL https://bmuster.com/install.sh | sudo sh      # Linux
-irm https://bmuster.com/install.ps1 | iex                 # Windows, PowerShell as administrator
+**Linux**
+
+```bash
+curl -fsSL https://bmuster.com/install.sh | sudo sh
 ```
 
-Then open the address it prints, create your admin account, and add machines from the server's **Add machine** page. The server and agents update themselves from signed releases.
+**Windows** (PowerShell, run as administrator)
 
-## Principles
+```powershell
+irm https://bmuster.com/install.ps1 | iex
+```
 
-- **Web traffic only.** Everything runs over HTTPS and WebSockets on port 443. No inbound ports on the machines.
-- **Mobile first.** There are no native apps. The web console has to work well on a phone.
-- **One installer for every machine.** A generic, signed agent plus a join code. Nothing is built per customer or per group.
-- **Self-hosted.** Your server, your data.
-- **Secure by default.** This tool runs commands on your machines, so it treats access as the main risk: strong sign-in, a notice on the machine during every session, and an audit log.
+It installs BMuster as a service and shows the address to open. Create your admin account there, then add machines from the server's **Add machine** page: it gives a one-line command with a join code to run on each computer. The server and agents update themselves from signed releases.
+
+## What it does
+
+BMuster is one place to reach and look after a fleet of computers, from a handful to hundreds. You run the server; a small agent on each machine phones home over HTTPS, so there are no ports to open on the machines themselves.
+
+- Remote desktop and terminal in the browser, built mobile-first so it works from your phone
+- Unattended access, with a notice on the machine and a Disconnect button while someone is connected
+- Inventory for every machine: hardware, operating system, GPUs and who is signed in
+- Users, groups and access rules that decide who can reach which machines
+- Sign in with a password, or with Microsoft 365 or Authentik, and an activity log of who did what
+- Works on a private network too, with its own pinned certificate when there is no public domain
+
+## Build from source
+
+Needs the Node.js version in `.node-version` and, for the agent, Rust.
+
+```bash
+npm install
+npm run dev        # run the server in development (HTTPS, reachable on your LAN)
+npm run agent:dev  # build the agent and enrol it with the dev server
+npm run build      # build the server
+npm start          # run the built server
+```
+
+Contributor notes are in [AGENTS.md](AGENTS.md).
 
 ## Code signing
 
-Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). See the [code signing policy](https://bmuster.com/code-signing-policy). Releases up to 0.4.24 are not Authenticode signed.
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/) ([code signing policy](https://bmuster.com/code-signing-policy)). Every release is also signed with the project's own Ed25519 key, and the server and agents refuse any update without a valid signature.
 
-Separately, every release is signed with the project's own Ed25519 key, and the server and agents refuse any update without a valid signature.
+## License
 
-## Licence
+[GNU AGPLv3](LICENSE). Your machines, your server, your data.
 
-BMuster is free software under the [GNU Affero General Public License v3.0](LICENSE).
+---
+
+<p align="center">
+  BMuster is one of the free apps by <a href="https://brumley.info">Jack Brumley</a>:<br />
+  <a href="https://voquill.org">Voquill</a> · <a href="https://brumley.info/rusty-g6/">Rusty G6</a> · <a href="https://somedrive.org/">SomeDrive</a> · <a href="https://yambuck.com/">Yambuck</a> · <a href="https://brumley.info/rawtap/">RawTap</a> · <b>BMuster</b>
+</p>
