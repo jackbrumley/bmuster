@@ -121,18 +121,17 @@ describe('clients (SPEC-MCP M6)', () => {
 		expect(database.select().from(oauthGrants).all()).toEqual([]);
 	});
 
-	it('M6: DCR refuses secrets and unsafe redirects', () => {
+	it('M6: DCR refuses auth methods BMuster does not offer, and unsafe redirects', () => {
 		const database = testDatabase();
-		expect(
-			registerClient(
-				database,
-				{
-					redirect_uris: ['https://a.example/cb'],
-					token_endpoint_auth_method: 'client_secret_post'
-				},
-				NOW
-			)
-		).toMatchObject({ kind: 'refused', error: 'invalid_client_metadata' });
+		for (const method of ['private_key_jwt', 'tls_client_auth', 'client_secret_jwt']) {
+			expect(
+				registerClient(
+					database,
+					{ redirect_uris: ['https://a.example/cb'], token_endpoint_auth_method: method },
+					NOW
+				)
+			).toMatchObject({ kind: 'refused', error: 'invalid_client_metadata' });
+		}
 		for (const redirect of [
 			'http://a.example/cb',
 			'javascript:alert(1)',

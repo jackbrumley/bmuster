@@ -20,6 +20,7 @@ export type ServerLogArea =
 	| 'relay'
 	| 'updates'
 	| 'auth'
+	| 'oauth'
 	| 'email'
 	| 'logs';
 

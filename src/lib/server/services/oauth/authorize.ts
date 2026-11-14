@@ -12,13 +12,15 @@ import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { allowsRedirect, isLoopbackRedirect, resolveClient, type ClientRecord } from './clients.ts';
 import { allowClient, refuseClient } from './grants.ts';
 import { connectEligibility } from './mcp-settings.ts';
+import { oauthLog, type OAuthLogFacts } from './oauth-log.ts';
 import type { FetchJson } from './safe-fetch.ts';
 
 /**
  * `/oauth/authorize` (SPEC-MCP M7, M8). The client and redirect URI are checked first: while
  * either is wrong nothing is sent anywhere and the page says what is wrong. After that, every
  * problem goes back to the client as an OAuth error on its redirect URI, with `state` and `iss`.
- * PKCE `S256` and `resource` (exactly this server's `/mcp`) are required.
+ * PKCE `S256` and `resource` (exactly this server's `/mcp`) are required. Every refusal writes
+ * one server log line (M31).
  */
 
 type ValidAuthorize = {
@@ -75,6 +77,12 @@ function requestedScopes(scope: string | undefined): McpScope[] | undefined {
 	return withImpliedScopes(['machines:read', ...known]);
 }
 
+/** A refusal shown on the page (nothing is sent to the client), logged with the reason. */
+function invalid(message: string, why: string, facts: OAuthLogFacts, now: number): AuthorizeCheck {
+	oauthLog('info', 'authorize', `refused on the page: ${why}`, facts, now);
+	return { kind: 'invalid', message };
+}
+
 async function checkAuthorize(
 	database: Queryable,
 	params: AuthorizeParams,
@@ -82,23 +90,34 @@ async function checkAuthorize(
 	fetchJson: FetchJson,
 	now: number
 ): Promise<AuthorizeCheck> {
+	const facts: OAuthLogFacts = {
+		client: params.client_id ?? null,
+		redirectUri: params.redirect_uri ?? null,
+		authMethod: null
+	};
 	if (params.client_id === undefined || params.client_id === '') {
-		return { kind: 'invalid', message: 'The assistant did not say who it is (client_id).' };
+		const message = 'The assistant did not say who it is (client_id).';
+		return invalid(message, 'no client_id', facts, now);
 	}
 	const lookup = await resolveClient(database, params.client_id, fetchJson, now);
 	if (lookup.kind === 'unknown') {
-		return { kind: 'invalid', message: lookup.message };
+		return invalid(lookup.message, lookup.why, facts, now);
 	}
 	const client = lookup.client;
+	const known = { ...facts, client: `${client.assistant.name} (${client.clientId})` };
 	if (params.redirect_uri === undefined || !allowsRedirect(client, params.redirect_uri)) {
-		return {
-			kind: 'invalid',
-			message: 'The assistant asked to return to an address it did not register (redirect_uri).'
-		};
+		return invalid(
+			'The assistant asked to return to an address it did not register (redirect_uri).',
+			`the redirect_uri is not one the client declared (it declared ${client.redirectUris.join(' ')})`,
+			known,
+			now
+		);
 	}
 	const redirectUri = params.redirect_uri;
-	const fail = (error: string, description: string): AuthorizeCheck =>
-		errorRedirect(redirectUri, params.state, origin, error, description);
+	const fail = (error: string, description: string): AuthorizeCheck => {
+		oauthLog('info', 'authorize', `refused (${error}): ${description}`, known, now);
+		return errorRedirect(redirectUri, params.state, origin, error, description);
+	};
 	if (params.response_type !== 'code') {
 		return fail('unsupported_response_type', 'Only response_type=code is supported.');
 	}
@@ -109,7 +128,8 @@ async function checkAuthorize(
 		return fail('invalid_request', 'A code_challenge (S256) is required.');
 	}
 	if (params.resource !== mcpServerUrl(origin)) {
-		return fail('invalid_target', `The resource must be ${mcpServerUrl(origin)}.`);
+		const sent = params.resource === undefined ? 'none was sent' : `it sent ${params.resource}`;
+		return fail('invalid_target', `The resource must be ${mcpServerUrl(origin)}; ${sent}.`);
 	}
 	const scopes = requestedScopes(params.scope);
 	if (scopes === undefined) {
@@ -162,6 +182,7 @@ export async function consentView(
 		return check;
 	}
 	if (connectEligibility(database, userId).kind === 'ineligible') {
+		logNotAllowed(userId, check.request, now);
 		return { kind: 'not-allowed', assistant: check.request.client.assistant };
 	}
 	return {
@@ -170,6 +191,19 @@ export async function consentView(
 		redirect: redirectTarget(check.request.redirectUri),
 		scopes: check.request.scopes
 	};
+}
+
+function requestFacts(request: ValidAuthorize): OAuthLogFacts {
+	return {
+		client: `${request.client.assistant.name} (${request.client.clientId})`,
+		redirectUri: request.redirectUri,
+		authMethod: null
+	};
+}
+
+function logNotAllowed(userId: string, request: ValidAuthorize, now: number): void {
+	const why = `person ${userId} may not connect an assistant (not in the connect group, or disabled)`;
+	oauthLog('info', 'authorize', `refused on the page: ${why}`, requestFacts(request), now);
 }
 
 export type Decision =
@@ -207,6 +241,8 @@ export async function decideConsent(
 			{ userId: decision.userId, client: request.client, reason: 'cancelled' },
 			now
 		);
+		const why = `refused (access_denied): person ${decision.userId} chose Cancel`;
+		oauthLog('info', 'authorize', why, requestFacts(request), now);
 		return back({ error: 'access_denied', error_description: 'The person did not allow it.' });
 	}
 	if (connectEligibility(database, decision.userId).kind === 'ineligible') {
@@ -215,6 +251,7 @@ export async function decideConsent(
 			{ userId: decision.userId, client: request.client, reason: 'not-allowed' },
 			now
 		);
+		logNotAllowed(decision.userId, request, now);
 		return { kind: 'not-allowed', assistant: request.client.assistant };
 	}
 	const code = allowClient(
@@ -229,5 +266,7 @@ export async function decideConsent(
 		},
 		now
 	);
+	const allowed = `allowed by person ${decision.userId}; a code went to the redirect URI`;
+	oauthLog('info', 'authorize', allowed, requestFacts(request), now);
 	return back({ code });
 }

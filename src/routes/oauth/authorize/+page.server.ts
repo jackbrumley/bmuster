@@ -3,6 +3,7 @@ import { authorizeParamsSchema, type AuthorizeParams } from '#lib/schemas/mcp/oa
 import { database } from '#lib/server/database/app-database.ts';
 import { page } from '#lib/server/guards/page.ts';
 import { consentView, decideConsent } from '#lib/server/services/oauth/authorize.ts';
+import { oauthLog } from '#lib/server/services/oauth/oauth-log.ts';
 import { safeFetchJson } from '#lib/server/services/oauth/safe-fetch.ts';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -31,6 +32,18 @@ function paramsFrom(read: (name: string) => string | null): AuthorizeParams {
 	}
 	const parsed = authorizeParamsSchema.safeParse(raw);
 	if (!parsed.success) {
+		const fields = parsed.error.issues.map((issue) => issue.path.join('.')).join(', ');
+		oauthLog(
+			'info',
+			'authorize',
+			`refused on the page (400): fields too long: ${fields}`,
+			{
+				client: raw['client_id'] ?? null,
+				redirectUri: raw['redirect_uri'] ?? null,
+				authMethod: null
+			},
+			Date.now()
+		);
 		error(400, 'This sign-in request is not valid.');
 	}
 	return parsed.data;

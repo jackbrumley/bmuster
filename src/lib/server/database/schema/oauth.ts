@@ -3,8 +3,8 @@ import { users } from './users.ts';
 
 /**
  * AI assistants connected over MCP (SPEC-MCP 13.1). BMuster is its own OAuth authorisation
- * server for public clients only: no client secrets. Codes and tokens are opaque and kept only
- * as SHA-256.
+ * server. Clients are public (PKCE only), except registered ones that ask for a client secret
+ * (M33). Codes, tokens and client secrets are opaque and kept only as SHA-256.
  */
 
 /**
@@ -25,6 +25,17 @@ export const oauthClients = sqliteTable('oauth_clients', {
 	redirectUris: text().notNull(),
 	/** JSON: the metadata as received, for the record. */
 	metadata: text().notNull(),
+	/**
+	 * How it proves itself at the token and revoke endpoints: `none` (a public client: PKCE
+	 * only), or a client secret sent in the form or as HTTP Basic (M33).
+	 */
+	tokenEndpointAuthMethod: text({
+		enum: ['none', 'client_secret_post', 'client_secret_basic']
+	})
+		.notNull()
+		.default('none'),
+	/** SHA-256 of the client secret; null for a public client. */
+	secretHash: text(),
 	/** When a metadata document was last fetched; null for a registered client. */
 	fetchedAt: integer({ mode: 'timestamp_ms' }),
 	createdAt: integer({ mode: 'timestamp_ms' }).notNull()

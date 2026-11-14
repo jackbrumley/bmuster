@@ -4,18 +4,21 @@ import { z } from 'zod';
 import type { AssistantName } from '#lib/domain/mcp/mcp.ts';
 import {
 	clientMetadataDocumentSchema,
-	type ClientMetadata,
+	type ClientMetadataDocument,
 	registrationRequestSchema
 } from '#lib/schemas/mcp/oauth.ts';
 import { oauthClients, oauthGrants } from '../../database/schema.ts';
 import type { Queryable } from '../../database/connection.ts';
+import { CLIENT_AUTH_METHODS, isClientAuthMethod, type ClientAuthMethod } from './client-auth.ts';
+import { oauthLog, type OAuthLogFacts } from './oauth-log.ts';
 import { fetchableUrl, type FetchJson } from './safe-fetch.ts';
+import { hashSecret, newSecret } from './secrets.ts';
 
 /**
  * OAuth clients (SPEC-MCP M6). A `client_id` that is an HTTPS URL is a Client ID Metadata
  * Document: fetched safely, cached up to 24 hours, and it must name itself. Anything else must
- * have been registered through `/oauth/register` (DCR), which grants nothing and marks the
- * client unverified. Redirect URIs match exactly, except loopback ones, which match on any port.
+ * have been registered through `/oauth/register` (DCR, public or with a client secret, M33),
+ * which grants nothing and marks the client unverified. Redirect URIs match exactly, except loopback ones, which match on any port.
  */
 
 const DOCUMENT_CACHE_MS = 24 * 60 * 60_000;
@@ -123,18 +126,27 @@ export function isMetadataDocumentUrl(clientId: string): boolean {
 }
 
 export type ClientLookup =
-	{ kind: 'found'; client: ClientRecord } | { kind: 'unknown'; message: string };
+	{ kind: 'found'; client: ClientRecord } | { kind: 'unknown'; message: string; why: string };
 
-/** Checks a client's metadata: public client, acceptable redirects. */
-function metadataProblem(metadata: ClientMetadata): string | undefined {
-	if (
-		metadata.token_endpoint_auth_method !== undefined &&
-		metadata.token_endpoint_auth_method !== 'none'
-	) {
-		return 'Only public clients may connect (token_endpoint_auth_method "none").';
+const BAD_REDIRECTS = 'Every redirect URI must be https://, or http:// on localhost or 127.0.0.1.';
+
+function unknown(message: string, why: string): ClientLookup {
+	return { kind: 'unknown', message, why };
+}
+
+/**
+ * A metadata document's client is public: it must be able to use `none` (M6, M34), either as
+ * its one method or among the methods it lists. BMuster offers no `private_key_jwt`, so a client
+ * that lists both picks `none` and proves itself with PKCE.
+ */
+function documentProblem(document: ClientMetadataDocument): string | undefined {
+	const preferred = document.token_endpoint_auth_method;
+	const listed = document.token_endpoint_auth_methods_supported ?? [];
+	if (preferred !== undefined && preferred !== 'none' && !listed.includes('none')) {
+		return 'Only public clients may connect with a metadata document (token_endpoint_auth_method "none").';
 	}
-	if (!metadata.redirect_uris.every(isAcceptableRedirect)) {
-		return 'Every redirect URI must be https://, or http:// on localhost or 127.0.0.1.';
+	if (!document.redirect_uris.every(isAcceptableRedirect)) {
+		return BAD_REDIRECTS;
 	}
 	return undefined;
 }
@@ -142,6 +154,7 @@ function metadataProblem(metadata: ClientMetadata): string | undefined {
 /**
  * The client behind a `client_id`: a metadata document (fetched again when the cached copy is a
  * day old) or a registered client. Fails closed: a document that cannot be fetched now is refused.
+ * `message` is for the consent page; `why` is the fuller reason for the server log (M31).
  */
 export async function resolveClient(
 	database: Queryable,
@@ -153,7 +166,10 @@ export async function resolveClient(
 	if (!isMetadataDocumentUrl(clientId)) {
 		return row?.kind === 'registered'
 			? { kind: 'found', client: toRecord(row) }
-			: { kind: 'unknown', message: 'This assistant is not registered with BMuster.' };
+			: unknown(
+					'This assistant is not registered with BMuster.',
+					'the client_id is not registered (unused registrations are pruned after a day) and is not a metadata document URL'
+				);
 	}
 	if (row?.fetchedAt !== undefined && row.fetchedAt !== null) {
 		if (now - row.fetchedAt.getTime() < DOCUMENT_CACHE_MS) {
@@ -162,24 +178,35 @@ export async function resolveClient(
 	}
 	const fetched = await fetchJson(clientId);
 	if (fetched.kind === 'failed') {
-		return {
-			kind: 'unknown',
-			message: `BMuster could not read the assistant's metadata document: ${fetched.reason}`
-		};
+		return unknown(
+			`BMuster could not read the assistant's metadata document: ${fetched.reason}`,
+			`the metadata document could not be fetched: ${fetched.reason}`
+		);
 	}
 	const document = clientMetadataDocumentSchema.safeParse(fetched.json);
 	if (!document.success) {
-		return { kind: 'unknown', message: "The assistant's metadata document is not valid." };
+		const fields = document.error.issues.map((issue) => issue.path.join('.')).join(', ');
+		return unknown(
+			"The assistant's metadata document is not valid.",
+			`the metadata document is not valid (fields: ${fields})`
+		);
 	}
 	if (document.data.client_id !== clientId) {
-		return {
-			kind: 'unknown',
-			message: "The assistant's metadata document names a different client_id."
-		};
+		return unknown(
+			"The assistant's metadata document names a different client_id.",
+			`the metadata document names client_id ${document.data.client_id}`
+		);
 	}
-	const problem = metadataProblem(document.data);
+	const problem = documentProblem(document.data);
 	if (problem !== undefined) {
-		return { kind: 'unknown', message: problem };
+		const methods = [
+			document.data.token_endpoint_auth_method ?? '(none given)',
+			...(document.data.token_endpoint_auth_methods_supported ?? [])
+		].join(', ');
+		return unknown(
+			problem,
+			`the metadata document was refused: ${problem} Its auth methods: ${methods}. Its redirect URIs: ${document.data.redirect_uris.join(' ')}`
+		);
 	}
 	const host = new URL(clientId).host;
 	const values = {
@@ -189,6 +216,8 @@ export async function resolveClient(
 		clientUri: document.data.client_uri ?? '',
 		redirectUris: JSON.stringify(document.data.redirect_uris),
 		metadata: JSON.stringify(document.data),
+		tokenEndpointAuthMethod: 'none' as const,
+		secretHash: null,
 		fetchedAt: new Date(now)
 	};
 	database
@@ -213,9 +242,13 @@ export type Registration =
 			reply: {
 				client_id: string;
 				client_id_issued_at: number;
+				/** Only for a confidential client: shown this once, then kept only as its hash. */
+				client_secret: string | undefined;
+				/** 0 (never expires, RFC 7591 3.2.1), beside a secret only. */
+				client_secret_expires_at: number | undefined;
 				client_name: string;
 				redirect_uris: string[];
-				token_endpoint_auth_method: 'none';
+				token_endpoint_auth_method: ClientAuthMethod;
 				grant_types: string[];
 				response_types: string[];
 			};
@@ -223,26 +256,69 @@ export type Registration =
 	  }
 	| { kind: 'refused'; error: 'invalid_client_metadata' | 'invalid_redirect_uri'; message: string };
 
-/** Dynamic Client Registration (RFC 7591): a public client, unverified, that may do nothing yet. */
+function refusedRegistration(
+	error: 'invalid_client_metadata' | 'invalid_redirect_uri',
+	message: string,
+	facts: OAuthLogFacts,
+	now: number
+): Registration {
+	oauthLog('info', 'register', `refused (${error}): ${message}`, facts, now);
+	return { kind: 'refused', error, message };
+}
+
+/** The registration's name, redirect URIs and method for the log, whatever shape it came in. */
+const looseRegistration = z
+	.object({
+		client_name: z.string().optional().catch(undefined),
+		redirect_uris: z.array(z.string()).optional().catch(undefined),
+		token_endpoint_auth_method: z.string().optional().catch(undefined)
+	})
+	.catch({
+		client_name: undefined,
+		redirect_uris: undefined,
+		token_endpoint_auth_method: undefined
+	});
+
+function registrationFacts(body: unknown): OAuthLogFacts {
+	const facts = looseRegistration.parse(body);
+	return {
+		client: facts.client_name ?? null,
+		redirectUri: facts.redirect_uris?.join(' ') ?? null,
+		authMethod: facts.token_endpoint_auth_method ?? null
+	};
+}
+
+/**
+ * Dynamic Client Registration (RFC 7591): unverified, and may do nothing until a person allows
+ * it. Public (`none`, also when no method is named) or confidential (`client_secret_post` or
+ * `client_secret_basic`, M33), which gets a secret once, kept only as SHA-256.
+ */
 export function registerClient(database: Queryable, body: unknown, now: number): Registration {
+	const facts = registrationFacts(body);
 	const request = registrationRequestSchema.safeParse(body);
 	if (!request.success) {
-		return {
-			kind: 'refused',
-			error: 'invalid_client_metadata',
-			message: 'The registration needs redirect_uris and may hold only the usual fields.'
-		};
+		return refusedRegistration(
+			'invalid_client_metadata',
+			'The registration needs redirect_uris and may hold only the usual fields.',
+			facts,
+			now
+		);
 	}
-	const problem = metadataProblem(request.data);
-	if (problem !== undefined) {
-		return {
-			kind: 'refused',
-			error: problem.startsWith('Every') ? 'invalid_redirect_uri' : 'invalid_client_metadata',
-			message: problem
-		};
+	const method = request.data.token_endpoint_auth_method ?? 'none';
+	if (!isClientAuthMethod(method)) {
+		return refusedRegistration(
+			'invalid_client_metadata',
+			`token_endpoint_auth_method must be one of ${CLIENT_AUTH_METHODS.join(', ')}.`,
+			facts,
+			now
+		);
+	}
+	if (!request.data.redirect_uris.every(isAcceptableRedirect)) {
+		return refusedRegistration('invalid_redirect_uri', BAD_REDIRECTS, facts, now);
 	}
 	pruneUnusedRegistrations(database, now);
 	const clientId = `bmc_${randomBytes(18).toString('base64url')}`;
+	const secret = method === 'none' ? undefined : newSecret('bmcs_');
 	const name = request.data.client_name ?? 'Unnamed client';
 	database
 		.insert(oauthClients)
@@ -254,19 +330,30 @@ export function registerClient(database: Queryable, body: unknown, now: number):
 			clientUri: request.data.client_uri ?? '',
 			redirectUris: JSON.stringify(request.data.redirect_uris),
 			metadata: JSON.stringify(request.data),
+			tokenEndpointAuthMethod: method,
+			secretHash: secret === undefined ? null : hashSecret(secret),
 			fetchedAt: null,
 			createdAt: new Date(now)
 		})
 		.run();
+	oauthLog(
+		'info',
+		'register',
+		'registered a client (unverified)',
+		{ ...facts, client: `${name} (${clientId})`, authMethod: method },
+		now
+	);
 	return {
 		kind: 'registered',
 		name,
 		reply: {
 			client_id: clientId,
 			client_id_issued_at: Math.floor(now / 1000),
+			client_secret: secret,
+			client_secret_expires_at: secret === undefined ? undefined : 0,
 			client_name: name,
 			redirect_uris: request.data.redirect_uris,
-			token_endpoint_auth_method: 'none',
+			token_endpoint_auth_method: method,
 			grant_types: ['authorization_code', 'refresh_token'],
 			response_types: ['code']
 		}

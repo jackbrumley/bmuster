@@ -7,7 +7,8 @@ import { oauthTokens } from '#lib/server/database/schema.ts';
 import { createGroup, setGroupMembers } from '#lib/server/services/access/groups.ts';
 import { decideConsent } from '#lib/server/services/oauth/authorize.ts';
 import { registerClient } from '#lib/server/services/oauth/clients.ts';
-import { hashSecret, saveMcpSettings } from '#lib/server/services/oauth/grants.ts';
+import { saveMcpSettings } from '#lib/server/services/oauth/grants.ts';
+import { hashSecret } from '#lib/server/services/oauth/secrets.ts';
 import { tokenRequest } from '#lib/server/services/oauth/tokens.ts';
 import type { FetchJson } from '#lib/server/services/oauth/safe-fetch.ts';
 import { done } from './access.ts';
@@ -29,6 +30,30 @@ export const CLAUDE_CODE_DOCUMENT = {
 	grant_types: ['authorization_code', 'refresh_token'],
 	response_types: ['code'],
 	token_endpoint_auth_method: 'none'
+};
+
+/**
+ * ChatGPT's published Client ID Metadata Document (SPEC-MCP M34), as fetched on 2026-11-14. It
+ * prefers `private_key_jwt` but lists `none`, and picks from what the server offers.
+ */
+export const CHATGPT_ID = 'https://chatgpt.com/oauth/client.json';
+export const CHATGPT_REDIRECT = 'https://chatgpt.com/connector_platform_oauth_redirect';
+export const CHATGPT_DOCUMENT = {
+	client_id: CHATGPT_ID,
+	client_uri: 'https://chatgpt.com/',
+	redirect_uris: [CHATGPT_REDIRECT],
+	token_endpoint_auth_method: 'private_key_jwt',
+	token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'],
+	grant_types: [
+		'authorization_code',
+		'refresh_token',
+		'urn:ietf:params:oauth:grant-type:jwt-bearer'
+	],
+	response_types: ['code'],
+	client_name: 'ChatGPT',
+	logo_uri: 'https://persistent.oaistatic.com/sonic/misc/openai-logo.png',
+	token_endpoint_auth_signing_alg: 'RS256',
+	jwks_uri: 'https://chatgpt.com/oauth/jwks.json'
 };
 
 /** A metadata document server that answers only for the documents it holds, counting fetches. */
@@ -231,6 +256,7 @@ export async function connectAssistant(
 			client_id: clientId,
 			resource: RESOURCE
 		},
+		{ kind: 'none' },
 		RESOURCE,
 		now
 	);

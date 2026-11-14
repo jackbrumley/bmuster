@@ -1,10 +1,18 @@
 import { MCP_SCOPES, mcpServerUrl } from '#lib/domain/mcp/mcp.ts';
+import { CLIENT_AUTH_METHODS } from './client-auth.ts';
 
 /**
- * Discovery (SPEC-MCP M5, 4.2): RFC 9728 protected resource metadata for `/mcp`, whose `resource`
- * must equal exactly the URL people paste into their assistant, and RFC 8414 authorisation server
- * metadata. BMuster is the only authorisation server. Advertising both `"none"` and metadata
- * documents makes Claude's clients use CIMD; DCR stays for others.
+ * Discovery (SPEC-MCP M5, M32, 4.2): RFC 9728 protected resource metadata for `/mcp`, whose
+ * `resource` must equal exactly the URL people paste into their assistant, and RFC 8414
+ * authorisation server metadata. BMuster is the only authorisation server. Advertising both
+ * `"none"` and metadata documents makes Claude's and ChatGPT's clients use CIMD; DCR stays for
+ * others, public or with a client secret (M33).
+ *
+ * The same resource document is served at the root path too (`/.well-known/oauth-protected-
+ * resource`), which some clients probe; and the same authorisation server document at
+ * `/.well-known/openid-configuration`, which some clients try before RFC 8414. That document
+ * claims no OpenID features (no `id_token`, no `userinfo`, no `jwks_uri`, no `openid` scope), so
+ * a client after OpenID sign-in sees there is none, and an OAuth client reads what it needs.
  */
 
 const PROTECTED_RESOURCE_PATH = '/.well-known/oauth-protected-resource/mcp';
@@ -34,8 +42,8 @@ export function authorizationServerMetadata(origin: string) {
 		response_modes_supported: ['query'],
 		grant_types_supported: ['authorization_code', 'refresh_token'],
 		code_challenge_methods_supported: ['S256'],
-		token_endpoint_auth_methods_supported: ['none'],
-		revocation_endpoint_auth_methods_supported: ['none'],
+		token_endpoint_auth_methods_supported: [...CLIENT_AUTH_METHODS],
+		revocation_endpoint_auth_methods_supported: [...CLIENT_AUTH_METHODS],
 		scopes_supported: [...MCP_SCOPES],
 		client_id_metadata_document_supported: true,
 		authorization_response_iss_parameter_supported: true

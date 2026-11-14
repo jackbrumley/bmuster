@@ -87,6 +87,7 @@ function refresh(
 	return tokenRequest(
 		database,
 		{ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId },
+		{ kind: 'none' },
 		RESOURCE,
 		now
 	);
@@ -114,11 +115,19 @@ describe('codes and tokens (SPEC-MCP M8)', () => {
 		for (const attempt of spoilt) {
 			const issued = await freshCode(database, pat.id);
 			expect(
-				tokenRequest(database, { ...issued.request, ...attempt.change }, RESOURCE, attempt.at)
+				tokenRequest(
+					database,
+					{ ...issued.request, ...attempt.change },
+					{ kind: 'none' },
+					RESOURCE,
+					attempt.at
+				)
 			).toMatchObject({ kind: 'error', error: attempt.error });
 		}
 		const good = await freshCode(database, pat.id);
-		expect(tokenRequest(database, good.request, RESOURCE, NOW).kind).toBe('issued');
+		expect(tokenRequest(database, good.request, { kind: 'none' }, RESOURCE, NOW).kind).toBe(
+			'issued'
+		);
 	});
 
 	it('M8: refresh answers invalid_grant for an unknown token or another client', async () => {
@@ -135,7 +144,11 @@ describe('codes and tokens (SPEC-MCP M8)', () => {
 	it('M8: revoking an access token stops it at once', async () => {
 		const { database, pat } = await setUp();
 		const connection = await connectAssistant(database, pat.id, 'claude-code', NOW);
-		revokeToken(database, { token: connection.accessToken, clientId: undefined }, NOW);
+		revokeToken(
+			database,
+			{ token: connection.accessToken, clientId: undefined, secret: { kind: 'none' } },
+			NOW
+		);
 		expect(authenticateAccessToken(database, connection.accessToken, CLIENT, NOW).kind).toBe(
 			'invalid'
 		);

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { hashSecret, newSecret } from './secrets.ts';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import {
@@ -50,14 +50,6 @@ const storedScopes = z.array(z.string());
 
 function parseScopes(json: string): McpScope[] {
 	return withImpliedScopes(storedScopes.parse(JSON.parse(json)).filter(isMcpScope));
-}
-
-export function hashSecret(secret: string): string {
-	return createHash('sha256').update(secret, 'utf8').digest('hex');
-}
-
-export function newSecret(prefix: 'bmac_' | 'bmat_' | 'bmrt_'): string {
-	return `${prefix}${randomBytes(32).toString('base64url')}`;
 }
 
 /**

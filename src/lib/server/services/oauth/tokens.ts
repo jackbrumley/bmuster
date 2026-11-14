@@ -8,33 +8,33 @@ import {
 } from '#lib/domain/mcp/mcp.ts';
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
 import { PKCE_VERIFIER, type TokenRequest } from '#lib/schemas/mcp/oauth.ts';
-import { oauthCodes, oauthGrants, oauthTokens } from '../../database/schema.ts';
+import { oauthClients, oauthCodes, oauthGrants, oauthTokens } from '../../database/schema.ts';
 import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { findUserById, toConsoleUser } from '../users/users.ts';
-import {
-	endGrant,
-	findGrant,
-	hashSecret,
-	LIFETIMES,
-	newSecret,
-	viaDetail,
-	type EndReason
-} from './grants.ts';
+import { checkClientSecret, presentedMethod, type PresentedSecret } from './client-auth.ts';
+import { endGrant, findGrant, LIFETIMES, viaDetail, type EndReason } from './grants.ts';
 import { connectEligibility } from './mcp-settings.ts';
+import { describeClient, oauthLog } from './oauth-log.ts';
+import { hashSecret, newSecret } from './secrets.ts';
 
 /**
  * The token endpoint, revocation and the bearer check (SPEC-MCP M8, M9). Tokens are opaque
  * (`bmat_` access, `bmrt_` refresh) and stored only as SHA-256, so every request looks its token
  * up and a revoke works on the next one. Refresh tokens rotate on every use; a used one presented
- * again ends the whole grant. `invalid_grant` for anything bad, used or expired.
+ * again ends the whole grant. `invalid_grant` for anything bad, used or expired; `invalid_client`
+ * when a confidential client's secret is missing or wrong (M33). Every outcome writes one server
+ * log line with the precise reason (M31); the client is told only the generic one.
  */
 
 type TokenError = {
 	kind: 'error';
-	status: 400;
-	error: 'invalid_grant' | 'invalid_request' | 'invalid_target' | 'invalid_scope';
+	status: 400 | 401;
+	error:
+		'invalid_grant' | 'invalid_request' | 'invalid_target' | 'invalid_scope' | 'invalid_client';
 	description: string;
+	/** The precise reason, for the server log only. */
+	why: string;
 };
 
 export type TokenReply =
@@ -50,8 +50,8 @@ export type TokenReply =
 	  }
 	| TokenError;
 
-function refused(error: TokenError['error'], description: string): TokenError {
-	return { kind: 'error', status: 400, error, description };
+function refused(error: TokenError['error'], description: string, why: string): TokenError {
+	return { kind: 'error', status: 400, error, description, why };
 }
 
 const BAD_GRANT = 'The code or refresh token is not valid, was already used, or has expired.';
@@ -119,7 +119,7 @@ function endAndRefuse(
 	now: number
 ): TokenError {
 	endGrant(database, grantId, { reason, actor: { kind: 'system' } }, now);
-	return refused('invalid_grant', BAD_GRANT);
+	return refused('invalid_grant', BAD_GRANT, `the grant was ended (${reason})`);
 }
 
 /** A code for a token pair (M8): single use, 60 s, same client, redirect, resource and PKCE verifier. */
@@ -132,11 +132,11 @@ function exchangeCode(
 	const hash = hashSecret(request.code);
 	const code = database.select().from(oauthCodes).where(eq(oauthCodes.hash, hash)).get();
 	if (code === undefined) {
-		return refused('invalid_grant', BAD_GRANT);
+		return refused('invalid_grant', BAD_GRANT, 'the code is unknown');
 	}
 	const grant = findGrant(database, code.grantId);
 	if (grant?.clientId !== request.client_id) {
-		return refused('invalid_grant', BAD_GRANT);
+		return refused('invalid_grant', BAD_GRANT, 'the code was issued to another client');
 	}
 	if (code.usedAt !== null) {
 		// A code seen twice may have been stolen: whatever it already bought stops working.
@@ -147,16 +147,25 @@ function exchangeCode(
 		.set({ usedAt: new Date(now) })
 		.where(eq(oauthCodes.hash, hash))
 		.run();
-	if (
-		code.expiresAt.getTime() <= now ||
-		grant.endedAt !== null ||
-		code.redirectUri !== request.redirect_uri ||
-		!pkceMatches(request.code_verifier, code.codeChallenge)
-	) {
-		return refused('invalid_grant', BAD_GRANT);
+	const problem =
+		code.expiresAt.getTime() <= now
+			? 'the code expired (codes last 60 seconds)'
+			: grant.endedAt !== null
+				? 'the grant has ended'
+				: code.redirectUri !== request.redirect_uri
+					? `the redirect_uri differs from the authorisation request's (${code.redirectUri})`
+					: !pkceMatches(request.code_verifier, code.codeChallenge)
+						? 'the PKCE code_verifier does not match the code_challenge'
+						: undefined;
+	if (problem !== undefined) {
+		return refused('invalid_grant', BAD_GRANT, problem);
 	}
 	if (request.resource !== undefined && request.resource !== code.resource) {
-		return refused('invalid_target', `This server's resource is ${resource}.`);
+		return refused(
+			'invalid_target',
+			`This server's resource is ${resource}.`,
+			`the resource ${request.resource} differs from ${code.resource}`
+		);
 	}
 	const eligibility = connectEligibility(database, grant.userId);
 	if (eligibility.kind === 'ineligible') {
@@ -200,19 +209,19 @@ function refresh(
 	const hash = hashSecret(request.refresh_token);
 	const token = database.select().from(oauthTokens).where(eq(oauthTokens.hash, hash)).get();
 	if (token?.kind !== 'refresh') {
-		return refused('invalid_grant', BAD_GRANT);
+		return refused('invalid_grant', BAD_GRANT, 'the refresh token is unknown');
 	}
 	const grant = findGrant(database, token.grantId);
 	if (grant === undefined) {
-		return refused('invalid_grant', BAD_GRANT);
+		return refused('invalid_grant', BAD_GRANT, 'the refresh token has no grant');
 	}
 	if (grant.clientId !== request.client_id) {
 		auditRefusedRefresh(database, grant, 'wrong-client', now);
-		return refused('invalid_grant', BAD_GRANT);
+		return refused('invalid_grant', BAD_GRANT, 'the refresh token belongs to another client');
 	}
 	if (grant.endedAt !== null) {
 		auditRefusedRefresh(database, grant, 'grant-ended', now);
-		return refused('invalid_grant', BAD_GRANT);
+		return refused('invalid_grant', BAD_GRANT, 'the grant has ended');
 	}
 	if (token.usedAt !== null || token.revokedAt !== null) {
 		return endAndRefuse(database, grant.id, 'refresh-reuse', now);
@@ -229,7 +238,11 @@ function refresh(
 		return endAndRefuse(database, grant.id, eligibility.why, now);
 	}
 	if (request.resource !== undefined && request.resource !== resource) {
-		return refused('invalid_target', `This server's resource is ${resource}.`);
+		return refused(
+			'invalid_target',
+			`This server's resource is ${resource}.`,
+			`the resource ${request.resource} is not ${resource}`
+		);
 	}
 	if (
 		request.scope !== undefined &&
@@ -238,7 +251,11 @@ function refresh(
 			.filter((scope) => scope !== '')
 			.every((scope) => isMcpScope(scope) && grant.scopes.includes(scope))
 	) {
-		return refused('invalid_scope', 'A refresh cannot add scopes.');
+		return refused(
+			'invalid_scope',
+			'A refresh cannot add scopes.',
+			`it asked for ${request.scope}`
+		);
 	}
 	const used = database
 		.update(oauthTokens)
@@ -256,64 +273,145 @@ function refresh(
 	);
 }
 
-/** `/oauth/token`: both grants in one transaction, so two racing uses settle on one outcome. */
+/**
+ * `/oauth/token`: the client's secret first (M33), then both grants in one transaction, so two
+ * racing uses settle on one outcome. The outcome is logged after the transaction.
+ */
 export function tokenRequest(
 	database: AppDatabase,
 	request: TokenRequest,
+	secret: PresentedSecret,
 	resource: string,
 	now: number
 ): TokenReply {
-	return database.transaction((transaction) => {
-		pruneDeadCredentials(transaction, now);
-		switch (request.grant_type) {
-			case 'authorization_code':
-				return exchangeCode(transaction, request, resource, now);
-			case 'refresh_token':
-				return refresh(transaction, request, resource, now);
-		}
-	});
+	const client = checkClientSecret(database, request.client_id, secret);
+	const reply: TokenReply =
+		client.kind === 'refused'
+			? {
+					kind: 'error',
+					status: 401,
+					error: 'invalid_client',
+					description: 'Client authentication failed.',
+					why: client.why
+				}
+			: database.transaction((transaction) => {
+					pruneDeadCredentials(transaction, now);
+					switch (request.grant_type) {
+						case 'authorization_code':
+							return exchangeCode(transaction, request, resource, now);
+						case 'refresh_token':
+							return refresh(transaction, request, resource, now);
+					}
+				});
+	const facts = {
+		client: describeClient(database, request.client_id),
+		redirectUri: request.grant_type === 'authorization_code' ? request.redirect_uri : null,
+		authMethod: presentedMethod(secret)
+	};
+	switch (reply.kind) {
+		case 'issued':
+			oauthLog(
+				'info',
+				'token',
+				`issued tokens (${request.grant_type}, scope ${reply.body.scope})`,
+				facts,
+				now
+			);
+			break;
+		case 'error':
+			oauthLog(
+				'info',
+				'token',
+				`refused (${reply.error}) grant_type ${request.grant_type}: ${reply.why}`,
+				facts,
+				now
+			);
+			break;
+	}
+	return reply;
+}
+
+export type RevokeOutcome = { kind: 'answered' } | { kind: 'refused'; why: string };
+
+/** Whether a client must send its secret: one registered with `client_secret_*` (M33). */
+function isConfidential(database: Queryable, clientId: string): boolean {
+	const row = database
+		.select({ method: oauthClients.tokenEndpointAuthMethod })
+		.from(oauthClients)
+		.where(eq(oauthClients.clientId, clientId))
+		.get();
+	return row !== undefined && row.method !== 'none';
+}
+
+/** What a revoke did, for the log; nothing here is told to the client. */
+function revokeInTransaction(
+	transaction: Queryable,
+	revoke: { token: string; clientId: string | undefined },
+	now: number
+): string {
+	const token = transaction
+		.select()
+		.from(oauthTokens)
+		.where(eq(oauthTokens.hash, hashSecret(revoke.token)))
+		.get();
+	const grant = token === undefined ? undefined : findGrant(transaction, token.grantId);
+	if (token === undefined || grant === undefined) {
+		return 'ignored: the token is unknown';
+	}
+	if (revoke.clientId !== undefined && revoke.clientId !== grant.clientId) {
+		return "ignored: the token is another client's";
+	}
+	if (revoke.clientId === undefined && isConfidential(transaction, grant.clientId)) {
+		return 'ignored: the token belongs to a confidential client, which did not authenticate';
+	}
+	switch (token.kind) {
+		case 'refresh':
+			endGrant(
+				transaction,
+				grant.id,
+				{ reason: 'disconnected', actor: { kind: 'user', userId: grant.userId } },
+				now
+			);
+			return 'ended the grant (refresh token revoked)';
+		case 'access':
+			transaction
+				.update(oauthTokens)
+				.set({ revokedAt: new Date(now) })
+				.where(eq(oauthTokens.hash, token.hash))
+				.run();
+			return 'revoked the access token';
+	}
 }
 
 /**
- * `/oauth/revoke` (RFC 7009): always answered 200. Revoking a refresh token disconnects the
- * whole grant; an access token stops on its own. A token named with another client's id is left.
+ * `/oauth/revoke` (RFC 7009): answered 200 whether or not the token was known, unless client
+ * authentication fails (401 `invalid_client`). Revoking a refresh token disconnects the whole
+ * grant; an access token stops on its own. A token named with another client's id is left, and
+ * so is a confidential client's token sent without its id and secret.
  */
 export function revokeToken(
 	database: AppDatabase,
-	revoke: { token: string; clientId: string | undefined },
+	revoke: { token: string; clientId: string | undefined; secret: PresentedSecret },
 	now: number
-): void {
-	database.transaction((transaction) => {
-		const token = transaction
-			.select()
-			.from(oauthTokens)
-			.where(eq(oauthTokens.hash, hashSecret(revoke.token)))
-			.get();
-		const grant = token === undefined ? undefined : findGrant(transaction, token.grantId);
-		if (token === undefined || grant === undefined) {
-			return;
-		}
-		if (revoke.clientId !== undefined && revoke.clientId !== grant.clientId) {
-			return;
-		}
-		switch (token.kind) {
-			case 'refresh':
-				endGrant(
-					transaction,
-					grant.id,
-					{ reason: 'disconnected', actor: { kind: 'user', userId: grant.userId } },
-					now
-				);
-				return;
-			case 'access':
-				transaction
-					.update(oauthTokens)
-					.set({ revokedAt: new Date(now) })
-					.where(eq(oauthTokens.hash, token.hash))
-					.run();
-				return;
-		}
-	});
+): RevokeOutcome {
+	const facts = {
+		client: revoke.clientId === undefined ? null : describeClient(database, revoke.clientId),
+		redirectUri: null,
+		authMethod: presentedMethod(revoke.secret)
+	};
+	const check =
+		revoke.clientId === undefined
+			? revoke.secret.kind === 'none'
+				? ({ kind: 'accepted' } as const)
+				: ({ kind: 'refused', why: 'a client secret came without a client_id' } as const)
+			: checkClientSecret(database, revoke.clientId, revoke.secret);
+	if (check.kind === 'refused') {
+		oauthLog('info', 'revoke', `refused (invalid_client): ${check.why}`, facts, now);
+		return check;
+	}
+	const done = database.transaction((transaction) => revokeInTransaction(transaction, revoke, now));
+	oauthLog('info', 'revoke', done, facts, now);
+	return { kind: 'answered' };
 }
 
 /** Who an assistant's request acts as (M4, M13): the person, the grant, and the assistant. */
@@ -325,7 +423,9 @@ export type McpPrincipal = {
 	clientId: string;
 };
 
-export type AccessCheck = { kind: 'valid'; principal: McpPrincipal } | { kind: 'invalid' };
+export type AccessCheck =
+	| { kind: 'valid'; principal: McpPrincipal }
+	| { kind: 'invalid'; why: string; client: string | null };
 
 /** The grant's last use is written at most this often (and whenever the address changes). */
 const TOUCH_EVERY_MS = 60_000;
@@ -341,7 +441,7 @@ export function authenticateAccessToken(
 	now: number
 ): AccessCheck {
 	if (!token.startsWith('bmat_')) {
-		return { kind: 'invalid' };
+		return { kind: 'invalid', why: 'the bearer token is not a BMuster access token', client: null };
 	}
 	return database.transaction((transaction) => {
 		const row = transaction
@@ -349,12 +449,24 @@ export function authenticateAccessToken(
 			.from(oauthTokens)
 			.where(eq(oauthTokens.hash, hashSecret(token)))
 			.get();
-		if (row?.kind !== 'access' || row.revokedAt !== null || row.expiresAt.getTime() <= now) {
-			return { kind: 'invalid' } as const;
+		if (row?.kind !== 'access') {
+			return { kind: 'invalid', why: 'the access token is unknown', client: null } as const;
 		}
 		const grant = findGrant(transaction, row.grantId);
-		if (grant?.endedAt !== null) {
-			return { kind: 'invalid' } as const;
+		if (grant === undefined) {
+			return { kind: 'invalid', why: 'the access token has no grant', client: null } as const;
+		}
+		const label = `${grant.assistant.name} (${grant.clientId})`;
+		const problem =
+			row.revokedAt !== null
+				? 'the access token was revoked'
+				: row.expiresAt.getTime() <= now
+					? 'the access token expired (they last an hour; the client should refresh)'
+					: grant.endedAt !== null
+						? 'the grant has ended (disconnected, or the person may no longer connect)'
+						: undefined;
+		if (problem !== undefined) {
+			return { kind: 'invalid', why: problem, client: label } as const;
 		}
 		const eligibility = connectEligibility(transaction, grant.userId);
 		const user = findUserById(transaction, grant.userId);
@@ -368,7 +480,11 @@ export function authenticateAccessToken(
 				},
 				now
 			);
-			return { kind: 'invalid' } as const;
+			return {
+				kind: 'invalid',
+				why: 'the person may no longer connect, so the grant was ended',
+				client: label
+			} as const;
 		}
 		if (
 			grant.lastUsedAt === null ||

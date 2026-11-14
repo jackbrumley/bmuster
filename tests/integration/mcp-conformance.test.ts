@@ -254,7 +254,7 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 			registration_endpoint: `${ORIGIN}/oauth/register`,
 			code_challenge_methods_supported: ['S256'],
 			client_id_metadata_document_supported: true,
-			token_endpoint_auth_methods_supported: ['none'],
+			token_endpoint_auth_methods_supported: ['none', 'client_secret_post', 'client_secret_basic'],
 			authorization_response_iss_parameter_supported: true
 		});
 	});

@@ -20,14 +20,19 @@ const clientMetadataFields = {
 	scope: z.string().max(1000).optional()
 };
 
+/**
+ * A document may list every method it can use; ChatGPT's names `private_key_jwt` as its
+ * preference and lists `none` beside it, and picks from what the server offers (SPEC-MCP M34).
+ */
 export const clientMetadataDocumentSchema = z.object({
 	client_id: uri,
+	token_endpoint_auth_methods_supported: z.array(z.string().max(100)).max(10).optional(),
 	...clientMetadataFields
 });
 
-export const registrationRequestSchema = z.object(clientMetadataFields);
+export type ClientMetadataDocument = z.infer<typeof clientMetadataDocumentSchema>;
 
-export type ClientMetadata = z.infer<typeof registrationRequestSchema>;
+export const registrationRequestSchema = z.object(clientMetadataFields);
 
 /** `/oauth/authorize`'s query (and the consent form's hidden fields): checked in order later. */
 export const authorizeParamsSchema = z.object({

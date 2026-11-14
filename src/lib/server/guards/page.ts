@@ -2,6 +2,7 @@ import { error, type RequestEvent } from '@sveltejs/kit';
 import { database } from '../database/app-database.ts';
 import { mcpEnabled } from '../services/oauth/mcp-settings.ts';
 import { requirePageAccess, type SessionContext } from './checks.ts';
+import { logMcpOff } from './mcp-checks.ts';
 
 /**
  * Guards for `load` functions and form actions in `+page.server.ts` and
@@ -36,6 +37,7 @@ export const page = {
 	oauth<E extends RequestEvent, R>(fn: Guarded<E, SessionContext, R>) {
 		return (event: E): R => {
 			if (!mcpEnabled(database)) {
+				logMcpOff(event);
 				error(404, 'Not found');
 			}
 			return fn(event, requirePageAccess(event, 'user'));
