@@ -44,6 +44,11 @@ export function commandOsLabel(family: CommandOsFamily): string {
 /** The limits of C7, C9, C10, C14 and C16, the same on the form and the server. */
 export const COMMAND_LIMITS = {
 	maxCommandChars: 8000,
+	/**
+	 * A PowerShell command's UTF-8 bytes (C30): it travels as base64 inside the wrapper, which
+	 * must fit Windows's 32,767-character command line. Only mostly non-ASCII text reaches it.
+	 */
+	maxPowerShellBytes: 23_000,
 	minTimeoutMs: 5_000,
 	maxTimeoutMs: 10 * 60_000,
 	defaultTimeoutMs: 60_000,
