@@ -24,6 +24,7 @@
 	import { COMMAND_LIMITS, type CommandDraft } from '#lib/domain/commands/commands.ts';
 	import { MachineSelection, type TickBoxes } from './machine-selection.svelte.ts';
 	import SelectionBar from './selection-bar.svelte';
+	import DonateReminder from './donate-reminder.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -267,6 +268,10 @@
 	{:else}
 		<MachineCards rows={visible} {now} batchSize={BATCH_SIZE} {resetKey} {ticks} />
 	{/if}
+{/if}
+
+{#if data.donate.kind === 'shown'}
+	<DonateReminder wording={data.donate.wording} />
 {/if}
 
 {#if selection.active && selection.ticked.size > 0}

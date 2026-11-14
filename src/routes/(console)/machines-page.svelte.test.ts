@@ -79,7 +79,8 @@ function renderPage(machines: Machine[] = MACHINES, rollout: Rollout = { kind: '
 			now: NOW,
 			rollout,
 			view: { kind: 'machines', machines },
-			commands: { kind: 'none' }
+			commands: { kind: 'none' },
+			donate: { kind: 'hidden' }
 		}
 	});
 }
