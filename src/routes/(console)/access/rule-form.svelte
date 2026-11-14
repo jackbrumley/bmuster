@@ -3,6 +3,7 @@
 	import {
 		CONSENTS,
 		PERMISSIONS,
+		permissionAbout,
 		permissionLabel,
 		togglePermission,
 		type Consent,
@@ -13,9 +14,10 @@
 
 	/**
 	 * The fields of a rule (SPEC-ACCESS A4): who, on what, what they may do
-	 * and whether it asks first. Ticking a permission ticks what it includes
-	 * (See inventory; Control desktop also ticks Watch desktop); unticking one
-	 * unticks what needs it.
+	 * and whether it asks first. Each permission has a line on what it allows
+	 * (SPEC-MCP M40). Ticking a permission ticks what it includes (See
+	 * inventory; Control desktop also ticks Watch desktop; AI commands also
+	 * ticks AI can view); unticking one unticks what needs it.
 	 */
 	type Named = { id: string; name: string };
 
@@ -83,18 +85,24 @@
 <fieldset class="field">
 	<legend class="label">Permissions</legend>
 	{#each PERMISSIONS as permission (permission)}
-		<Checkbox
-			label={permissionLabel(permission)}
-			error={undefined}
-			bind:checked={
-				() => permissions.includes(permission),
-				(on: boolean) => {
-					permissions = togglePermission(permissions, permission, on);
+		<div class="permission">
+			<Checkbox
+				label={permissionLabel(permission)}
+				error={undefined}
+				bind:checked={
+					() => permissions.includes(permission),
+					(on: boolean) => {
+						permissions = togglePermission(permissions, permission, on);
+					}
 				}
-			}
-		/>
+			/>
+			<p class="about">{permissionAbout(permission)}</p>
+		</div>
 	{/each}
-	<p class="hint">Every permission includes See inventory; Control desktop includes watching it.</p>
+	<p class="hint">
+		Every permission includes See inventory; Control desktop includes watching it; AI commands
+		includes AI can view. Admins get the two AI permissions only from a rule.
+	</p>
 </fieldset>
 
 <SegmentedControl label="Before connecting" options={consentOptions} bind:value={consent} />
@@ -126,6 +134,19 @@
 	.hint {
 		color: var(--muted);
 		font-size: var(--text-xs);
+	}
+
+	.permission {
+		display: grid;
+		min-width: 0;
+	}
+
+	/* Lines up under the label: the 20px box and its gap. */
+	.about {
+		padding-left: var(--space-8);
+		color: var(--muted);
+		font-size: var(--text-xs);
+		overflow-wrap: anywhere;
 	}
 
 	a {
