@@ -33,7 +33,7 @@ function toCallResult<T extends Record<string, unknown>>(result: ToolResult<T>):
 	}
 }
 
-export function bmusterMcpServer(context: ToolContext): McpServer {
+function bmusterMcpServer(context: ToolContext): McpServer {
 	const server = new McpServer(
 		{ name: 'BMuster', version: __BMUSTER_VERSION__ },
 		{

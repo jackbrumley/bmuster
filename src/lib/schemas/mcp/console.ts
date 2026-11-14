@@ -7,8 +7,6 @@ export const mcpSettingsRequestSchema = z.object({
 	userGroupId: z.uuid().nullable()
 });
 
-export type McpSettingsRequest = z.infer<typeof mcpSettingsRequestSchema>;
-
 export const mcpSettingsReplySchema = z.object({
 	enabled: z.boolean(),
 	userGroupId: z.string().nullable()

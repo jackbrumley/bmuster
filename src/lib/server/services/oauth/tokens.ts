@@ -30,7 +30,7 @@ import { connectEligibility } from './mcp-settings.ts';
  * again ends the whole grant. `invalid_grant` for anything bad, used or expired.
  */
 
-export type TokenError = {
+type TokenError = {
 	kind: 'error';
 	status: 400;
 	error: 'invalid_grant' | 'invalid_request' | 'invalid_target' | 'invalid_scope';

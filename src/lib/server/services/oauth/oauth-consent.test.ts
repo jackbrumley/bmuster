@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { testDatabase } from '#tests/helpers/fake-agent.ts';
 import {
 	CLAUDE_CODE_DOCUMENT,
 	CLAUDE_CODE_ID,
 	documentServer,
-	enableMcp,
+	mcpPeople,
 	ORIGIN,
 	pkcePair,
 	RESOURCE
 } from '#tests/helpers/mcp.ts';
-import { addTestUser, NOW } from '#tests/helpers/people.ts';
+import { NOW } from '#tests/helpers/people.ts';
 import { oauthGrants } from '../../database/schema.ts';
 import { listAudit } from '../audit/audit.ts';
 import { disableUser } from '../users/users.ts';
@@ -29,26 +28,7 @@ function request() {
 	};
 }
 
-async function setUp() {
-	const database = testDatabase();
-	const admin = await addTestUser(database, {
-		email: 'ada@example.com',
-		role: 'admin',
-		password: null
-	});
-	const pat = await addTestUser(database, {
-		email: 'pat@example.com',
-		role: 'member',
-		password: null
-	});
-	const kim = await addTestUser(database, {
-		email: 'kim@example.com',
-		role: 'member',
-		password: null
-	});
-	enableMcp(database, admin.id, [pat.id, kim.id]);
-	return { database, admin, pat, kim };
-}
+const setUp = mcpPeople;
 
 describe('who may connect (SPEC-MCP M2)', () => {
 	it('M2: a member of the connect group is asked', async () => {

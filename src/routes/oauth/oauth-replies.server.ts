@@ -2,7 +2,7 @@
  * OAuth replies (RFC 6749 5.1, 5.2): JSON that is never cached, and errors as
  * `{ error, error_description }`.
  */
-export const NO_STORE = { 'cache-control': 'no-store', pragma: 'no-cache' } as const;
+const NO_STORE = { 'cache-control': 'no-store', pragma: 'no-cache' } as const;
 
 export function oauthJson(body: unknown, status: number): Response {
 	return Response.json(body, { status, headers: NO_STORE });

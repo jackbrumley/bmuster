@@ -7,9 +7,9 @@ import { MCP_SCOPES, mcpServerUrl } from '#lib/domain/mcp/mcp.ts';
  * documents makes Claude's clients use CIMD; DCR stays for others.
  */
 
-export const PROTECTED_RESOURCE_PATH = '/.well-known/oauth-protected-resource/mcp';
+const PROTECTED_RESOURCE_PATH = '/.well-known/oauth-protected-resource/mcp';
 
-export function protectedResourceMetadataUrl(origin: string): string {
+function protectedResourceMetadataUrl(origin: string): string {
 	return `${origin}${PROTECTED_RESOURCE_PATH}`;
 }
 

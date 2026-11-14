@@ -32,7 +32,7 @@ export const CONNECTED_WINDOW_MS = 10 * 60_000;
  * Who a client is: a Client ID Metadata Document ties its name to the host that serves the
  * document (verified); a registered client's name is only its own claim (unverified).
  */
-export type ClientIdentity = { kind: 'verified'; host: string } | { kind: 'unverified' };
+type ClientIdentity = { kind: 'verified'; host: string } | { kind: 'unverified' };
 
 export type AssistantName = { name: string; identity: ClientIdentity };
 
@@ -64,7 +64,7 @@ export type GrantView = {
 export type AssistantStatus = { kind: 'none' } | { kind: 'connected'; name: string };
 
 /** The connect group as Settings → AI assistants shows it. */
-export type McpGroupChoice =
+type McpGroupChoice =
 	| { kind: 'none' }
 	| { kind: 'group'; id: string; name: string }
 	/** The setting names a group that has since been deleted: nobody may connect. */

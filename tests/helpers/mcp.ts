@@ -11,7 +11,8 @@ import { hashSecret, saveMcpSettings } from '#lib/server/services/oauth/grants.t
 import { tokenRequest } from '#lib/server/services/oauth/tokens.ts';
 import type { FetchJson } from '#lib/server/services/oauth/safe-fetch.ts';
 import { done } from './access.ts';
-import { NOW } from './people.ts';
+import { testDatabase } from './fake-agent.ts';
+import { addTestUser, NOW } from './people.ts';
 
 /** Helpers for the MCP and OAuth tests (SPEC-MCP). */
 
@@ -68,6 +69,28 @@ export function enableMcp(database: AppDatabase, adminId: string, memberIds: str
 	const saved = saveMcpSettings(database, adminId, { enabled: true, userGroupId: groupId }, NOW);
 	if (saved.kind !== 'changed') throw new Error(saved.message);
 	return groupId;
+}
+
+export /** A fresh database with an admin (Ada) and two members (Pat, Kim) who may connect assistants. */
+async function mcpPeople() {
+	const database = testDatabase();
+	const admin = await addTestUser(database, {
+		email: 'ada@example.com',
+		role: 'admin',
+		password: null
+	});
+	const pat = await addTestUser(database, {
+		email: 'pat@example.com',
+		role: 'member',
+		password: null
+	});
+	const kim = await addTestUser(database, {
+		email: 'kim@example.com',
+		role: 'member',
+		password: null
+	});
+	enableMcp(database, admin.id, [pat.id, kim.id]);
+	return { database, admin, pat, kim };
 }
 
 export type EventOptions = {

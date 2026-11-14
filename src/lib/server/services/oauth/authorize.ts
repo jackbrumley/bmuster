@@ -20,7 +20,7 @@ import type { FetchJson } from './safe-fetch.ts';
  * PKCE `S256` and `resource` (exactly this server's `/mcp`) are required.
  */
 
-export type ValidAuthorize = {
+type ValidAuthorize = {
 	client: ClientRecord;
 	redirectUri: string;
 	codeChallenge: string;
@@ -29,13 +29,13 @@ export type ValidAuthorize = {
 	scopes: McpScope[];
 };
 
-export type AuthorizeCheck =
+type AuthorizeCheck =
 	| { kind: 'invalid'; message: string }
 	| { kind: 'redirect'; location: string }
 	| { kind: 'valid'; request: ValidAuthorize };
 
 /** The redirect URI with these parameters added, keeping any query it already has. */
-export function withParameters(redirectUri: string, parameters: Record<string, string>): string {
+function withParameters(redirectUri: string, parameters: Record<string, string>): string {
 	const url = new URL(redirectUri);
 	for (const [name, value] of Object.entries(parameters)) {
 		url.searchParams.set(name, value);
@@ -74,7 +74,7 @@ function requestedScopes(scope: string | undefined): McpScope[] | undefined {
 	return known.includes('machines:read') ? known : ['machines:read', ...known];
 }
 
-export async function checkAuthorize(
+async function checkAuthorize(
 	database: Queryable,
 	params: AuthorizeParams,
 	origin: string,
@@ -139,7 +139,7 @@ export type ConsentView =
 			scopes: McpScope[];
 	  };
 
-export function redirectTarget(redirectUri: string): RedirectTarget {
+function redirectTarget(redirectUri: string): RedirectTarget {
 	return isLoopbackRedirect(redirectUri)
 		? { kind: 'loopback' }
 		: { kind: 'web', host: new URL(redirectUri).host };

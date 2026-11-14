@@ -70,7 +70,7 @@ export function isLoopbackRedirect(raw: string): boolean {
 }
 
 /** A redirect URI a client may declare: HTTPS, or HTTP on loopback; no fragment, no credentials. */
-export function isAcceptableRedirect(raw: string): boolean {
+function isAcceptableRedirect(raw: string): boolean {
 	const url = parsed(raw);
 	if (url?.hash !== '' || raw.includes('#')) {
 		return false;

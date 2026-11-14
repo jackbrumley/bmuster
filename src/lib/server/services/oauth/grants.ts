@@ -47,7 +47,7 @@ export type EndReason = NonNullable<(typeof oauthGrants.$inferSelect)['endedReas
 
 const storedScopes = z.array(z.string());
 
-export function parseScopes(json: string): McpScope[] {
+function parseScopes(json: string): McpScope[] {
 	return storedScopes.parse(JSON.parse(json)).filter(isMcpScope);
 }
 

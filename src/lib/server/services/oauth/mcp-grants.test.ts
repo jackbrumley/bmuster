@@ -1,33 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { testDatabase } from '#tests/helpers/fake-agent.ts';
-import { connectAssistant, enableMcp } from '#tests/helpers/mcp.ts';
-import { addTestUser, NOW } from '#tests/helpers/people.ts';
+import { connectAssistant, mcpPeople } from '#tests/helpers/mcp.ts';
+import { NOW } from '#tests/helpers/people.ts';
 import { assistantStatus, disconnectGrant, listGrants } from './grants.ts';
 import { authenticateAccessToken } from './tokens.ts';
 
 const CLIENT = { ip: '198.51.100.7', userAgent: 'Vitest' };
 const MINUTE = 60_000;
 
-async function setUp() {
-	const database = testDatabase();
-	const admin = await addTestUser(database, {
-		email: 'ada@example.com',
-		role: 'admin',
-		password: null
-	});
-	const pat = await addTestUser(database, {
-		email: 'pat@example.com',
-		role: 'member',
-		password: null
-	});
-	const kim = await addTestUser(database, {
-		email: 'kim@example.com',
-		role: 'member',
-		password: null
-	});
-	enableMcp(database, admin.id, [pat.id, kim.id]);
-	return { database, admin, pat, kim };
-}
+const setUp = mcpPeople;
 
 describe('connected assistants (SPEC-MCP M10)', () => {
 	it('M10: a person sees their own grants: client, verified or not, connected on, last used and address', async () => {
