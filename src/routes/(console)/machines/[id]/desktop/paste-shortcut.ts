@@ -20,7 +20,7 @@ type KeyName = { code: string; key: string };
 type Modifier = { codes: readonly string[]; press: KeyName };
 
 /** A paste chord: its key, and the modifier held with it. */
-export type PasteChord = { key: KeyName; modifier: Modifier };
+type PasteChord = { key: KeyName; modifier: Modifier };
 
 const CONTROL: Modifier = {
 	codes: ['ControlLeft', 'ControlRight'],
@@ -41,7 +41,7 @@ const INSERT: KeyName = { code: 'Insert', key: 'Insert' };
  * Ctrl+V, Cmd+V (Apple keyboards) or Shift+Insert, each with no other modifier and not a
  * repeat; anything else is undefined.
  */
-export function pasteChord(event: KeyboardEvent): PasteChord | undefined {
+function pasteChord(event: KeyboardEvent): PasteChord | undefined {
 	if (event.repeat || event.altKey) {
 		return undefined;
 	}
