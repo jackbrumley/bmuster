@@ -20,7 +20,7 @@ const ANSI = new RegExp(
 	'gu'
 );
 
-export function stripAnsi(text: string): string {
+function stripAnsi(text: string): string {
 	return text.replace(ANSI, '');
 }
 

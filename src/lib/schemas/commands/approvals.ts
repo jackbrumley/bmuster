@@ -6,10 +6,9 @@ import { z } from 'zod';
 import {
 	ASSISTANT_RUN_LIMITS,
 	type ApprovalSummary,
-	type ApprovalView,
 	type LiveEvent
 } from '#lib/domain/commands/assistant-runs.ts';
-import { COMMAND_LIMITS, COMMAND_SHELLS } from '#lib/domain/commands/commands.ts';
+import { COMMAND_LIMITS } from '#lib/domain/commands/commands.ts';
 
 /** The event name on GET /api/live. */
 export const LIVE_EVENT = 'live';
@@ -46,40 +45,6 @@ export const denyRequestSchema = z.object({
 
 export const decidedReplySchema = z.object({ runId: z.uuid() });
 
-const shell = z.enum([...COMMAND_SHELLS.windows, ...COMMAND_SHELLS.linux]);
-
-export const approvalViewSchema: z.ZodType<ApprovalView> = z.object({
-	runId: z.uuid(),
-	requestedBy: z.string(),
-	assistant: z.string(),
-	verified: z.boolean(),
-	reason: z.string(),
-	requestedIso: z.iso.datetime(),
-	expiresIso: z.iso.datetime(),
-	osFamily: z.enum(['windows', 'linux']),
-	shell,
-	command: z.string(),
-	timeoutMs: z.int(),
-	machines: z.array(
-		z.object({
-			id: z.uuid(),
-			name: z.string(),
-			plan: z.enum(['runs', 'offline', 'agent-too-old'])
-		})
-	),
-	decide: z.discriminatedUnion('kind', [
-		z.object({
-			kind: z.literal('yes'),
-			signIn: z.discriminatedUnion('kind', [
-				z.object({ kind: z.literal('recent') }),
-				z.object({ kind: z.literal('password') }),
-				z.object({ kind: z.literal('sign-in-again') })
-			])
-		}),
-		z.object({ kind: z.literal('no'), why: z.string() })
-	])
-});
-
 const approvalSummarySchema: z.ZodType<ApprovalSummary> = z.object({
 	runId: z.uuid(),
 	requestedBy: z.string(),
@@ -89,8 +54,6 @@ const approvalSummarySchema: z.ZodType<ApprovalSummary> = z.object({
 	requestedIso: z.iso.datetime(),
 	expiresIso: z.iso.datetime()
 });
-
-export const approvalsReplySchema = z.object({ approvals: z.array(approvalSummarySchema) });
 
 export const liveEventSchema: z.ZodType<LiveEvent> = z.discriminatedUnion('kind', [
 	z.object({

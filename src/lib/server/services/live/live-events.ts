@@ -41,7 +41,7 @@ export function publishLive(audience: LiveAudience): void {
 }
 
 /** Listens until the returned function is called. */
-export function onLive(listener: Listener): () => void {
+function onLive(listener: Listener): () => void {
 	const all = listeners();
 	all.add(listener);
 	return () => {

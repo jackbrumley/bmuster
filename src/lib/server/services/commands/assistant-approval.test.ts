@@ -29,6 +29,30 @@ afterEach(disconnectAgents);
 const ask = (machines: string[], command = 'uptime') =>
 	runCommandInput.parse({ machines, shell: 'bash', command, reason: 'Check the load' });
 
+/** Ada in an approvers group, with the setting at requester-or-group. Returns the group. */
+function adaApproves(
+	setUp: Pick<Awaited<ReturnType<typeof setUpAssistantRuns>>, 'database' | 'people' | 'clock'>
+): string {
+	const { database, people, clock } = setUp;
+	const groupId = done(
+		createGroup(
+			database,
+			'user',
+			people.admin.id,
+			{ name: 'Approvers', description: '' },
+			clock.now
+		)
+	);
+	done(setGroupMembers(database, 'user', people.admin.id, groupId, [people.admin.id], clock.now));
+	writeApproverSettings(
+		database,
+		people.admin.id,
+		{ mode: 'requester-or-group', groupId },
+		clock.now
+	);
+	return groupId;
+}
+
 async function requested() {
 	const setUp = await setUpAssistantRuns();
 	const pat = await setUp.assistantOf('pat');
@@ -52,22 +76,7 @@ describe('who may approve (SPEC-MCP M19)', () => {
 
 	it('M19: requester-or-group and group-only add or replace the approvers group', async () => {
 		const { database, people, consoleAs, runId, clock } = await requested();
-		const groupId = done(
-			createGroup(
-				database,
-				'user',
-				people.admin.id,
-				{ name: 'Approvers', description: '' },
-				clock.now
-			)
-		);
-		done(setGroupMembers(database, 'user', people.admin.id, groupId, [people.admin.id], clock.now));
-		writeApproverSettings(
-			database,
-			people.admin.id,
-			{ mode: 'requester-or-group', groupId },
-			clock.now
-		);
+		const groupId = adaApproves({ database, people, clock });
 		expect(listApprovals(consoleAs('admin')).map((approval) => approval.runId)).toEqual([runId]);
 		expect(listApprovals(consoleAs('pat')).map((approval) => approval.runId)).toEqual([runId]);
 		writeApproverSettings(database, people.admin.id, { mode: 'group-only', groupId }, clock.now);
@@ -164,22 +173,7 @@ describe('approve, deny, edit (SPEC-MCP M20)', () => {
 
 	it('M20: two decisions at once settle on one; the other sees who decided', async () => {
 		const { database, people, consoleAs, runId, clock } = await requested();
-		const groupId = done(
-			createGroup(
-				database,
-				'user',
-				people.admin.id,
-				{ name: 'Approvers', description: '' },
-				clock.now
-			)
-		);
-		done(setGroupMembers(database, 'user', people.admin.id, groupId, [people.admin.id], clock.now));
-		writeApproverSettings(
-			database,
-			people.admin.id,
-			{ mode: 'requester-or-group', groupId },
-			clock.now
-		);
+		adaApproves({ database, people, clock });
 		const [approved, denied] = await Promise.all([
 			approveRun(consoleAs('pat'), runId, asAsked('uptime', 60_000, 1)),
 			Promise.resolve(denyRun(consoleAs('admin'), runId, ''))

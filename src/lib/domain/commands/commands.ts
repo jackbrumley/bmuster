@@ -238,7 +238,7 @@ export type RunOrigin =
 			decision: RunDecision;
 	  };
 
-export type RunDecision =
+type RunDecision =
 	| { kind: 'pending' }
 	| { kind: 'approved'; by: string; atIso: string; edit: RunEdit }
 	| { kind: 'denied'; by: string; atIso: string; note: string }
@@ -246,7 +246,7 @@ export type RunDecision =
 	| { kind: 'cancelled' };
 
 /** What the approver changed before approving (M20). */
-export type RunEdit =
+type RunEdit =
 	{ kind: 'unchanged' } | { kind: 'edited'; requestedCommand: string; requestedTimeoutMs: number };
 
 /** "Jack Brumley", or "Jack Brumley via Claude Code" for an assistant's run (M28). */

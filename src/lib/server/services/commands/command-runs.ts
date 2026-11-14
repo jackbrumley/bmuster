@@ -16,7 +16,7 @@ import {
  */
 
 /** A person's run starts at once; an assistant's waits for a person's approval (SPEC-MCP M17). */
-export type NewRunOrigin =
+type NewRunOrigin =
 	{ kind: 'person' } | { kind: 'assistant'; grantId: string; reason: string; expiresAt: number };
 
 export type NewRun = {

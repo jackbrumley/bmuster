@@ -19,7 +19,14 @@ import {
 	type Ticket
 } from '#tests/helpers/assistant-runs.ts';
 import { enrolFakeAgent } from '#tests/helpers/fake-agent.ts';
-import { connectAssistant, enableMcp, invoke, ORIGIN, rpcReply } from '#tests/helpers/mcp.ts';
+import {
+	connectAssistant,
+	enableMcp,
+	invoke,
+	ORIGIN,
+	rpcReply,
+	type EventOptions
+} from '#tests/helpers/mcp.ts';
 import { addTestUser, NOW, PASSWORD } from '#tests/helpers/people.ts';
 import { POST as approvePost } from '../../src/routes/api/commands/runs/[id=uuid]/approve/+server.ts';
 import { POST as denyPost } from '../../src/routes/api/commands/runs/[id=uuid]/deny/+server.ts';
@@ -126,34 +133,28 @@ async function call(name: string, args: Record<string, unknown>) {
 }
 
 /** A console POST from Pat's own browser session. */
-function consolePost(
-	handler: typeof approvePost,
-	action: 'approve' | 'deny',
-	runId: string,
-	body: unknown
-): Promise<Response> {
+function consolePost(action: 'approve' | 'deny', runId: string, body: unknown): Promise<Response> {
+	const options: EventOptions = {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json',
+			origin: ORIGIN,
+			cookie: `bmuster_session=${sessionToken}`
+		},
+		body: JSON.stringify(body),
+		session: { kind: 'signed-in', user: pat },
+		address: ADDRESS
+	};
+	const path = `/api/commands/runs/${runId}/${action}`;
 	return Promise.resolve(
-		invoke(
-			handler,
-			`/api/commands/runs/${runId}/${action}`,
-			{
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-					origin: ORIGIN,
-					cookie: `bmuster_session=${sessionToken}`
-				},
-				body: JSON.stringify(body),
-				session: { kind: 'signed-in', user: pat },
-				address: ADDRESS
-			},
-			{ id: runId }
-		)
+		action === 'approve'
+			? invoke(approvePost, path, options, { id: runId })
+			: invoke(denyPost, path, options, { id: runId })
 	);
 }
 
 const approve = (runId: string, command: string, count = 1) =>
-	consolePost(approvePost, 'approve', runId, {
+	consolePost('approve', runId, {
 		command,
 		timeoutMs: 60_000,
 		confirmCount: count,
@@ -246,7 +247,7 @@ describe('MCP conformance, step 2 (SPEC-MCP 14.1, 14.2)', () => {
 		const tickets = connect(mint);
 		const asked = call('run_command', ask('rm -rf /tmp/cache'));
 		const runId = await waitingRun();
-		expect((await consolePost(denyPost, 'deny', runId, { note: 'Ask me first' })).status).toBe(200);
+		expect((await consolePost('deny', runId, { note: 'Ask me first' })).status).toBe(200);
 		const output = commandResultOutput.parse((await asked).structuredContent);
 		expect(output).toMatchObject({
 			status: 'denied',
