@@ -155,6 +155,13 @@
       "when": 1794581908403,
       "tag": "0021_lumpy_lady_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1794615780634,
+      "tag": "0022_flawless_darkstar",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,7 @@ export {
 	storageCleanups
 } from './schema/machines.ts';
 export { notificationEvents, notificationRules } from './schema/notifications.ts';
+export { oauthClients, oauthCodes, oauthGrants, oauthTokens } from './schema/oauth.ts';
 export { passwordLinks } from './schema/password-links.ts';
 export { serverKeys } from './schema/server-keys.ts';
 export { consoleSessions, signInFailures } from './schema/sessions.ts';
