@@ -29,7 +29,14 @@ export default defineConfig(({ command, mode }) => ({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			adapter: adapter(),
+			// Cross-site protection is BMuster's own origin hook (SPEC-SIGN-IN S8,
+			// src/lib/server/hooks/origin-check.ts): stricter than SvelteKit's, since it
+			// refuses every cross-origin or origin-less write, JSON included, not only
+			// form posts. SvelteKit's check runs in production only and would refuse
+			// the form-encoded OAuth token requests AI assistants send with no Origin
+			// (SPEC-MCP), which the hook deliberately leaves to those endpoints' guards.
+			csrf: { trustedOrigins: ['*'] }
 		}),
 		// Attaches the socket routes (agents' live sockets) to the dev server.
 		webSockets(),
