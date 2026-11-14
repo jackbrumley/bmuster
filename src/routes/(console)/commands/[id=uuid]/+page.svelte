@@ -24,10 +24,10 @@
 {:else}
 	<PageHeader
 		title="Command run"
-		summary="One row per machine, updating as each finishes. Tap a machine to see its output."
+		summary="One row per machine, updating live. Tap a machine to see its output, so far while it runs."
 		actions={undefined}
 	/>
 	{#key data.run.id}
-		<RunResults initial={data.run} now={data.now} />
+		<RunResults initial={data.run} now={data.now} openMachineId={data.openMachineId} />
 	{/key}
 {/if}
