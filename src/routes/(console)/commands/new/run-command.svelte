@@ -2,7 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import type { SignInCheck } from '#lib/domain/auth/sign-in-check.ts';
+	import { recheckAsk, type SignInCheck } from '#lib/domain/auth/sign-in-check.ts';
 	import {
 		COMMAND_LIMITS,
 		COMMAND_OS_FAMILIES,
@@ -167,7 +167,7 @@
 			message: `${ready.map((script) => `${commandOsLabel(script.osFamily)}: ${firstLine(script.command)}`).join(' · ')}. It runs as Administrator (root or SYSTEM).`,
 			confirmLabel: 'Run',
 			typedCount: count > COMMAND_LIMITS.typedCountAbove ? count : null,
-			askPassword: plan.signIn.kind === 'password'
+			recheck: recheckAsk(plan.signIn)
 		});
 		if (answer.kind === 'no') {
 			return;
@@ -181,8 +181,7 @@
 				scripts: ready,
 				timeoutMs: Number(timeout),
 				confirmCount: count,
-				password:
-					answer.password === '' ? { kind: 'none' } : { kind: 'given', password: answer.password },
+				recheck: answer.recheck,
 				rerunOf: draft.rerunOf
 			},
 			reply: startRunReplySchema

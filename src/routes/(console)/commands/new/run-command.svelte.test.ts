@@ -1,3 +1,4 @@
+import type { RecheckRequest } from '#lib/schemas/auth/recheck.ts';
 import '../../../../app.css';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
@@ -46,11 +47,11 @@ function draft(machineIds: string[]) {
 	return { machineIds, scripts: [], timeoutMs: 60_000, rerunOf: null };
 }
 
-async function answer(yes: { typed: string; password: string } | null): Promise<void> {
+async function answer(yes: { typed: string; recheck: RecheckRequest } | null): Promise<void> {
 	await expect.poll(() => confirmation.current.kind).toBe('asking');
 	const current = confirmation.current;
 	if (current.kind !== 'asking') throw new Error('not asking');
-	current.answer(yes === null ? { kind: 'no' } : { kind: 'yes', password: yes.password });
+	current.answer(yes === null ? { kind: 'no' } : { kind: 'yes', recheck: yes.recheck });
 }
 
 beforeEach(async () => {
@@ -145,15 +146,18 @@ describe('Run command (SPEC-COMMANDS C6, C8, C9)', () => {
 		expect(asked.options.message).toContain('Restart-Service Spooler');
 		expect(asked.typed).toEqual({ kind: 'count', count: 12 });
 		// Signed in more than 10 minutes ago: the same dialog asks for the password (C10).
-		expect(asked.password).toEqual({ kind: 'ask' });
-		await answer({ typed: '12', password: 'correct horse battery' });
+		expect(asked.recheck).toBe('password');
+		await answer({
+			typed: '12',
+			recheck: { kind: 'password', password: 'correct horse battery' }
+		});
 		await expect.poll(() => sent.length).toBe(1);
 		expect(sent[0]).toMatchObject({
 			machineIds: machines.map((machine) => machine.id),
 			scripts: [{ osFamily: 'windows', shell: 'powershell', command: 'Restart-Service Spooler' }],
 			timeoutMs: 60_000,
 			confirmCount: 12,
-			password: { kind: 'given', password: 'correct horse battery' },
+			recheck: { kind: 'password', password: 'correct horse battery' },
 			rerunOf: null
 		});
 		await expect.poll(() => goto.mock.calls.length).toBe(1);
@@ -173,8 +177,23 @@ describe('Run command (SPEC-COMMANDS C6, C8, C9)', () => {
 		if (asked.kind !== 'asking') throw new Error('not asking');
 		expect(asked.options.title).toBe('Run on 2 machines?');
 		expect(asked.typed).toEqual({ kind: 'none' });
-		expect(asked.password).toEqual({ kind: 'none' });
+		expect(asked.recheck).toBe('none');
 		await answer(null);
 		expect(sent).toEqual([]);
+	});
+
+	it('SPEC-TWO-FACTOR TF13: with two-factor on, the dialog asks for an authenticator code', async () => {
+		const sent = stubServer([planned(1, 'linux', RUNS)], { kind: 'code' });
+		const screen = await render(RunCommand, { draft: draft([id(1)]) });
+		await screen.getByRole('textbox', { name: /^Linux command/ }).fill('uptime');
+		await screen.getByRole('button', { name: 'Review' }).click();
+		await screen.getByRole('button', { name: 'Run' }).click();
+		await expect.poll(() => confirmation.current.kind).toBe('asking');
+		const asked = confirmation.current;
+		if (asked.kind !== 'asking') throw new Error('not asking');
+		expect(asked.recheck).toBe('code');
+		await answer({ typed: '', recheck: { kind: 'code', code: '123456' } });
+		await expect.poll(() => sent.length).toBe(1);
+		expect(sent[0]).toMatchObject({ recheck: { kind: 'code', code: '123456' } });
 	});
 });

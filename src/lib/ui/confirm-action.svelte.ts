@@ -1,3 +1,6 @@
+import type { RecheckAsk } from '#lib/domain/auth/sign-in-check.ts';
+import type { RecheckRequest } from '#lib/schemas/auth/recheck.ts';
+
 /**
  * The shared confirmation for anything destructive (AGENTS.md §12): call
  * `confirmAction()`, await the answer, and only then send the request. The
@@ -16,11 +19,8 @@ export type ConfirmOptions = {
 type TypedCheck =
 	{ kind: 'none' } | { kind: 'text'; text: string } | { kind: 'count'; count: number };
 
-/** `ask`: the dialog asks for the person's password too (SPEC-COMMANDS C10). */
-type PasswordCheck = { kind: 'none' } | { kind: 'ask' };
-
-/** How the dialog was answered; `password` is '' unless it was asked for. */
-export type ConfirmAnswer = { kind: 'no' } | { kind: 'yes'; password: string };
+/** How the dialog was answered; `recheck` is `none` unless it asked for something. */
+export type ConfirmAnswer = { kind: 'no' } | { kind: 'yes'; recheck: RecheckRequest };
 
 type Pending =
 	| { kind: 'none' }
@@ -28,14 +28,14 @@ type Pending =
 			kind: 'asking';
 			options: ConfirmOptions;
 			typed: TypedCheck;
-			password: PasswordCheck;
+			recheck: RecheckAsk;
 			answer: (answer: ConfirmAnswer) => void;
 	  };
 
 export const confirmation = $state<{ current: Pending }>({ current: { kind: 'none' } });
 
 export async function confirmAction(options: ConfirmOptions): Promise<boolean> {
-	return (await ask(options, { kind: 'none' }, { kind: 'none' })).kind === 'yes';
+	return (await ask(options, { kind: 'none' }, 'none')).kind === 'yes';
 }
 
 /**
@@ -45,30 +45,28 @@ export async function confirmAction(options: ConfirmOptions): Promise<boolean> {
 export async function confirmByTyping(
 	options: ConfirmOptions & { text: string }
 ): Promise<boolean> {
-	return (
-		(await ask(options, { kind: 'text', text: options.text }, { kind: 'none' })).kind === 'yes'
-	);
+	return (await ask(options, { kind: 'text', text: options.text }, 'none')).kind === 'yes';
 }
 
 /**
  * Running a command on many machines (SPEC-COMMANDS C9, C10): above a threshold the person types
- * the machine count, and when their sign-in is not recent they give their password, in the same
- * dialog. The server checks both again.
+ * the machine count, and when their sign-in is not recent they give their password (or an
+ * authenticator code), in the same dialog. The server checks both again.
  */
 export function confirmWithChecks(
-	options: ConfirmOptions & { typedCount: number | null; askPassword: boolean }
+	options: ConfirmOptions & { typedCount: number | null; recheck: RecheckAsk }
 ): Promise<ConfirmAnswer> {
 	return ask(
 		options,
 		options.typedCount === null ? { kind: 'none' } : { kind: 'count', count: options.typedCount },
-		options.askPassword ? { kind: 'ask' } : { kind: 'none' }
+		options.recheck
 	);
 }
 
 function ask(
 	options: ConfirmOptions,
 	typed: TypedCheck,
-	password: PasswordCheck
+	recheck: RecheckAsk
 ): Promise<ConfirmAnswer> {
 	if (confirmation.current.kind === 'asking') {
 		confirmation.current.answer({ kind: 'no' });
@@ -78,7 +76,7 @@ function ask(
 			kind: 'asking',
 			options,
 			typed,
-			password,
+			recheck,
 			answer: (answer) => {
 				confirmation.current = { kind: 'none' };
 				resolve(answer);

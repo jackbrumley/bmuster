@@ -412,7 +412,7 @@ export async function approveRun(
 			message: 'The command has text-direction control characters. Remove them.'
 		};
 	}
-	const signIn = await checkRecentSignIn(context, request.password);
+	const signIn = await checkRecentSignIn(context, request.recheck);
 	if (signIn !== undefined) {
 		return signIn;
 	}

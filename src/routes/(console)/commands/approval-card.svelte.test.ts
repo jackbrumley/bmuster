@@ -52,7 +52,7 @@ async function answerYes(): Promise<string> {
 	const current = confirmation.current;
 	if (current.kind !== 'asking') throw new Error('not asking');
 	const message = current.options.message;
-	current.answer({ kind: 'yes', password: '' });
+	current.answer({ kind: 'yes', recheck: { kind: 'none' } });
 	return message;
 }
 
@@ -112,7 +112,7 @@ describe('the approval card (SPEC-MCP M25)', () => {
 				command: 'systemctl status restic-backup.service',
 				timeoutMs: 60_000,
 				confirmCount: 2,
-				password: { kind: 'none' }
+				recheck: { kind: 'none' }
 			}
 		});
 	});

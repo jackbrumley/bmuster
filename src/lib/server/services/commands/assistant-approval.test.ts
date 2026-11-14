@@ -1,3 +1,5 @@
+import { codeFor, turnOnTwoFactor } from '#tests/helpers/two-factor.ts';
+import { findUserById } from '../users/users.ts';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
 	cancelCommandInput,
@@ -108,7 +110,28 @@ describe('who may approve (SPEC-MCP M19)', () => {
 		expect(
 			await approveRun(later, runId, {
 				...asAsked('uptime', 60_000, 1),
-				password: { kind: 'given', password: PASSWORD }
+				recheck: { kind: 'password', password: PASSWORD }
+			})
+		).toEqual({ kind: 'approved', runId });
+	});
+
+	it('SPEC-TWO-FACTOR TF13: with two-factor on, approving later takes an authenticator code', async () => {
+		const { consoleAs, clock, pat, tools, database, people } = await requested();
+		const row = findUserById(database, people.pat.id);
+		if (row === undefined) throw new Error('no Pat');
+		await turnOnTwoFactor(database, row, clock.now);
+		clock.now += 9 * MINUTE;
+		const asked = await runCommandTool(tools(pat), ask(['mint']));
+		const runId = asked.kind === 'ok' ? asked.output.runId : '';
+		clock.now += 2 * MINUTE;
+		const later = consoleAs('pat');
+		expect(approvalViewFor(later, runId)).toMatchObject({
+			decide: { kind: 'yes', signIn: { kind: 'code' } }
+		});
+		expect(
+			await approveRun(later, runId, {
+				...asAsked('uptime', 60_000, 1),
+				recheck: { kind: 'code', code: codeFor(database, people.pat.id, clock.now) }
 			})
 		).toEqual({ kind: 'approved', runId });
 	});

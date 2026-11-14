@@ -1,3 +1,4 @@
+import { SECRETS_KEY } from './email.ts';
 import { eq } from 'drizzle-orm';
 import { expect } from 'vitest';
 import { z } from 'zod';
@@ -28,7 +29,6 @@ import { addTestUser, NOW, PASSWORD } from './people.ts';
  * each system, a fake agent socket per machine, and Pat's assistant connected.
  */
 
-const SECRETS_KEY = Buffer.alloc(32, 3);
 export const MINUTE = 60_000;
 
 /** The parts of an exec ticket these tests read. */
@@ -210,6 +210,7 @@ export async function setUpAssistantRuns() {
 		runner,
 		user: people[who],
 		sessionToken: sessions[who],
+		secretsKey: SECRETS_KEY,
 		ip: '192.0.2.9',
 		now: clock.now
 	});
@@ -255,5 +256,5 @@ export async function setUpAssistantRuns() {
 
 /** Approve as asked: the command and time limit unchanged, the count typed, no password. */
 export function asAsked(command: string, timeoutMs: number, count: number): ApproveRequest {
-	return { command, timeoutMs, confirmCount: count, password: { kind: 'none' } };
+	return { command, timeoutMs, confirmCount: count, recheck: { kind: 'none' } };
 }

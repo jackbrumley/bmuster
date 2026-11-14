@@ -157,7 +157,7 @@ describe('Share links on the machine page (SPEC-SHARE-LINKS)', () => {
 		await end.click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
 		if (confirmation.current.kind === 'asking')
-			confirmation.current.answer({ kind: 'yes', password: '' });
+			confirmation.current.answer({ kind: 'yes', recheck: { kind: 'none' } });
 		await expect
 			.poll(() => calls.filter((call) => call.method === 'DELETE').map((call) => call.url))
 			.toEqual([`/api/share-links/${LINK_ID}`]);

@@ -1,3 +1,6 @@
+import { SECRETS_KEY } from '#tests/helpers/email.ts';
+import { codeFor, turnOnTwoFactor } from '#tests/helpers/two-factor.ts';
+import { findUserById } from '../users/users.ts';
 import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -20,7 +23,6 @@ import { createCommandRunner } from './command-runner.ts';
 import { cancelRun, planRun, startRun, type CommandContext } from './commands.ts';
 import { listRunsFor, runOutputFor, runViewFor } from './run-views.ts';
 
-const SECRETS_KEY = Buffer.alloc(32, 3);
 const MINUTE = 60_000;
 
 const connected: { machineId: string; peer: LivePeer }[] = [];
@@ -126,6 +128,7 @@ async function setUp() {
 		runner,
 		user: who === 'admin' ? admin : pat,
 		sessionToken: who === 'admin' ? adminToken : patToken,
+		secretsKey: SECRETS_KEY,
 		ip: '192.0.2.1',
 		now: at
 	});
@@ -138,7 +141,7 @@ function request(machineIds: string[], overrides: Partial<StartRunRequest> = {})
 		scripts: [{ osFamily: 'linux', shell: 'sh', command: 'systemctl restart cups' }],
 		timeoutMs: 60_000,
 		confirmCount: machineIds.length,
-		password: { kind: 'none' },
+		recheck: { kind: 'none' },
 		rerunOf: null,
 		...overrides
 	};
@@ -208,7 +211,7 @@ describe('recent sign-in (C10)', () => {
 		});
 		const started = await startRun(
 			context('admin', later),
-			request([office], { password: { kind: 'given', password: PASSWORD } })
+			request([office], { recheck: { kind: 'password', password: PASSWORD } })
 		);
 		expect(started.kind).toBe('started');
 		// The password check is fresh for the next 10 minutes.
@@ -216,6 +219,37 @@ describe('recent sign-in (C10)', () => {
 			signIn: { kind: 'recent' }
 		});
 		expect(listAudit(database, 50).some((entry) => entry.kind === 'password-confirmed')).toBe(true);
+	});
+
+	it('SPEC-TWO-FACTOR TF13: with two-factor on, the check takes an authenticator code', async () => {
+		const { database, admin, context } = await setUp();
+		const row = findUserById(database, admin.id);
+		if (row === undefined) throw new Error('no admin');
+		await turnOnTwoFactor(database, row, NOW);
+		const office = enrol(database, 'Office', 'linux');
+		connect(office);
+		const later = NOW + 11 * MINUTE;
+		expect(planRun(context('admin', later), [office])).toMatchObject({
+			signIn: { kind: 'code' }
+		});
+		expect(await startRun(context('admin', later), request([office]))).toMatchObject({
+			kind: 'refused',
+			status: 403,
+			message:
+				'You signed in more than 10 minutes ago. Type a code from your authenticator app to run it.'
+		});
+		expect(
+			await startRun(
+				context('admin', later),
+				request([office], { recheck: { kind: 'password', password: PASSWORD } })
+			)
+		).toMatchObject({ kind: 'refused', status: 403 });
+		const started = await startRun(
+			context('admin', later),
+			request([office], { recheck: { kind: 'code', code: codeFor(database, admin.id, later) } })
+		);
+		expect(started.kind).toBe('started');
+		expect(listAudit(database, 50).some((entry) => entry.kind === 'code-confirmed')).toBe(true);
 	});
 
 	it('C10: a wrong password is refused and counts toward the sign-in pauses', async () => {
@@ -227,7 +261,7 @@ describe('recent sign-in (C10)', () => {
 			expect(
 				await startRun(
 					context('admin', later),
-					request([office], { password: { kind: 'given', password: 'wrong' } })
+					request([office], { recheck: { kind: 'password', password: 'wrong' } })
 				)
 			).toMatchObject({ kind: 'refused', status: 403, message: 'That password is not right.' });
 		}
@@ -238,7 +272,7 @@ describe('recent sign-in (C10)', () => {
 		expect(
 			await startRun(
 				context('admin', later),
-				request([office], { password: { kind: 'given', password: PASSWORD } })
+				request([office], { recheck: { kind: 'password', password: PASSWORD } })
 			)
 		).toMatchObject({ kind: 'refused', status: 429 });
 		const failures = listAudit(database, 50).filter((entry) => entry.kind === 'sign-in-failed');
@@ -264,7 +298,7 @@ describe('recent sign-in (C10)', () => {
 		expect(
 			await startRun(
 				context('pat', later),
-				request([office], { password: { kind: 'given', password: 'anything' } })
+				request([office], { recheck: { kind: 'password', password: 'anything' } })
 			)
 		).toEqual({
 			kind: 'refused',

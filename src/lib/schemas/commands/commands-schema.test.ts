@@ -10,7 +10,7 @@ function start(overrides: Record<string, unknown>) {
 		scripts: [{ osFamily: 'linux', shell: 'sh', command: 'uptime' }],
 		timeoutMs: 60_000,
 		confirmCount: 1,
-		password: { kind: 'none' },
+		recheck: { kind: 'none' },
 		rerunOf: null,
 		...overrides
 	});

@@ -69,7 +69,7 @@ describe('the Account page (SPEC-MCP M10)', () => {
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
 		expect(calls).toEqual([]);
 		if (confirmation.current.kind === 'asking') {
-			confirmation.current.answer({ kind: 'yes', password: '' });
+			confirmation.current.answer({ kind: 'yes', recheck: { kind: 'none' } });
 		}
 		await expect
 			.poll(() => calls)

@@ -266,7 +266,7 @@ describe('the desktop tab', () => {
 		await screen.getByRole('button', { name: 'Disconnect' }).click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
 		if (confirmation.current.kind === 'asking')
-			confirmation.current.answer({ kind: 'yes', password: '' });
+			confirmation.current.answer({ kind: 'yes', recheck: { kind: 'none' } });
 		await expect.poll(() => socket.messages()).toContainEqual({ type: 'end' });
 		socket.receive(
 			JSON.stringify({

@@ -118,7 +118,7 @@ describe('the Keys menu', () => {
 		await button.click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
 		if (confirmation.current.kind === 'asking')
-			confirmation.current.answer({ kind: 'yes', password: '' });
+			confirmation.current.answer({ kind: 'yes', recheck: { kind: 'none' } });
 		await expect.poll(() => sent).toEqual([{ type: 'special', name: 'ctrl-alt-del' }]);
 	});
 

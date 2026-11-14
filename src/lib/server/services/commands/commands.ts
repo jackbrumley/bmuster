@@ -11,11 +11,12 @@ import {
 import { compareAgentVersions, isAgentVersion } from '#lib/domain/machines/agent-version.ts';
 import type { OsFamily } from '#lib/domain/machines/machine.ts';
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
+import type { RecheckRequest } from '#lib/schemas/auth/recheck.ts';
 import type { StartRunRequest } from '#lib/schemas/commands/commands.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { permissionsFor } from '../access/access.ts';
 import { isAgentConnected } from '../agents/live-agents.ts';
-import { reconfirmPassword, signInCheck, SIGN_IN_AGAIN } from '../auth/recent-sign-in.ts';
+import { reconfirmSignIn, signInCheck, SIGN_IN_AGAIN } from '../auth/recent-sign-in.ts';
 import { machineAgentFacts } from '../machines/machine-views.ts';
 import { cancelPendingRun, cancelStartedRun } from './assistant-pending.ts';
 import { auditRunStarted } from './command-audit.ts';
@@ -34,6 +35,8 @@ export type CommandContext = {
 	user: ConsoleUser;
 	/** The console session's cookie, for the recent sign-in check. */
 	sessionToken: string;
+	/** Opens the authenticator key when the recent sign-in check takes a code (SPEC-TWO-FACTOR). */
+	secretsKey: Buffer;
 	ip: string;
 	now: number;
 };
@@ -87,7 +90,7 @@ export function agentTooOld(version: string): boolean {
 	return !isAgentVersion(version) || compareAgentVersions(version, FIRST_COMMANDS_AGENT) < 0;
 }
 
-/** What Review shows for these machines (C8), and whether the password is needed (C10). */
+/** What Review shows for these machines (C8), and whether a password or code is needed (C10). */
 export function planRun(
 	context: Pick<CommandContext, 'database' | 'user' | 'sessionToken' | 'now'>,
 	machineIds: readonly string[]
@@ -117,10 +120,13 @@ export function planRun(
 	};
 }
 
-/** C10: a recent sign-in, or the password now. Approving an assistant's command uses it too. */
+/**
+ * C10: a recent sign-in, or the password now (an authenticator code with two-factor on,
+ * SPEC-TWO-FACTOR 2.7). Approving an assistant's command uses it too.
+ */
 export async function checkRecentSignIn(
 	context: CommandContext,
-	password: StartRunRequest['password']
+	recheck: RecheckRequest
 ): Promise<Refused | undefined> {
 	const check = signInCheck(
 		context.database,
@@ -129,32 +135,29 @@ export async function checkRecentSignIn(
 		COMMAND_LIMITS.recentSignInMs,
 		context.now
 	);
-	switch (check.kind) {
-		case 'recent':
-			return undefined;
-		case 'sign-in-again':
-			return { kind: 'refused', status: 403, message: SIGN_IN_AGAIN };
-		case 'password': {
-			if (password.kind === 'none') {
-				return {
-					kind: 'refused',
-					status: 403,
-					message: 'You signed in more than 10 minutes ago. Type your password to run it.'
-				};
-			}
-			const confirmed = await reconfirmPassword(
-				context.database,
-				{
-					token: context.sessionToken,
-					userId: context.user.id,
-					password: password.password,
-					ip: context.ip
-				},
-				context.now
-			);
-			return confirmed.kind === 'confirmed' ? undefined : confirmed;
-		}
+	if (check.kind === 'recent') {
+		return undefined;
 	}
+	if (check.kind === 'sign-in-again') {
+		return { kind: 'refused', status: 403, message: SIGN_IN_AGAIN };
+	}
+	if (recheck.kind === 'none') {
+		return {
+			kind: 'refused',
+			status: 403,
+			message:
+				check.kind === 'code'
+					? 'You signed in more than 10 minutes ago. Type a code from your authenticator app to run it.'
+					: 'You signed in more than 10 minutes ago. Type your password to run it.'
+		};
+	}
+	const confirmed = await reconfirmSignIn(
+		context.database,
+		context.secretsKey,
+		{ token: context.sessionToken, userId: context.user.id, recheck, ip: context.ip },
+		context.now
+	);
+	return confirmed.kind === 'confirmed' ? undefined : confirmed;
 }
 
 /** Starts a run (C8–C15). Machines skipped at the start are recorded with their reason. */
@@ -214,7 +217,7 @@ export async function startRun(
 	if (request.rerunOf !== null && findRun(context.database, request.rerunOf) === undefined) {
 		return { kind: 'refused', status: 404, message: 'No command run with this id.' };
 	}
-	const signIn = await checkRecentSignIn(context, request.password);
+	const signIn = await checkRecentSignIn(context, request.recheck);
 	if (signIn !== undefined) {
 		return signIn;
 	}

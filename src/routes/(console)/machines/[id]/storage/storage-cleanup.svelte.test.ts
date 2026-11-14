@@ -104,7 +104,7 @@ describe('the Clean up panel (SPEC-STORAGE S20)', () => {
 		await screen.getByRole('button', { name: 'Clean up' }).click();
 		await expect.poll(() => confirmation.current.kind).toBe('asking');
 		if (confirmation.current.kind === 'asking') {
-			confirmation.current.answer({ kind: 'yes', password: '' });
+			confirmation.current.answer({ kind: 'yes', recheck: { kind: 'none' } });
 		}
 		await expect
 			.poll(() => starts().map((request) => request.body))

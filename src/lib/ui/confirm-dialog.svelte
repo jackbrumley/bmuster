@@ -2,6 +2,7 @@
 	import Button from './button.svelte';
 	import CopyField from './copy-field.svelte';
 	import TextField from './text-field.svelte';
+	import type { RecheckRequest } from '#lib/schemas/auth/recheck.ts';
 	import { confirmation } from './confirm-action.svelte.ts';
 
 	/** Shows the question `confirmAction()` asks. Mounted once, in the console frame. */
@@ -24,8 +25,8 @@
 
 	let typedText = $state('');
 	let typedError = $state<string | undefined>(undefined);
-	let password = $state('');
-	let passwordError = $state<string | undefined>(undefined);
+	let secret = $state('');
+	let secretError = $state<string | undefined>(undefined);
 
 	/** Why the typed check does not pass yet, or undefined when it does. */
 	function typedProblem(): string | undefined {
@@ -44,21 +45,38 @@
 		}
 	}
 
+	/** What the person typed for the recent sign-in check, as the request carries it. */
+	function recheckGiven(): RecheckRequest {
+		switch (asking?.recheck) {
+			case undefined:
+			case 'none':
+				return { kind: 'none' };
+			case 'password':
+				return { kind: 'password', password: secret };
+			case 'code':
+				return { kind: 'code', code: secret.trim() };
+		}
+	}
+
 	function answer(yes: boolean): void {
 		if (yes) {
 			typedError = typedProblem();
-			passwordError =
-				asking?.password.kind === 'ask' && password === '' ? 'Type your password.' : undefined;
-			if (typedError !== undefined || passwordError !== undefined) {
+			secretError =
+				asking?.recheck === 'password' && secret === ''
+					? 'Type your password.'
+					: asking?.recheck === 'code' && secret.trim() === ''
+						? 'Type the code from your authenticator app.'
+						: undefined;
+			if (typedError !== undefined || secretError !== undefined) {
 				return;
 			}
 		}
-		const given = password;
+		const recheck = recheckGiven();
 		typedText = '';
 		typedError = undefined;
-		password = '';
-		passwordError = undefined;
-		asking?.answer(yes ? { kind: 'yes', password: given } : { kind: 'no' });
+		secret = '';
+		secretError = undefined;
+		asking?.answer(yes ? { kind: 'yes', recheck } : { kind: 'no' });
 	}
 </script>
 
@@ -102,7 +120,7 @@
 				/>
 			</div>
 		{/if}
-		{#if asking.password.kind === 'ask'}
+		{#if asking.recheck === 'password'}
 			<div class="typed">
 				<TextField
 					label="Your password (you signed in more than 10 minutes ago)"
@@ -111,8 +129,21 @@
 					autocomplete="current-password"
 					autocapitalize="off"
 					required={true}
-					error={passwordError}
-					bind:value={password}
+					error={secretError}
+					bind:value={secret}
+				/>
+			</div>
+		{:else if asking.recheck === 'code'}
+			<div class="typed">
+				<TextField
+					label="Code from your authenticator app (you signed in more than 10 minutes ago)"
+					name="confirm-code"
+					type="one-time-code"
+					autocomplete="one-time-code"
+					autocapitalize="off"
+					required={true}
+					error={secretError}
+					bind:value={secret}
 				/>
 			</div>
 		{/if}

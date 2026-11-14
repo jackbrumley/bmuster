@@ -3,6 +3,7 @@
  * a request with the same schema (C7).
  */
 import { z } from 'zod';
+import { recheckSchema } from '../auth/recheck.ts';
 import {
 	COMMAND_LIMITS,
 	COMMAND_SHELLS,
@@ -80,6 +81,7 @@ const plannedMachineSchema: z.ZodType<PlannedMachine> = z.object({
 const signInCheckSchema: z.ZodType<SignInCheck> = z.discriminatedUnion('kind', [
 	z.object({ kind: z.literal('recent') }),
 	z.object({ kind: z.literal('password') }),
+	z.object({ kind: z.literal('code') }),
 	z.object({ kind: z.literal('sign-in-again') })
 ]);
 
@@ -90,17 +92,14 @@ export const planReplySchema = z.object({
 
 /**
  * POST /api/commands/runs (C7–C12). `confirmCount` is the number typed in the confirmation
- * (the machine count when 10 or fewer); `password` when the last check is too old (C10).
+ * (the machine count when 10 or fewer); `recheck` when the last check is too old (C10).
  */
 export const startRunRequestSchema = z.object({
 	machineIds,
 	scripts,
 	timeoutMs,
 	confirmCount: z.int().min(0),
-	password: z.discriminatedUnion('kind', [
-		z.object({ kind: z.literal('none') }),
-		z.object({ kind: z.literal('given'), password: z.string().min(1).max(1024) })
-	]),
+	recheck: recheckSchema,
 	rerunOf: z.uuid().nullable()
 });
 

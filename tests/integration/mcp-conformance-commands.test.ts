@@ -158,7 +158,7 @@ const approve = (runId: string, command: string, count = 1) =>
 		command,
 		timeoutMs: 60_000,
 		confirmCount: count,
-		password: { kind: 'none' }
+		recheck: { kind: 'none' }
 	});
 
 /** The run the assistant just asked for, once it is waiting. */
@@ -307,7 +307,7 @@ describe('MCP conformance, step 2 (SPEC-MCP 14.1, 14.2)', () => {
 					command: 'uptime',
 					timeoutMs: 60_000,
 					confirmCount: 1,
-					password: { kind: 'none' }
+					recheck: { kind: 'none' }
 				}),
 				session: { kind: 'none' },
 				address: ADDRESS

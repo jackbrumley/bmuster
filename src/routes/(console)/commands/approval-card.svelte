@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { recheckAsk } from '#lib/domain/auth/sign-in-check.ts';
 	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { IconAlertTriangle, IconRobot } from '@tabler/icons-svelte-runes';
@@ -148,7 +149,7 @@
 				: `${shown}. It runs as ${runsAs}, time limit ${limitText(shownLimit)}.`,
 			confirmLabel: 'Approve and run',
 			typedCount: null,
-			askPassword: view.decide.signIn.kind === 'password'
+			recheck: recheckAsk(view.decide.signIn)
 		});
 		if (answer.kind === 'no') {
 			return;
@@ -161,8 +162,7 @@
 				command: shown,
 				timeoutMs: shownLimit,
 				confirmCount: count,
-				password:
-					answer.password === '' ? { kind: 'none' } : { kind: 'given', password: answer.password }
+				recheck: answer.recheck
 			},
 			reply: decidedReplySchema
 		});
