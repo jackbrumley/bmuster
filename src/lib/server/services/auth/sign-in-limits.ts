@@ -10,6 +10,9 @@ import type { Queryable } from '../../database/connection.ts';
  *   the oldest of them is 10 minutes old.
  * A paused attempt is refused before the password is checked.
  */
+/** What a paused sign-in, code or password check is told. */
+export const PAUSED = 'Too many attempts. Wait a few minutes, then try again.';
+
 export const EMAIL_LIMIT = { failures: 5, windowMs: 15 * 60_000, pauseMs: 5 * 60_000 } as const;
 export const ADDRESS_LIMIT = { failures: 20, windowMs: 10 * 60_000 } as const;
 

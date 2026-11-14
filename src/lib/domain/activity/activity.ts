@@ -132,7 +132,14 @@ const AUDIT_KINDS = [
 	'mcp-tool-called',
 	'command-run-requested',
 	'command-run-denied',
-	'command-run-expired'
+	'command-run-expired',
+	// SPEC-TWO-FACTOR
+	'two-factor-turned-on',
+	'two-factor-turned-off',
+	'two-factor-reset',
+	'recovery-code-used',
+	'recovery-codes-replaced',
+	'code-confirmed'
 ] as const;
 
 export type AuditKind = (typeof AUDIT_KINDS)[number];
@@ -389,5 +396,17 @@ export function activityLabel(kind: AuditKind): string {
 			return "Denied an AI assistant's command";
 		case 'command-run-expired':
 			return 'A command waiting for approval expired';
+		case 'two-factor-turned-on':
+			return 'Turned on two-factor sign-in';
+		case 'two-factor-turned-off':
+			return 'Turned off two-factor sign-in';
+		case 'two-factor-reset':
+			return "Reset someone's two-factor sign-in";
+		case 'recovery-code-used':
+			return 'Used a recovery code';
+		case 'recovery-codes-replaced':
+			return 'Made new recovery codes';
+		case 'code-confirmed':
+			return 'Typed an authenticator code again';
 	}
 }

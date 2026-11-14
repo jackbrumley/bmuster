@@ -5,9 +5,8 @@ import type { AppDatabase, Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { findUserById } from '../users/users.ts';
 import { verifyPassword } from './passwords.ts';
-import { PAUSED } from './password-sign-in.ts';
 import { hashSessionToken } from './sessions.ts';
-import { clearSignInFailures, recordSignInFailure, signInPause } from './sign-in-limits.ts';
+import { clearSignInFailures, PAUSED, recordSignInFailure, signInPause } from './sign-in-limits.ts';
 
 /**
  * Recent sign-in (SPEC-COMMANDS C10), for anything that should not run on a browser someone

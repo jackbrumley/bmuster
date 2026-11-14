@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CONSENTS } from '../access/access.ts';
+import { TWO_FACTOR_POLICIES } from '../auth/two-factor.ts';
 
 /**
  * Every server setting, declared once (SPEC-SIGN-IN S16): its key, type,
@@ -38,6 +39,7 @@ type SettingDefinition<T> = {
 
 const consentSchema = z.enum(CONSENTS);
 const updatePolicySchema = z.enum(['automatic', 'manual']);
+const twoFactorPolicySchema = z.enum(TWO_FACTOR_POLICIES);
 
 /** Plain text up to `max` characters, trimmed; `required` refuses a blank one. */
 function textSchema(max: number, required: boolean): z.ZodType<string> {
@@ -139,6 +141,24 @@ export const SETTING_DEFINITIONS = {
 		section: 'security',
 		control: { kind: 'local-network-mode' }
 	} satisfies SettingDefinition<boolean>,
+	twoFactorSignIn: {
+		label: 'Two-factor sign-in',
+		description:
+			'Who must type a code from an authenticator app after their password. People who sign in through a sign-in provider are never asked; the provider handles it. Anyone can turn it on for themselves on their Account page.',
+		schema: twoFactorPolicySchema,
+		// Off for a server that updates, so nobody is locked out; setup makes a new server "admins".
+		defaultValue: 'off',
+		changedBy: 'admin',
+		section: 'security',
+		control: {
+			kind: 'choice',
+			options: [
+				{ value: 'off', label: 'Off' },
+				{ value: 'admins', label: 'Required for admins' },
+				{ value: 'everyone', label: 'Required for everyone' }
+			]
+		}
+	} satisfies SettingDefinition<z.infer<typeof twoFactorPolicySchema>>,
 	organisationName: {
 		label: 'Organisation name',
 		description:

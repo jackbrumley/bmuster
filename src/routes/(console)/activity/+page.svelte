@@ -261,6 +261,14 @@
 			case 'command-run-denied':
 			case 'command-run-expired':
 				return IconHandStop;
+			case 'two-factor-turned-on':
+			case 'two-factor-turned-off':
+			case 'two-factor-reset':
+			case 'code-confirmed':
+				return IconShieldLock;
+			case 'recovery-code-used':
+			case 'recovery-codes-replaced':
+				return IconKey;
 		}
 	}
 </script>

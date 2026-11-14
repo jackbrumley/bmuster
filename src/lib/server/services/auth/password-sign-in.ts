@@ -5,7 +5,7 @@ import { findUserByEmail, markSignedIn, toConsoleUser } from '../users/users.ts'
 import type { SignInClient } from './client.ts';
 import { verifyDecoy, verifyPassword } from './passwords.ts';
 import { pruneSessions, startSession, type StartedSession } from './sessions.ts';
-import { clearSignInFailures, recordSignInFailure, signInPause } from './sign-in-limits.ts';
+import { clearSignInFailures, PAUSED, recordSignInFailure, signInPause } from './sign-in-limits.ts';
 
 /**
  * Password sign-in (SPEC-SIGN-IN S3, S4, S11). Every refusal for a wrong
@@ -14,7 +14,6 @@ import { clearSignInFailures, recordSignInFailure, signInPause } from './sign-in
  * use a password (break-glass); anyone else only if an admin set one.
  */
 export const WRONG_DETAILS = 'That email and password do not match an account here.';
-export const PAUSED = 'Too many attempts. Wait a few minutes, then try again.';
 
 export type PasswordSignIn =
 	| { kind: 'signed-in'; user: ConsoleUser; session: StartedSession }

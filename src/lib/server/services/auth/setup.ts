@@ -103,7 +103,9 @@ export function applyFirstRunLocalNetworkMode(
 	if (!wanted || hasUsers(database) || getSetting(database, 'localNetworkMode')) {
 		return;
 	}
-	updateSettingAsSystem(database, 'localNetworkMode', true, 'BMUSTER_LOCAL_NETWORK_MODE', now);
+	database.transaction((transaction) => {
+		updateSettingAsSystem(transaction, 'localNetworkMode', true, 'BMUSTER_LOCAL_NETWORK_MODE', now);
+	});
 }
 
 /** True when the admin was created; false when the server already had users. */

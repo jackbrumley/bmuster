@@ -3,9 +3,9 @@ import { testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, CLIENT, NOW, PASSWORD } from '#tests/helpers/people.ts';
 import { setPassword } from '../users/users.ts';
 import { addProvider } from './identity-providers.ts';
-import { PAUSED, signInWithPassword, WRONG_DETAILS } from './password-sign-in.ts';
+import { signInWithPassword, WRONG_DETAILS } from './password-sign-in.ts';
 import { findSession } from './sessions.ts';
-import { ADDRESS_LIMIT, EMAIL_LIMIT } from './sign-in-limits.ts';
+import { ADDRESS_LIMIT, EMAIL_LIMIT, PAUSED } from './sign-in-limits.ts';
 
 const KEY = Buffer.alloc(32, 9);
 

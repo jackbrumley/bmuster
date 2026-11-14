@@ -24,6 +24,7 @@ const PARSE: { [K in SettingKey]: (value: unknown) => SettingValues[K] } = {
 	agentUpdatePolicy: (value) => SETTING_DEFINITIONS.agentUpdatePolicy.schema.parse(value),
 	maxUploadGb: (value) => SETTING_DEFINITIONS.maxUploadGb.schema.parse(value),
 	localNetworkMode: (value) => SETTING_DEFINITIONS.localNetworkMode.schema.parse(value),
+	twoFactorSignIn: (value) => SETTING_DEFINITIONS.twoFactorSignIn.schema.parse(value),
 	organisationName: (value) => SETTING_DEFINITIONS.organisationName.schema.parse(value),
 	scamImpersonators: (value) => SETTING_DEFINITIONS.scamImpersonators.schema.parse(value),
 	scamReportAdvice: (value) => SETTING_DEFINITIONS.scamReportAdvice.schema.parse(value)
@@ -36,6 +37,7 @@ const DEFAULTS: SettingValues = {
 	agentUpdatePolicy: SETTING_DEFINITIONS.agentUpdatePolicy.defaultValue,
 	maxUploadGb: SETTING_DEFINITIONS.maxUploadGb.defaultValue,
 	localNetworkMode: SETTING_DEFINITIONS.localNetworkMode.defaultValue,
+	twoFactorSignIn: SETTING_DEFINITIONS.twoFactorSignIn.defaultValue,
 	organisationName: SETTING_DEFINITIONS.organisationName.defaultValue,
 	scamImpersonators: SETTING_DEFINITIONS.scamImpersonators.defaultValue,
 	scamReportAdvice: SETTING_DEFINITIONS.scamReportAdvice.defaultValue
@@ -99,17 +101,20 @@ export function updateSetting(
 					: `That is not a valid value for “${definition.label}”.`
 		};
 	}
-	writeSetting(database, { kind: 'user', userId: actorUserId }, key, parsed.data, {}, now);
+	database.transaction((transaction) => {
+		writeSetting(transaction, { kind: 'user', userId: actorUserId }, key, parsed.data, {}, now);
+	});
 	return { kind: 'changed', settings: listSettings(database) };
 }
 
 /**
  * Changes one setting on the server's own behalf (start-up, from the
- * installer's environment), and audits it with the system as the actor and
- * `source` naming where the value came from.
+ * installer's environment, first-run setup), and audits it with the system as
+ * the actor and `source` naming where the value came from. Pass a transaction
+ * so the change and its audit entry land together.
  */
 export function updateSettingAsSystem<K extends SettingKey>(
-	database: AppDatabase,
+	database: Queryable,
 	key: K,
 	value: SettingValues[K],
 	source: string,
@@ -119,7 +124,7 @@ export function updateSettingAsSystem<K extends SettingKey>(
 }
 
 function writeSetting(
-	database: AppDatabase,
+	database: Queryable,
 	actor: AuditActor,
 	key: SettingKey,
 	value: unknown,
@@ -128,26 +133,24 @@ function writeSetting(
 ): void {
 	const definition = SETTING_DEFINITIONS[key];
 	const updatedBy = actor.kind === 'user' ? actor.userId : 'system';
-	database.transaction((transaction) => {
-		const before = getSetting(transaction, key);
-		transaction
-			.insert(settings)
-			.values({ key, value: JSON.stringify(value), updatedAt: new Date(now), updatedBy })
-			.onConflictDoUpdate({
-				target: settings.key,
-				set: { value: JSON.stringify(value), updatedAt: new Date(now), updatedBy }
-			})
-			.run();
-		recordAudit(
-			transaction,
-			{
-				actor,
-				kind: 'setting-changed',
-				target: definition.label,
-				machineId: null,
-				detail: { from: String(before), to: String(value), ...extraDetail }
-			},
-			now
-		);
-	});
+	const before = getSetting(database, key);
+	database
+		.insert(settings)
+		.values({ key, value: JSON.stringify(value), updatedAt: new Date(now), updatedBy })
+		.onConflictDoUpdate({
+			target: settings.key,
+			set: { value: JSON.stringify(value), updatedAt: new Date(now), updatedBy }
+		})
+		.run();
+	recordAudit(
+		database,
+		{
+			actor,
+			kind: 'setting-changed',
+			target: definition.label,
+			machineId: null,
+			detail: { from: String(before), to: String(value), ...extraDetail }
+		},
+		now
+	);
 }

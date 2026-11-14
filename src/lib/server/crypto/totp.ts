@@ -4,7 +4,7 @@ import { createHmac } from 'node:crypto';
  * Time-based one-time codes (RFC 6238 over RFC 4226): HMAC-SHA1, 30-second
  * steps. The agent's local page checks the same codes (agent/crates/agent/src/totp.rs).
  */
-const TOTP_STEP_SECONDS = 30;
+export const TOTP_STEP_SECONDS = 30;
 const TOTP_DIGITS = 6;
 
 /** The code for the step `unixSeconds` falls in, `digits` long. */
