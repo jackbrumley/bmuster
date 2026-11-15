@@ -325,7 +325,7 @@ describe('the desktop tab', () => {
 		expect(screen.container.textContent).not.toContain('View only');
 	});
 
-	it('full screen has a bar with Exit that hides when idle and comes back near the top edge', async () => {
+	it('FB3: full screen has a bar with Exit that moves by its handle without reaching the machine', async () => {
 		const { screen, socket } = await open(CONTROL, 'Connect');
 		socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
 		await screen.getByRole('button', { name: 'Full screen' }).click();
@@ -342,12 +342,29 @@ describe('the desktop tab', () => {
 		await expect.element(screen.getByRole('application', { name: /Screen of/ })).toHaveFocus();
 		await bar.getByRole('button', { name: 'Picture settings' }).click();
 
-		// The mouse leaves the bar for the middle of the screen: the bar hides after a few seconds.
-		const stage = screen.getByRole('application', { name: /Screen of/ });
-		const middle = stage.element().getBoundingClientRect();
-		await stage.hover({ position: { x: middle.width / 2, y: middle.height / 2 } });
-		await expect.element(bar, { timeout: 6000 }).not.toBeInTheDocument();
-		await stage.hover({ position: { x: 300, y: 5 } });
+		// The handle drags the bar across the screen; the machine sees none of it.
+		const handle = bar.getByRole('button', { name: 'Collapse the controls' }).element();
+		const start = handle.getBoundingClientRect();
+		const down = { x: start.left + 20, y: start.top + 20 };
+		for (const [type, x, y] of [
+			['pointerdown', down.x, down.y],
+			['pointermove', down.x + 30, down.y + 30],
+			['pointermove', down.x + 100, down.y + 300],
+			['pointerup', down.x + 100, down.y + 300]
+		] as const) {
+			handle.dispatchEvent(
+				new PointerEvent(type, {
+					pointerId: 1,
+					pointerType: 'mouse',
+					button: 0,
+					clientX: x,
+					clientY: y,
+					bubbles: true
+				})
+			);
+		}
+		await expect.poll(() => handle.getBoundingClientRect().top).toBeCloseTo(start.top + 300, 0);
+		expect(sentTypes(socket).filter((type) => type === 'pointer').length).toBe(before);
 		await expect.element(bar).toBeVisible();
 
 		await bar.getByRole('button', { name: 'Leave full screen' }).click();

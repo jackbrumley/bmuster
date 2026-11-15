@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { IconDownload, IconMenu2 } from '@tabler/icons-svelte-runes';
 	import type {
 		AutoLevel,
 		DesktopSettings as PictureSettings,
@@ -12,29 +10,23 @@
 	import Panel from '#lib/ui/panel.svelte';
 	import TabBar from '#lib/ui/tab-bar.svelte';
 	import DesktopSettings from './desktop-settings.svelte';
-	import {
-		clampCorner,
-		DEFAULT_POSITION,
-		DRAG_THRESHOLD_PX,
-		readPosition,
-		savePosition,
-		snapped,
-		type FloatingPosition
-	} from './floating-position.ts';
+	import FloatingButton from './floating-button.svelte';
+	import { BUTTON_SIZE, type FloatingPosition } from './floating-position.ts';
 	import ClipboardPanel from './clipboard-panel.svelte';
 	import type { SheetFiles, SheetTransfers } from './desktop-files.svelte.ts';
 	import FloatingSessionTab from './floating-session-tab.svelte';
 	import type { DesktopClipboard } from './clipboard.svelte.ts';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
-	import type { ChromeAction, SessionStatus } from './session-actions.ts';
+	import type { Attention, ChromeAction, SessionStatus } from './session-actions.ts';
 	import { scrollEdges, sheetLayout, sheetTabs, type SheetTab as Tab } from './sheet-layout.ts';
 	import type { TouchMode } from './touch-gestures.ts';
 
 	/**
-	 * Full screen on phones and tablets (SPEC-DESKTOP-FLOATING, option A):
-	 * one round button over the screen that a finger can drag anywhere; let
-	 * go, it snaps to the nearest edge and this browser remembers where. A
+	 * The collapsed floating controls (SPEC-DESKTOP-FLOATING, option A and
+	 * FB5–FB8): one round button over the screen that can be dragged
+	 * anywhere; let go, it snaps to the nearest edge. Where the bar is
+	 * offered (`expand`), a tap expands it; on phones and narrow windows a
 	 * tap opens the sheet: a bottom sheet on an upright screen, a full-height
 	 * side panel on a screen on its side, with tabs for the keys, the
 	 * picture, the screen picker and the session, each scrolling inside the
@@ -45,9 +37,13 @@
 	 * session's actions (SPEC-DESKTOP 23): each action has a home tab here.
 	 */
 	let {
+		fab = $bindable(),
+		position = $bindable(),
+		onmoved,
+		expand,
 		actions,
 		status,
-		waiting,
+		attention,
 		transfers,
 		osFamily,
 		mode,
@@ -70,12 +66,20 @@
 		ondisconnect,
 		files
 	}: {
+		/** The round button, for the owner to focus after collapsing the bar. */
+		fab: HTMLButtonElement | undefined;
+		/** Where the button sits; its owner remembers it. */
+		position: FloatingPosition;
+		/** A drag put the button somewhere new. */
+		onmoved: () => void;
+		/** Expands the bar instead of opening the sheet (wide screens); `keyboard` when a key pressed the button. */
+		expand: ((keyboard: boolean) => void) | undefined;
 		/** What the session offers now (`session-actions.ts`). */
 		actions: readonly ChromeAction[];
 		/** The session's status in a few words, for the Session tab. */
 		status: SessionStatus;
-		/** Files copied on the machine, for the badge on the button ("2 files copied on the machine"). */
-		waiting: string | undefined;
+		/** Something waiting (files, a clipboard notice), for the badge on the button. */
+		attention: Attention | undefined;
 		/** The Transfers panel, in the Session tab; undefined without files. */
 		transfers: SheetTransfers | undefined;
 		osFamily: OsFamily;
@@ -108,15 +112,9 @@
 		files: SheetFiles | undefined;
 	} = $props();
 
-	/** The button's size in page pixels (also in the stylesheet). */
-	const SIZE = 48;
-
 	const uid = $props.id();
 	const control = $derived(mode === 'control');
 
-	let position = $state<FloatingPosition>(DEFAULT_POSITION);
-	/** The button's top-left corner inside the area while a finger drags it. */
-	let drag = $state<{ x: number; y: number }>();
 	let open = $state(false);
 	/** The tab the person picked; until then, or once it goes away, the opening tab. */
 	let chosen = $state<Tab>();
@@ -125,33 +123,24 @@
 	let area = $state<HTMLElement>();
 	let areaWidth = $state(0);
 	let areaHeight = $state(0);
-	let fab = $state<HTMLElement>();
 	let scroller = $state<HTMLElement>();
 	/** More of the tab to see above or below: the fades show. */
 	let edges = $state({ above: false, below: false });
 
 	const tabs = $derived(sheetTabs(actions));
-	/** A control session opens on its keys; any other, or one with files waiting, on the session's actions. */
+	/** A control session opens on its keys, or on what waits (files: Session; a clipboard notice: Clipboard); any other on Session. */
 	const shown = $derived<Tab>(
 		chosen !== undefined && tabs.some((tab) => tab.value === chosen)
 			? chosen
-			: control && waiting === undefined
-				? 'keys'
-				: 'session'
+			: !control || attention?.kind === 'files'
+				? 'session'
+				: attention?.kind === 'clipboard'
+					? 'clipboard'
+					: 'keys'
 	);
-	const layout = $derived(sheetLayout({ width: areaWidth, height: areaHeight }, position, SIZE));
-
-	type Press = {
-		id: number;
-		startX: number;
-		startY: number;
-		dx: number;
-		dy: number;
-		moved: boolean;
-	};
-	let press: Press | undefined;
-	/** The click that follows a drag's release is not a tap. */
-	let afterDrag = false;
+	const layout = $derived(
+		sheetLayout({ width: areaWidth, height: areaHeight }, position, BUTTON_SIZE)
+	);
 
 	function close(): void {
 		open = false;
@@ -203,103 +192,15 @@
 		};
 	});
 
-	function cornerAt(event: PointerEvent, held: Press, box: DOMRect): { x: number; y: number } {
-		return clampCorner(
-			{ x: event.clientX - held.dx - box.left, y: event.clientY - held.dy - box.top },
-			box,
-			SIZE
-		);
-	}
-
-	function onPointerDown(event: PointerEvent): void {
-		afterDrag = false;
-		if (fab === undefined || (event.pointerType === 'mouse' && event.button !== 0)) {
-			return;
-		}
-		const box = fab.getBoundingClientRect();
-		press = {
-			id: event.pointerId,
-			startX: event.clientX,
-			startY: event.clientY,
-			dx: event.clientX - box.left,
-			dy: event.clientY - box.top,
-			moved: false
-		};
-		window.addEventListener('pointermove', onPointerMove, { capture: true });
-		window.addEventListener('pointerup', onPointerUp, { capture: true });
-		window.addEventListener('pointercancel', onPointerCancel, { capture: true });
-	}
-
-	/** The press this event's pointer started on the button, if any. */
-	function pressOf(event: PointerEvent): Press | undefined {
-		return press?.id === event.pointerId ? press : undefined;
-	}
-
-	function onPointerMove(event: PointerEvent): void {
-		const held = pressOf(event);
-		if (held === undefined || area === undefined) {
-			return;
-		}
-		// The pointer belongs to the button until it is let go, wherever it goes.
-		event.stopPropagation();
-		if (
-			!held.moved &&
-			Math.hypot(event.clientX - held.startX, event.clientY - held.startY) <= DRAG_THRESHOLD_PX
-		) {
-			return;
-		}
-		if (!held.moved) {
-			held.moved = true;
-			close();
-		}
-		drag = cornerAt(event, held, area.getBoundingClientRect());
-	}
-
-	function onPointerUp(event: PointerEvent): void {
-		const held = pressOf(event);
-		if (held === undefined) {
-			return;
-		}
-		event.stopPropagation();
-		if (held.moved && area !== undefined) {
-			const box = area.getBoundingClientRect();
-			position = snapped(cornerAt(event, held, box), box, SIZE);
-			savePosition(position);
-			afterDrag = true;
-		}
-		release();
-	}
-
-	function onPointerCancel(event: PointerEvent): void {
-		if (pressOf(event) !== undefined) {
-			release();
-		}
-	}
-
-	function release(): void {
-		press = undefined;
-		drag = undefined;
-		window.removeEventListener('pointermove', onPointerMove, { capture: true });
-		window.removeEventListener('pointerup', onPointerUp, { capture: true });
-		window.removeEventListener('pointercancel', onPointerCancel, { capture: true });
-	}
-
-	function onTap(): void {
-		if (afterDrag) {
-			afterDrag = false;
-			return;
-		}
-		if (open) {
+	function onTap(keyboard: boolean): void {
+		if (expand !== undefined) {
+			expand(keyboard);
+		} else if (open) {
 			close();
 		} else {
 			open = true;
 		}
 	}
-
-	onMount(() => {
-		position = readPosition();
-		return release;
-	});
 </script>
 
 <svelte:window onkeydown={onWindowKey} />
@@ -315,31 +216,18 @@
 			onclick={close}
 		></button>
 	{/if}
-	<div
-		class="area"
-		bind:this={area}
-		bind:clientWidth={areaWidth}
-		bind:clientHeight={areaHeight}
-		style:--at={String(position.at)}
-	>
-		<button
-			bind:this={fab}
-			data-raw-button="icon"
-			type="button"
-			class="fab edge-{position.edge}"
-			class:dragging={drag !== undefined}
-			style:--x={drag === undefined ? undefined : `${drag.x}px`}
-			style:--y={drag === undefined ? undefined : `${drag.y}px`}
-			aria-label={waiting === undefined ? 'Session controls' : `Session controls, ${waiting}`}
-			title={waiting === undefined ? 'Session controls' : `Session controls, ${waiting}`}
-			aria-expanded={open}
-			aria-controls="{uid}-sheet"
-			onpointerdown={onPointerDown}
-			onclick={onTap}
-			><IconMenu2 size={24} />{#if waiting !== undefined}<span class="badge" aria-hidden="true"
-					><IconDownload size={14} /></span
-				>{/if}</button
-		>
+	<div class="area" bind:this={area} bind:clientWidth={areaWidth} bind:clientHeight={areaHeight}>
+		<FloatingButton
+			bind:element={fab}
+			bind:position
+			{area}
+			{attention}
+			expanded={open}
+			controls={expand === undefined ? `${uid}-sheet` : undefined}
+			ondragstart={close}
+			{onmoved}
+			ontap={onTap}
+		/>
 		{#if open}
 			<div
 				id="{uid}-sheet"
@@ -461,78 +349,12 @@
 
 	/* Where the button and the sheet may sit: the screen less the safe-area insets and a small gap. */
 	.area {
-		--size: 48px;
-		/* The button's place along its edge; --at comes from the script. */
-		--travel: calc(100% - var(--size));
-		--along: calc(var(--travel) * var(--at));
 		position: absolute;
 		top: calc(var(--space-3) + var(--safe-top));
 		right: calc(var(--space-3) + var(--safe-right));
 		bottom: calc(var(--space-3) + var(--safe-bottom));
 		left: calc(var(--space-3) + var(--safe-left));
 		pointer-events: none;
-	}
-
-	.fab {
-		position: absolute;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: var(--size);
-		height: var(--size);
-		padding: 0;
-		border: 2px solid var(--brand-contrast);
-		border-radius: var(--radius-round);
-		background: var(--brand);
-		color: var(--brand-contrast);
-		pointer-events: auto;
-		touch-action: none;
-		user-select: none;
-		cursor: grab;
-	}
-
-	.fab.edge-left {
-		top: var(--along);
-		left: 0;
-	}
-
-	.fab.edge-right {
-		top: var(--along);
-		right: 0;
-	}
-
-	.fab.edge-top {
-		top: 0;
-		left: var(--along);
-	}
-
-	.fab.edge-bottom {
-		bottom: 0;
-		left: var(--along);
-	}
-
-	/* Files wait to be downloaded: a dot on the button that holds Download. */
-	.badge {
-		position: absolute;
-		top: -4px;
-		right: -4px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 20px;
-		height: 20px;
-		border: 2px solid var(--brand);
-		border-radius: var(--radius-round);
-		background: var(--brand-contrast);
-		color: var(--brand);
-	}
-
-	.fab.dragging {
-		top: var(--y);
-		right: auto;
-		bottom: auto;
-		left: var(--x);
-		cursor: grabbing;
 	}
 
 	/* An upright screen: a bottom sheet across the width, at most 70% of the height. */

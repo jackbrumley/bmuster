@@ -11,8 +11,10 @@ import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 import type { DesktopFiles } from './desktop-files.svelte.ts';
 import type { DesktopSession } from './desktop-session.svelte.ts';
 import {
+	attentionOf,
 	availableActions,
 	connectionStatus,
+	type Attention,
 	type ChromeAction,
 	type SessionStatus
 } from './session-actions.ts';
@@ -50,8 +52,8 @@ export type ChromeExit = { kind: 'full-screen' | 'window'; run: () => void };
 export type ChromeLayout =
 	| { kind: 'bar'; onfullscreen: () => void; onpopout: (() => void) | undefined }
 	| { kind: 'phone'; onfullscreen: () => void }
-	| { kind: 'overlay'; surface: HTMLElement; exit: ChromeExit }
-	| { kind: 'floating'; exit: ChromeExit };
+	/** Over the screen: the bar that collapses into the button, or (phones, narrow windows) the button and its sheet. */
+	| { kind: 'floating'; form: 'bar' | 'sheet'; exit: ChromeExit };
 
 export class SessionChrome {
 	/** The panel the person opened; shown only while its action is available. */
@@ -188,6 +190,15 @@ export class SessionChrome {
 	get waitingNotice(): FilesWaiting | undefined {
 		const offer = this.files?.offer;
 		return offer?.kind === 'offer' && offer.offerId === this.#putAway ? undefined : this.waiting;
+	}
+
+	/** What the controls button's badge says waits (SPEC-DESKTOP-FLOATING FB6). */
+	get attention(): Attention | undefined {
+		const clipboard = this.session?.clipboard;
+		return attentionOf(this.waiting?.text, {
+			pending: clipboard?.pending !== undefined,
+			error: clipboard?.note.kind === 'error' ? clipboard.note.message : undefined
+		});
 	}
 
 	putAwayWaiting(): void {

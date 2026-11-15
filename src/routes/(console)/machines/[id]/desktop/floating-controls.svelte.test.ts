@@ -6,16 +6,17 @@ import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 import '#lib/ui/design-tokens.css';
 import { DesktopClipboard } from './clipboard.svelte.ts';
 import FloatingControls from './floating-controls.svelte';
+import { DEFAULT_POSITION, type FloatingPosition } from './floating-position.ts';
 import { availableActions } from './session-actions.ts';
 
-// SPEC-DESKTOP-FLOATING F2, F3, F4, F6, FA1, FA4, FA5, FA6, FA7, FA8, FA9.
+// SPEC-DESKTOP-FLOATING F2, F3, F4, F6, FA1, FA4, FA5, FA6, FA7, FA8, FA9. Remembering the
+// button's place is the floating chrome's (FB7, floating-chrome.svelte.test.ts).
 
 const TWO_SCREENS = [
 	{ value: 'L', label: 'Left', count: undefined },
 	{ value: 'R', label: 'Right', count: undefined }
 ];
 
-const STORAGE_KEY = 'bmuster.desktop.floatingButton';
 /** The gap between the button and the screen's edge (`--space-3`). */
 const EDGE = 12;
 
@@ -31,8 +32,10 @@ afterEach(() => {
 async function setup(
 	mode: DesktopMode | undefined,
 	displays: readonly { value: string; label: string; count: undefined }[] = [],
-	upload?: () => void
+	upload?: () => void,
+	position: FloatingPosition = DEFAULT_POSITION
 ) {
+	const onmoved = vi.fn();
 	const sent: InputMessage[] = [];
 	const backToScreen = vi.fn();
 	const onexit = vi.fn();
@@ -42,6 +45,10 @@ async function setup(
 		toAgent.push(message);
 	});
 	const screen = await render(FloatingControls, {
+		fab: undefined,
+		position,
+		onmoved,
+		expand: undefined,
 		actions: availableActions({
 			running: mode !== undefined,
 			watchOnly: mode === 'watch',
@@ -55,7 +62,7 @@ async function setup(
 			mode === undefined
 				? { kind: 'text', text: 'Not connected' }
 				: { kind: 'figures', fps: 15, kilobytes: 200 },
-		waiting: undefined,
+		attention: undefined,
 		transfers: undefined,
 		osFamily: 'windows',
 		mode,
@@ -86,7 +93,7 @@ async function setup(
 		'position: fixed; inset: 0; width: 100vw; height: 100vh; background: black;';
 	const button = screen.getByRole('button', { name: 'Session controls' });
 	await expect.element(button).toBeVisible();
-	return { screen, sent, toAgent, backToScreen, onexit, ondisconnect, button };
+	return { screen, sent, toAgent, backToScreen, onexit, ondisconnect, button, onmoved };
 }
 
 function pointer(target: Element, type: string, x: number, y: number): void {
@@ -136,8 +143,8 @@ describe('the floating controls', () => {
 		await expect.element(button).toHaveFocus();
 	});
 
-	it('F2, F3: a drag moves the button, snaps it to the nearest edge, and is remembered', async () => {
-		const { screen, button } = await setup('control');
+	it('F2: a drag moves the button, snaps it to the nearest edge, and says so', async () => {
+		const { screen, button, onmoved } = await setup('control');
 		const start = button.element().getBoundingClientRect();
 		expect(start.right).toBeCloseTo(375 - EDGE, 0);
 
@@ -155,24 +162,16 @@ describe('the floating controls', () => {
 		await expect
 			.element(screen.getByRole('group', { name: 'Session options' }))
 			.not.toBeInTheDocument();
-		const saved: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
-		expect(saved).toMatchObject({ edge: 'left' });
+		expect(onmoved).toHaveBeenCalledOnce();
 	});
 
-	it('FA1: a drag to the top lands the button on the top edge, where it stays next time', async () => {
-		const first = await setup('control');
-		const fab = first.button.element();
+	it('FA1: a drag to the top lands the button on the top edge', async () => {
+		const { button, onmoved } = await setup('control');
+		const fab = button.element();
 		dragTo(fab, 200, 30);
 		await expect.poll(() => fab.getBoundingClientRect().top).toBeCloseTo(EDGE, 0);
 		expect(fab.getBoundingClientRect().left).toBeCloseTo(200 - 24, 0);
-		const saved: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
-		expect(saved).toMatchObject({ edge: 'top' });
-		await first.screen.unmount();
-
-		const again = await setup('control');
-		const at = again.button.element().getBoundingClientRect();
-		expect(at.top).toBeCloseTo(EDGE, 0);
-		expect(at.left).toBeCloseTo(200 - 24, 0);
+		expect(onmoved).toHaveBeenCalledOnce();
 	});
 
 	it('F2: a press that barely moves is still a tap', async () => {
@@ -187,9 +186,8 @@ describe('the floating controls', () => {
 		await expect.element(screen.getByRole('group', { name: 'Session options' })).toBeVisible();
 	});
 
-	it('F3: starts where this browser left it', async () => {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify({ edge: 'left', at: 0 }));
-		const { button } = await setup('control');
+	it('F3: starts at the place it is given', async () => {
+		const { button } = await setup('control', [], undefined, { edge: 'left', at: 0 });
 		const at = button.element().getBoundingClientRect();
 		expect(at.left).toBeCloseTo(EDGE, 0);
 		expect(at.top).toBeCloseTo(EDGE, 0);
@@ -215,8 +213,7 @@ describe('the floating controls', () => {
 			[{ edge: 'right', at: 0.5 }, 'right'],
 			[{ edge: 'top', at: 0.1 }, 'left']
 		] as const) {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-			const landscape = await setup('control');
+			const landscape = await setup('control', [], undefined, stored);
 			await landscape.button.click();
 			const wide = landscape.screen.getByRole('group', { name: 'Session options' });
 			await expect.element(wide).toBeVisible();

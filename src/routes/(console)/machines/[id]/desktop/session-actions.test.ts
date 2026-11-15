@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	attentionOf,
 	availableActions,
 	CHROME_ACTIONS,
 	connectionStatus,
@@ -74,5 +75,22 @@ describe('the session status', () => {
 			kind: 'text',
 			text: 'Waiting for the machine…'
 		});
+	});
+});
+
+describe('what needs attention', () => {
+	it('FB6: files waiting come first, then a clipboard notice; nothing otherwise', () => {
+		const quiet = { pending: false, error: undefined };
+		expect(attentionOf(undefined, quiet)).toBeUndefined();
+		expect(
+			attentionOf('2 files copied on the machine', { pending: true, error: undefined })
+		).toEqual({ kind: 'files', text: '2 files copied on the machine' });
+		expect(attentionOf(undefined, { pending: true, error: undefined })).toEqual({
+			kind: 'clipboard',
+			text: 'text copied on the machine, tap to use it here'
+		});
+		expect(
+			attentionOf(undefined, { pending: false, error: 'The machine has no clipboard.' })
+		).toEqual({ kind: 'clipboard', text: 'clipboard: The machine has no clipboard.' });
 	});
 });

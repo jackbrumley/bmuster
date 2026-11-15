@@ -95,3 +95,27 @@ export function connectionStatus(
 			return words('Ended');
 	}
 }
+
+/** Something waiting for the person, shown as a badge on the controls button (SPEC-DESKTOP-FLOATING FB6). */
+export type Attention = { kind: 'files' | 'clipboard'; text: string };
+
+/**
+ * What needs attention: files copied on the machine first, then a
+ * clipboard notice (text from the machine waiting for a tap to land on
+ * this device, or the clipboard's last error).
+ */
+export function attentionOf(
+	filesWaiting: string | undefined,
+	clipboard: { pending: boolean; error: string | undefined }
+): Attention | undefined {
+	if (filesWaiting !== undefined) {
+		return { kind: 'files', text: filesWaiting };
+	}
+	if (clipboard.pending) {
+		return { kind: 'clipboard', text: 'text copied on the machine, tap to use it here' };
+	}
+	if (clipboard.error !== undefined) {
+		return { kind: 'clipboard', text: `clipboard: ${clipboard.error}` };
+	}
+	return undefined;
+}

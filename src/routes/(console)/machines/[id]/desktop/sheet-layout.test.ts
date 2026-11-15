@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHROME_ACTIONS } from './session-actions.ts';
-import { scrollEdges, sheetLayout, sheetTabs } from './sheet-layout.ts';
+import { scrollEdges, SHEET_QUERY, sheetLayout, sheetTabs } from './sheet-layout.ts';
 
 // SPEC-DESKTOP-FLOATING FA3, FA7.
 
@@ -68,5 +68,11 @@ describe('the sheet', () => {
 			'session'
 		]);
 		expect(sheetTabs([]).map((tab) => tab.value)).toEqual(['session']);
+	});
+});
+
+describe('which screens get the sheet', () => {
+	it('FB8: windows under 900px wide, and touch screens under 600px tall', () => {
+		expect(SHEET_QUERY).toBe('(max-width: 899px), (pointer: coarse) and (max-height: 599px)');
 	});
 });

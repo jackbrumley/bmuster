@@ -1,11 +1,9 @@
-import { z } from 'zod';
-
 /**
  * Where the full-screen controls button sits (SPEC-DESKTOP-FLOATING, option
  * A): on one of the four edges, at a place along it given as a fraction of
  * the space it can travel, so a rotated phone keeps it at the same place.
- * Kept in this browser only; storage can be blocked (private windows, site
- * data off), and then the button starts at the default place.
+ * The expanded bar's place lives here too (SPEC-DESKTOP-FLOATING FB3–FB5);
+ * `floating-memory.ts` keeps both in this browser.
  */
 export type Edge = 'left' | 'right' | 'top' | 'bottom';
 
@@ -15,41 +13,8 @@ export type Area = { width: number; height: number };
 
 export const DEFAULT_POSITION: FloatingPosition = { edge: 'right', at: 0.5 };
 
-/** A press that moves less than this (page pixels) is a tap, not a drag. */
-export const DRAG_THRESHOLD_PX = 8;
-
-const STORAGE_KEY = 'bmuster.desktop.floatingButton';
-
-const fraction = z.number().min(0).max(1);
-
-const stored = z.union([
-	z.object({ edge: z.enum(['left', 'right', 'top', 'bottom']), at: fraction }),
-	// Saved before the button could sit on the top or bottom edge: the same place, read as an edge.
-	z
-		.object({ side: z.enum(['left', 'right']), at: fraction })
-		.transform(({ side, at }): FloatingPosition => ({ edge: side, at }))
-]);
-
-export function readPosition(): FloatingPosition {
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (raw === null) {
-			return DEFAULT_POSITION;
-		}
-		const parsed = stored.safeParse(JSON.parse(raw));
-		return parsed.success ? parsed.data : DEFAULT_POSITION;
-	} catch {
-		return DEFAULT_POSITION;
-	}
-}
-
-export function savePosition(position: FloatingPosition): void {
-	try {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(position));
-	} catch {
-		// A per-viewer convenience; the button just starts at the default next time.
-	}
-}
+/** The round button's size in page pixels (also in its stylesheet). */
+export const BUTTON_SIZE = 48;
 
 /** The left and right edges run up and down; `at` is then a height. */
 export function upright(edge: Edge): edge is 'left' | 'right' {
@@ -113,4 +78,86 @@ export function clampCorner(
 		x: Math.min(Math.max(corner.x, 0), Math.max(area.width - size, 0)),
 		y: Math.min(Math.max(corner.y, 0), Math.max(area.height - size, 0))
 	};
+}
+
+/**
+ * The bar's place: how far across and down the room it can move in it
+ * sits, from 0 to 1, so it stays inside the screen whatever the screen's
+ * or the bar's size (the stylesheet places it the same way).
+ */
+export type BarPlace = { x: number; y: number };
+
+export const DEFAULT_BAR: BarPlace = { x: 0.5, y: 0 };
+
+function fractionOf(at: number, room: number): number {
+	return room <= 0 ? 0 : Math.min(Math.max(at / room, 0), 1);
+}
+
+/** The bar's top-left corner inside the area. */
+export function barCorner(place: BarPlace, area: Area, bar: Area): { x: number; y: number } {
+	return {
+		x: place.x * Math.max(area.width - bar.width, 0),
+		y: place.y * Math.max(area.height - bar.height, 0)
+	};
+}
+
+/** The place of a bar whose top-left corner is at `corner`, kept inside the area. */
+export function barPlaceAt(corner: { x: number; y: number }, area: Area, bar: Area): BarPlace {
+	return {
+		x: fractionOf(corner.x, area.width - bar.width),
+		y: fractionOf(corner.y, area.height - bar.height)
+	};
+}
+
+/** The place after the arrow keys moved the bar by `delta` page pixels. */
+export function nudged(
+	place: BarPlace,
+	delta: { x: number; y: number },
+	area: Area,
+	bar: Area
+): BarPlace {
+	const corner = barCorner(place, area, bar);
+	return barPlaceAt({ x: corner.x + delta.x, y: corner.y + delta.y }, area, bar);
+}
+
+/**
+ * The bar opened next to the button: level with it and starting at it,
+ * running towards the middle of the screen, fitted inside it.
+ */
+export function barBeside(button: FloatingPosition, area: Area, bar: Area, size: number): BarPlace {
+	const at = cornerOf(button, area, size);
+	const leftHalf = at.x + size / 2 < area.width / 2;
+	const topHalf = at.y + size / 2 < area.height / 2;
+	return barPlaceAt(
+		{
+			x: leftHalf ? at.x : at.x + size - bar.width,
+			y: topHalf ? at.y : at.y + size - bar.height
+		},
+		area,
+		bar
+	);
+}
+
+/**
+ * Where the button goes when the bar collapses: at the bar's end nearer
+ * the screen's edge, snapped to the nearest edge, so expanding it again
+ * opens the bar where it was (`barBeside`).
+ */
+export function buttonBeside(
+	place: BarPlace,
+	area: Area,
+	bar: Area,
+	size: number
+): FloatingPosition {
+	const at = barCorner(place, area, bar);
+	const leftHalf = at.x + bar.width / 2 < area.width / 2;
+	const topHalf = at.y + bar.height / 2 < area.height / 2;
+	return snapped(
+		{
+			x: leftHalf ? at.x : at.x + bar.width - size,
+			y: topHalf ? at.y : at.y + bar.height - size
+		},
+		area,
+		size
+	);
 }

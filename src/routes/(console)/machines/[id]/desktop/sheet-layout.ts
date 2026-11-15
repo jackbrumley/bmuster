@@ -7,6 +7,15 @@ import type { ChromeAction } from './session-actions.ts';
  * height is not; a full-height side panel on a screen on its side, where
  * height is short. The panel goes on the button's side.
  */
+/**
+ * The screens where the floating controls are the button and its sheet,
+ * never the bar (SPEC-DESKTOP-FLOATING FB8): windows narrower than the
+ * console's sidebar breakpoint, whatever the pointer, and touch screens
+ * shorter than 600px (a phone on its side, as in PHONE_QUERY). Wider or
+ * taller touch screens (tablets) get the bar.
+ */
+export const SHEET_QUERY = '(max-width: 899px), (pointer: coarse) and (max-height: 599px)';
+
 export type SheetLayout = { kind: 'bottom' } | { kind: 'side'; side: 'left' | 'right' };
 
 export function sheetLayout(area: Area, position: FloatingPosition, size: number): SheetLayout {

@@ -1,86 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
+	barBeside,
+	barCorner,
+	barPlaceAt,
+	buttonBeside,
 	clampCorner,
-	DEFAULT_POSITION,
-	readPosition,
-	savePosition,
+	cornerOf,
+	nudged,
 	snapped
 } from './floating-position.ts';
 
-// SPEC-DESKTOP-FLOATING F2, F3, FA1, FA2.
-
-function memoryStorage(): Storage {
-	const items = new Map<string, string>();
-	return {
-		get length() {
-			return items.size;
-		},
-		clear: () => {
-			items.clear();
-		},
-		getItem: (key) => items.get(key) ?? null,
-		key: (index) => [...items.keys()][index] ?? null,
-		removeItem: (key) => {
-			items.delete(key);
-		},
-		setItem: (key, value) => {
-			items.set(key, value);
-		}
-	};
-}
-
-function blockedStorage(): Storage {
-	const blocked = () => {
-		throw new Error('SecurityError: storage is blocked');
-	};
-	return {
-		length: 0,
-		clear: blocked,
-		getItem: blocked,
-		key: blocked,
-		removeItem: blocked,
-		setItem: blocked
-	};
-}
-
-const KEY = 'bmuster.desktop.floatingButton';
+// SPEC-DESKTOP-FLOATING F2, FA1, FB3, FB4, FB5.
 
 describe('the floating button position', () => {
-	it('F3: is saved and read back', () => {
-		vi.stubGlobal('localStorage', memoryStorage());
-		expect(readPosition()).toEqual(DEFAULT_POSITION);
-		savePosition({ edge: 'top', at: 0.25 });
-		expect(readPosition()).toEqual({ edge: 'top', at: 0.25 });
-	});
-
-	it('FA2: a position saved before the top and bottom edges reads as the same place', () => {
-		const storage = memoryStorage();
-		vi.stubGlobal('localStorage', storage);
-		storage.setItem(KEY, '{"side":"left","at":0.25}');
-		expect(readPosition()).toEqual({ edge: 'left', at: 0.25 });
-		storage.setItem(KEY, '{"side":"right","at":1}');
-		expect(readPosition()).toEqual({ edge: 'right', at: 1 });
-	});
-
-	it('FA2: blocked storage or a bad value gives the default, right edge halfway', () => {
-		const storage = memoryStorage();
-		vi.stubGlobal('localStorage', storage);
-		for (const bad of [
-			'not json',
-			'{"side":"top","at":0.5}',
-			'{"edge":"middle","at":0.5}',
-			'{"edge":"left","at":3}'
-		]) {
-			storage.setItem(KEY, bad);
-			expect(readPosition()).toEqual({ edge: 'right', at: 0.5 });
-		}
-		vi.stubGlobal('localStorage', blockedStorage());
-		expect(readPosition()).toEqual(DEFAULT_POSITION);
-		expect(() => {
-			savePosition({ edge: 'left', at: 0 });
-		}).not.toThrow();
-	});
-
 	it('FA1: snaps to the nearest of the four edges and keeps its place along it', () => {
 		// The button can travel 303 across and 595 down.
 		const area = { width: 351, height: 643 };
@@ -98,5 +30,57 @@ describe('the floating button position', () => {
 		const area = { width: 300, height: 500 };
 		expect(clampCorner({ x: -20, y: 900 }, area, 48)).toEqual({ x: 0, y: 452 });
 		expect(clampCorner({ x: 400, y: -5 }, area, 48)).toEqual({ x: 252, y: 0 });
+	});
+});
+
+describe('the floating bar position', () => {
+	const area = { width: 1000, height: 600 };
+	const bar = { width: 400, height: 48 };
+
+	it('FB3: keeps its place as a fraction of its room, and stays inside the screen', () => {
+		expect(barPlaceAt({ x: 300, y: 276 }, area, bar)).toEqual({ x: 0.5, y: 0.5 });
+		expect(barPlaceAt({ x: -50, y: 900 }, area, bar)).toEqual({ x: 0, y: 1 });
+		expect(barCorner({ x: 0.5, y: 1 }, area, bar)).toEqual({ x: 300, y: 552 });
+		// A narrower window keeps the bar inside it.
+		expect(barCorner({ x: 1, y: 0 }, { width: 500, height: 600 }, bar)).toEqual({ x: 100, y: 0 });
+		// A bar as wide as the screen has no room to move: it sits at the start.
+		expect(barPlaceAt({ x: 10, y: 0 }, { width: 400, height: 600 }, bar).x).toBe(0);
+	});
+
+	it('FB4: the arrow keys move it, never past the edge', () => {
+		expect(nudged({ x: 0.5, y: 0 }, { x: 16, y: 16 }, area, bar)).toEqual({
+			x: 316 / 600,
+			y: 16 / 552
+		});
+		expect(nudged({ x: 0, y: 0 }, { x: -64, y: -64 }, area, bar)).toEqual({ x: 0, y: 0 });
+	});
+
+	it('FB5: opens next to the button, running towards the middle of the screen', () => {
+		// The button on the right edge, near the top: the bar ends at the button, level with it.
+		const right = barCorner(barBeside({ edge: 'right', at: 0.1 }, area, bar, 48), area, bar);
+		const button = cornerOf({ edge: 'right', at: 0.1 }, area, 48);
+		expect(right.x + bar.width).toBeCloseTo(button.x + 48);
+		expect(right.y).toBeCloseTo(button.y);
+		// The button on the bottom edge, at the left: the bar starts at it and sits on the bottom.
+		const left = barCorner(barBeside({ edge: 'bottom', at: 0 }, area, bar, 48), area, bar);
+		expect(left).toEqual({ x: 0, y: 552 });
+	});
+
+	it('FB5: collapsing puts the button at the bar end nearer the edge, and expanding lands back', () => {
+		for (const place of [
+			{ x: 0.5, y: 0 },
+			{ x: 0, y: 1 },
+			{ x: 1, y: 0.3 },
+			{ x: 0.2, y: 0 }
+		]) {
+			const button = buttonBeside(place, area, bar, 48);
+			const again = barBeside(button, area, bar, 48);
+			expect(again.x).toBeCloseTo(place.x);
+			expect(again.y).toBeCloseTo(place.y);
+		}
+		expect(buttonBeside({ x: 0.5, y: 0 }, area, bar, 48)).toEqual({
+			edge: 'top',
+			at: (700 - 48) / 952
+		});
 	});
 });

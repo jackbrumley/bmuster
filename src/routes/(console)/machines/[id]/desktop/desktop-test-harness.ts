@@ -6,6 +6,7 @@ import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import { presenceOf, underMachineLayout } from '#tests/helpers/machine-presence.ts';
 import DesktopTab from './+page.svelte';
+import DesktopWindow from './window/+page@.svelte';
 
 /**
  * The desktop tab under test: a fake server that opens every session, the
@@ -128,5 +129,23 @@ export async function open(
 	const socket = FakeSocket.last;
 	if (socket === undefined) throw new Error('no socket');
 	attach(socket);
+	return { screen, socket };
+}
+
+/**
+ * Opens the pop-out window's page, with the session handed over in the address
+ * (the caller sets it), and plays the server's side of joining it.
+ */
+export async function openPopOut(grants: Grant[], machine = TEST_MACHINE) {
+	const screen = await render(DesktopWindow, {
+		form: undefined,
+		params: { id: machine.id },
+		data: { signedIn: true, machine, grants }
+	});
+	await expect.poll(() => FakeSocket.last?.url ?? '').toContain('ticket=moved-here');
+	const socket = FakeSocket.last;
+	if (socket === undefined) throw new Error('the window opened no socket');
+	socket.receive(JSON.stringify({ type: 'attached', resumed: true }));
+	socket.receive(JSON.stringify({ type: 'ready' }));
 	return { screen, socket };
 }

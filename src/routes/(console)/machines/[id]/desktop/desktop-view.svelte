@@ -32,6 +32,7 @@
 		type ChromeMachine,
 		type MovedNotice
 	} from './session-chrome.svelte.ts';
+	import { SHEET_QUERY } from './sheet-layout.ts';
 	import { attachStageInput } from './stage-input.ts';
 	import type { TouchMode } from './touch-gestures.ts';
 	import StageOverlay from './stage-overlay.svelte';
@@ -97,8 +98,8 @@
 	/** The browser's full screen, or the stage filling the window where there is none. */
 	const screenMode = new FullScreen(() => session?.viewportChanged());
 	const fullScreen = $derived(screenMode.on);
-	/** A finger, or a window narrower than the sidebar breakpoint: the controls button, not the floating bar. */
-	const touchLayout = new MediaQuery('(pointer: coarse), (max-width: 899px)');
+	/** A phone or a narrow window: the controls button and its sheet, never the floating bar (SPEC-DESKTOP-FLOATING FB8). */
+	const sheetForm = new MediaQuery(SHEET_QUERY);
 	/** A finger is the main pointer: the gestures hint is for this device. */
 	const touchDevice = new MediaQuery('(pointer: coarse)');
 	/** A phone: Connect goes full screen, and the page keeps only Full screen and Disconnect (SPEC-DESKTOP-POPOUT 1–3). */
@@ -164,10 +165,7 @@
 	);
 	const layout = $derived.by((): ChromeLayout => {
 		if (over) {
-			// The overlay is drawn only once the stage is there (see the markup).
-			return touchLayout.current || stage === undefined
-				? { kind: 'floating', exit }
-				: { kind: 'overlay', surface: stage, exit };
+			return { kind: 'floating', form: sheetForm.current ? 'sheet' : 'bar', exit };
 		}
 		if (phone) {
 			return { kind: 'phone', onfullscreen: () => void toggleFullScreen() };

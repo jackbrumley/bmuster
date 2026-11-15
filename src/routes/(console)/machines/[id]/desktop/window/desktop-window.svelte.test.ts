@@ -6,6 +6,7 @@ import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import '#lib/ui/design-tokens.css';
 import DesktopWindow from './+page@.svelte';
+import { openPopOut } from '../desktop-test-harness.ts';
 
 // SPEC-DESKTOP-POPOUT PO6, PO7: the desktop popped out into a window of its own.
 
@@ -47,18 +48,8 @@ afterEach(() => {
 });
 
 /** Opens the window page and plays the server's side of joining the handed-over session. */
-async function openWindow() {
-	const screen = await render(DesktopWindow, {
-		form: undefined,
-		params: { id: TEST_MACHINE.id },
-		data: { signedIn: true, machine: TEST_MACHINE, grants: GRANTS }
-	});
-	await expect.poll(() => FakeSocket.last?.url ?? '').toContain('ticket=moved-here');
-	const socket = FakeSocket.last;
-	if (socket === undefined) throw new Error('the window opened no socket');
-	socket.receive(JSON.stringify({ type: 'attached', resumed: true }));
-	socket.receive(JSON.stringify({ type: 'ready' }));
-	return { screen, socket };
+function openWindow() {
+	return openPopOut(GRANTS);
 }
 
 describe('the pop-out window', () => {

@@ -1,19 +1,12 @@
 <script lang="ts">
-	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
-	import type {
-		DesktopSettings as PictureSettings,
-		InputMessage
-	} from '#lib/domain/desktop/messages.ts';
 	import ToastHost from '#lib/ui/toast-host.svelte';
-	import FloatingControls from './floating-controls.svelte';
-	import FullScreenBar from './full-screen-bar.svelte';
+	import FloatingChrome from './floating-chrome.svelte';
 	import GestureHint from './gesture-hint.svelte';
 	import PhoneToolbar from './phone-toolbar.svelte';
 	import SessionBar from './session-bar.svelte';
 	import type { ChromeLayout, MovedNotice, SessionChrome } from './session-chrome.svelte.ts';
 	import SessionNotices from './session-notices.svelte';
 	import SessionPanels from './session-panels.svelte';
-	import type { TouchMode } from './touch-gestures.ts';
 
 	/**
 	 * The session's controls in one desktop view (SPEC-DESKTOP 23.4, 2), the
@@ -53,7 +46,7 @@
 	{/if}
 	<SessionNotices {chrome} over={false} {moved} {refused} />
 	{#if layout.kind === 'bar'}
-		<SessionPanels {chrome} />
+		<SessionPanels {chrome} touch={false} />
 		{#if hint !== undefined}
 			<GestureHint ondismiss={hint} />
 		{/if}
@@ -67,55 +60,14 @@
 			<GestureHint ondismiss={hint} />
 		</div>
 	{/if}
-	{#if layout.kind === 'overlay'}
-		<FullScreenBar {chrome} surface={layout.surface} exit={layout.exit} />
-	{:else if chrome.session !== undefined}
-		<FloatingControls
-			actions={chrome.actions}
-			status={chrome.status}
-			waiting={chrome.waiting?.text}
-			transfers={chrome.files?.sheetTransfers}
-			osFamily={chrome.machine.osFamily}
-			mode={chrome.mode}
-			canSwitch={chrome.canControl}
-			touchMode={chrome.touchMode}
-			displays={chrome.displays}
-			display={chrome.display}
-			settings={chrome.session.settings}
-			autoLevel={chrome.session.autoLevel}
-			agentVersion={chrome.machine.agentVersion}
-			send={(message: InputMessage) => {
-				chrome.send(message);
-			}}
-			clipboard={chrome.session.clipboard}
-			backToScreen={() => {
-				chrome.focusScreen();
-			}}
-			ontouchmode={(next: TouchMode) => {
-				chrome.chooseTouchMode(next);
-			}}
-			ondisplay={(id: string) => {
-				chrome.selectDisplay(id);
-			}}
-			onsettings={(next: PictureSettings) => {
-				chrome.changeSettings(next);
-			}}
-			onswitch={(next: DesktopMode) => {
-				chrome.switchMode(next);
-			}}
-			exit={layout.exit.kind}
-			onexit={layout.exit.run}
-			ondisconnect={() => void chrome.disconnect()}
-			files={chrome.files?.sheet}
-		/>
-	{/if}
+	<FloatingChrome {chrome} form={layout.form} exit={layout.exit} />
 	{#if toasts}
 		<ToastHost />
 	{/if}
 {/if}
 
 <style>
-	/* Over the screen at the bottom, clear of the bar at the top; under the controls (z-index 2). */
+	/* Over the screen at the bottom centre, under the floating controls (z-index 2). */
 	.notices {
 		position: absolute;
 		bottom: calc(var(--space-4) + var(--safe-bottom));

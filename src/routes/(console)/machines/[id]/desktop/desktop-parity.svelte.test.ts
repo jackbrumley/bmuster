@@ -14,6 +14,7 @@ import { CHROME_ACTIONS, FILE_ACTIONS, type ChromeAction } from './session-actio
 import DesktopWindow from './window/+page@.svelte';
 
 // SPEC-DESKTOP 23 (DP1–DP3, DP5–DP8): every desktop view offers the same session features.
+// SPEC-DESKTOP-FLOATING FB2, FB6, FB8, FB9: the floating bar, collapsed and expanded, and the sheet.
 // A new ChromeAction must be added to ON_BAR and IN_SHEET below, or this file stops compiling.
 
 const SESSION = '66666666-6666-4666-8666-666666666666';
@@ -71,12 +72,17 @@ afterEach(async () => {
 	if (document.fullscreenElement !== null) await document.exitFullscreen();
 });
 
-/** A touch device: a phone, or a tablet wider than the phone layout. */
+/**
+ * A touch device: a phone, or a tablet wider than the phone layout. A tablet's sizes are the
+ * viewport's; a phone stays a phone in full screen, where the test browser grows to the
+ * whole headless screen.
+ */
 function touchDevice(kind: 'phone' | 'tablet'): void {
 	const real = window.matchMedia.bind(window);
 	vi.stubGlobal('matchMedia', (query: string): MediaQueryList => {
 		if (query === PHONE_QUERY) return real(kind === 'phone' ? 'all' : 'not all');
-		return real(query.includes('pointer: coarse') ? 'all' : query);
+		if (kind === 'phone') return real(query.includes('pointer: coarse') ? 'all' : query);
+		return real(query.replaceAll('(pointer: coarse)', '(min-width: 0px)'));
 	});
 }
 
@@ -142,9 +148,13 @@ async function openGuest(): Promise<FakeSocket> {
 	return serve();
 }
 
-/** Brings the floating bar back (it hides when the mouse is idle) by moving near the top edge. */
-async function revealBar(): Promise<void> {
-	await stage().hover({ position: { x: 5, y: 5 } });
+/** Expands the floating bar when it shows as the round button (FB5); in the page, nothing. */
+async function expandBar(): Promise<void> {
+	const collapsed = page.getByRole('button', { name: /^Session controls/ });
+	if (collapsed.query() !== null && button('Collapse the controls').query() === null) {
+		await collapsed.click();
+	}
+	await expect.element(button('Collapse the controls')).toBeVisible();
 }
 
 async function toggles(name: string, opens: Locator, reveal: () => Promise<void>): Promise<void> {
@@ -295,9 +305,27 @@ async function offersEverything(
 	await afterPutAway();
 }
 
-async function downloadStaysOnBar(): Promise<void> {
-	await revealBar();
+/**
+ * FB9: Download stays on the bar; collapsed, the button carries the badge (FB6), and
+ * expanded again from it the bar has every action.
+ */
+async function bothForms(): Promise<void> {
+	await expandBar();
 	await expect.element(button('Download 2 files (zip)')).toBeVisible();
+	await button('Collapse the controls').click();
+	await badgeOnButton();
+	for (const action of CHROME_ACTIONS) {
+		await ON_BAR[action].reach(expandBar);
+	}
+}
+
+/** FB8: on a touch screen the bar's Keys panel adds the phone keys and the touch input choice. */
+async function touchKeysOnBar(): Promise<void> {
+	await expandBar();
+	await button('Keys').click();
+	await expect.element(button('Show the keyboard')).toBeVisible();
+	await expect.element(page.getByRole('button', { name: 'Tap to click' })).toBeVisible();
+	await button('Keys').click();
 }
 
 async function badgeOnButton(): Promise<void> {
@@ -314,45 +342,71 @@ describe('every desktop view offers the same features', () => {
 		});
 	});
 
-	it('DP1, DP3: full screen with a mouse', async () => {
+	it('DP1, DP3, FB9: full screen with a mouse, on the bar and again after collapsing it', async () => {
 		await openTab();
 		await goFullScreen();
-		await offersEverything(ON_BAR, revealBar, downloadStaysOnBar);
+		await expect.element(button('Collapse the controls')).toBeVisible();
+		await offersEverything(ON_BAR, expandBar, bothForms);
 	});
 
-	it('DP1, DP3: full screen on a tablet', async () => {
+	it('DP1, DP3, FB8, FB9: full screen on a tablet: the bar, collapsed at first, with the touch keys', async () => {
 		touchDevice('tablet');
 		await page.viewport(1024, 768);
 		await openTab();
 		await goFullScreen();
-		await offersEverything(IN_SHEET, noReveal, badgeOnButton);
+		await expect.element(page.getByRole('button', { name: /^Session controls/ })).toBeVisible();
+		await expect.element(button('Collapse the controls')).not.toBeInTheDocument();
+		await offersEverything(ON_BAR, expandBar, bothForms);
+		await touchKeysOnBar();
 	});
 
-	it('DP1, DP3: a phone', async () => {
+	it('DP1, DP3, FB8: a phone: the button and its sheet, never the bar', async () => {
 		touchDevice('phone');
 		await page.viewport(375, 667);
 		await openTab();
 		await expect.poll(() => document.fullscreenElement !== null).toBe(true);
 		await offersEverything(IN_SHEET, noReveal, badgeOnButton);
+		await expect.element(button('Collapse the controls')).not.toBeInTheDocument();
 	});
 
-	it('DP1, DP3: the pop-out window with a mouse', async () => {
+	it('DP1, DP3, FB9: the pop-out window with a mouse', async () => {
 		await page.viewport(900, 600);
 		await openWindow();
-		await offersEverything(ON_BAR, revealBar, downloadStaysOnBar);
+		await offersEverything(ON_BAR, expandBar, bothForms);
 	});
 
-	it('DP1, DP3: the pop-out window on touch', async () => {
+	it('DP1, DP3, FB8, FB9: the pop-out window on a touch screen 900px wide: the bar', async () => {
 		touchDevice('tablet');
 		await page.viewport(900, 600);
 		await openWindow();
+		await offersEverything(ON_BAR, expandBar, bothForms);
+		await touchKeysOnBar();
+	});
+
+	it('DP1, DP3, FB8: a pop-out window narrower than 900px: the sheet', async () => {
+		await page.viewport(800, 600);
+		await openWindow();
 		await offersEverything(IN_SHEET, noReveal, badgeOnButton);
+		await expect.element(button('Collapse the controls')).not.toBeInTheDocument();
+	});
+
+	it('FB2: the bar holds the handle, the tools, Disconnect, then Leave full screen or Close window', async () => {
+		await openTab();
+		await goFullScreen();
+		const order = (name: string): string[] =>
+			[...page.getByRole('group', { name }).element().querySelectorAll('button')].map(
+				(element) => element.getAttribute('aria-label') ?? element.textContent.trim()
+			);
+		const fullScreen = order('Full screen controls');
+		expect(fullScreen[0]).toBe('Collapse the controls');
+		expect(fullScreen.slice(-2)).toEqual(['Disconnect', 'Leave full screen']);
+		await document.exitFullscreen();
 	});
 
 	it('DP2: a guest with control, in the page and in full screen, without file actions', async () => {
 		await openGuest();
-		for (const reveal of [noReveal, revealBar]) {
-			if (reveal === revealBar) await goFullScreen();
+		for (const reveal of [noReveal, expandBar]) {
+			if (reveal === expandBar) await goFullScreen();
 			for (const action of CHROME_ACTIONS) {
 				if (FILE_ACTIONS.includes(action)) {
 					await ON_BAR[action].absent();
@@ -401,7 +455,7 @@ describe('notices and toasts over the screen', () => {
 		vi.spyOn(navigator.permissions, 'query').mockResolvedValue(status);
 		vi.spyOn(navigator.clipboard, 'readText').mockResolvedValue('from this device');
 		touchDevice('tablet');
-		await page.viewport(900, 600);
+		await page.viewport(800, 600);
 		const socket = await openWindow();
 		window.dispatchEvent(new Event('focus'));
 		await expect
