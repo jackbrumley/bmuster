@@ -78,7 +78,7 @@ describe('the pop-out window', () => {
 		expect(sessionStorage.getItem(`bmuster.desktop.${TEST_MACHINE.id}`)).toContain(SESSION);
 	});
 
-	it('PO7: has the floating controls with Close window, and keys go to the machine, Escape too', async () => {
+	it('PO7: with a mouse has the floating bar with Close window, and keys go to the machine, Escape too', async () => {
 		const close = vi.fn();
 		vi.stubGlobal('close', close);
 		const { screen, socket } = await openWindow();
@@ -90,6 +90,26 @@ describe('the pop-out window', () => {
 			.toContainEqual(expect.objectContaining({ type: 'key', code: 'Escape', down: true }));
 		expect(close).not.toHaveBeenCalled();
 
+		await stage.hover({ position: { x: 5, y: 5 } });
+		const bar = screen.getByRole('group', { name: 'Window controls' });
+		await expect
+			.element(bar.getByRole('button', { name: 'Leave full screen' }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(screen.getByRole('button', { name: 'Session controls' }))
+			.not.toBeInTheDocument();
+		await bar.getByRole('button', { name: 'Close window' }).click();
+		expect(close).toHaveBeenCalledTimes(1);
+	});
+
+	it('PO7: on touch has the controls button, whose sheet offers Close window', async () => {
+		const real = window.matchMedia.bind(window);
+		vi.stubGlobal('matchMedia', (query: string): MediaQueryList =>
+			real(query.includes('pointer: coarse') ? 'all' : query)
+		);
+		const close = vi.fn();
+		vi.stubGlobal('close', close);
+		const { screen } = await openWindow();
 		await screen.getByRole('button', { name: 'Session controls' }).click();
 		const sheet = screen.getByRole('group', { name: 'Session options' });
 		await sheet.getByRole('tab', { name: 'Session' }).click();

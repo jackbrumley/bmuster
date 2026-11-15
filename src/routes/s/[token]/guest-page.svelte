@@ -88,6 +88,7 @@
 				{token}
 				machineName={guest.machineName}
 				osFamily={guest.osFamily}
+				agentVersion={guest.agentVersion}
 				canControl={guest.permissions.includes('desktop-control')}
 			/>
 			<p class="note">

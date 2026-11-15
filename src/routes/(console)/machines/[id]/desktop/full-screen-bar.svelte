@@ -1,71 +1,26 @@
 <script lang="ts">
-	import { onMount, type Snippet } from 'svelte';
+	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import {
-		IconAdjustmentsHorizontal,
-		IconArrowsMinimize,
-		IconEye,
-		IconKeyboard,
-		IconPlugConnectedX,
-		IconDownload,
-		IconUpload,
-		IconPointer
-	} from '@tabler/icons-svelte-runes';
-	import type { DisplayChoice } from '#lib/domain/desktop/displays.ts';
-	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
+	import { IconArrowsMinimize, IconX } from '@tabler/icons-svelte-runes';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
-	import type { SheetFiles } from './desktop-files.svelte.ts';
+	import type { ChromeExit, SessionChrome } from './session-chrome.svelte.ts';
+	import SessionPanels from './session-panels.svelte';
+	import SessionTools from './session-tools.svelte';
 	import ToolButton from './tool-button.svelte';
 
 	/**
-	 * The controls inside full screen (SPEC-DESKTOP 15): the page's own bar is
-	 * outside the full-screen element, so this one floats at the top centre
-	 * of the screen. It shows when the mouse comes near the top edge or a
-	 * finger taps the screen, and hides after a few idle seconds. Every
-	 * action gives the keyboard back to the screen, and the screen's input
-	 * ignores events aimed at the bar (`screen-input.ts`).
+	 * The floating bar over the screen (SPEC-DESKTOP 15, 23), in full screen
+	 * and in the pop-out window with a mouse: the page's bar is outside the
+	 * full-screen element (or there is no page around the window), so this
+	 * one floats at the top centre with the same tools (`session-tools.svelte`)
+	 * and panels (`session-panels.svelte`). It shows when the mouse comes near
+	 * the top edge or a finger taps the screen, and hides after a few idle
+	 * seconds unless a panel is open. Every action gives the keyboard back to
+	 * the screen, and the screen's input ignores events aimed at the bar
+	 * (`screen-input.ts`).
 	 */
-	let {
-		surface,
-		mode,
-		canSwitch,
-		displays,
-		display,
-		ondisplay,
-		settingsOpen,
-		settings,
-		keysOpen,
-		keys,
-		onexit,
-		onswitch,
-		onsettings,
-		onkeys,
-		files,
-		ondisconnect
-	}: {
-		surface: HTMLElement;
-		/** Undefined while no session runs: then only Exit shows. */
-		mode: DesktopMode | undefined;
-		/** The person may control, so they may change mode. */
-		canSwitch: boolean;
-		/** The screen picker's choices (All screens among them when offered); shown with more than one. */
-		displays: readonly DisplayChoice[];
-		display: string | null;
-		ondisplay: (id: string) => void;
-		settingsOpen: boolean;
-		/** The picture settings, shown under the bar while open. */
-		settings: Snippet;
-		/** The Keys menu (control sessions only), shown under the bar while open. */
-		keysOpen: boolean;
-		keys: Snippet;
-		onexit: () => void;
-		onswitch: (mode: DesktopMode) => void;
-		onsettings: () => void;
-		onkeys: () => void;
-		/** Upload files and Download N files, when sending is allowed (SPEC-SESSION-FILES). */
-		files: SheetFiles | undefined;
-		ondisconnect: () => void;
-	} = $props();
+	let { chrome, surface, exit }: { chrome: SessionChrome; surface: HTMLElement; exit: ChromeExit } =
+		$props();
 
 	/** Idle time before the bar hides. */
 	const HIDE_AFTER_MS = 3000;
@@ -76,7 +31,8 @@
 	let hovering = $state(false);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
-	const pinned = $derived(hovering || settingsOpen || keysOpen);
+	const pinned = $derived(hovering || chrome.panel !== 'none' || chrome.transfersOpen);
+	const exitLabel = $derived(exit.kind === 'window' ? 'Close window' : 'Leave full screen');
 
 	function reveal(): void {
 		shown = true;
@@ -88,13 +44,10 @@
 		}, HIDE_AFTER_MS);
 	}
 
-	/** Runs an action, then gives the keyboard back to the screen. */
-	function act(action: () => void): () => void {
-		return () => {
-			action();
-			surface.focus();
-			reveal();
-		};
+	/** After an action the keyboard goes back to the screen. */
+	function after(): void {
+		surface.focus();
+		reveal();
 	}
 
 	onMount(() => {
@@ -122,7 +75,7 @@
 	});
 
 	$effect(() => {
-		// Closing the settings or leaving the bar starts the idle clock again.
+		// Closing a panel or leaving the bar starts the idle clock again.
 		if (!pinned) {
 			reveal();
 		}
@@ -137,98 +90,41 @@
 		onpointerenter={() => (hovering = true)}
 		onpointerleave={() => (hovering = false)}
 	>
-		<div class="bar" role="group" aria-label="Full screen controls">
-			<ToolButton label="Leave full screen" pressed={undefined} disabled={false} onclick={onexit}>
-				<IconArrowsMinimize size={20} />
+		<div
+			class="bar"
+			role="group"
+			aria-label={exit.kind === 'window' ? 'Window controls' : 'Full screen controls'}
+		>
+			<ToolButton label={exitLabel} pressed={undefined} disabled={false} onclick={exit.run}>
+				{#if exit.kind === 'window'}
+					<IconX size={20} />
+				{:else}
+					<IconArrowsMinimize size={20} />
+				{/if}
 			</ToolButton>
-			{#if mode !== undefined}
-				<span class="mode">{mode === 'control' ? 'Control' : 'View only'}</span>
-				{#if canSwitch}
-					{#if mode === 'watch'}
-						<ToolButton
-							label="Take control (reconnects)"
-							pressed={undefined}
-							disabled={false}
-							onclick={act(() => {
-								onswitch('control');
-							})}
-						>
-							<IconPointer size={20} />
-						</ToolButton>
-					{:else}
-						<ToolButton
-							label="Switch to view only (reconnects)"
-							pressed={undefined}
-							disabled={false}
-							onclick={act(() => {
-								onswitch('watch');
-							})}
-						>
-							<IconEye size={20} />
-						</ToolButton>
-					{/if}
-				{/if}
-				<ToolButton
-					label="Picture settings"
-					pressed={settingsOpen}
-					disabled={false}
-					onclick={act(onsettings)}
-				>
-					<IconAdjustmentsHorizontal size={20} />
-				</ToolButton>
-				{#if mode === 'control'}
-					<ToolButton label="Keys" pressed={keysOpen} disabled={false} onclick={act(onkeys)}>
-						<IconKeyboard size={20} />
-					</ToolButton>
-				{/if}
-				{#if files !== undefined}
-					<ToolButton
-						label="Upload files"
-						pressed={undefined}
-						disabled={false}
-						onclick={files.upload}
-					>
-						<IconUpload size={20} />
-					</ToolButton>
-					{#if files.download !== undefined}
-						<ToolButton
-							label={files.download.label}
-							pressed={undefined}
-							disabled={false}
-							onclick={files.download.run}
-						>
-							<IconDownload size={20} />
-						</ToolButton>
-					{/if}
-				{/if}
-				<ToolButton label="Disconnect" pressed={undefined} disabled={false} onclick={ondisconnect}>
-					<IconPlugConnectedX size={20} />
-				</ToolButton>
-			{/if}
+			<SessionTools {chrome} look="overlay" {after} frame={undefined} />
 		</div>
-		{#if mode !== undefined && displays.length > 1}
+		{#if chrome.has('display')}
 			<div class="screens">
 				<ChipGroup
 					label="Screen"
-					options={displays}
+					options={chrome.displays}
 					bind:value={
-						() => display,
+						() => chrome.display,
 						(value: string | null) => {
 							if (value !== null) {
-								act(() => {
-									ondisplay(value);
-								})();
+								chrome.selectDisplay(value);
+								after();
 							}
 						}
 					}
 				/>
 			</div>
 		{/if}
-		{#if settingsOpen && mode !== undefined}
-			<div class="settings">{@render settings()}</div>
-		{/if}
-		{#if keysOpen && mode === 'control'}
-			<div class="settings">{@render keys()}</div>
+		{#if chrome.panel !== 'none' || chrome.transfersOpen}
+			<div class="panels">
+				<SessionPanels {chrome} />
+			</div>
 		{/if}
 	</div>
 {/if}
@@ -270,17 +166,11 @@
 		background: var(--surface-overlay);
 	}
 
-	.settings {
+	.panels {
+		display: grid;
+		gap: var(--space-2);
 		width: min(440px, calc(100vw - 16px));
 		min-height: 0;
 		overflow: auto;
-	}
-
-	.mode {
-		padding: 0 var(--space-2);
-		color: var(--text-soft);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		white-space: nowrap;
 	}
 </style>

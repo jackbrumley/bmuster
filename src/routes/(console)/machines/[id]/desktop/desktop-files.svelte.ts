@@ -45,6 +45,15 @@ export type SheetFiles = {
 	getCopied: () => void;
 };
 
+/** The Transfers panel in the full-screen sheet's Session tab. */
+export type SheetTransfers = {
+	open: boolean;
+	/** Uploads still running, for the button's count. */
+	running: number;
+	toggle: () => void;
+	sender: SessionFileSender;
+};
+
 export class DesktopFiles {
 	readonly sender: SessionFileSender;
 	/** The Transfers panel under the bar. */
@@ -192,6 +201,21 @@ export class DesktopFiles {
 				link.download = '';
 				link.click();
 			}
+		};
+	}
+
+	/** The Transfers panel for the sheet, while sending is allowed or the panel is open. */
+	get sheetTransfers(): SheetTransfers | undefined {
+		if (!this.canSend && !this.panelOpen) {
+			return undefined;
+		}
+		return {
+			open: this.panelOpen,
+			running: this.sender.running,
+			toggle: () => {
+				this.togglePanel();
+			},
+			sender: this.sender
 		};
 	}
 

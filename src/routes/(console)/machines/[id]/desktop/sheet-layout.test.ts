@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { scrollEdges, sheetLayout } from './sheet-layout.ts';
+import { CHROME_ACTIONS } from './session-actions.ts';
+import { scrollEdges, sheetLayout, sheetTabs } from './sheet-layout.ts';
 
 // SPEC-DESKTOP-FLOATING FA3, FA7.
 
@@ -52,5 +53,20 @@ describe('the sheet', () => {
 			above: true,
 			below: false
 		});
+	});
+
+	it('DP8: has a tab for every session action, and Session always', () => {
+		expect(sheetTabs(CHROME_ACTIONS).map((tab) => tab.label)).toEqual([
+			'Keys',
+			'Clipboard',
+			'Picture',
+			'Screen',
+			'Session'
+		]);
+		expect(sheetTabs(['settings', 'disconnect']).map((tab) => tab.value)).toEqual([
+			'picture',
+			'session'
+		]);
+		expect(sheetTabs([]).map((tab) => tab.value)).toEqual(['session']);
 	});
 });

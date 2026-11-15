@@ -1,4 +1,5 @@
 import { cornerOf, upright, type Area, type FloatingPosition } from './floating-position.ts';
+import type { ChromeAction } from './session-actions.ts';
 
 /**
  * The shape of the full-screen controls sheet (SPEC-DESKTOP-FLOATING,
@@ -33,4 +34,38 @@ export function scrollEdges(box: {
 		above: box.scrollTop > 1,
 		below: box.scrollTop + box.clientHeight < box.scrollHeight - 1
 	};
+}
+
+export type SheetTab = 'keys' | 'clipboard' | 'picture' | 'screen' | 'session';
+
+/** The sheet's tabs, in order. */
+const TABS: readonly { value: SheetTab; label: string }[] = [
+	{ value: 'keys', label: 'Keys' },
+	{ value: 'clipboard', label: 'Clipboard' },
+	{ value: 'picture', label: 'Picture' },
+	{ value: 'screen', label: 'Screen' },
+	{ value: 'session', label: 'Session' }
+];
+
+/**
+ * The tab each session action lives in (SPEC-DESKTOP 23): a new action does
+ * not compile until it has one.
+ */
+const HOME: Record<ChromeAction, SheetTab> = {
+	mode: 'session',
+	keys: 'keys',
+	clipboard: 'clipboard',
+	upload: 'session',
+	download: 'session',
+	transfers: 'session',
+	settings: 'picture',
+	display: 'screen',
+	disconnect: 'session'
+};
+
+/** Session always (it holds the exit), each other tab while an action of its own is on offer. */
+export function sheetTabs(actions: readonly ChromeAction[]): { value: SheetTab; label: string }[] {
+	return TABS.filter(
+		(tab) => tab.value === 'session' || actions.some((action) => HOME[action] === tab.value)
+	);
 }

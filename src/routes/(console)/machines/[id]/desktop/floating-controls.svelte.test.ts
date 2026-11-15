@@ -6,6 +6,7 @@ import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 import '#lib/ui/design-tokens.css';
 import { DesktopClipboard } from './clipboard.svelte.ts';
 import FloatingControls from './floating-controls.svelte';
+import { availableActions } from './session-actions.ts';
 
 // SPEC-DESKTOP-FLOATING F2, F3, F4, F6, FA1, FA4, FA5, FA6, FA7, FA8, FA9.
 
@@ -41,6 +42,18 @@ async function setup(
 		toAgent.push(message);
 	});
 	const screen = await render(FloatingControls, {
+		actions: availableActions({
+			running: mode !== undefined,
+			watchOnly: mode === 'watch',
+			canControl: true,
+			canSend: upload !== undefined,
+			filesWaiting: false,
+			transfersOpen: false,
+			displays: displays.length
+		}),
+		status: mode === undefined ? 'Not connected' : '15 fps · 200 KB/s',
+		waiting: undefined,
+		transfers: undefined,
 		osFamily: 'windows',
 		mode,
 		canSwitch: true,

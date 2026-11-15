@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { IconMenu2 } from '@tabler/icons-svelte-runes';
+	import { IconDownload, IconMenu2 } from '@tabler/icons-svelte-runes';
 	import type {
 		AutoLevel,
 		DesktopSettings as PictureSettings,
@@ -22,12 +22,13 @@
 		type FloatingPosition
 	} from './floating-position.ts';
 	import ClipboardPanel from './clipboard-panel.svelte';
-	import type { SheetFiles } from './desktop-files.svelte.ts';
+	import type { SheetFiles, SheetTransfers } from './desktop-files.svelte.ts';
 	import FloatingSessionTab from './floating-session-tab.svelte';
 	import type { DesktopClipboard } from './clipboard.svelte.ts';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
-	import { scrollEdges, sheetLayout } from './sheet-layout.ts';
+	import type { ChromeAction } from './session-actions.ts';
+	import { scrollEdges, sheetLayout, sheetTabs, type SheetTab as Tab } from './sheet-layout.ts';
 	import type { TouchMode } from './touch-gestures.ts';
 
 	/**
@@ -40,9 +41,14 @@
 	 * sheet with a fade where there is more. The screen's input takes only
 	 * events aimed at the screen itself (`screen-input.ts`), and a drag
 	 * swallows its pointer's events on the way down, so neither the button
-	 * nor the sheet ever clicks on the machine.
+	 * nor the sheet ever clicks on the machine. The tabs come from the
+	 * session's actions (SPEC-DESKTOP 23): each action has a home tab here.
 	 */
 	let {
+		actions,
+		status,
+		waiting,
+		transfers,
 		osFamily,
 		mode,
 		canSwitch,
@@ -64,6 +70,14 @@
 		ondisconnect,
 		files
 	}: {
+		/** What the session offers now (`session-actions.ts`). */
+		actions: readonly ChromeAction[];
+		/** The session's status in a few words, for the Session tab. */
+		status: string;
+		/** Files copied on the machine, for the badge on the button ("2 files copied on the machine"). */
+		waiting: string | undefined;
+		/** The Transfers panel, in the Session tab; undefined without files. */
+		transfers: SheetTransfers | undefined;
 		osFamily: OsFamily;
 		/** Undefined while no session runs: then only Leave full screen shows. */
 		mode: DesktopMode | undefined;
@@ -97,8 +111,6 @@
 	/** The button's size in page pixels (also in the stylesheet). */
 	const SIZE = 48;
 
-	type Tab = 'keys' | 'clipboard' | 'picture' | 'screen' | 'session';
-
 	const uid = $props.id();
 	const control = $derived(mode === 'control');
 
@@ -118,20 +130,12 @@
 	/** More of the tab to see above or below: the fades show. */
 	let edges = $state({ above: false, below: false });
 
-	const tabs = $derived<{ value: Tab; label: string }[]>([
-		...(control ? [{ value: 'keys' as const, label: 'Keys' }] : []),
-		...(control ? [{ value: 'clipboard' as const, label: 'Clipboard' }] : []),
-		...(mode !== undefined ? [{ value: 'picture' as const, label: 'Picture' }] : []),
-		...(mode !== undefined && displays.length > 1
-			? [{ value: 'screen' as const, label: 'Screen' }]
-			: []),
-		{ value: 'session', label: 'Session' }
-	]);
-	/** A control session opens on its keys; any other on the session's actions. */
+	const tabs = $derived(sheetTabs(actions));
+	/** A control session opens on its keys; any other, or one with files waiting, on the session's actions. */
 	const shown = $derived<Tab>(
 		chosen !== undefined && tabs.some((tab) => tab.value === chosen)
 			? chosen
-			: control
+			: control && waiting === undefined
 				? 'keys'
 				: 'session'
 	);
@@ -326,12 +330,15 @@
 			class:dragging={drag !== undefined}
 			style:--x={drag === undefined ? undefined : `${drag.x}px`}
 			style:--y={drag === undefined ? undefined : `${drag.y}px`}
-			aria-label="Session controls"
-			title="Session controls"
+			aria-label={waiting === undefined ? 'Session controls' : `Session controls, ${waiting}`}
+			title={waiting === undefined ? 'Session controls' : `Session controls, ${waiting}`}
 			aria-expanded={open}
 			aria-controls="{uid}-sheet"
 			onpointerdown={onPointerDown}
-			onclick={onTap}><IconMenu2 size={24} /></button
+			onclick={onTap}
+			><IconMenu2 size={24} />{#if waiting !== undefined}<span class="badge" aria-hidden="true"
+					><IconDownload size={14} /></span
+				>{/if}</button
 		>
 		{#if open}
 			<div
@@ -393,6 +400,8 @@
 										/>
 									{:else if shown === 'session'}
 										<FloatingSessionTab
+											{status}
+											{transfers}
 											{mode}
 											{canSwitch}
 											{touchMode}
@@ -500,6 +509,22 @@
 	.fab.edge-bottom {
 		bottom: 0;
 		left: var(--along);
+	}
+
+	/* Files wait to be downloaded: a dot on the button that holds Download. */
+	.badge {
+		position: absolute;
+		top: -4px;
+		right: -4px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		border: 2px solid var(--brand);
+		border-radius: var(--radius-round);
+		background: var(--brand-contrast);
+		color: var(--brand);
 	}
 
 	.fab.dragging {
