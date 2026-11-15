@@ -5,6 +5,7 @@
 		IconArrowsTransferUpDown,
 		IconArrowsMinimize,
 		IconClipboard,
+		IconDownload,
 		IconEye,
 		IconKeyboard,
 		IconUpload,
@@ -40,6 +41,7 @@
 		clipboardOpen,
 		settingsOpen,
 		canSend,
+		download,
 		transfersOpen,
 		transfersRunning,
 		ondisplay,
@@ -72,6 +74,8 @@
 		settingsOpen: boolean;
 		/** Files may be sent through the screen now (SPEC-SESSION-FILES 3.1). */
 		canSend: boolean;
+		/** Download N files: files copied on the machine (SPEC-SESSION-FILES 3.2). */
+		download: { label: string; run: () => void } | undefined;
 		transfersOpen: boolean;
 		/** Uploads still running, for the Transfers button's count. */
 		transfersRunning: number;
@@ -163,6 +167,11 @@
 			<ToolButton label="Upload files" pressed={undefined} disabled={false} onclick={onupload}>
 				<IconUpload size={20} />
 			</ToolButton>
+		{/if}
+		{#if download !== undefined}
+			<Button variant="secondary" size="compact" type="button" onclick={download.run}
+				><IconDownload size={18} /> {download.label}</Button
+			>
 		{/if}
 		{#if canSend || transfersOpen}
 			<ToolButton

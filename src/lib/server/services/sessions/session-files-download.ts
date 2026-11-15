@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { agentWalkSchema } from '#lib/schemas/session-files/session-files.ts';
 import { recordAudit } from '../audit/audit.ts';
-import { parseRange, rangeStillValid, type ByteRange } from './range.ts';
+import { attachment, fileDownload } from './range.ts';
 import {
 	ANSWER_MS,
 	outcomeOf,
@@ -35,12 +35,6 @@ export type OfferDownload = {
 	/** "PC-12 files 2026-11-15.zip". */
 	zipName: string;
 };
-
-/** `attachment` with an ASCII fallback name and the real one (RFC 6266). */
-function disposition(name: string): string {
-	const fallback = name.replace(/[^\x20-\x7e]|["\\%]/g, '_');
-	return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`;
-}
 
 /**
  * The bytes of one read, as they arrive, acknowledged once taken. Ending early (the browser went
@@ -149,38 +143,20 @@ function single(
 	entry: { path: string; size: number; modifiedMs: number },
 	tally: Tally
 ): Response {
-	const { size, modifiedMs } = entry;
-	const etag = `"${size.toString(36)}-${modifiedMs.toString(36)}"`;
-	const lastModified = new Date(modifiedMs).toUTCString();
-	const range: ByteRange = rangeStillValid(request.ifRange, { etag, lastModified })
-		? parseRange(request.range, size)
-		: { kind: 'whole' };
-	const headers = new Headers({
-		'accept-ranges': 'bytes',
-		'cache-control': 'no-store',
-		'content-disposition': disposition(entry.path),
-		'content-type': 'application/octet-stream',
-		etag,
-		'last-modified': lastModified,
-		'x-content-type-options': 'nosniff'
-	});
-	if (range.kind === 'unsatisfiable') {
-		headers.set('content-range', `bytes */${size}`);
+	const { headers, plan } = fileDownload(
+		{ name: entry.path, size: entry.size, modifiedMs: entry.modifiedMs },
+		request
+	);
+	if (plan.kind === 'unsatisfiable') {
 		tally.end(false, 'The range asked for is outside the file.');
 		return new Response(null, { status: 416, headers });
 	}
-	const start = range.kind === 'part' ? range.start : 0;
-	const length = range.kind === 'part' ? range.end - range.start + 1 : size;
-	headers.set('content-length', String(length));
-	if (range.kind === 'part') {
-		headers.set('content-range', `bytes ${range.start}-${range.end}/${size}`);
-	}
-	const status = range.kind === 'part' ? 206 : 200;
+	const { status, start, length } = plan;
 	if (request.method === 'HEAD' || length === 0) {
 		tally.end(length === 0, length === 0 ? '' : 'Headers only.');
 		return new Response(null, { status, headers });
 	}
-	const count = tally.item(entry.path, size);
+	const count = tally.item(entry.path, entry.size);
 	const body = guarded(
 		streamed(channel, { offerId: request.offerId, entry: 0, offset: start, length }, (data) => {
 			count(data);
@@ -269,7 +245,7 @@ function zipped(
 	tally.transfer.size = length;
 	const headers = new Headers({
 		'cache-control': 'no-store',
-		'content-disposition': disposition(request.zipName),
+		'content-disposition': attachment(request.zipName),
 		'content-type': 'application/zip',
 		'content-length': String(length),
 		'x-content-type-options': 'nosniff'

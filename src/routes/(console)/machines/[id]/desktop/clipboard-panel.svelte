@@ -4,6 +4,7 @@
 		IconClipboardText,
 		IconCopy,
 		IconDownload,
+		IconFiles,
 		IconUpload
 	} from '@tabler/icons-svelte-runes';
 	import { MediaQuery } from 'svelte/reactivity';
@@ -24,7 +25,14 @@
 	 * machine's latest copy; on a desktop it offers Allow clipboard sharing
 	 * once, and the text box with its buttons as the fallback.
 	 */
-	let { clipboard }: { clipboard: DesktopClipboard } = $props();
+	let {
+		clipboard,
+		getCopied
+	}: {
+		clipboard: DesktopClipboard;
+		/** Get copied files, while sharing is off (SPEC-SESSION-FILES question 8); undefined without files. */
+		getCopied: (() => void) | undefined;
+	} = $props();
 
 	const phone = new MediaQuery(PHONE_QUERY);
 	const uid = $props.id();
@@ -146,6 +154,13 @@
 					onclick={() => void clipboard.pasteFromDevice()}
 				>
 					<IconClipboardText size={18} /> Paste from this device
+				</Button>
+			</div>
+		{/if}
+		{#if getCopied !== undefined && !clipboard.sharing}
+			<div class="actions">
+				<Button variant="secondary" size="compact" type="button" onclick={getCopied}>
+					<IconFiles size={18} /> Get copied files
 				</Button>
 			</div>
 		{/if}

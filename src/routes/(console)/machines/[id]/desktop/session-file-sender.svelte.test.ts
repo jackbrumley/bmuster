@@ -47,17 +47,18 @@ function fakeApi(refuse: Record<string, string>, rows: TransferRow[]) {
 				ok: true,
 				data: { kind: 'ready', user: 'kim', folderLabel: 'Downloads/BMuster', free: 50 * 1024 ** 3 }
 			}),
-		finish: (batchId) => {
-			calls.push(`finish ${batchId.length}`);
-			return Promise.resolve({ ok: true, data: { onClipboard: false } });
+		finish: (batchId, shareClipboard) => {
+			calls.push(`finish ${batchId.length} ${String(shareClipboard)}`);
+			return Promise.resolve({ ok: true, data: { onClipboard: shareClipboard } });
 		},
+		offer: () => Promise.resolve({ ok: true, data: { kind: 'none' } }),
 		transfers: () => Promise.resolve({ ok: true, data: { transfers: rows } })
 	};
 	return { api, calls };
 }
 
-function sender(api: SessionFilesApi, notices: string[]) {
-	return new SessionFileSender(api, 'PC-12', {
+function sender(api: SessionFilesApi, notices: string[], sharing = false) {
+	return new SessionFileSender(api, 'PC-12', () => sharing, {
 		notify: (tone, text) => notices.push(`${tone}: ${text}`),
 		wait: () => new Promise((resolve) => setTimeout(resolve, 5))
 	});
@@ -73,8 +74,8 @@ describe('the browser notice', () => {
 		await one.send([file('report.pdf')], { kind: 'none' }, DESKTOP);
 		await one.send([file('a.txt'), file('b.txt'), file('c.txt')], { kind: 'none' }, DESKTOP);
 		expect(notices).toEqual([
-			"success: Sent report (2).pdf to kim's Downloads/BMuster on PC-12.",
-			"success: Sent 3 files to kim's Downloads/BMuster on PC-12."
+			"success: Sent report (2).pdf to kim's Downloads/BMuster on PC-12. Share clipboard is off, so they are not on the machine's clipboard.",
+			"success: Sent 3 files to kim's Downloads/BMuster on PC-12. Share clipboard is off, so they are not on the machine's clipboard."
 		]);
 		expect(calls.filter((call) => call.startsWith('finish'))).toHaveLength(2);
 	});
@@ -88,7 +89,7 @@ describe('the browser notice', () => {
 			DESKTOP
 		);
 		expect(notices).toEqual([
-			"error: Sent 2 of 3 files to kim's Downloads/BMuster on PC-12. big.iso: There isn't enough room on the machine."
+			"error: Sent 2 of 3 files to kim's Downloads/BMuster on PC-12. big.iso: There isn't enough room on the machine. Share clipboard is off, so they are not on the machine's clipboard."
 		]);
 	});
 
@@ -113,6 +114,18 @@ describe('the browser notice', () => {
 			'error: Connect to the screen first.'
 		]);
 		expect(calls).toEqual([]);
+	});
+});
+
+describe('files on the clipboard', () => {
+	it('SF20: with Share clipboard on, the agent is asked to and the notice says they can be pasted', async () => {
+		const notices: string[] = [];
+		const { api, calls } = fakeApi({}, []);
+		await sender(api, notices, true).send([file('a.txt')], { kind: 'none' }, DESKTOP);
+		expect(calls.filter((call) => call.startsWith('finish'))).toEqual(['finish 36 true']);
+		expect(notices).toEqual([
+			"success: Sent a.txt to kim's Downloads/BMuster on PC-12. They're on the machine's clipboard: paste with Ctrl+V."
+		]);
 	});
 });
 

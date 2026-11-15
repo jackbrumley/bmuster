@@ -98,6 +98,8 @@
 	const phone = $derived(phoneLayout.current);
 	/** The window this tab popped the session out into (SPEC-DESKTOP-POPOUT 8). */
 	const popOut = new PopOutWindow();
+	/** How often copied files are looked for while Share clipboard is on. */
+	const OFFER_EVERY_MS = 2000;
 	/** Files sent through the screen (SPEC-SESSION-FILES): the drop zone, Upload files, Transfers. */
 	const files = new DesktopFiles(() => data.machine, {
 		block: () =>
@@ -107,7 +109,8 @@
 				running,
 				watchOnly
 			}),
-		sessionId: () => session?.handover?.sessionId
+		sessionId: () => session?.handover?.sessionId,
+		sharing: () => session?.clipboard.sharing === true
 	});
 
 	const connection = $derived(session?.connection ?? { kind: 'idle' as const });
@@ -306,6 +309,7 @@
 		});
 		const detachFullScreen = screenMode.attach();
 		const detachDrop = files.attach(surface);
+		const stopOffers = files.watch(OFFER_EVERY_MS);
 		const detachViewport = watchViewport(surface, () => {
 			current.viewportChanged();
 		});
@@ -313,6 +317,7 @@
 			detachInput();
 			detachFullScreen();
 			detachDrop();
+			stopOffers();
 			detachViewport();
 			current.detach();
 			cursor.detach();
@@ -348,6 +353,7 @@
 			clipboardOpen={open === 'clipboard'}
 			settingsOpen={open === 'settings'}
 			canSend={files.canSend}
+			download={files.download}
 			transfersOpen={files.panelOpen}
 			transfersRunning={files.sender.running}
 			ondisplay={(id: string) => session?.selectDisplay(id)}
@@ -404,7 +410,7 @@
 		{/if}
 
 		{#if open === 'clipboard' && session !== undefined && running && !watchOnly && !fullScreen}
-			<ClipboardPanel clipboard={session.clipboard} />
+			<ClipboardPanel clipboard={session.clipboard} getCopied={files.sheet?.getCopied} />
 		{/if}
 
 		{#if files.panelOpen && !fullScreen}
@@ -481,11 +487,7 @@
 					exit="full-screen"
 					onexit={() => void toggleFullScreen()}
 					ondisconnect={() => void endSession()}
-					onupload={files.canSend
-						? () => {
-								files.pick();
-							}
-						: undefined}
+					files={files.sheet}
 				/>
 			{:else if fullScreen && stage !== undefined}
 				<FullScreenBar
@@ -505,11 +507,7 @@
 					onkeys={() => {
 						toggle('keys');
 					}}
-					onupload={files.canSend
-						? () => {
-								files.pick();
-							}
-						: undefined}
+					files={files.sheet}
 					ondisconnect={() => void endSession()}
 				>
 					{#snippet settings()}

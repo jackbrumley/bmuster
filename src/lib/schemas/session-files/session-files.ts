@@ -134,7 +134,7 @@ const offerItemSchema = z.object({
 });
 
 /** The offer's id: 128 random bits, hex. */
-export const offerIdSchema = z.string().regex(/^[0-9a-f]{32}$/);
+const offerIdSchema = z.string().regex(/^[0-9a-f]{32}$/);
 
 export const agentOfferSchema = z.object({
 	offer: z
@@ -167,8 +167,6 @@ export const agentWalkSchema = z.object({
 	skipped: z.array(z.object({ path: z.string().max(8192), reason: z.string().max(1000) })),
 	single: z.boolean()
 });
-
-export const agentReadDoneSchema = z.object({ bytes });
 
 /** `GET …/session-files/offers/<offerId>/download?desktopSessionId=` */
 export const offerDownloadQuerySchema = z.object({ desktopSessionId: id, offerId: offerIdSchema });

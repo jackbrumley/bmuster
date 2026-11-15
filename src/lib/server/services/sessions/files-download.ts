@@ -10,7 +10,7 @@ import {
 	type FilesContext,
 	type FilesOutcome
 } from './files.ts';
-import { parseRange, rangeStillValid, type ByteRange } from './range.ts';
+import { fileDownload } from './range.ts';
 
 /**
  * Downloads (SPEC-FILES F5): streamed from the agent through the server,
@@ -32,12 +32,6 @@ export type DownloadRequest = {
 	ifRange: string | null;
 };
 
-/** `attachment` with an ASCII fallback name and the real one (RFC 6266). */
-function disposition(name: string): string {
-	const fallback = name.replace(/[^\x20-\x7e]|["\\%]/g, '_');
-	return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`;
-}
-
 export function downloadFile(
 	context: FilesContext,
 	request: DownloadRequest
@@ -55,36 +49,22 @@ export function downloadFile(
 		}
 		const size = stat.value.size;
 		const modifiedMs = stat.value.modifiedMs ?? 0;
-		const etag = `"${size.toString(36)}-${modifiedMs.toString(36)}"`;
-		const lastModified = new Date(modifiedMs).toUTCString();
-		const range: ByteRange = rangeStillValid(request.ifRange, { etag, lastModified })
-			? parseRange(request.range, size)
-			: { kind: 'whole' };
-		const headers = new Headers({
-			'accept-ranges': 'bytes',
-			'cache-control': 'no-store',
-			'content-disposition': disposition(baseName(pathFlavour(machine.osFamily), request.path)),
-			'content-type': 'application/octet-stream',
-			etag,
-			'last-modified': lastModified,
-			'x-content-type-options': 'nosniff'
-		});
-		if (range.kind === 'unsatisfiable') {
-			headers.set('content-range', `bytes */${size}`);
+		const { headers, plan } = fileDownload(
+			{
+				name: baseName(pathFlavour(machine.osFamily), request.path),
+				size,
+				modifiedMs
+			},
+			request
+		);
+		if (plan.kind === 'unsatisfiable') {
 			return { kind: 'ok', value: new Response(null, { status: 416, headers }) };
 		}
-		const start = range.kind === 'part' ? range.start : 0;
-		const length = range.kind === 'part' ? range.end - range.start + 1 : size;
-		headers.set('content-length', String(length));
-		if (range.kind === 'part') {
-			headers.set('content-range', `bytes ${range.start}-${range.end}/${size}`);
-		}
-		const status = range.kind === 'part' ? 206 : 200;
+		const { status, start, length } = plan;
 		if (request.method === 'HEAD' || length === 0) {
 			return { kind: 'ok', value: new Response(null, { status, headers }) };
 		}
-		const rangeText =
-			range.kind === 'part' ? `bytes ${range.start}-${range.end}` : 'the whole file';
+		const rangeText = status === 206 ? `bytes ${start}-${start + length - 1}` : 'the whole file';
 		return stream(
 			channel,
 			{ path: request.path, offset: start, length },

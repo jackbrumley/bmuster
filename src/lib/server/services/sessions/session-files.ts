@@ -77,7 +77,7 @@ export type Outcome<T> = { kind: 'ok'; value: T } | Refusal;
 
 export const ANSWER_MS = { quick: 30_000, chunk: 120_000, slow: 15 * 60_000 } as const;
 
-export function refused(status: number, message: string): Refusal {
+function refused(status: number, message: string): Refusal {
 	return { kind: 'refused', status, message };
 }
 

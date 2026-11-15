@@ -63,3 +63,53 @@ export function rangeStillValid(
 	}
 	return validator === current.lastModified;
 }
+
+/** `attachment` with an ASCII fallback name and the real one (RFC 6266). */
+export function attachment(name: string): string {
+	const fallback = name.replace(/[^\x20-\x7e]|["\\%]/g, '_');
+	return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
+
+/** What to send for one file: nothing (416), or a status and the bytes from `start`. */
+export type RangePlan =
+	{ kind: 'unsatisfiable' } | { kind: 'send'; status: 200 | 206; start: number; length: number };
+
+/**
+ * A single file's download headers (SPEC-FILES F5, SPEC-SESSION-FILES SF25): Content-Length,
+ * Accept-Ranges, ETag, Last-Modified and Content-Disposition, the range asked for (dropped when
+ * If-Range names an older version) and Content-Range.
+ */
+export function fileDownload(
+	file: { name: string; size: number; modifiedMs: number },
+	asked: { range: string | null; ifRange: string | null }
+): { headers: Headers; plan: RangePlan } {
+	const { size, modifiedMs } = file;
+	const etag = `"${size.toString(36)}-${modifiedMs.toString(36)}"`;
+	const lastModified = new Date(modifiedMs).toUTCString();
+	const range: ByteRange = rangeStillValid(asked.ifRange, { etag, lastModified })
+		? parseRange(asked.range, size)
+		: { kind: 'whole' };
+	const headers = new Headers({
+		'accept-ranges': 'bytes',
+		'cache-control': 'no-store',
+		'content-disposition': attachment(file.name),
+		'content-type': 'application/octet-stream',
+		etag,
+		'last-modified': lastModified,
+		'x-content-type-options': 'nosniff'
+	});
+	if (range.kind === 'unsatisfiable') {
+		headers.set('content-range', `bytes */${size}`);
+		return { headers, plan: { kind: 'unsatisfiable' } };
+	}
+	const start = range.kind === 'part' ? range.start : 0;
+	const length = range.kind === 'part' ? range.end - range.start + 1 : size;
+	headers.set('content-length', String(length));
+	if (range.kind === 'part') {
+		headers.set('content-range', `bytes ${range.start}-${range.end}/${size}`);
+	}
+	return {
+		headers,
+		plan: { kind: 'send', status: range.kind === 'part' ? 206 : 200, start, length }
+	};
+}

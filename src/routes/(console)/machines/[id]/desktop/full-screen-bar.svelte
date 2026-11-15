@@ -7,12 +7,14 @@
 		IconEye,
 		IconKeyboard,
 		IconPlugConnectedX,
+		IconDownload,
 		IconUpload,
 		IconPointer
 	} from '@tabler/icons-svelte-runes';
 	import type { DisplayChoice } from '#lib/domain/desktop/displays.ts';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
+	import type { SheetFiles } from './desktop-files.svelte.ts';
 	import ToolButton from './tool-button.svelte';
 
 	/**
@@ -38,7 +40,7 @@
 		onswitch,
 		onsettings,
 		onkeys,
-		onupload,
+		files,
 		ondisconnect
 	}: {
 		surface: HTMLElement;
@@ -60,8 +62,8 @@
 		onswitch: (mode: DesktopMode) => void;
 		onsettings: () => void;
 		onkeys: () => void;
-		/** Upload files, when sending is allowed (SPEC-SESSION-FILES 3.1). */
-		onupload: (() => void) | undefined;
+		/** Upload files and Download N files, when sending is allowed (SPEC-SESSION-FILES). */
+		files: SheetFiles | undefined;
 		ondisconnect: () => void;
 	} = $props();
 
@@ -179,10 +181,25 @@
 						<IconKeyboard size={20} />
 					</ToolButton>
 				{/if}
-				{#if onupload !== undefined}
-					<ToolButton label="Upload files" pressed={undefined} disabled={false} onclick={onupload}>
+				{#if files !== undefined}
+					<ToolButton
+						label="Upload files"
+						pressed={undefined}
+						disabled={false}
+						onclick={files.upload}
+					>
 						<IconUpload size={20} />
 					</ToolButton>
+					{#if files.download !== undefined}
+						<ToolButton
+							label={files.download.label}
+							pressed={undefined}
+							disabled={false}
+							onclick={files.download.run}
+						>
+							<IconDownload size={20} />
+						</ToolButton>
+					{/if}
 				{/if}
 				<ToolButton label="Disconnect" pressed={undefined} disabled={false} onclick={ondisconnect}>
 					<IconPlugConnectedX size={20} />

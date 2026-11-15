@@ -22,6 +22,7 @@
 		type FloatingPosition
 	} from './floating-position.ts';
 	import ClipboardPanel from './clipboard-panel.svelte';
+	import type { SheetFiles } from './desktop-files.svelte.ts';
 	import FloatingSessionTab from './floating-session-tab.svelte';
 	import type { DesktopClipboard } from './clipboard.svelte.ts';
 	import KeyBar from './key-bar.svelte';
@@ -61,7 +62,7 @@
 		exit,
 		onexit,
 		ondisconnect,
-		onupload
+		files
 	}: {
 		osFamily: OsFamily;
 		/** Undefined while no session runs: then only Leave full screen shows. */
@@ -89,8 +90,8 @@
 		exit: 'full-screen' | 'window';
 		onexit: () => void;
 		ondisconnect: () => void;
-		/** Upload files in the Session tab, when sending is allowed (SPEC-SESSION-FILES 3.1). */
-		onupload: (() => void) | undefined;
+		/** Upload files and Download N files in the Session tab, Get copied files in the Clipboard tab (SPEC-SESSION-FILES). */
+		files: SheetFiles | undefined;
 	} = $props();
 
 	/** The button's size in page pixels (also in the stylesheet). */
@@ -376,7 +377,7 @@
 											<KeysMenu {osFamily} {send} afterSend={backToScreen} />
 										{/if}
 									{:else if shown === 'clipboard' && control}
-										<ClipboardPanel {clipboard} />
+										<ClipboardPanel {clipboard} getCopied={files?.getCopied} />
 									{:else if shown === 'picture' && mode !== undefined}
 										<DesktopSettings {settings} {autoLevel} {agentVersion} onchange={onsettings} />
 									{:else if shown === 'screen'}
@@ -403,7 +404,16 @@
 											}}
 											onexit={leave(onexit)}
 											ondisconnect={leave(ondisconnect)}
-											onupload={onupload === undefined ? undefined : leave(onupload)}
+											files={files === undefined
+												? undefined
+												: {
+														upload: leave(files.upload),
+														download:
+															files.download === undefined
+																? undefined
+																: { label: files.download.label, run: leave(files.download.run) },
+														getCopied: files.getCopied
+													}}
 										/>
 									{/if}
 								</div>

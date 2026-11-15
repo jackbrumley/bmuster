@@ -1,6 +1,8 @@
+import { resolve } from '$app/paths';
+import { downloadLabel, type ClipboardOffer } from '#lib/domain/session-files/session-files.ts';
 import { showToast } from '#lib/ui/toast.svelte.ts';
 import { attachDropZone } from './drop-guard.ts';
-import { sessionFilesApi } from './session-files-api.ts';
+import { sessionFilesApi, type SessionFilesApi } from './session-files-api.ts';
 import { chosenFromDrop, SessionFileSender, type SendBlock } from './session-file-sender.svelte.ts';
 
 /**
@@ -35,21 +37,42 @@ export function sendBlock(view: {
 	return { kind: 'none' };
 }
 
+/** Files in the full-screen controls: Upload files, and Download N files when there is an offer. */
+export type SheetFiles = {
+	upload: () => void;
+	download: { label: string; run: () => void } | undefined;
+	/** Get copied files, for the Clipboard tab while sharing is off. */
+	getCopied: () => void;
+};
+
 export class DesktopFiles {
 	readonly sender: SessionFileSender;
 	/** The Transfers panel under the bar. */
 	panelOpen = $state(false);
+	/** What is copied on the machine now (SPEC-SESSION-FILES 3.2). */
+	offer = $state<ClipboardOffer>({ kind: 'none' });
 	readonly #block: () => SendBlock;
 	readonly #sessionId: () => string | undefined;
+	readonly #sharing: () => boolean;
+	readonly #api: SessionFilesApi;
+	readonly #machineId: string;
 
 	constructor(
 		machineOf: () => { id: string; name: string },
-		view: { block: () => SendBlock; sessionId: () => string | undefined }
+		view: {
+			block: () => SendBlock;
+			sessionId: () => string | undefined;
+			/** Share clipboard is on: copied files are offered by themselves, sent ones go on the clipboard. */
+			sharing: () => boolean;
+		}
 	) {
 		this.#block = view.block;
 		this.#sessionId = view.sessionId;
+		this.#sharing = view.sharing;
 		const machine = machineOf();
-		this.sender = new SessionFileSender(sessionFilesApi(machine.id), machine.name, {
+		this.#machineId = machine.id;
+		this.#api = sessionFilesApi(machine.id);
+		this.sender = new SessionFileSender(this.#api, machine.name, view.sharing, {
 			notify: (tone, text) => {
 				showToast(text, tone);
 			},
@@ -89,6 +112,87 @@ export class DesktopFiles {
 			void this.sender.send(files, this.#block(), this.#sessionId());
 		});
 		picker.click();
+	}
+
+	/** Asks what is copied on the machine; `quiet` keeps refusals out of the notices. */
+	async look(quiet: boolean): Promise<void> {
+		const sessionId = this.#sessionId();
+		if (sessionId === undefined || !this.canSend) {
+			this.offer = { kind: 'none' };
+			return;
+		}
+		const answer = await this.#api.offer(sessionId);
+		if (!answer.ok) {
+			if (!quiet) {
+				showToast(answer.message, 'error');
+			}
+			return;
+		}
+		this.offer = answer.data;
+		if (!quiet && answer.data.kind !== 'offer') {
+			showToast(
+				answer.data.kind === 'refused'
+					? answer.data.message
+					: 'No files are copied on the machine. Copy them in its file manager first.',
+				'error'
+			);
+		}
+	}
+
+	/**
+	 * While Share clipboard is on, looks every `everyMs` (SF27); Get copied files asks once when
+	 * it is off. Returns the stop.
+	 */
+	watch(everyMs: number): () => void {
+		const tick = (): void => {
+			if (this.#sharing() && this.canSend) {
+				void this.look(true);
+			} else if (this.offer.kind !== 'none' && !this.canSend) {
+				this.offer = { kind: 'none' };
+			}
+		};
+		tick();
+		const timer = setInterval(tick, everyMs);
+		return () => {
+			clearInterval(timer);
+		};
+	}
+
+	/** Download N files: the browser's own download, from the server's stream. */
+	get download(): { label: string; run: () => void } | undefined {
+		const offer = this.offer;
+		const sessionId = this.#sessionId();
+		if (offer.kind !== 'offer' || sessionId === undefined || !this.canSend) {
+			return undefined;
+		}
+		const url = `${resolve('/api/machines/[id]/session-files/offers/[offerId]/download', {
+			id: this.#machineId,
+			offerId: offer.offerId
+		})}?desktopSessionId=${encodeURIComponent(sessionId)}`;
+		return {
+			label: downloadLabel(offer),
+			run: () => {
+				const link = document.createElement('a');
+				link.href = url;
+				link.download = '';
+				link.click();
+			}
+		};
+	}
+
+	/** What the full-screen bar and sheet offer, while sending is allowed. */
+	get sheet(): SheetFiles | undefined {
+		return this.canSend
+			? {
+					upload: () => {
+						this.pick();
+					},
+					download: this.download,
+					getCopied: () => {
+						void this.look(false);
+					}
+				}
+			: undefined;
 	}
 
 	togglePanel(): void {

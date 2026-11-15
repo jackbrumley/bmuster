@@ -1,5 +1,6 @@
 import { resolve } from '$app/paths';
 import {
+	clipboardOfferSchema,
 	emptyReplySchema,
 	partReplySchema,
 	sendBeginReplySchema,
@@ -21,7 +22,8 @@ export function sessionFilesApi(machineId: string) {
 		end: resolve('/api/machines/[id]/session-files/send/end', params),
 		cancel: resolve('/api/machines/[id]/session-files/send/cancel', params),
 		finish: resolve('/api/machines/[id]/session-files/send/finish', params),
-		transfers: resolve('/api/machines/[id]/session-files/transfers', params)
+		transfers: resolve('/api/machines/[id]/session-files/transfers', params),
+		offer: resolve('/api/machines/[id]/session-files/offer', params)
 	};
 
 	const uploads: UploadApi<SessionDestination> = {
@@ -83,12 +85,19 @@ export function sessionFilesApi(machineId: string) {
 				body: undefined,
 				reply: sendTargetSchema
 			}),
-		finish: (batchId: string) =>
+		finish: (batchId: string, shareClipboard: boolean) =>
 			apiRequest({
 				method: 'POST',
 				url: urls.finish,
-				body: { batchId },
+				body: { batchId, shareClipboard },
 				reply: sendFinishReplySchema
+			}),
+		offer: (desktopSessionId: string) =>
+			apiRequest({
+				method: 'GET',
+				url: `${urls.offer}?${new URLSearchParams({ desktopSessionId }).toString()}`,
+				body: undefined,
+				reply: clipboardOfferSchema
 			}),
 		transfers: () =>
 			apiRequest({

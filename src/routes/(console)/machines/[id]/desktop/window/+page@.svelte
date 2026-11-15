@@ -95,7 +95,8 @@
 				running: live,
 				watchOnly: session?.mode === 'watch'
 			}),
-		sessionId: () => session?.handover?.sessionId
+		sessionId: () => session?.handover?.sessionId,
+		sharing: () => session?.clipboard.sharing === true
 	});
 
 	/** A file dropped on the window never replaces the session with the file. */
@@ -155,9 +156,11 @@
 		});
 		resized.observe(surface);
 		const detachDrop = files.attach(surface);
+		const stopOffers = files.watch(2000);
 		surface.focus();
 		return () => {
 			detachDrop();
+			stopOffers();
 			clearTimeout(settle);
 			resized.disconnect();
 			detachInput();
@@ -223,11 +226,7 @@
 					window.close();
 				}}
 				ondisconnect={() => void disconnect()}
-				onupload={files.canSend
-					? () => {
-							files.pick();
-						}
-					: undefined}
+				files={files.sheet}
 			/>
 		{/if}
 	</div>

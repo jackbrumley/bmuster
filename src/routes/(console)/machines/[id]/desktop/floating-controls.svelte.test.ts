@@ -30,7 +30,7 @@ afterEach(() => {
 async function setup(
 	mode: DesktopMode | undefined,
 	displays: readonly { value: string; label: string; count: undefined }[] = [],
-	onupload?: () => void
+	upload?: () => void
 ) {
 	const sent: InputMessage[] = [];
 	const backToScreen = vi.fn();
@@ -62,7 +62,8 @@ async function setup(
 		exit: 'full-screen',
 		onexit,
 		ondisconnect,
-		onupload
+		files:
+			upload === undefined ? undefined : { upload, download: undefined, getCopied: () => undefined }
 	});
 	// The full-screen element the controls float over.
 	screen.container.style.cssText =
