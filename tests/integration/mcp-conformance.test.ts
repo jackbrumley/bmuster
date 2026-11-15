@@ -19,9 +19,11 @@ import {
 	pkcePair,
 	RESOURCE,
 	rpcReply,
+	setByLastCall,
 	thrown
 } from '#tests/helpers/mcp.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
+import { FORM_ACTION_HEADER } from '#lib/server/hooks/security-headers.ts';
 import { GET as protectedResource } from '../../src/routes/.well-known/oauth-protected-resource/mcp/+server.ts';
 import { GET as authorizationServer } from '../../src/routes/.well-known/oauth-authorization-server/+server.ts';
 import { POST as mcpPost } from '../../src/routes/mcp/+server.ts';
@@ -266,6 +268,25 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 			kind: 'redirect',
 			location: `/login?returnTo=${encodeURIComponent(`/oauth/authorize?${query}`)}`
 		});
+	});
+
+	it('S20: the consent page lets its forms lead back to the assistant, and only to its origin', async () => {
+		const pkce = pkcePair();
+		const query = new URLSearchParams({
+			response_type: 'code',
+			client_id: CLAUDE_CODE_ID,
+			redirect_uri: 'http://127.0.0.1:41234/callback',
+			code_challenge: pkce.challenge,
+			code_challenge_method: 'S256',
+			state: 'state-123',
+			resource: RESOURCE,
+			scope: 'machines:read'
+		}).toString();
+		const shown = await thrown(() =>
+			invoke(load, `/oauth/authorize?${query}`, getting({ kind: 'signed-in', user: pat }), {})
+		);
+		expect(shown.kind).toBe('returned');
+		expect(setByLastCall.get(FORM_ACTION_HEADER)).toBe('http://127.0.0.1:41234');
 	});
 
 	it('CIMD client on loopback (any port, localhost and 127.0.0.1): connect, initialize, tools/list, list_machines', async () => {

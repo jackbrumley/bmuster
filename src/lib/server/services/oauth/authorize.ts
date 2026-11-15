@@ -151,16 +151,21 @@ async function checkAuthorize(
 	};
 }
 
-/** What the consent screen shows (M7), or why it cannot ask. */
+/**
+ * What the consent screen shows (M7), or why it cannot ask. `formTarget` is the origin of the
+ * checked redirect URI, where Allow and Cancel lead: the page adds it to its form-action
+ * (SPEC-SIGN-IN S20).
+ */
 export type ConsentView =
 	| { kind: 'invalid'; message: string }
 	| { kind: 'redirect'; location: string }
-	| { kind: 'not-allowed'; assistant: AssistantName }
+	| { kind: 'not-allowed'; assistant: AssistantName; formTarget: string }
 	| {
 			kind: 'ask';
 			assistant: AssistantName;
 			redirect: RedirectTarget;
 			scopes: McpScope[];
+			formTarget: string;
 	  };
 
 function redirectTarget(redirectUri: string): RedirectTarget {
@@ -183,13 +188,18 @@ export async function consentView(
 	}
 	if (connectEligibility(database, userId).kind === 'ineligible') {
 		logNotAllowed(userId, check.request, now);
-		return { kind: 'not-allowed', assistant: check.request.client.assistant };
+		return {
+			kind: 'not-allowed',
+			assistant: check.request.client.assistant,
+			formTarget: new URL(check.request.redirectUri).origin
+		};
 	}
 	return {
 		kind: 'ask',
 		assistant: check.request.client.assistant,
 		redirect: redirectTarget(check.request.redirectUri),
-		scopes: check.request.scopes
+		scopes: check.request.scopes,
+		formTarget: new URL(check.request.redirectUri).origin
 	};
 }
 

@@ -9,6 +9,7 @@ import { scheduleSnapshots } from '#lib/server/database/snapshots.ts';
 import { env } from '#lib/server/env.ts';
 import { errorReference, serverErrorHandler } from '#lib/server/hooks/handle-error.ts';
 import { originCheck } from '#lib/server/hooks/origin-check.ts';
+import { securityHeaders } from '#lib/server/hooks/security-headers.ts';
 import { session } from '#lib/server/hooks/session.ts';
 import { setupRedirect } from '#lib/server/hooks/setup-redirect.ts';
 import {
@@ -119,10 +120,11 @@ export const init: ServerInit = async () => {
 };
 
 /**
- * Every request: who is signed in → first-run setup → cross-site writes
- * refused. Access itself is checked by the guard on each route.
+ * Every request: browser security headers on whatever comes back (SPEC-SIGN-IN S20) → who
+ * is signed in → first-run setup → cross-site writes refused. Access itself is checked by
+ * the guard on each route.
  */
-export const handle = sequence(session, setupRedirect, originCheck);
+export const handle = sequence(securityHeaders, session, setupRedirect, originCheck);
 
 /**
  * Unexpected errors go to the server log under a reference the error page

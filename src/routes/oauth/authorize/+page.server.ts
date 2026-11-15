@@ -2,6 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 import { authorizeParamsSchema, type AuthorizeParams } from '#lib/schemas/mcp/oauth.ts';
 import { database } from '#lib/server/database/app-database.ts';
 import { page } from '#lib/server/guards/page.ts';
+import { FORM_ACTION_HEADER } from '#lib/server/hooks/security-headers.ts';
 import { consentView, decideConsent } from '#lib/server/services/oauth/authorize.ts';
 import { oauthLog } from '#lib/server/services/oauth/oauth-log.ts';
 import { safeFetchJson } from '#lib/server/services/oauth/safe-fetch.ts';
@@ -65,11 +66,15 @@ function hiddenFields(params: AuthorizeParams): { name: string; value: string }[
 	});
 }
 
-export const load: PageServerLoad = page.oauth(async ({ url }, { user }) => {
+export const load: PageServerLoad = page.oauth(async ({ url, setHeaders }, { user }) => {
 	const params = paramsFrom((name) => url.searchParams.get(name));
 	const view = await consentView(database, user.id, params, url.origin, safeFetchJson, Date.now());
 	if (view.kind === 'redirect') {
 		backToAssistant(view.location);
+	}
+	if (view.kind === 'ask' || view.kind === 'not-allowed') {
+		// Allow and Cancel redirect to the assistant, which form-action must permit (S20).
+		setHeaders({ [FORM_ACTION_HEADER]: view.formTarget });
 	}
 	return { view, fields: hiddenFields(params), userName: user.name };
 });

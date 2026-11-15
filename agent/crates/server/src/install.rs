@@ -6,7 +6,7 @@ use crate::bundle;
 use crate::layout::{self, bundle_version, check_bundle, Layout};
 use crate::releases::{self, current_version, point_current, releases_dir, CURRENT};
 use crate::updater::files;
-use crate::{address, config, platform};
+use crate::{address, config, data_privacy, platform};
 use anyhow::{bail, Context as _, Result};
 use std::fs;
 use std::path::Path;
@@ -119,6 +119,12 @@ pub fn install(target: &Layout, port: Option<u16>, no_service: bool) -> Result<(
             );
         }
     }
+    // Only the service account and administrators may open the settings,
+    // database and snapshots, including any written by an older release
+    // (SPEC-SERVER-INSTALL I16). Windows needs an Administrator for this.
+    if cfg!(unix) || !no_service {
+        data_privacy::lock(&target.data)?;
+    }
 
     if no_service {
         println!(
@@ -155,7 +161,10 @@ pub fn refresh_units(target: &Layout, no_service: bool) -> Result<()> {
         return Ok(());
     }
     platform::require_admin()?;
-    platform::refresh_units(target)
+    platform::refresh_units(target)?;
+    // Every upgrade runs this as root or SYSTEM: the data lockdown is
+    // repaired whatever happened to it since the install (I16).
+    data_privacy::lock(&target.data)
 }
 
 pub fn uninstall(target: &Layout, purge: bool) -> Result<()> {

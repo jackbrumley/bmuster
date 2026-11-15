@@ -5,6 +5,7 @@
 mod address;
 mod bundle;
 mod config;
+mod data_privacy;
 mod install;
 mod launcher;
 mod layout;
@@ -198,6 +199,8 @@ fn run(data: PathBuf) -> Result<()> {
     }
     #[cfg(unix)]
     {
+        // Only the owner may open the data (SPEC-SERVER-INSTALL I16).
+        data_privacy::repair(&data)?;
         launcher::run_in_foreground(data)
     }
     #[cfg(not(unix))]

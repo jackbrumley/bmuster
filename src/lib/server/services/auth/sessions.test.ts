@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW } from '#tests/helpers/people.ts';
 import { consoleSessions } from '../../database/schema.ts';
+import { listAudit } from '../audit/audit.ts';
 import { disableUser } from '../users/users.ts';
 import { authenticateSession } from './current-user.ts';
 import {
@@ -12,6 +13,8 @@ import {
 	SESSION_MAX_MS,
 	sessionCookieOptions,
 	sessionCount,
+	otherSessionCount,
+	signOutOtherSessions,
 	signOut,
 	startSession
 } from './sessions.ts';
@@ -77,6 +80,54 @@ describe('console sessions (S5)', () => {
 			expect(findSession(database, token, at).kind).toBe('active');
 		}
 		expect(findSession(database, token, NOW + SESSION_MAX_MS).kind).toBe('none');
+	});
+});
+
+describe('signing out everywhere else (S21)', () => {
+	it("S21: ends the person's other sessions, keeps this one and other people's, and is audited", async () => {
+		const database = testDatabase();
+		const ada = await addTestUser(database, {
+			email: 'ada@example.com',
+			role: 'admin',
+			password: null
+		});
+		const kim = await addTestUser(database, {
+			email: 'kim@example.com',
+			role: 'member',
+			password: null
+		});
+		const here = startSession(database, ada.id, CLIENT, NOW);
+		const phone = startSession(database, ada.id, CLIENT, NOW);
+		const laptop = startSession(database, ada.id, CLIENT, NOW);
+		const kims = startSession(database, kim.id, CLIENT, NOW);
+
+		expect(otherSessionCount(database, ada.id, here.token, NOW)).toBe(2);
+		expect(signOutOtherSessions(database, here.token, ada, NOW)).toBe(2);
+
+		expect(findSession(database, here.token, NOW).kind).toBe('active');
+		expect(findSession(database, phone.token, NOW).kind).toBe('none');
+		expect(findSession(database, laptop.token, NOW).kind).toBe('none');
+		expect(findSession(database, kims.token, NOW).kind).toBe('active');
+		expect(otherSessionCount(database, ada.id, here.token, NOW)).toBe(0);
+		expect(listAudit(database, 1)[0]).toMatchObject({
+			kind: 'sign-out',
+			actorUserId: ada.id,
+			target: 'ada@example.com',
+			detail: { sessions: 'every other session', ended: '2' }
+		});
+	});
+
+	it('S21: counts only the other sessions still open', async () => {
+		const database = testDatabase();
+		const ada = await addTestUser(database, {
+			email: 'ada@example.com',
+			role: 'admin',
+			password: null
+		});
+		const here = startSession(database, ada.id, CLIENT, NOW);
+		startSession(database, ada.id, CLIENT, NOW - SESSION_IDLE_MS - 1);
+		startSession(database, ada.id, CLIENT, NOW - 60_000);
+		expect(otherSessionCount(database, ada.id, here.token, NOW)).toBe(1);
 	});
 });
 

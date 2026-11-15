@@ -4,6 +4,7 @@ import { playwright } from '@vitest/browser-playwright';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { CSP_DIRECTIVES } from './src/lib/server/hooks/content-security-policy.ts';
 import { webSockets } from './src/lib/server/sockets/vite-plugin.ts';
 
 const packageJson: unknown = JSON.parse(readFileSync('package.json', 'utf8'));
@@ -36,7 +37,10 @@ export default defineConfig(({ command, mode }) => ({
 			// form posts. SvelteKit's check runs in production only and would refuse
 			// the form-encoded OAuth token requests AI assistants send with no Origin
 			// (SPEC-MCP), which the hook deliberately leaves to those endpoints' guards.
-			csrf: { trustedOrigins: ['*'] }
+			csrf: { trustedOrigins: ['*'] },
+			// The Content-Security-Policy of every page, with a nonce for SvelteKit's own inline
+			// script (SPEC-SIGN-IN S20); the security headers hook sends it on other responses.
+			csp: { mode: 'auto', directives: CSP_DIRECTIVES }
 		}),
 		// Attaches the socket routes (agents' live sockets) to the dev server.
 		webSockets(),
