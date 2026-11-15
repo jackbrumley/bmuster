@@ -36,7 +36,7 @@ function starter(name: string): SavedCommandView {
 /** The first lines of every starter's PowerShell script (SC27). */
 const POWERSHELL_HEAD = "$ErrorActionPreference = 'Stop'\ntry {\n";
 
-/** The last lines: any error, terminating or not, ends the run with exit code 1 (SC27). */
+/** The last lines, so that every error, terminating or not, ends the run with exit code 1 (SC27). */
 const POWERSHELL_TAIL =
 	'\n} catch {\n  [Console]::Error.WriteLine("Failed: $($_.Exception.Message)")\n  exit 1\n}';
 
