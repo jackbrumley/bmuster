@@ -15,6 +15,24 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.5.3',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Pop-out window: tap the grip; the white button appears where the grip was; tap it and the grip lands back under it',
+				'The figures are stacked and the bar stays narrow; the dot is green on a good connection and turns amber or red when Auto drops quality',
+				'Drag the bar near the top centre and let go: it snaps there; hover each icon for its tooltip',
+				'Press Ctrl+Alt+Home: the control collapses and expands, and nothing types on the machine',
+				'Move the bar on one machine, open another: each keeps its own place; a machine never opened starts where you last left it'
+			]
+		},
+		changes: [
+			'Floating desktop control: collapsing puts the button where the grip was, and it is now white so it stands out over any screen; the frames and KB/s figures sit one above the other to keep the bar narrow',
+			'A green, amber or red dot beside the figures shows how the connection is doing; every icon has a tooltip; the bar snaps to the top centre when dropped near it',
+			'Ctrl+Alt+Home collapses or expands the floating control (never sent to the machine), and where you leave it is remembered for each machine, starting from your last placement on a new one'
+		]
+	},
+	{
 		version: '0.5.2',
 		testing: {
 			kind: 'steps',
