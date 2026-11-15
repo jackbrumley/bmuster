@@ -15,6 +15,26 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.5.0',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Windows (AUADRNBK00007), desktop in Firefox: drop a file on the screen; it lands in the user’s Downloads, BMuster, the tray shows a notice, and Ctrl+V in an Explorer folder pastes it',
+				'Copy a file in Explorer on the machine: Download appears in the session bar and downloads it; copy two and they come as one zip',
+				'Ask your AI assistant where the disk space went on fedora (it uses get_storage, no approval); ask it to clear the safe items: an approval card shows each item and size',
+				'Run Get-CimInstance -ClassName Win32_Nope; "after" on Windows from Commands: it shows Finished with errors (1); and Uptime from saved commands works',
+				'Account: Sign out everywhere else; Settings, General: the Recovery panel shows server.env, the backups folder and the reset commands; the console works with no errors in the browser console'
+			]
+		},
+		changes: [
+			'Files through the remote session: drop files on the remote screen (or Upload files) and they land in the signed-in person’s Downloads, BMuster folder and on the machine’s clipboard, so Ctrl+V pastes them into any folder; files copied on the machine show as Download in your browser (zipped when several). A dropped file can no longer replace your session',
+			'AI assistants and storage: get_storage reads the machine’s cached disk analysis (biggest folders, largest files, safe clean-ups) without running commands; rescan_storage refreshes it; clean_up_storage asks to clear items from BMuster’s safe list and always waits for your approval',
+			'Honest results: a PowerShell command that writes errors but exits 0 now shows Finished with errors (N). The starter saved commands fail loudly, Uptime no longer needs WMI, and AI assistants see Runs at once or Needs a person’s approval for each saved command',
+			'Security: strict browser security headers (no framing, a Content-Security-Policy, HSTS when BMuster serves its own HTTPS); a Windows server’s data folder is limited to SYSTEM and Administrators; a Recovery panel in Settings says what to back up; Sign out everywhere else on your Account page',
+			'Getting back in: bmuster-server reset-password and reset-two-factor run on the server itself (Linux, Windows and Docker). Questions and answers at bmuster.com/faq cover these, AI set-up, approvals and saved commands'
+		]
+	},
+	{
 		version: '0.4.34',
 		testing: {
 			kind: 'steps',
