@@ -4,34 +4,38 @@ import { UPLOAD_CHUNK_BYTES } from '#lib/domain/files/files.ts';
 import type { ApiResult } from '#lib/utils/api-client.ts';
 
 /**
- * Uploads in the Files tab (SPEC-FILES F6, F10): one file at a time, in
+ * Uploads in the Files tab (SPEC-FILES F6, F10) and files sent through a
+ * desktop session (SPEC-SESSION-FILES SF19): one file at a time, in
  * 8 MB pieces. The browser hashes the file as it sends it; the machine
  * checks that hash before putting the file in place. A dropped connection
  * (or a server or machine that went away for a moment) is retried, and
  * `begin` says how much the machine already holds, so the upload carries on
  * from there rather than starting again.
+ *
+ * Where a file goes is its destination: a folder for the Files tab, a
+ * desktop session for files sent through the screen. The queue is the same;
+ * only the calls differ.
  */
 
-export type UploadApi = {
-	beginUpload(
-		dir: string,
-		name: string,
-		size: number,
-		replace: boolean
-	): Promise<ApiResult<{ partSize: number }>>;
-	uploadChunk(
-		target: { dir: string; name: string; offset: number },
+/** The Files tab's destination: a folder, and whether to replace a file of the same name. */
+export type FolderDestination = { kind: 'folder'; dir: string; replace: boolean };
+
+/** Files sent through a desktop session (SPEC-SESSION-FILES), in one drop. */
+export type SessionDestination = { kind: 'session'; desktopSessionId: string; batchId: string };
+
+export type UploadApi<D> = {
+	/** Starts or resumes: how much the machine holds. Sets `upload.remoteId` when the server names it. */
+	begin(upload: Upload<D>): Promise<ApiResult<{ partSize: number }>>;
+	chunk(
+		upload: Upload<D>,
+		offset: number,
 		body: Blob,
 		onProgress: (sentBytes: number) => void,
 		signal: AbortSignal
 	): Promise<ApiResult<{ partSize: number }>>;
-	endUpload(
-		dir: string,
-		name: string,
-		size: number,
-		sha256: string
-	): Promise<ApiResult<{ path: string; size: number; sha256: string }>>;
-	cancelUpload(dir: string, name: string): Promise<ApiResult<Record<string, never>>>;
+	/** The machine checked the hash: what the file was saved as. */
+	end(upload: Upload<D>, sha256: string): Promise<ApiResult<{ savedAs: string }>>;
+	cancel(upload: Upload<D>): Promise<unknown>;
 };
 
 export type UploadState =
@@ -45,9 +49,9 @@ export type UploadState =
 	| { kind: 'failed'; message: string }
 	| { kind: 'cancelled' };
 
-export type QueueHooks = {
+export type QueueHooks<D> = {
 	/** An upload finished (the folder it went to can be listed again). */
-	finished: (upload: Upload) => void;
+	finished: (upload: Upload<D>) => void;
 	/** Waits before trying again; tests make it instant. */
 	wait: (ms: number) => Promise<void>;
 };
@@ -59,13 +63,15 @@ const LONGEST_RETRY_MS = 15_000;
 
 let nextId = 1;
 
-export class Upload {
+export class Upload<D> {
 	readonly id: string;
 	readonly file: File;
-	readonly dir: string;
+	readonly destination: D;
 	readonly name: string;
-	/** Replace a file of the same name (the person said yes). */
-	readonly replace: boolean;
+	/** The server's id for this upload once it has begun, for files sent through a screen. */
+	remoteId: string | null = null;
+	/** What the machine saved it as. */
+	savedAs = $state<string | undefined>(undefined);
 	sent = $state(0);
 	state = $state<UploadState>({ kind: 'waiting' });
 	controller = new AbortController();
@@ -73,12 +79,11 @@ export class Upload {
 	/** Bytes from the start of the file fed to `hasher`. */
 	hashed = 0;
 
-	constructor(file: File, dir: string, replace: boolean) {
+	constructor(file: File, destination: D) {
 		this.id = `upload-${nextId++}`;
 		this.file = file;
-		this.dir = dir;
+		this.destination = destination;
 		this.name = file.name;
-		this.replace = replace;
 	}
 
 	get size(): number {
@@ -98,13 +103,13 @@ function retryable(result: { status: number }): boolean {
 	return [0, 412, 502, 503, 504].includes(result.status);
 }
 
-export class UploadQueue {
-	items = $state<Upload[]>([]);
-	readonly #api: UploadApi;
-	readonly #hooks: QueueHooks;
+export class UploadQueue<D> {
+	items = $state<Upload<D>[]>([]);
+	readonly #api: UploadApi<D>;
+	readonly #hooks: QueueHooks<D>;
 	#running = false;
 
-	constructor(api: UploadApi, hooks: QueueHooks) {
+	constructor(api: UploadApi<D>, hooks: QueueHooks<D>) {
 		this.#api = api;
 		this.#hooks = hooks;
 	}
@@ -116,22 +121,25 @@ export class UploadQueue {
 		).length;
 	}
 
-	add(files: readonly { file: File; replace: boolean }[], dir: string): void {
-		this.items.push(...files.map(({ file, replace }) => new Upload(file, dir, replace)));
+	add(files: readonly { file: File; destination: D }[]): Upload<D>[] {
+		const added = files.map(({ file, destination }) => new Upload(file, destination));
+		this.items.push(...added);
 		void this.#drain();
+		// The proxies the queue holds, so callers see their state change.
+		return this.items.slice(-added.length);
 	}
 
-	cancel(upload: Upload): void {
+	cancel(upload: Upload<D>): void {
 		if (['done', 'failed', 'cancelled'].includes(upload.state.kind)) {
 			return;
 		}
 		upload.state = { kind: 'cancelled' };
 		upload.controller.abort();
-		void this.#api.cancelUpload(upload.dir, upload.name);
+		void this.#api.cancel(upload);
 	}
 
 	/** Tries a failed upload again, from what the machine already holds. */
-	retry(upload: Upload): void {
+	retry(upload: Upload<D>): void {
 		if (upload.state.kind !== 'failed') {
 			return;
 		}
@@ -164,7 +172,7 @@ export class UploadQueue {
 		}
 	}
 
-	async #run(upload: Upload): Promise<void> {
+	async #run(upload: Upload<D>): Promise<void> {
 		let delay = FIRST_RETRY_MS;
 		let troubleSince: number | undefined;
 		for (;;) {
@@ -204,8 +212,8 @@ export class UploadQueue {
 	}
 
 	/** One go at the upload, from wherever the machine's part file ends. */
-	async #attempt(upload: Upload): Promise<Attempt> {
-		const begun = await this.#api.beginUpload(upload.dir, upload.name, upload.size, upload.replace);
+	async #attempt(upload: Upload<D>): Promise<Attempt> {
+		const begun = await this.#api.begin(upload);
 		if (!begun.ok) {
 			return retryable(begun) ? 'retry' : { kind: 'failed', message: begun.message };
 		}
@@ -219,8 +227,9 @@ export class UploadQueue {
 			upload.state = { kind: 'sending' };
 			const start = offset;
 			const piece = upload.file.slice(start, Math.min(upload.size, start + UPLOAD_CHUNK_BYTES));
-			const sent = await this.#api.uploadChunk(
-				{ dir: upload.dir, name: upload.name, offset: start },
+			const sent = await this.#api.chunk(
+				upload,
+				start,
 				piece,
 				(bytes) => {
 					upload.sent = start + bytes;
@@ -245,21 +254,22 @@ export class UploadQueue {
 		}
 		upload.state = { kind: 'checking' };
 		const digest = bytesToHex(upload.hasher.clone().digest());
-		const ended = await this.#api.endUpload(upload.dir, upload.name, upload.size, digest);
+		const ended = await this.#api.end(upload, digest);
 		if (!ended.ok) {
 			return retryable(ended) ? 'retry' : { kind: 'failed', message: ended.message };
 		}
+		upload.savedAs = ended.data.savedAs;
 		return 'done';
 	}
 }
 
 /** Whether the person cancelled the upload (a call, so a check made earlier is not assumed to hold). */
-function stopped(upload: Upload): boolean {
+function stopped<D>(upload: Upload<D>): boolean {
 	return upload.controller.signal.aborted;
 }
 
 /** Brings the running hash to `offset` bytes: further on by reading, or from the start. */
-async function hashUpTo(upload: Upload, offset: number): Promise<void> {
+async function hashUpTo<D>(upload: Upload<D>, offset: number): Promise<void> {
 	if (offset < upload.hashed) {
 		upload.hasher = sha256.create();
 		upload.hashed = 0;

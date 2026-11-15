@@ -3,12 +3,12 @@
 	import Button from '#lib/ui/button.svelte';
 	import Panel from '#lib/ui/panel.svelte';
 	import { formatBytes, percentOf } from '#lib/utils/format.ts';
-	import type { Upload, UploadQueue } from './upload-queue.svelte.ts';
+	import type { FolderDestination, Upload, UploadQueue } from './upload-queue.svelte.ts';
 
 	/** Uploads in progress (SPEC-FILES F10): progress, cancel and try again per file. */
-	let { queue }: { queue: UploadQueue } = $props();
+	let { queue }: { queue: UploadQueue<FolderDestination> } = $props();
 
-	function status(upload: Upload): string {
+	function status(upload: Upload<FolderDestination>): string {
 		switch (upload.state.kind) {
 			case 'waiting':
 				return 'Waiting';

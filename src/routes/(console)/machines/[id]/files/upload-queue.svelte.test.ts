@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiResult } from '#lib/utils/api-client.ts';
-import { UploadQueue, type UploadApi } from './upload-queue.svelte.ts';
+import {
+	Upload,
+	UploadQueue,
+	type FolderDestination,
+	type SessionDestination,
+	type UploadApi
+} from './upload-queue.svelte.ts';
 
 const MB = 1024 * 1024;
 
@@ -16,12 +22,13 @@ function fakeMachine(options: { dropPieceAt: number[]; refuseEnd: boolean }) {
 	const drops = [...options.dropPieceAt];
 	let finished: { sha256: string } | undefined;
 	const ok = <T>(data: T): ApiResult<T> => ({ ok: true, data });
-	const api: UploadApi = {
-		beginUpload: (_dir, _name, _size, replace) => {
-			calls.push(`begin ${part.byteLength} ${String(replace)}`);
+	const api: UploadApi<FolderDestination> = {
+		begin: (upload) => {
+			calls.push(`begin ${part.byteLength} ${String(upload.destination.replace)}`);
 			return Promise.resolve(ok({ partSize: part.byteLength }));
 		},
-		uploadChunk: async (target, body, onProgress) => {
+		chunk: async (_upload, offset, body, onProgress) => {
+			const target = { offset };
 			calls.push(`piece ${target.offset}`);
 			if (drops[0] === target.offset) {
 				drops.shift();
@@ -40,16 +47,16 @@ function fakeMachine(options: { dropPieceAt: number[]; refuseEnd: boolean }) {
 			onProgress(body.size);
 			return ok({ partSize: part.byteLength });
 		},
-		endUpload: async (dir, name, size, sha256) => {
+		end: async (upload, sha256) => {
 			calls.push('end');
 			const actual = await sha256Hex(part);
-			if (options.refuseEnd || actual !== sha256 || size !== part.byteLength) {
+			if (options.refuseEnd || actual !== sha256 || upload.size !== part.byteLength) {
 				return { ok: false, message: 'The file arrived changed.', status: 422 };
 			}
 			finished = { sha256 };
-			return ok({ path: `${dir}/${name}`, size, sha256 });
+			return ok({ savedAs: `${upload.destination.dir}/${upload.name}` });
 		},
-		cancelUpload: () => {
+		cancel: () => {
 			calls.push('cancel');
 			part = new Uint8Array(0);
 			return Promise.resolve(ok({}));
@@ -75,7 +82,7 @@ describe('uploads (SPEC-FILES F6, F10)', () => {
 			wait: () => Promise.resolve()
 		});
 		const { file: picked, bytes } = file(20 * MB);
-		queue.add([{ file: picked, replace: false }], '/srv');
+		queue.add([{ file: picked, destination: { kind: 'folder', dir: '/srv', replace: false } }]);
 		await expect.poll(() => done, { timeout: 20_000 }).toEqual(['big.bin']);
 		expect(machine.calls).toEqual([
 			'begin 0 false',
@@ -97,8 +104,9 @@ describe('uploads (SPEC-FILES F6, F10)', () => {
 		const machine = fakeMachine({ dropPieceAt: [], refuseEnd: false });
 		const { file: picked, bytes } = file(10 * MB);
 		// An earlier page sent the first piece, then went away.
-		await machine.api.uploadChunk(
-			{ dir: '/srv', name: 'big.bin', offset: 0 },
+		await machine.api.chunk(
+			new Upload(picked, { kind: 'folder', dir: '/srv', replace: true }),
+			0,
 			picked.slice(0, 8 * MB),
 			() => undefined,
 			new AbortController().signal
@@ -108,7 +116,7 @@ describe('uploads (SPEC-FILES F6, F10)', () => {
 			finished: (upload) => done.push(upload.name),
 			wait: () => Promise.resolve()
 		});
-		queue.add([{ file: picked, replace: true }], '/srv');
+		queue.add([{ file: picked, destination: { kind: 'folder', dir: '/srv', replace: true } }]);
 		await expect.poll(() => done, { timeout: 20_000 }).toEqual(['big.bin']);
 		expect(machine.calls.slice(1)).toEqual(['begin 8388608 true', 'piece 8388608', 'end']);
 		expect(machine.finished()?.sha256).toBe(await sha256Hex(bytes));
@@ -120,7 +128,9 @@ describe('uploads (SPEC-FILES F6, F10)', () => {
 			finished: () => undefined,
 			wait: () => Promise.resolve()
 		});
-		queue.add([{ file: file(1000).file, replace: false }], '/srv');
+		queue.add([
+			{ file: file(1000).file, destination: { kind: 'folder', dir: '/srv', replace: false } }
+		]);
 		await expect
 			.poll(() => queue.items[0]?.state)
 			.toEqual({ kind: 'failed', message: 'The file arrived changed.' });
@@ -144,7 +154,9 @@ describe('uploads (SPEC-FILES F6, F10)', () => {
 					release = resolve;
 				})
 		});
-		queue.add([{ file: file(1000).file, replace: false }], '/srv');
+		queue.add([
+			{ file: file(1000).file, destination: { kind: 'folder', dir: '/srv', replace: false } }
+		]);
 		await expect.poll(() => queue.items[0]?.state.kind).toBe('retrying');
 		const upload = queue.items[0];
 		if (upload === undefined) throw new Error('no upload');
@@ -153,5 +165,40 @@ describe('uploads (SPEC-FILES F6, F10)', () => {
 		expect(upload.state).toEqual({ kind: 'cancelled' });
 		await expect.poll(() => machine.calls.at(-1)).toBe('cancel');
 		expect(machine.calls.filter((call) => call.startsWith('piece'))).toHaveLength(1);
+	});
+
+	it('SF19: the same queue sends files through a screen, by destination, with the saved name', async () => {
+		const calls: string[] = [];
+		const api: UploadApi<SessionDestination> = {
+			begin: (upload) => {
+				upload.remoteId = 'transfer-1';
+				calls.push(`begin ${upload.destination.desktopSessionId} ${upload.destination.batchId}`);
+				return Promise.resolve({ ok: true, data: { partSize: 0 } });
+			},
+			chunk: (upload, offset, body, onProgress) => {
+				calls.push(`piece ${String(upload.remoteId)} ${offset}`);
+				onProgress(body.size);
+				return Promise.resolve({ ok: true, data: { partSize: offset + body.size } });
+			},
+			end: (upload) => {
+				calls.push(`end ${String(upload.remoteId)}`);
+				return Promise.resolve({ ok: true, data: { savedAs: 'report (2).pdf' } });
+			},
+			cancel: () => Promise.resolve()
+		};
+		const done: string[] = [];
+		const queue = new UploadQueue(api, {
+			finished: (upload) => done.push(upload.savedAs ?? ''),
+			wait: () => Promise.resolve()
+		});
+		const [added] = queue.add([
+			{
+				file: new File(['%PDF'], 'report.pdf'),
+				destination: { kind: 'session', desktopSessionId: 'd-1', batchId: 'b-1' }
+			}
+		]);
+		await expect.poll(() => done).toEqual(['report (2).pdf']);
+		expect(added?.savedAs).toBe('report (2).pdf');
+		expect(calls).toEqual(['begin d-1 b-1', 'piece transfer-1 0', 'end transfer-1']);
 	});
 });

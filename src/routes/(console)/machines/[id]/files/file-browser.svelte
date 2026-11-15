@@ -30,7 +30,7 @@
 	import RootList from './root-list.svelte';
 	import SelectionBar from './selection-bar.svelte';
 	import UploadTray from './upload-tray.svelte';
-	import { UploadQueue } from './upload-queue.svelte.ts';
+	import { UploadQueue, type FolderDestination } from './upload-queue.svelte.ts';
 
 	/**
 	 * The machine's files (SPEC-FILES): drives, folders, downloads through
@@ -60,17 +60,27 @@
 	const selected = new SvelteSet<string>();
 	let loads = 0;
 
-	const queue = new UploadQueue(
+	const queue = new UploadQueue<FolderDestination>(
 		{
-			beginUpload: (...args) => api.beginUpload(...args),
-			uploadChunk: (...args) => api.uploadChunk(...args),
-			endUpload: (...args) => api.endUpload(...args),
-			cancelUpload: (...args) => api.cancelUpload(...args)
+			begin: (upload) =>
+				api.beginUpload(
+					upload.destination.dir,
+					upload.name,
+					upload.size,
+					upload.destination.replace
+				),
+			chunk: (upload, offset, ...rest) =>
+				api.uploadChunk({ dir: upload.destination.dir, name: upload.name, offset }, ...rest),
+			end: async (upload, sha256) => {
+				const ended = await api.endUpload(upload.destination.dir, upload.name, upload.size, sha256);
+				return ended.ok ? { ok: true, data: { savedAs: ended.data.path } } : ended;
+			},
+			cancel: (upload) => api.cancelUpload(upload.destination.dir, upload.name)
 		},
 		{
 			finished: (upload) => {
 				showToast(`${upload.name} uploaded.`, 'success');
-				if (view.kind === 'folder' && view.path === upload.dir) {
+				if (view.kind === 'folder' && view.path === upload.destination.dir) {
 					void load(view);
 				}
 			},
@@ -309,8 +319,10 @@
 		}
 		const chosen = files.filter((file) => replace || !existing.has(file.name));
 		queue.add(
-			chosen.map((file) => ({ file, replace: existing.has(file.name) })),
-			dir
+			chosen.map((file) => ({
+				file,
+				destination: { kind: 'folder', dir, replace: existing.has(file.name) }
+			}))
 		);
 	}
 
