@@ -2,6 +2,7 @@ import { database } from '#lib/server/database/app-database.ts';
 import { route } from '#lib/server/guards/route.ts';
 import { appRunner } from '#lib/server/services/commands/app-runner.ts';
 import { settleEndedGrantRuns } from '#lib/server/services/commands/assistant-pending.ts';
+import { settleEndedGrantCleanups } from '#lib/server/services/sessions/cleanup-requests.ts';
 import { disconnectGrant } from '#lib/server/services/oauth/grants.ts';
 import type { RequestHandler } from './$types';
 
@@ -20,6 +21,7 @@ export const DELETE: RequestHandler = route.user(({ params }, { user }) => {
 		case 'ended':
 			// Its requests waiting for approval are cancelled (SPEC-MCP M21).
 			settleEndedGrantRuns({ database, runner: appRunner(), now: Date.now() });
+			settleEndedGrantCleanups(database, Date.now());
 			return Response.json({ disconnected: true });
 		case 'refused':
 			return Response.json({ message: result.message }, { status: result.status });

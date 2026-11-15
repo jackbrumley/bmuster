@@ -166,7 +166,7 @@ describe('the check-in records a clean-up nobody watched (SPEC-STORAGE S19)', ()
 		const runId = crypto.randomUUID();
 		recordCleanupStart(
 			database,
-			{ runId, machineId: agent.machineId, userId: admin.id, items: ['journal'] },
+			{ runId, machineId: agent.machineId, userId: admin.id, items: ['journal'], asked: {} },
 			NOW
 		);
 		const report = {

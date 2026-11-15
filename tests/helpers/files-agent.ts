@@ -82,10 +82,19 @@ export function fakeAgent(relay: Relay, machineId: string) {
 	let sessionId = '';
 	let chunkFor: Request | undefined;
 	// Storage clean-up (SPEC-STORAGE 11) and Rescan now; an old agent answers rescan with `{}`.
-	const state: { cleanupRun: unknown; cleanupBusy: boolean; rescanReply: unknown } = {
+	// The scan's largest files and the root's sub-folders can be replaced (SPEC-MCP M50).
+	const state: {
+		cleanupRun: unknown;
+		cleanupBusy: boolean;
+		rescanReply: unknown;
+		largest: unknown[];
+		rootChildren: unknown[];
+	} = {
 		cleanupRun: { kind: 'none' },
 		cleanupBusy: false,
-		rescanReply: {}
+		rescanReply: {},
+		largest: [{ path: '/srv/data.bin', bytes: 100, modifiedMs: 1000 }],
+		rootChildren: STORAGE_ROOT.children
 	};
 
 	const done = (id: number, result: unknown): void => {
@@ -180,10 +189,15 @@ export function fakeAgent(relay: Relay, machineId: string) {
 					refuse(id, 'not-found', 'The last scan has no separate total for this folder.');
 					return;
 				}
-				done(id, { ...STORAGE_ROOT, path, offset: request['offset'] });
+				done(id, {
+					...STORAGE_ROOT,
+					children: path === '/' ? state.rootChildren : STORAGE_ROOT.children,
+					path,
+					offset: request['offset']
+				});
 				return;
 			case 'storage-largest':
-				done(id, { files: [{ path: '/srv/data.bin', bytes: 100, modifiedMs: 1000 }] });
+				done(id, { files: state.largest });
 				return;
 			case 'storage-rescan':
 				done(id, state.rescanReply);

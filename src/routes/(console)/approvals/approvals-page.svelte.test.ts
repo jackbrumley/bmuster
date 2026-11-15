@@ -20,8 +20,13 @@ const MEMBER = {
 	role: 'member'
 } as const;
 
-function request(runId: string, machineNames: string[], firstLine: string): ApprovalSummary {
+function request(
+	runId: string,
+	machineNames: string[],
+	firstLine: string
+): Extract<ApprovalSummary, { kind: 'command' }> {
 	return {
+		kind: 'command',
 		runId,
 		requestedBy: 'Jack Brumley',
 		assistant: 'Claude Code',
@@ -74,6 +79,36 @@ describe('the Approvals page (SPEC-MCP M26)', () => {
 		expect(first).toContain('Jack Brumley via Claude Code');
 		await expect.element(links.first()).toHaveAttribute('href', `/commands/${NEWER.runId}`);
 		expect(links.nth(1).element().textContent).toContain('reception and office');
+	});
+
+	it('M54: a clean-up request shows its items and total, and opens its own card', async () => {
+		const cleanUp: ApprovalSummary = {
+			kind: 'clean-up',
+			requestId: '33333333-3333-4333-8333-333333333333',
+			requestedBy: 'Jack Brumley',
+			assistant: 'Claude Code',
+			machineNames: ['mint'],
+			items: 'Package downloads and Crash dumps',
+			total: '2.1 GB',
+			requestedIso: new Date(NOW - 30_000).toISOString(),
+			expiresIso: new Date(NOW + 9 * 60_000).toISOString()
+		};
+		const screen = await render(ApprovalsPage, {
+			params: {},
+			form: undefined,
+			data: data([cleanUp, NEWER])
+		});
+		const first = screen
+			.getByRole('list', { name: 'Requests waiting for approval, newest first' })
+			.getByRole('link')
+			.first();
+		await expect.element(first).toBeVisible();
+		expect(first.element().textContent.replace(/\s+/gu, ' ')).toContain(
+			'Clean up Package downloads and Crash dumps (2.1 GB)'
+		);
+		await expect
+			.element(first)
+			.toHaveAttribute('href', '/approvals/clean-ups/33333333-3333-4333-8333-333333333333');
 	});
 
 	it('M26: nothing waiting shows an empty state', async () => {
@@ -133,7 +168,7 @@ describe('the Approvals page (SPEC-MCP M26)', () => {
 			children
 		});
 		await expect.poll(() => FakeEventSource.opened.length).toBe(1);
-		feed().send(LIVE_EVENT, { kind: 'approval-decided', runId: NEWER.runId, pending: 0 });
+		feed().send(LIVE_EVENT, { kind: 'approval-decided', id: NEWER.runId, pending: 0 });
 		await expect.poll(() => refreshAll.mock.calls.length).toBe(1);
 	});
 });

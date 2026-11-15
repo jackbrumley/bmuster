@@ -4,6 +4,7 @@
  * agent/crates/protocol/src/cleanup.rs; both must change together.
  */
 import { z } from 'zod';
+import { recheckSchema } from '../auth/recheck.ts';
 import {
 	CLEANUP_ITEM_IDS,
 	type CleanupItemProgress,
@@ -14,7 +15,7 @@ import {
 const count = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
 const ms = z.int();
 
-const cleanupItemIdSchema = z.enum(CLEANUP_ITEM_IDS);
+export const cleanupItemIdSchema = z.enum(CLEANUP_ITEM_IDS);
 
 const itemSizeSchema: z.ZodType<CleanupItemSize> = z.object({
 	id: cleanupItemIdSchema,
@@ -24,10 +25,14 @@ const itemSizeSchema: z.ZodType<CleanupItemSize> = z.object({
 	])
 });
 
+/** Item sizes, as the machine measured them; kept with an assistant's request (SPEC-MCP M53). */
+export const cleanupSizesSchema = z.array(itemSizeSchema).max(CLEANUP_ITEM_IDS.length);
+
+/** Item ids, as stored with an assistant's request. */
+export const cleanupItemIdsSchema = z.array(cleanupItemIdSchema).max(CLEANUP_ITEM_IDS.length);
+
 /** `GET /api/machines/[id]/storage/cleanup/items` */
-export const cleanupSizesReplySchema = z.object({
-	items: z.array(itemSizeSchema).max(CLEANUP_ITEM_IDS.length)
-});
+export const cleanupSizesReplySchema = z.object({ items: cleanupSizesSchema });
 
 const itemProgressSchema: z.ZodType<CleanupItemProgress> = z.object({
 	id: cleanupItemIdSchema,
@@ -64,6 +69,12 @@ export const cleanupRunSchema: z.ZodType<CleanupRun> = z.discriminatedUnion('kin
 	z.object({ kind: z.literal('interrupted'), runId, startedAtMs: ms, items })
 ]);
 
+/** A recorded result (`storage_cleanups.outcome`). */
+export const cleanupOutcomeSchema = z.object({
+	kind: z.enum(['finished', 'interrupted']),
+	items
+});
+
 /** `GET /api/machines/[id]/storage/cleanup` (the agent's `storage-cleanup-status`). */
 export const cleanupStatusReplySchema = z.object({ run: cleanupRunSchema });
 
@@ -78,3 +89,12 @@ export const cleanupStartRequestSchema = z.strictObject({
 
 /** The start's reply: the new run's id. */
 export const cleanupStartReplySchema = z.object({ runId });
+
+/**
+ * `POST /api/approvals/clean-ups/<id>/approve` (SPEC-MCP M54): the password or code when the
+ * sign-in is not recent. The items cannot be changed.
+ */
+export const cleanupApproveRequestSchema = z.object({ recheck: recheckSchema });
+
+/** The approve and deny replies. */
+export const cleanupDecidedReplySchema = z.object({ requestId: runId });

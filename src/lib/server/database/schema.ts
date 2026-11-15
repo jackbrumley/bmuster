@@ -28,6 +28,7 @@ export {
 	machineStatus,
 	machineStorage,
 	machines,
+	storageCleanupRequests,
 	storageCleanups
 } from './schema/machines.ts';
 export { notificationEvents, notificationRules } from './schema/notifications.ts';

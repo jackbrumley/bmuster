@@ -88,7 +88,7 @@ describe('who may read storage (SPEC-STORAGE S9)', () => {
 		fakeAgent(relay, machineId);
 		await storageSummary(context(admin));
 		await storageFolder(context(admin), '/', '/', 0);
-		expect(await requestRescan(context(admin))).toEqual({
+		expect(await requestRescan(context(admin), {})).toEqual({
 			kind: 'ok',
 			value: { alreadyScanning: false }
 		});

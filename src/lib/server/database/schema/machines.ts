@@ -1,5 +1,6 @@
 import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { joinCodes } from './join-codes.ts';
+import { oauthGrants } from './oauth.ts';
 import { users } from './users.ts';
 
 /**
@@ -174,4 +175,38 @@ export const storageCleanups = sqliteTable(
 		outcome: text()
 	},
 	(table) => [index('storage_cleanups_machine_idx').on(table.machineId)]
+);
+
+/**
+ * A clean-up an AI assistant asked for (SPEC-MCP M53–M56), waiting for a person's approval.
+ * `items` is JSON item ids and `sizes` JSON `CleanupItemSize[]`, the machine's own sizing when it
+ * was asked, which the approval card shows. Once approved it runs as an ordinary clean-up:
+ * `cleanupId` is its `storage_cleanups` row.
+ */
+export const storageCleanupRequests = sqliteTable(
+	'storage_cleanup_requests',
+	{
+		id: text().primaryKey(),
+		machineId: text()
+			.notNull()
+			.references(() => machines.id),
+		/** The person the assistant acts as. */
+		userId: text()
+			.notNull()
+			.references(() => users.id),
+		oauthGrantId: text()
+			.notNull()
+			.references(() => oauthGrants.id),
+		items: text().notNull(),
+		sizes: text().notNull(),
+		reason: text().notNull(),
+		status: text({ enum: ['pending', 'approved', 'denied', 'expired', 'cancelled'] }).notNull(),
+		requestedAt: integer({ mode: 'timestamp_ms' }).notNull(),
+		expiresAt: integer({ mode: 'timestamp_ms' }).notNull(),
+		decidedBy: text().references(() => users.id),
+		decidedAt: integer({ mode: 'timestamp_ms' }),
+		denyNote: text(),
+		cleanupId: text().references(() => storageCleanups.id)
+	},
+	(table) => [index('storage_cleanup_requests_status_idx').on(table.status)]
 );

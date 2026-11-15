@@ -104,6 +104,11 @@ const AUDIT_KINDS = [
 	'storage-rescan-requested',
 	'storage-cleanup-started',
 	'storage-cleanup',
+	// SPEC-MCP M53–M55: clean-ups an AI assistant asks for
+	'storage-cleanup-requested',
+	'storage-cleanup-denied',
+	'storage-cleanup-expired',
+	'storage-cleanup-withdrawn',
 	// SPEC-PRESENCE
 	'machine-offline',
 	'machine-online',
@@ -354,6 +359,14 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Started a disk clean-up';
 		case 'storage-cleanup':
 			return 'Cleaned up disk space';
+		case 'storage-cleanup-requested':
+			return 'Asked to clean up disk space';
+		case 'storage-cleanup-denied':
+			return "Denied an AI assistant's clean-up";
+		case 'storage-cleanup-expired':
+			return 'A clean-up waiting for approval expired';
+		case 'storage-cleanup-withdrawn':
+			return 'A clean-up waiting for approval was withdrawn';
 		case 'machine-offline':
 			return 'A machine went offline';
 		case 'machine-online':

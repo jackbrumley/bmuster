@@ -32,6 +32,7 @@ import {
 } from '#lib/server/services/commands/command-retention.ts';
 import { appRunner } from '#lib/server/services/commands/app-runner.ts';
 import { schedulePendingSweeps } from '#lib/server/services/commands/assistant-pending.ts';
+import { scheduleCleanupRequestSweeps } from '#lib/server/services/sessions/cleanup-requests.ts';
 import { closeSessionsCutByRestart } from '#lib/server/services/sessions/session-audit.ts';
 import { sessionRelay } from '#lib/server/services/sessions/relay.ts';
 import { scheduleShareLinkSweeps } from '#lib/server/services/share-links/share-links.ts';
@@ -117,6 +118,7 @@ export const init: ServerInit = async () => {
 	scheduleCommandOutputRetention(database);
 	// AI assistants' requests expire after 10 minutes and end with their assistant (SPEC-MCP M21).
 	schedulePendingSweeps(database, appRunner());
+	scheduleCleanupRequestSweeps(database);
 };
 
 /**

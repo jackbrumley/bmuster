@@ -6,16 +6,18 @@ import { signedReleases } from '#lib/server/services/agents/releases.ts';
 import { appRunner } from '#lib/server/services/commands/app-runner.ts';
 import { serverLog } from '#lib/server/services/logs/server-log.ts';
 import { serveMcp } from '#lib/server/services/mcp/mcp-endpoint.ts';
-import { serverToolLimits } from '#lib/server/services/mcp/tool-limits.ts';
+import { serverRescanLimits, serverToolLimits } from '#lib/server/services/mcp/tool-limits.ts';
+import { filesChannels } from '#lib/server/services/sessions/files-channel.ts';
+import { sessionRelay } from '#lib/server/services/sessions/relay.ts';
 import type { RequestHandler } from './$types';
 
 /**
  * POST /mcp (SPEC-MCP M4, 7.2): an AI assistant's requests, as the person behind its token.
  * Stateless, so GET (a listening stream) and DELETE (ending a session) answer 405.
  */
-export const POST: RequestHandler = route.mcp(({ request }, { origin, principal }) =>
+export const POST: RequestHandler = route.mcp((event, { origin, principal }) =>
 	serveMcp(
-		request,
+		event.request,
 		{
 			read: {
 				database,
@@ -30,6 +32,19 @@ export const POST: RequestHandler = route.mcp(({ request }, { origin, principal 
 				origin,
 				clock: Date.now,
 				waitMs: ASSISTANT_RUN_LIMITS.waitMs
+			},
+			storage: {
+				database,
+				principal,
+				releases: signedReleases(env.releasesPath, env.agentTestBuildsPath),
+				relay: sessionRelay(),
+				channels: filesChannels(),
+				secretsKey: env.secretsKey,
+				ip: event.getClientAddress(),
+				origin,
+				clock: Date.now,
+				waitMs: ASSISTANT_RUN_LIMITS.waitMs,
+				rescans: serverRescanLimits
 			},
 			limits: serverToolLimits
 		},

@@ -16,6 +16,7 @@ import {
 import ConsentPage from '../oauth/authorize/+page.svelte';
 import AccountPage from './account/+page.svelte';
 import ApprovalsPage from './approvals/+page.svelte';
+import CleanupPage from './approvals/clean-ups/[id=uuid]/+page.svelte';
 import RunPage from './commands/[id=uuid]/+page.svelte';
 import ConsoleFrame from './console-frame.svelte';
 import AiAssistantsPage from './settings/ai-assistants/+page.svelte';
@@ -30,7 +31,8 @@ import {
 /**
  * SPEC-MCP M16 and M30 (SPEC-PHONE-LAYOUT U1): AI assistants work on a 360 px phone with the
  * longest names: the consent screen, the Account page, Settings → AI assistants, the Approvals
- * page and the approval card (with Approvals and its count in the tab bar). Kept apart from
+ * page, the approval card and the clean-up approval card (M54), with Approvals and its count in
+ * the tab bar. Kept apart from
  * phone-overflow.svelte.test.ts, which is at its size limit; the setup is the same harness.
  */
 
@@ -192,6 +194,7 @@ const PAGES: readonly PhonePage[] = [
 						now: NOW,
 						requests: [
 							{
+								kind: 'command',
 								runId: RUN_ID,
 								requestedBy: LONG_PERSON,
 								assistant: `unverified client ${LONG_WORD}`,
@@ -285,6 +288,46 @@ const PAGES: readonly PhonePage[] = [
 								],
 								decide: { kind: 'yes', signIn: { kind: 'password' } }
 							}
+						}
+					}
+				},
+				AS_APPROVER
+			)
+	},
+	{
+		name: 'M54: clean-up approval card',
+		ready: 'says:',
+		open: () =>
+			render(
+				CleanupPage,
+				{
+					params: { id: RUN_ID },
+					form: undefined,
+					data: {
+						...APPROVER,
+						now: NOW,
+						view: {
+							requestId: RUN_ID,
+							machine: {
+								id: MACHINE_GROUP_ID,
+								name: LONG_MACHINE_NAME,
+								osFamily: 'windows',
+								online: true
+							},
+							requestedBy: LONG_PERSON,
+							assistant: LONG_WORD,
+							verified: false,
+							reason: `${LONG_WORD} ${LONG_WORD}`,
+							requestedIso: new Date(NOW).toISOString(),
+							expiresIso: new Date(NOW + 9 * 60_000).toISOString(),
+							items: [
+								{
+									id: 'windows-update-cache',
+									size: { kind: 'bytes', bytes: 9 * 1024 ** 4, files: 9_999_999 }
+								},
+								{ id: 'component-store', size: { kind: 'unknown' } }
+							],
+							state: { kind: 'pending', decide: { kind: 'yes', signIn: { kind: 'password' } } }
 						}
 					}
 				},

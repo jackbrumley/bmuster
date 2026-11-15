@@ -204,6 +204,13 @@
       "when": 1794701122545,
       "tag": "0028_solid_nehzno",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1794702415764,
+      "tag": "0029_freezing_lord_tyger",
+      "breakpoints": true
     }
   ]
 }

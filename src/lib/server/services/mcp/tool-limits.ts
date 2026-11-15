@@ -1,4 +1,5 @@
 import { ASSISTANT_RUN_LIMITS } from '#lib/domain/commands/assistant-runs.ts';
+import { CLEANUP_REQUEST_LIMITS } from '#lib/domain/storage/cleanup-requests.ts';
 
 /**
  * Rate limits on an assistant's tool calls (SPEC-MCP M24), per person: 600 tool calls an hour,
@@ -54,3 +55,34 @@ export function createToolLimits(): ToolLimits {
 
 /** The server's limits, one set for every request. */
 export const serverToolLimits: ToolLimits = createToolLimits();
+
+/**
+ * Rescan now through an assistant (SPEC-MCP M52): at most once every 10 minutes per machine for
+ * each assistant connection, on top of the tool limits. Only a rescan the machine was asked for
+ * counts. In memory, like the tool limits.
+ */
+export type RescanLimits = {
+	/** How long until this connection may ask this machine again; 0 when it may now. */
+	waitMs(grantId: string, machineId: string, now: number): number;
+	/** Counts a rescan the machine was asked for. */
+	record(grantId: string, machineId: string, now: number): void;
+};
+
+export function createRescanLimits(everyMs: number): RescanLimits {
+	const asked = new Map<string, number>();
+	const key = (grantId: string, machineId: string): string => `${grantId} ${machineId}`;
+	return {
+		waitMs(grantId, machineId, now) {
+			const last = asked.get(key(grantId, machineId));
+			return last === undefined ? 0 : Math.max(0, last + everyMs - now);
+		},
+		record(grantId, machineId, now) {
+			asked.set(key(grantId, machineId), now);
+		}
+	};
+}
+
+/** The server's rescan limits, one set for every request. */
+export const serverRescanLimits: RescanLimits = createRescanLimits(
+	CLEANUP_REQUEST_LIMITS.rescanEveryMs
+);

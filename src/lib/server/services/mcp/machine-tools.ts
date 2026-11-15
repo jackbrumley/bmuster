@@ -35,7 +35,7 @@ export type ToolResult<T> = { kind: 'ok'; output: T } | { kind: 'error'; message
 const NEEDS_SCOPE = 'This connection was not allowed to read machines (scope machines:read).';
 
 /** The machines this person's assistant may see, by name. */
-function aiMachines(context: ToolContext): Machine[] {
+export function aiMachines(context: ToolContext): Machine[] {
 	const allowed = machineIdsWith(context.database, context.principal.user, 'ai-view');
 	return listMachines(context.database, context.now, context.releases).filter((machine) =>
 		allowed.has(machine.id)
@@ -122,7 +122,7 @@ export function listMachinesTool(
 }
 
 /** A machine by id, or by a name no other visible machine shares. */
-function findByName(machines: readonly Machine[], wanted: string): Machine | string {
+export function findByName(machines: readonly Machine[], wanted: string): Machine | string {
 	const byId = machines.find((machine) => machine.id === wanted);
 	if (byId !== undefined) {
 		return byId;

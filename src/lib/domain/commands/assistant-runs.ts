@@ -202,16 +202,43 @@ export type ApprovalView = {
 	saved: SavedRunMark;
 };
 
-/** A request on the Approvals page and in the live notice (M26). */
-export type ApprovalSummary = {
-	runId: string;
-	requestedBy: string;
-	assistant: string;
-	machineNames: string[];
-	firstLine: string;
-	requestedIso: string;
-	expiresIso: string;
-};
+/**
+ * A request on the Approvals page and in the live notice (M26): a command, or a clean-up of
+ * BMuster's safe list (M54).
+ */
+export type ApprovalSummary =
+	| {
+			kind: 'command';
+			runId: string;
+			requestedBy: string;
+			assistant: string;
+			machineNames: string[];
+			firstLine: string;
+			requestedIso: string;
+			expiresIso: string;
+	  }
+	| {
+			kind: 'clean-up';
+			requestId: string;
+			requestedBy: string;
+			assistant: string;
+			machineNames: string[];
+			/** The items in words, and their total when asked. */
+			items: string;
+			total: string;
+			requestedIso: string;
+			expiresIso: string;
+	  };
+
+/** The run's or the clean-up request's id. */
+export function approvalId(approval: ApprovalSummary): string {
+	switch (approval.kind) {
+		case 'command':
+			return approval.runId;
+		case 'clean-up':
+			return approval.requestId;
+	}
+}
 
 /** "mint", "mint and reception", "mint, reception and 3 more". */
 export function machineNamesText(names: readonly string[]): string {
@@ -222,10 +249,22 @@ export function machineNamesText(names: readonly string[]): string {
 	return `${first}, ${second} and ${String(names.length - 2)} more`;
 }
 
+/** "Claude Code wants to run a command on mint", or to clean up disk space there (M54). */
+export function approvalText(approval: ApprovalSummary): string {
+	const where = machineNamesText(approval.machineNames);
+	switch (approval.kind) {
+		case 'command':
+			return `${approval.assistant} wants to run a command on ${where}`;
+		case 'clean-up':
+			return `${approval.assistant} wants to clean up disk space on ${where}`;
+	}
+}
+
 /** The Approvals entry in the navigation: hidden for people who may not approve (M26). */
 export type ApprovalsNav = { kind: 'hidden' } | { kind: 'shown'; pending: number };
 
 /** What the console's live channel carries (`GET /api/live`, SPEC-MCP 10.3). */
 export type LiveEvent =
 	| { kind: 'approval-requested'; approval: ApprovalSummary; pending: number }
-	| { kind: 'approval-decided'; runId: string; pending: number };
+	/** `id` is the run's or the clean-up request's (approvalId). */
+	| { kind: 'approval-decided'; id: string; pending: number };
