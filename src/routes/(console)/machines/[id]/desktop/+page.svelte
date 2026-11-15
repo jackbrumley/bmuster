@@ -481,6 +481,11 @@
 					exit="full-screen"
 					onexit={() => void toggleFullScreen()}
 					ondisconnect={() => void endSession()}
+					onupload={files.canSend
+						? () => {
+								files.pick();
+							}
+						: undefined}
 				/>
 			{:else if fullScreen && stage !== undefined}
 				<FullScreenBar
@@ -500,6 +505,11 @@
 					onkeys={() => {
 						toggle('keys');
 					}}
+					onupload={files.canSend
+						? () => {
+								files.pick();
+							}
+						: undefined}
 					ondisconnect={() => void endSession()}
 				>
 					{#snippet settings()}

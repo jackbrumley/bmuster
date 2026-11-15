@@ -29,7 +29,8 @@ afterEach(() => {
 
 async function setup(
 	mode: DesktopMode | undefined,
-	displays: readonly { value: string; label: string; count: undefined }[] = []
+	displays: readonly { value: string; label: string; count: undefined }[] = [],
+	onupload?: () => void
 ) {
 	const sent: InputMessage[] = [];
 	const backToScreen = vi.fn();
@@ -60,7 +61,8 @@ async function setup(
 		onswitch: vi.fn(),
 		exit: 'full-screen',
 		onexit,
-		ondisconnect
+		ondisconnect,
+		onupload
 	});
 	// The full-screen element the controls float over.
 	screen.container.style.cssText =
@@ -355,5 +357,24 @@ describe('the floating controls', () => {
 		expect(sent.filter((message) => message.type === 'text')).not.toEqual([]);
 		await sheet.getByRole('button', { name: 'Escape', exact: true }).click();
 		await expect.element(typing).toHaveFocus();
+	});
+
+	it('SF15: Upload files is in the Session tab only when sending is allowed', async () => {
+		const upload = vi.fn();
+		const allowed = await setup('control', [], upload);
+		await allowed.button.click();
+		const sheet = allowed.screen.getByRole('group', { name: 'Session options' });
+		await sheet.getByRole('tab', { name: 'Session' }).click();
+		await sheet.getByRole('button', { name: 'Upload files' }).click();
+		expect(upload).toHaveBeenCalledTimes(1);
+		await allowed.screen.unmount();
+		const refused = await setup('control');
+		await refused.button.click();
+		const other = refused.screen.getByRole('group', { name: 'Session options' });
+		await other.getByRole('tab', { name: 'Session' }).click();
+		await expect.element(other.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+		await expect
+			.element(other.getByRole('button', { name: 'Upload files' }))
+			.not.toBeInTheDocument();
 	});
 });

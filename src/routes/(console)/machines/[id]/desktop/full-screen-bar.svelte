@@ -7,6 +7,7 @@
 		IconEye,
 		IconKeyboard,
 		IconPlugConnectedX,
+		IconUpload,
 		IconPointer
 	} from '@tabler/icons-svelte-runes';
 	import type { DisplayChoice } from '#lib/domain/desktop/displays.ts';
@@ -37,6 +38,7 @@
 		onswitch,
 		onsettings,
 		onkeys,
+		onupload,
 		ondisconnect
 	}: {
 		surface: HTMLElement;
@@ -58,6 +60,8 @@
 		onswitch: (mode: DesktopMode) => void;
 		onsettings: () => void;
 		onkeys: () => void;
+		/** Upload files, when sending is allowed (SPEC-SESSION-FILES 3.1). */
+		onupload: (() => void) | undefined;
 		ondisconnect: () => void;
 	} = $props();
 
@@ -173,6 +177,11 @@
 				{#if mode === 'control'}
 					<ToolButton label="Keys" pressed={keysOpen} disabled={false} onclick={act(onkeys)}>
 						<IconKeyboard size={20} />
+					</ToolButton>
+				{/if}
+				{#if onupload !== undefined}
+					<ToolButton label="Upload files" pressed={undefined} disabled={false} onclick={onupload}>
+						<IconUpload size={20} />
 					</ToolButton>
 				{/if}
 				<ToolButton label="Disconnect" pressed={undefined} disabled={false} onclick={ondisconnect}>

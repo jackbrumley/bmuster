@@ -111,4 +111,20 @@ describe('the pop-out window', () => {
 		await expect.element(screen.getByRole('button', { name: 'Watch only' })).toBeVisible();
 		expect(asked).toEqual([]);
 	});
+
+	it('SF13: files dragged over the window show the drop overlay', async () => {
+		const { screen } = await openWindow();
+		const stage = screen.getByRole('application', { name: `Screen of ${TEST_MACHINE.name}` });
+		const transfer = new DataTransfer();
+		transfer.items.add(new File(['x'], 'a.txt'));
+		const over = new DragEvent('dragover', {
+			bubbles: true,
+			cancelable: true,
+			dataTransfer: transfer
+		});
+		stage.element().dispatchEvent(over);
+		expect(over.defaultPrevented).toBe(true);
+		// These grants carry no files permission: the overlay says why.
+		await expect.element(screen.getByText("Files can't be sent")).toBeVisible();
+	});
 });

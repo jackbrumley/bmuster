@@ -4,6 +4,7 @@
 		IconDeviceDesktop,
 		IconEye,
 		IconPlugConnectedX,
+		IconUpload,
 		IconX
 	} from '@tabler/icons-svelte-runes';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
@@ -24,7 +25,8 @@
 		ontouchmode,
 		onswitch,
 		onexit,
-		ondisconnect
+		ondisconnect,
+		onupload
 	}: {
 		/** Undefined while no session runs: then only the exit action shows. */
 		mode: DesktopMode | undefined;
@@ -35,6 +37,8 @@
 		onswitch: (mode: DesktopMode) => void;
 		onexit: () => void;
 		ondisconnect: () => void;
+		/** Upload files (SPEC-SESSION-FILES 3.1), when sending is allowed. */
+		onupload: (() => void) | undefined;
 	} = $props();
 
 	const control = $derived(mode === 'control');
@@ -61,6 +65,11 @@
 			onclick={() => {
 				onswitch(control ? 'watch' : 'control');
 			}}>{control ? 'Switch to view only' : 'Take control'}</Button
+		>
+	{/if}
+	{#if onupload !== undefined}
+		<Button variant="secondary" size="compact" type="button" onclick={onupload}
+			><IconUpload size={18} /> Upload files</Button
 		>
 	{/if}
 	<Button variant="secondary" size="compact" type="button" onclick={onexit}

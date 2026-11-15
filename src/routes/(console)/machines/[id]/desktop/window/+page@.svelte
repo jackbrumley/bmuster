@@ -19,7 +19,9 @@
 	import DesktopStart from '../desktop-start.svelte';
 	import FloatingControls from '../floating-controls.svelte';
 	import { handoverFrom } from '../pop-out.ts';
+	import { DesktopFiles, sendBlock } from '../desktop-files.svelte.ts';
 	import { attachDropGuard } from '../drop-guard.ts';
+	import DropOverlay from '../drop-overlay.svelte';
 	import { attachStageInput } from '../stage-input.ts';
 	import StageOverlay from '../stage-overlay.svelte';
 	import { connectingTitle, isRunning, stageGeometry } from '../stage-state.ts';
@@ -84,6 +86,18 @@
 		}
 	}
 
+	/** Files sent through the screen (SPEC-SESSION-FILES): the window is a drop zone too. */
+	const files = new DesktopFiles(() => data.machine, {
+		block: () =>
+			sendBlock({
+				canFiles: hasPermission(data.grants, 'files'),
+				canControl,
+				running: live,
+				watchOnly: session?.mode === 'watch'
+			}),
+		sessionId: () => session?.handover?.sessionId
+	});
+
 	/** A file dropped on the window never replaces the session with the file. */
 	onMount(() => attachDropGuard(window, undefined));
 
@@ -140,8 +154,10 @@
 			}, RESIZE_SETTLE_MS);
 		});
 		resized.observe(surface);
+		const detachDrop = files.attach(surface);
 		surface.focus();
 		return () => {
+			detachDrop();
 			clearTimeout(settle);
 			resized.disconnect();
 			detachInput();
@@ -183,6 +199,7 @@
 			{waiting}
 			onapprove={() => session?.askApproval()}
 		/>
+		<DropOverlay overlay={files.sender.overlay} machine={machine.name} />
 		{#if session !== undefined}
 			<FloatingControls
 				osFamily={machine.osFamily}
@@ -206,6 +223,11 @@
 					window.close();
 				}}
 				ondisconnect={() => void disconnect()}
+				onupload={files.canSend
+					? () => {
+							files.pick();
+						}
+					: undefined}
 			/>
 		{/if}
 	</div>

@@ -60,7 +60,8 @@
 		onswitch,
 		exit,
 		onexit,
-		ondisconnect
+		ondisconnect,
+		onupload
 	}: {
 		osFamily: OsFamily;
 		/** Undefined while no session runs: then only Leave full screen shows. */
@@ -88,6 +89,8 @@
 		exit: 'full-screen' | 'window';
 		onexit: () => void;
 		ondisconnect: () => void;
+		/** Upload files in the Session tab, when sending is allowed (SPEC-SESSION-FILES 3.1). */
+		onupload: (() => void) | undefined;
 	} = $props();
 
 	/** The button's size in page pixels (also in the stylesheet). */
@@ -400,6 +403,7 @@
 											}}
 											onexit={leave(onexit)}
 											ondisconnect={leave(ondisconnect)}
+											onupload={onupload === undefined ? undefined : leave(onupload)}
 										/>
 									{/if}
 								</div>
