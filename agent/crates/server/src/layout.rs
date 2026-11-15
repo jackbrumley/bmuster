@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 /// The server's settings: SECRETS_KEY, HOST, PORT and anything the admin adds.
 pub const ENV_FILE: &str = "server.env";
-const DATABASE_FILE: &str = "bmuster.db";
+pub const DATABASE_FILE: &str = "bmuster.db";
 /// The Windows service's log (Node's output); journald on Linux.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const LOG_FILE: &str = "server.log";

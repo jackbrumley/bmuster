@@ -281,6 +281,18 @@ jobs:
           systemctl is-enabled bmuster-server-recover.service
           test -f /etc/systemd/system/bmuster-server-update.service
 
+      # SPEC-SERVER-INSTALL I15: the recovery commands reach the database as
+      # the service user; an unknown email changes nothing and exits 1.
+      - name: Account recovery runs as root, refuses anyone else
+        run: |
+          out="$(sudo /opt/bmuster-server/current/bmuster-server reset-two-factor --email nobody@example.com 2>&1)" && exit 1
+          echo "$out"
+          echo "$out" | grep -q 'No account has the email nobody@example.com'
+          out="$(/opt/bmuster-server/current/bmuster-server reset-password --email nobody@example.com 2>&1)" && exit 1
+          echo "$out"
+          echo "$out" | grep -q 'run this as root'
+          test "$(sudo stat -c %U /var/lib/bmuster-server/bmuster.db)" = "bmuster-server"
+
       - name: A tampered archive is refused
         run: |
           mkdir tampered
@@ -350,6 +362,17 @@ jobs:
           curl.exe -fsk https://127.0.0.1:8443/readyz
           if ($LASTEXITCODE -ne 0) { throw 'not ready' }
           if ((Get-Service BMusterServer).Status -ne 'Running') { throw 'service not running' }
+
+      - name: Account recovery runs as Administrator
+        run: |
+          # Start-Process, because PowerShell 5.1 turns a native command's stderr into errors.
+          $run = Start-Process -FilePath 'C:\Program Files\BMuster Server\current\bmuster-server.exe' `
+            -ArgumentList 'reset-two-factor', '--email', 'nobody@example.com' `
+            -RedirectStandardOutput recovery-out.txt -RedirectStandardError recovery-err.txt `
+            -NoNewWindow -Wait -PassThru
+          $out = Get-Content recovery-err.txt -Raw
+          if ($run.ExitCode -ne 1) { throw "expected exit 1, got $($run.ExitCode): $out" }
+          if ($out -notmatch 'No account has the email nobody@example.com') { throw $out }
 
       - name: Upgrade keeps the data
         run: |
@@ -512,6 +535,8 @@ jobs:
           curl -fsS http://127.0.0.1:8080/readyz
           grep -q 'first-run setup code:' smoke.log
           docker exec smoke test -x "/opt/bmuster/releases/$BMUSTER_VERSION/aarch64-unknown-linux-gnu/bmuster-agent"
+          out="$(docker exec smoke bmuster-server reset-two-factor --email nobody@example.com 2>&1)" && exit 1
+          echo "$out" | grep -q 'No account has the email nobody@example.com'
           docker rm -f smoke
 
       - name: Image names
