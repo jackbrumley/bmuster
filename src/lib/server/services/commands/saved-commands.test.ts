@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { PRELUDE_HEADING } from '#lib/domain/commands/saved-commands.ts';
 import type { SavedRunRequest } from '#lib/schemas/commands/saved-commands.ts';
 import { grantAccess } from '#tests/helpers/access.ts';
 import {
 	connect,
 	disconnectAgents,
 	MINUTE,
-	setUpAssistantRuns
+	setUpAssistantRuns,
+	unwrapped
 } from '#tests/helpers/assistant-runs.ts';
 import { PASSWORD } from '#tests/helpers/people.ts';
 import {
@@ -279,9 +281,14 @@ describe('people running a saved command (SC1, SC10, SC12, SC13)', () => {
 		const [linuxTicket] = linux;
 		// The admin's script, byte for byte, after the prelude; the value never in the script part.
 		expect(linuxTicket?.purpose.command.endsWith(`\n\n${LINUX_SCRIPT}`)).toBe(true);
-		expect(windowsTicket?.purpose.command.endsWith(`\n\n${WINDOWS_SCRIPT}`)).toBe(true);
-		expect(windowsTicket?.purpose.command).not.toContain('C:\\Data');
-		expect(windowsTicket?.purpose.command).toContain(
+		// PowerShell's ticket is the wrapper (SPEC-COMMANDS C25), with the prelude inside it.
+		if (windowsTicket === undefined) throw new Error('office was sent no ticket');
+		expect(windowsTicket.purpose.command).not.toContain(WINDOWS_SCRIPT);
+		const windowsCommand = unwrapped(windowsTicket);
+		expect(windowsCommand.startsWith(PRELUDE_HEADING)).toBe(true);
+		expect(windowsCommand.endsWith(`\n\n${WINDOWS_SCRIPT}`)).toBe(true);
+		expect(windowsCommand).not.toContain('C:\\Data');
+		expect(windowsCommand).toContain(
 			`$env:BMUSTER_PARAM_MOUNT = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${Buffer.from('C:\\Data').toString('base64')}'))`
 		);
 		expect(runViewFor(setup.database, setup.people.pat, runId, setup.runner)?.saved).toEqual({

@@ -78,3 +78,25 @@ describe('command limits (SPEC-COMMANDS C7)', () => {
 		).toBe(true);
 	});
 });
+
+describe('room for the wrapper (SPEC-COMMANDS C30)', () => {
+	const script = (shell: string, command: string) =>
+		commandScriptSchema.safeParse({ osFamily: 'windows', shell, command });
+
+	it('C30: a PowerShell command is at most 23,000 bytes of UTF-8', () => {
+		const wide = '語'.repeat(Math.floor(COMMAND_LIMITS.maxPowerShellBytes / 3));
+		const longest = `${wide}xx`;
+		expect(Buffer.byteLength(longest)).toBe(COMMAND_LIMITS.maxPowerShellBytes);
+		expect(script('powershell', longest).success).toBe(true);
+		const over = script('powershell', `${longest}x`);
+		expect(over.success).toBe(false);
+		expect(over.error?.issues[0]?.message).toBe(
+			'A PowerShell command is at most 23,000 bytes: about 7,600 characters of non-English text.'
+		);
+		expect(over.error?.issues[0]?.path).toEqual(['command']);
+		// Plain text never meets it: 8,000 characters are 8,000 bytes.
+		expect(script('powershell', 'x'.repeat(COMMAND_LIMITS.maxCommandChars)).success).toBe(true);
+		// cmd is not wrapped, so only the character limit applies.
+		expect(script('cmd', `${longest}x`).success).toBe(true);
+	});
+});

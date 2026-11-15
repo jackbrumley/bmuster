@@ -1,6 +1,6 @@
 # SPEC-MCP: Claude as an administrator, with a person approving every command
 
-**Status:** step 1 `IMPLEMENTED (v0.4.27)` (As built: section 17) · step 2 `IMPLEMENTED (v0.4.29)` (As built: section 18) · ChatGPT compatibility `IMPLEMENTED (v0.4.32)` (As built: section 19) · AI can view and the connection guide `IMPLEMENTED (v0.4.33)` (As built: section 20) · output while it runs `IMPLEMENTED (v0.4.34)` (As built: section 21); reworked onto SPEC-COMMANDS · **Date:** 2026-11-07, reworked 2026-11-14 · Design inputs: `docs/mcp.md` (the earlier note: "explicit approvals for every action"), SPEC-COMMANDS (runs, the runner, recent sign-in, `run-commands`; IMPLEMENTED v0.4.26), SPEC-ACCESS and `docs/access-and-sign-in.md` (permissions, rules), SPEC-SIGN-IN (users, sessions), SPEC-EMAIL (notifications). Research on Claude's clients: section 4.
+**Status:** step 1 `IMPLEMENTED (v0.4.27)` (As built: section 17) · step 2 `IMPLEMENTED (v0.4.29)` (As built: section 18) · ChatGPT compatibility `IMPLEMENTED (v0.4.32)` (As built: section 19) · AI can view and the connection guide `IMPLEMENTED (v0.4.33)` (As built: section 20) · output while it runs `IMPLEMENTED (v0.4.34)` (As built: section 21) · honest results (M48) `IMPLEMENTED` (version set at release; As built: section 22); reworked onto SPEC-COMMANDS · **Date:** 2026-11-07, reworked 2026-11-14 · Design inputs: `docs/mcp.md` (the earlier note: "explicit approvals for every action"), SPEC-COMMANDS (runs, the runner, recent sign-in, `run-commands`; IMPLEMENTED v0.4.26), SPEC-ACCESS and `docs/access-and-sign-in.md` (permissions, rules), SPEC-SIGN-IN (users, sessions), SPEC-EMAIL (notifications). Research on Claude's clients: section 4.
 
 > **Security work.** This adds a second way in (OAuth tokens held by an AI client), a new permission, and a new way to start a Commands run. Commands run as root or SYSTEM. Nothing in this spec weakens a check that SPEC-COMMANDS built: a command Claude asks for runs only through the Commands runner, after a person approves it in the console, with a ticket the agent checks for `run-commands`.
 
@@ -183,6 +183,14 @@ Jack (2026-11-15): scripts an admin writes once, which an assistant may run with
 | :-- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------- |
 | M46 | **`list_saved_commands`** (read-only, `commands:run`): the switched-on saved commands with a machine where the person holds `ai-commands` in the command's groups; name, description, label, systems, parameters, machines and whether each runs without approval; never the script text (SPEC-SAVED-COMMANDS SC15). | `saved-command-assistant.test.ts` "SC15"                                            |
 | M47 | **`run_saved_command`** (`commands:run`): runs at once only when every unattended condition holds, else waits on Approvals like `run_command`; same result shape, with `savedCommand` and `commandRun: null` (SC16–SC22).                                                                                            | `saved-command-assistant.test.ts` "SC17", `mcp-conformance-commands.test.ts` "SC18" |
+
+### Honest results (SPEC-COMMANDS C25–C30)
+
+Jack (2026-11-15): a PowerShell command can print errors and still exit 0. Assistants now see when it did.
+
+| #   | Criterion                                                                                                                                                                                                                                                                                                                                                                       | Named test                      |
+| :-- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------ |
+| M48 | **Errors reported in results.** `get_command_result`, `run_command` and `run_saved_command` give each machine `errorsReported` (the count the PowerShell wrapper reported; null when the shell has no wrapper or no report came) and `wroteToStderr` (null until it finished). The text copy reads "Finished with errors (N)" for a machine that exited 0 with errors reported. | `windows-wrapper.test.ts` "M48" |
 
 ## 6. Shape
 
@@ -549,3 +557,12 @@ M44 and M45 are built. Where the build differs from the criteria, or settles som
 - **Tool description.** `get_command_result`'s description now says it returns a running machine's output so far, that the next offsets give only what is new, and that it waits until the run ends or about 2 seconds after new output. No guidance about slow commands was added.
 - **Tests.** M44 and M45 in `services/commands/live-output.test.ts` (M45 with fake timers); the output schema snapshot in `mcp-tools.test.ts` gained the two fields.
 - **Not done here.** The version bump and changelog entry are left for the release step.
+
+## 22. As built (honest results)
+
+M48 is built, on SPEC-COMMANDS C25–C30 (As built: section 12 there).
+
+- **Fields.** Each machine in a result gains `errorsReported` (integer or null) and `wroteToStderr` (boolean or null), both read from the stored row, so they survive the 30-day output deletion. `errorsReported` is null for sh, bash and cmd, before the machine ends, and when the wrapper's report did not arrive; the model is told it is PowerShell only and that above 0 means finished with errors. `wroteToStderr` is information, not failure.
+- **Text copy.** The machine's line starts "Finished with errors (N)" in place of "Succeeded" when it exited 0 with errors reported.
+- **Output.** The wrapper's report line never reaches the assistant: it is taken off the stored stderr and hidden from the output so far.
+- **Tests.** M48 in `services/commands/windows-wrapper.test.ts`; the output schema snapshot in `mcp-tools.test.ts` gained the two fields.

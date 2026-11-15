@@ -6,11 +6,10 @@
 		commandOsLabel,
 		commandShellLabel,
 		countsLine,
+		machineResultLabel,
 		needsRunAgain,
-		runMachineStatusLabel,
 		type CommandDraft,
 		type RunMachineOutput,
-		type RunMachineStatus,
 		type RunMachineView,
 		type RunView
 	} from '#lib/domain/commands/commands.ts';
@@ -295,10 +294,11 @@
 		}
 	});
 
-	function tone(status: RunMachineStatus): 'good' | 'bad' | 'quiet' | 'busy' {
-		switch (status) {
+	/** Exit 0 with errors reported reads as a warning, not a success (C27). */
+	function tone(machine: RunMachineView): 'good' | 'warn' | 'bad' | 'quiet' | 'busy' {
+		switch (machine.status) {
 			case 'succeeded':
-				return 'good';
+				return machine.errorsReported !== null && machine.errorsReported > 0 ? 'warn' : 'good';
 			case 'failed':
 			case 'timed-out':
 			case 'lost':
@@ -426,7 +426,9 @@
 					<span class="name">{machine.machineName}</span>
 					<span class="detail">{resultText(machine)}</span>
 				</span>
-				<span class="status {tone(machine.status)}">{runMachineStatusLabel(machine.status)}</span>
+				<span class="status {tone(machine)}"
+					>{machineResultLabel(machine.status, machine.errorsReported)}</span
+				>
 			</ListRow>
 		{/snippet}
 	</ListCard>
@@ -439,6 +441,12 @@
 			padding="normal"
 		>
 			<LoadingVeil active={shown.kind === 'loading'} title="Loading the output" detail={undefined}>
+				{#if shownMachine.status === 'succeeded' && tone(shownMachine) === 'warn'}
+					<p class="status warn result">
+						{machineResultLabel(shownMachine.status, shownMachine.errorsReported)}: it exited 0, but
+						PowerShell recorded errors. Check Errors below.
+					</p>
+				{/if}
 				{#if shown.kind === 'shown'}
 					{#if shown.output.kind === 'none'}
 						<p class="meta">
@@ -569,6 +577,17 @@
 	.good {
 		background: var(--success-bg);
 		color: var(--success);
+	}
+
+	.warn {
+		background: var(--warning-bg);
+		color: var(--warning);
+	}
+
+	.result {
+		justify-self: start;
+		margin-bottom: var(--space-3);
+		overflow-wrap: anywhere;
 	}
 
 	.bad {

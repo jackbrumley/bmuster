@@ -195,6 +195,8 @@ export function machinesOf(database: Queryable, runIds: readonly string[]): RunM
 			outputBytes: commandRunMachines.outputBytes,
 			outputSha256: commandRunMachines.outputSha256,
 			outputDeletedAt: commandRunMachines.outputDeletedAt,
+			errorsReported: commandRunMachines.errorsReported,
+			wroteToStderr: commandRunMachines.wroteToStderr,
 			outputKept: isNotNull(commandRunMachines.stdout),
 			machineName: machines.name,
 			osFamily: machines.osFamily,
@@ -278,6 +280,8 @@ export type MachineResult = {
 	stderrTruncated: boolean;
 	outputBytes: number;
 	outputSha256: string;
+	errorsReported: number | null;
+	wroteToStderr: boolean;
 };
 
 export function finishMachine(
@@ -300,7 +304,9 @@ export function finishMachine(
 			stdoutTruncated: result.stdoutTruncated,
 			stderrTruncated: result.stderrTruncated,
 			outputBytes: result.outputBytes,
-			outputSha256: result.outputSha256
+			outputSha256: result.outputSha256,
+			errorsReported: result.errorsReported,
+			wroteToStderr: result.wroteToStderr
 		})
 		.where(machineRow(runId, machineId))
 		.run();

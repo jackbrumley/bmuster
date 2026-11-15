@@ -44,6 +44,11 @@ export function commandOsLabel(family: CommandOsFamily): string {
 /** The limits of C7, C9, C10, C14 and C16, the same on the form and the server. */
 export const COMMAND_LIMITS = {
 	maxCommandChars: 8000,
+	/**
+	 * A PowerShell command's UTF-8 bytes (C30): it travels as base64 inside the wrapper, which
+	 * must fit Windows's 32,767-character command line. Only mostly non-ASCII text reaches it.
+	 */
+	maxPowerShellBytes: 23_000,
 	minTimeoutMs: 5_000,
 	maxTimeoutMs: 10 * 60_000,
 	defaultTimeoutMs: 60_000,
@@ -101,6 +106,19 @@ export function runMachineStatusLabel(status: RunMachineStatus): string {
 		case 'cancelled':
 			return 'Cancelled';
 	}
+}
+
+/**
+ * A finished machine's result as people and assistants read it: "Finished with errors (3)" for a
+ * command that exited 0 but reported errors (C27), else its status. It still counts as succeeded.
+ */
+export function machineResultLabel(
+	status: RunMachineStatus,
+	errorsReported: number | null
+): string {
+	return status === 'succeeded' && errorsReported !== null && errorsReported > 0
+		? `Finished with errors (${String(errorsReported)})`
+		: runMachineStatusLabel(status);
 }
 
 /** What **Run again on failed and offline** picks up (C18). */
@@ -285,6 +303,13 @@ export type RunMachineView = {
 	reason: string;
 	exitCode: number | null;
 	durationMs: number | null;
+	/**
+	 * How many errors the PowerShell wrapper reported (C26): null for other shells, before it
+	 * finishes, or when no report came.
+	 */
+	errorsReported: number | null;
+	/** Whether it wrote anything to stderr (C29), as information; null before it finishes. */
+	wroteToStderr: boolean | null;
 	/** `live` while it runs (C22): the bytes so far, which the results page watches for change. */
 	output:
 		| { kind: 'none' }

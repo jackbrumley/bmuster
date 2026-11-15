@@ -57,6 +57,8 @@ function machineView(row: RunMachineRow, live: LiveOutputs): RunMachineView {
 		reason: row.skipReason ?? '',
 		exitCode: row.exitCode,
 		durationMs: row.durationMs,
+		errorsReported: row.errorsReported,
+		wroteToStderr: row.wroteToStderr,
 		output:
 			running !== undefined
 				? { kind: 'live', bytes: running.bytes() }

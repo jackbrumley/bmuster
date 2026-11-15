@@ -86,6 +86,25 @@ function quietPeer(): RelayPeer {
 	};
 }
 
+/**
+ * A PowerShell ticket's command as the wrapper decodes it (SPEC-COMMANDS C25), and the report
+ * line the wrapper ends stderr with. Other shells' tickets carry the command itself.
+ */
+export function unwrapped(ticket: Ticket): string {
+	if (ticket.purpose.shell !== 'powershell') {
+		return ticket.purpose.command;
+	}
+	const found = /FromBase64String\('([A-Za-z0-9+/=]*)'\)\)/.exec(ticket.purpose.command);
+	if (found === null) throw new Error('The PowerShell ticket is not wrapped');
+	return Buffer.from(found[1] ?? '', 'base64').toString('utf8');
+}
+
+export function wrapperReport(ticket: Ticket, errors: number): string {
+	const nonce = /BMUSTER-PS-1 ([0-9a-f]{32}) errors=/.exec(ticket.purpose.command)?.[1];
+	if (nonce === undefined) throw new Error('The PowerShell ticket is not wrapped');
+	return `\nBMUSTER-PS-1 ${nonce} errors=${String(errors)}\r\n`;
+}
+
 /** The agent's side of an exec session opening: it attaches to the relay. */
 export function agentAttaches(relay: ReturnType<typeof createRelay>, ticket: Ticket): RelayPeer {
 	const peer = quietPeer();

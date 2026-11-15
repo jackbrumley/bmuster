@@ -26,6 +26,8 @@ function row(index: number, status: RunMachineStatus, exitCode: number | null): 
 		reason: status === 'lost' ? 'The connection to the machine was lost.' : '',
 		exitCode,
 		durationMs: exitCode === null ? null : 1200,
+		errorsReported: null,
+		wroteToStderr: exitCode === null ? null : false,
 		output: exitCode === null ? { kind: 'none' } : { kind: 'kept', bytes: 12 }
 	};
 }
@@ -331,5 +333,51 @@ describe('a saved command’s run (SPEC-SAVED-COMMANDS SC14)', () => {
 		expect(label.element().classList.contains('changes')).toBe(true);
 		// Run again goes back through the saved command, not a typed copy of its prelude.
 		expect(screen.getByRole('button', { name: /Run again/ }).query()).toBeNull();
+	});
+});
+
+describe('finished with errors (SPEC-COMMANDS C27)', () => {
+	it('C27: exit 0 with errors reported reads "Finished with errors (N)" in the warning colour, row and panel', async () => {
+		const withErrors: RunMachineView = {
+			...row(1, 'succeeded', 0),
+			errorsReported: 3,
+			wroteToStderr: true
+		};
+		const kept: RunMachineOutput = {
+			kind: 'kept',
+			stdout: '',
+			stderr: 'Get-CimInstance : Invalid class',
+			stdoutTruncated: false,
+			stderrTruncated: false
+		};
+		vi.stubGlobal(
+			'fetch',
+			vi.fn<typeof globalThis.fetch>(() =>
+				Promise.resolve(
+					new Response(JSON.stringify(kept), {
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					})
+				)
+			)
+		);
+		const screen = await render(RunResults, {
+			initial: view([withErrors, row(2, 'succeeded', 0)]),
+			now: NOW,
+			openMachineId: null
+		});
+		// It still counts as succeeded; only its label says more.
+		await expect.element(screen.getByText('2 succeeded')).toBeVisible();
+		const label = screen.getByText('Finished with errors (3)', { exact: true });
+		await expect.element(label).toBeVisible();
+		expect(label.element().classList.contains('warn')).toBe(true);
+		expect(
+			screen.getByText('Succeeded', { exact: true }).element().classList.contains('good')
+		).toBe(true);
+		await screen.getByRole('button', { name: /PC 1/u }).click();
+		await expect.element(screen.getByText('Get-CimInstance : Invalid class')).toBeVisible();
+		const panel = screen.getByText(/^Finished with errors \(3\): it exited 0/u);
+		await expect.element(panel).toBeVisible();
+		expect(panel.element().classList.contains('warn')).toBe(true);
 	});
 });
