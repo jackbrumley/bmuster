@@ -16,6 +16,9 @@
 
 	let email = $state('');
 	let password = $state('');
+
+	/** "Continue with": off to the provider, then back to the page that was asked for. */
+	const returnQuery = $derived(new URLSearchParams({ returnTo: data.returnTo }).toString());
 </script>
 
 <svelte:head>
@@ -28,21 +31,20 @@
 	{#if data.providers.length > 0}
 		<div class="providers">
 			{#each data.providers as provider (provider.id)}
-				<form
-					method="GET"
-					action={resolve('/auth/oidc/[id=uuid]/start', { id: provider.id })}
+				<!-- A link, not a form: form-action would have to allow the provider the start
+				     endpoint redirects to (SPEC-SIGN-IN S20). -->
+				<a
+					class="pill-link provider"
+					href={resolve(`/auth/oidc/[id=uuid]/start?${returnQuery}`, { id: provider.id })}
 					data-sveltekit-reload
 				>
-					<input type="hidden" name="returnTo" value={data.returnTo} />
-					<Button variant="secondary" size="large" type="submit" onclick={undefined}>
-						{#if provider.kind === 'microsoft-entra'}
-							<IconBrandWindows size={20} />
-						{:else}
-							<IconShieldLock size={20} />
-						{/if}
-						Continue with {provider.name}
-					</Button>
-				</form>
+					{#if provider.kind === 'microsoft-entra'}
+						<IconBrandWindows size={20} />
+					{:else}
+						<IconShieldLock size={20} />
+					{/if}
+					Continue with {provider.name}
+				</a>
 			{/each}
 		</div>
 		<p class="divider"><span>or with a password</span></p>
@@ -89,7 +91,7 @@
 	{/if}
 	<!-- Someone enrolling a computer uses an enrolment code, not a password (SPEC-JOIN J14). -->
 	<p class="divider"><span>Adding a computer?</span></p>
-	<a class="join" href={resolve('/join')}
+	<a class="pill-link join" href={resolve('/join')}
 		><IconDeviceDesktopPlus size={20} />Enrol this computer with a code</a
 	>
 </PublicPage>
@@ -139,7 +141,7 @@
 		color: var(--brand);
 	}
 
-	.join {
+	.pill-link {
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -148,13 +150,23 @@
 		padding: var(--space-2) var(--space-4);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-pill);
-		color: var(--brand);
-		font-weight: var(--weight-semibold);
 		text-decoration: none;
 	}
 
-	.join:hover {
+	.pill-link:hover {
 		background: var(--surface-muted);
+	}
+
+	.provider {
+		background: var(--surface-elevated);
+		color: var(--text-soft);
+		font-size: var(--text-base);
+		font-weight: var(--weight-medium);
+	}
+
+	.join {
+		color: var(--brand);
+		font-weight: var(--weight-semibold);
 	}
 
 	.problem {

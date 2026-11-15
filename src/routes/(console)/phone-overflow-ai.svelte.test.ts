@@ -101,7 +101,8 @@ const PAGES: readonly PhonePage[] = [
 							identity: { kind: 'verified', host: LONG_HOSTNAME }
 						},
 						redirect: { kind: 'web', host: LONG_HOSTNAME },
-						scopes: ['machines:read', 'offline_access']
+						scopes: ['machines:read', 'offline_access'],
+						formTarget: `https://${LONG_HOSTNAME}`
 					}
 				}
 			})

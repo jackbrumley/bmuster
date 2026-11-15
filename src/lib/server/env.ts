@@ -159,5 +159,10 @@ export const env = {
 	/** Optional: turn local network mode on for a server with no users (I12). */
 	localNetworkModeAtFirstRun: localNetworkModeAtFirstRun(),
 	/** Optional: when and how many nightly database snapshots (H3). */
-	backupSchedule: backupSchedule()
+	backupSchedule: backupSchedule(),
+	/**
+	 * Optional: the header a reverse proxy puts the public scheme in (adapter-node reads it too).
+	 * Only with it does a proxied request count as HTTPS for Strict-Transport-Security (S20).
+	 */
+	protocolHeader: optional('PROTOCOL_HEADER')?.toLowerCase()
 };
