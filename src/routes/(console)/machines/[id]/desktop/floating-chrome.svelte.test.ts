@@ -57,6 +57,11 @@ function box(locator: Locator): DOMRect {
 	return locator.element().getBoundingClientRect();
 }
 
+function centre(locator: Locator): { x: number; y: number } {
+	const at = box(locator);
+	return { x: at.left + at.width / 2, y: at.top + at.height / 2 };
+}
+
 function mouse(target: Element, type: string, x: number, y: number): void {
 	target.dispatchEvent(
 		new PointerEvent(type, {
@@ -142,26 +147,27 @@ describe('the floating bar', () => {
 		await expect.element(button).toBeVisible();
 	});
 
-	it('FB5: a tap collapses the bar into the button at its end, and a tap on the button opens it there again', async () => {
+	it('FB5: a tap collapses the bar into the button where the grip was, and the button expands it with the grip on it', async () => {
 		const { screen, bar, handle, button } = await openWindow();
-		dragHandle(handle, 30, 5000);
-		await expect.poll(() => box(bar).left).toBeCloseTo(BAR_GAP, 0);
-		const placed = box(bar);
+		dragHandle(handle, 400, 100);
+		await expect.poll(() => centre(handle).x).toBeCloseTo(400, 0);
 
 		await handle.click();
 		await expect.element(bar).not.toBeInTheDocument();
-		// The button sits at the bar's end nearer the edge: here the bottom-left corner.
-		expect(box(button).left).toBeCloseTo(BUTTON_GAP, 0);
-		expect(box(button).bottom).toBeCloseTo(800 - BUTTON_GAP, 0);
+		// The button is centred where the grip was, snapped up to the nearest edge (the top).
+		expect(centre(button).x).toBeCloseTo(400, 0);
+		expect(box(button).top).toBeCloseTo(BUTTON_GAP, 0);
 		// The focus goes back to the screen.
 		await expect.element(screen.getByRole('application', { name: /Screen of/ })).toHaveFocus();
 
+		const fabAt = centre(button);
 		await button.click();
 		await expect.element(bar).toBeVisible();
-		expect(box(bar).left).toBeCloseTo(placed.left, 0);
-		expect(box(bar).bottom).toBeCloseTo(placed.bottom, 0);
+		expect(centre(handle).x).toBeCloseTo(fabAt.x, 0);
+		expect(centre(handle).y).toBeCloseTo(fabAt.y, 0);
 
-		// Collapsed and dragged to the right, the button snaps to the right edge; the bar opens from there.
+		// Collapsed and dragged to the right, the button snaps to the right edge; the bar opens
+		// level with it, fitted inside the window.
 		await handle.click();
 		const fab = button.element();
 		const at = fab.getBoundingClientRect();
@@ -169,11 +175,11 @@ describe('the floating bar', () => {
 		mouse(fab, 'pointermove', 1100, 300);
 		mouse(fab, 'pointerup', 1100, 300);
 		await expect.poll(() => fab.getBoundingClientRect().right).toBeCloseTo(1200 - BUTTON_GAP, 0);
-		const snappedTo = fab.getBoundingClientRect();
+		const snappedTo = centre(button);
 		await button.click();
 		await expect.element(bar).toBeVisible();
 		expect(box(bar).right).toBeCloseTo(1200 - BAR_GAP, 0);
-		expect(box(bar).top).toBeCloseTo(snappedTo.top, -1);
+		expect(centre(handle).y).toBeCloseTo(snappedTo.y, 0);
 	});
 
 	it('FB7: the bar or the button, and their places, are remembered for the pop-out', async () => {

@@ -3,11 +3,12 @@
 	import { IconArrowsMinimize, IconGripVertical, IconX } from '@tabler/icons-svelte-runes';
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import {
-		barBeside,
+		barAtGrip,
 		barCorner,
 		barPlaceAt,
 		BUTTON_SIZE,
-		buttonBeside,
+		buttonAtGrip,
+		buttonCentre,
 		nudged,
 		type BarPlace,
 		type FloatingPosition
@@ -25,9 +26,9 @@
 	 * session's tools (`session-tools.svelte`), Disconnect, and Leave full
 	 * screen or Close window at the far right. The handle drags the bar
 	 * anywhere on the screen, and a tap (or Enter, or Space) collapses it into
-	 * the round button; the arrow keys move it. The display picker and the
-	 * open panel hang under the bar, or over it in the lower half of the
-	 * screen. The bar stays inside the screen less the safe-area insets: its
+	 * the round button, which takes the grip's place; the arrow keys move it.
+	 * The display picker and the open panel hang under the bar, or over it in
+	 * the lower half of the screen. The bar stays inside the screen less the safe-area insets: its
 	 * place is a share of the room it can move in, so the stylesheet keeps it
 	 * inside when the window changes size.
 	 */
@@ -58,6 +59,8 @@
 	const BIG_STEP_PX = 64;
 	/** The gap between the bar and what hangs from it (`--space-2`). */
 	const HANG_GAP_PX = 8;
+	/** The button's area sits further in from the screen than the bar's (`--space-3` against `--space-2`). */
+	const BUTTON_INSET_PX = 4;
 
 	let area = $state<HTMLElement>();
 	let float = $state<HTMLElement>();
@@ -92,6 +95,23 @@
 		return { area: area.getBoundingClientRect(), bar: float.getBoundingClientRect() };
 	}
 
+	/** The grip's centre inside the bar, measured. */
+	function gripInBar(bar: DOMRect): Point | undefined {
+		if (handle === undefined) {
+			return undefined;
+		}
+		const grip = handle.getBoundingClientRect();
+		return { x: grip.left - bar.left + grip.width / 2, y: grip.top - bar.top + grip.height / 2 };
+	}
+
+	/** The button's area: the bar's, less the button's extra inset on every side. */
+	function buttonArea(barArea: DOMRect): { width: number; height: number } {
+		return {
+			width: barArea.width - 2 * BUTTON_INSET_PX,
+			height: barArea.height - 2 * BUTTON_INSET_PX
+		};
+	}
+
 	function placeOf(client: Point): BarPlace | undefined {
 		const now = sizes();
 		if (now === undefined) {
@@ -121,11 +141,19 @@
 		}
 	});
 
+	/** The button takes the grip's place: centred on it, then snapped to the nearest edge (FB5). */
 	function collapse(keyboard: boolean): void {
 		const now = sizes();
-		if (now !== undefined) {
-			oncollapse(buttonBeside(place, now.area, now.bar, BUTTON_SIZE), keyboard);
+		const grip = now === undefined ? undefined : gripInBar(now.bar);
+		if (now === undefined || grip === undefined) {
+			return;
 		}
+		const at = barCorner(place, now.area, now.bar);
+		const centre = {
+			x: at.x + grip.x - BUTTON_INSET_PX,
+			y: at.y + grip.y - BUTTON_INSET_PX
+		};
+		oncollapse(buttonAtGrip(centre, buttonArea(now.area), BUTTON_SIZE), keyboard);
 	}
 
 	function onHandleKey(event: KeyboardEvent): void {
@@ -147,12 +175,19 @@
 	}
 
 	onMount(() => {
-		// Expanded from the button: the bar opens next to it (FB5), and the keyboard
-		// goes to the handle when a key pressed the button, else back to the screen.
-		if (opened.kind === 'beside') {
+		// Expanded from the button: the bar opens with its grip on the button (FB5), and
+		// the keyboard goes to the handle when a key pressed the button, else back to the screen.
+		if (opened.kind === 'expanded') {
 			const now = sizes();
-			if (now !== undefined) {
-				place = barBeside(opened.button, now.area, now.bar, BUTTON_SIZE);
+			const grip = now === undefined ? undefined : gripInBar(now.bar);
+			if (now !== undefined && grip !== undefined) {
+				const centre = buttonCentre(opened.button, buttonArea(now.area), BUTTON_SIZE);
+				place = barAtGrip(
+					{ x: centre.x + BUTTON_INSET_PX, y: centre.y + BUTTON_INSET_PX },
+					grip,
+					now.area,
+					now.bar
+				);
 				onmoved();
 			}
 			if (opened.keyboard) {

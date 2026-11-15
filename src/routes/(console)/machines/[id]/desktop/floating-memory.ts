@@ -25,7 +25,7 @@ export type ControlsMemory = {
 
 /** How the bar came to show: as remembered, or expanded from the button at `button` just now. */
 export type BarOpening =
-	{ kind: 'restored' } | { kind: 'beside'; button: FloatingPosition; keyboard: boolean };
+	{ kind: 'restored' } | { kind: 'expanded'; button: FloatingPosition; keyboard: boolean };
 
 const fraction = z.number().min(0).max(1);
 

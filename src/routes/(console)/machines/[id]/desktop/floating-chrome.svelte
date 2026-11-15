@@ -22,9 +22,10 @@
 	 * The session's controls over the screen, in full screen and in the
 	 * pop-out (SPEC-DESKTOP-FLOATING FB2–FB9): one control in two shapes.
 	 * Expanded, the bar (`floating-bar.svelte`); collapsed, the round button
-	 * (`floating-controls.svelte`), whose tap expands the bar next to it. On
-	 * phones and narrow windows (`form` 'sheet') it is always the button, and
-	 * a tap opens the sheet instead. Which shape shows and where each sits is
+	 * (`floating-controls.svelte`), which sits where the bar's grip was and
+	 * whose tap expands the bar with its grip on it. On phones and narrow
+	 * windows (`form` 'sheet') it is always the button, and a tap opens the
+	 * sheet instead. Which shape shows and where each sits is
 	 * remembered in this browser, for full screen and the pop-out apart.
 	 */
 	let { chrome, form, exit }: { chrome: SessionChrome; form: 'bar' | 'sheet'; exit: ChromeExit } =
@@ -47,17 +48,17 @@
 		}
 	}
 
-	/** The button was tapped: the bar opens next to it (FB5). */
+	/** The button was tapped: the bar opens with its grip on the button (FB5). */
 	function expand(keyboard: boolean): void {
 		if (memory === undefined) {
 			return;
 		}
-		opened = { kind: 'beside', button: memory.button, keyboard };
+		opened = { kind: 'expanded', button: memory.button, keyboard };
 		memory.shown = 'bar';
 		remember();
 	}
 
-	/** The handle was tapped: the button takes the bar's place (FB4, FB5). */
+	/** The handle was tapped: the button takes the grip's place (FB4, FB5). */
 	async function collapse(to: FloatingPosition, keyboard: boolean): Promise<void> {
 		if (memory === undefined) {
 			return;

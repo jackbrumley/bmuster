@@ -1,3 +1,5 @@
+import type { Point } from './press-drag.ts';
+
 /**
  * Where the full-screen controls button sits (SPEC-DESKTOP-FLOATING, option
  * A): on one of the four edges, at a place along it given as a fraction of
@@ -120,44 +122,28 @@ export function nudged(
 	return barPlaceAt({ x: corner.x + delta.x, y: corner.y + delta.y }, area, bar);
 }
 
-/**
- * The bar opened next to the button: level with it and starting at it,
- * running towards the middle of the screen, fitted inside it.
- */
-export function barBeside(button: FloatingPosition, area: Area, bar: Area, size: number): BarPlace {
-	const at = cornerOf(button, area, size);
-	const leftHalf = at.x + size / 2 < area.width / 2;
-	const topHalf = at.y + size / 2 < area.height / 2;
-	return barPlaceAt(
-		{
-			x: leftHalf ? at.x : at.x + size - bar.width,
-			y: topHalf ? at.y : at.y + size - bar.height
-		},
-		area,
-		bar
-	);
+/** The centre of a button resting at `position`. */
+export function buttonCentre(position: FloatingPosition, area: Area, size: number): Point {
+	const corner = cornerOf(position, area, size);
+	return { x: corner.x + size / 2, y: corner.y + size / 2 };
 }
 
 /**
- * Where the button goes when the bar collapses: at the bar's end nearer
- * the screen's edge, snapped to the nearest edge, so expanding it again
- * opens the bar where it was (`barBeside`).
+ * Where the button goes when the bar collapses: centred where the bar's
+ * grip was (`grip`, the grip's centre inside the button's area), kept
+ * inside the area and snapped to the nearest edge, so it lands as close to
+ * the grip as an edge allows.
  */
-export function buttonBeside(
-	place: BarPlace,
-	area: Area,
-	bar: Area,
-	size: number
-): FloatingPosition {
-	const at = barCorner(place, area, bar);
-	const leftHalf = at.x + bar.width / 2 < area.width / 2;
-	const topHalf = at.y + bar.height / 2 < area.height / 2;
-	return snapped(
-		{
-			x: leftHalf ? at.x : at.x + bar.width - size,
-			y: topHalf ? at.y : at.y + bar.height - size
-		},
-		area,
-		size
-	);
+export function buttonAtGrip(grip: Point, area: Area, size: number): FloatingPosition {
+	const corner = clampCorner({ x: grip.x - size / 2, y: grip.y - size / 2 }, area, size);
+	return snapped(corner, area, size);
+}
+
+/**
+ * The bar expanded from the button: placed so its grip's centre (`grip`,
+ * inside the bar) sits on `centre`, the button's centre inside the area,
+ * fitted inside the area.
+ */
+export function barAtGrip(centre: Point, grip: Point, area: Area, bar: Area): BarPlace {
+	return barPlaceAt({ x: centre.x - grip.x, y: centre.y - grip.y }, area, bar);
 }
