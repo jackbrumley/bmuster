@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import type { CleanupItemId } from '#lib/domain/storage/cleanup.ts';
 import type { FileErrorCode } from '#lib/domain/files/files.ts';
 import { agentFilesReplySchema } from '#lib/schemas/files/files.ts';
@@ -10,10 +11,25 @@ import type { EndedSession, LocalEnd } from './session-record.ts';
  * nothing running. Requests from any number of HTTP calls share it,
  * numbered so each reply finds its caller. Binary frames carry a 4-byte
  * request id, then the bytes.
+ *
+ * Files sent through a desktop session (SPEC-SESSION-FILES) use the same
+ * channel with their own ops and error codes (`sessionFilesChannels`).
  */
 
-export type AgentAnswer =
-	{ kind: 'done'; result: unknown } | { kind: 'error'; code: FileErrorCode; message: string };
+export type AgentAnswer<Code extends string = FileErrorCode> =
+	{ kind: 'done'; result: unknown } | { kind: 'error'; code: Code; message: string };
+
+/** An agent's reply on a channel, as its schema parses it. */
+type AgentReply<Code extends string> =
+	| { type: 'done'; id: number; result: unknown }
+	| { type: 'error'; id: number; code: Code; message: string };
+
+/** What a kind of channel is: its reply schema, the code for a lost machine, and its idle message. */
+export type ChannelKind<Code extends string> = {
+	replies: z.ZodType<AgentReply<Code>>;
+	ioCode: Code;
+	idleMessage: string;
+};
 
 /** What the server asks the agent (agent/crates/protocol/src/files.rs `FilesOp`). */
 export type FilesOp =
@@ -37,28 +53,34 @@ export type FilesOp =
 	| { op: 'storage-cleanup-status' };
 
 /** A read the caller is streaming: acknowledge what was passed on, or give up. */
-export type ReadHandle = {
-	done: Promise<AgentAnswer>;
+export type ReadHandle<Code extends string = FileErrorCode> = {
+	done: Promise<AgentAnswer<Code>>;
 	ack(bytes: number): void;
 	cancel(): void;
 };
 
-export type FilesChannel = {
+export type Channel<Op extends { op: string }, Code extends string> = {
 	readonly sessionId: string;
-	ask(request: FilesOp, timeoutMs: number): Promise<AgentAnswer>;
-	/** One upload chunk: its request, then its data. */
-	chunk(
-		target: { dir: string; name: string; offset: number },
-		data: Uint8Array,
-		timeoutMs: number
-	): Promise<AgentAnswer>;
-	/** Streams `length` bytes from `offset` to `onBytes`; quiet for `timeoutMs` means failed. */
+	ask(request: Op, timeoutMs: number): Promise<AgentAnswer<Code>>;
+	/** One upload chunk: its request (`op` included), then its data. */
+	chunk(request: Op, data: Uint8Array, timeoutMs: number): Promise<AgentAnswer<Code>>;
+	/** Streams what `request` reads to `onBytes`; quiet for `timeoutMs` means failed. */
 	read(
-		target: { path: string; offset: number; length: number },
+		request: Op,
 		onBytes: (data: Uint8Array) => void,
 		timeoutMs: number
-	): Promise<{ kind: 'reading'; handle: ReadHandle } | { kind: 'failed'; answer: AgentAnswer }>;
+	): Promise<
+		{ kind: 'reading'; handle: ReadHandle<Code> } | { kind: 'failed'; answer: AgentAnswer<Code> }
+	>;
 };
+
+/** Every request on a files channel, chunks and reads included. */
+type FilesChannelOp =
+	| FilesOp
+	| { op: 'write-chunk'; dir: string; name: string; offset: number }
+	| { op: 'read'; path: string; offset: number; length: number };
+
+export type FilesChannel = Channel<FilesChannelOp, FileErrorCode>;
 
 /** How a new channel's session is asked for (the files service signs the ticket). */
 export type OpenSession = (
@@ -68,24 +90,42 @@ export type OpenSession = (
 	| { kind: 'opened'; sessionId: string }
 	| { kind: 'refused'; status: 403 | 404 | 409 | 503; message: string };
 
-export type ChannelLookup =
-	| { kind: 'channel'; channel: FilesChannel }
+export type ChannelLookup<C> =
+	| { kind: 'channel'; channel: C }
 	| { kind: 'refused'; status: 403 | 404 | 409 | 503; message: string };
 
-type Pending = {
-	settle: (answer: AgentAnswer) => void;
+type Pending<Code extends string> = {
+	settle: (answer: AgentAnswer<Code>) => void;
 	onBytes: ((data: Uint8Array) => void) | undefined;
 	/** Restarts the reply timeout (a read that is still sending is alive). */
 	touch: () => void;
 };
 
-export type FilesChannels = ReturnType<typeof createFilesChannels>;
+export type Channels<Op extends { op: string }, Code extends string> = {
+	/** The person's channel to the machine, asking for a session with `open` if there is none. */
+	get(userId: string, machineId: string, open: OpenSession): ChannelLookup<Channel<Op, Code>>;
+};
 
-export function createFilesChannels(relay: Relay, limits: { idleMs: number }) {
-	const channels = new Map<string, FilesChannel>();
+export type FilesChannels = Channels<FilesChannelOp, FileErrorCode>;
 
-	function create(key: string, open: OpenSession): ChannelLookup {
-		const pending = new Map<number, Pending>();
+export function createFilesChannels(relay: Relay, limits: { idleMs: number }): FilesChannels {
+	return createChannels(relay, limits, {
+		replies: agentFilesReplySchema,
+		ioCode: 'io',
+		idleMessage: 'Files were not used for 5 minutes.'
+	});
+}
+
+export function createChannels<Op extends { op: string }, Code extends string>(
+	relay: Relay,
+	limits: { idleMs: number },
+	kind: ChannelKind<Code>
+): Channels<Op, Code> {
+	type Answer = AgentAnswer<Code>;
+	const channels = new Map<string, Channel<Op, Code>>();
+
+	function create(key: string, open: OpenSession): ChannelLookup<Channel<Op, Code>> {
+		const pending = new Map<number, Pending<Code>>();
 		let nextId = 1;
 		let active = 0;
 		let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -100,7 +140,7 @@ export function createFilesChannels(relay: Relay, limits: { idleMs: number }) {
 				markReady(true);
 			},
 			text: (text) => {
-				const parsed = agentFilesReplySchema.safeParse(parseJson(text));
+				const parsed = kind.replies.safeParse(parseJson(text));
 				if (!parsed.success) {
 					return;
 				}
@@ -140,10 +180,10 @@ export function createFilesChannels(relay: Relay, limits: { idleMs: number }) {
 		}
 		const sessionId = opened.sessionId;
 
-		function gone(): AgentAnswer {
+		function gone(): Answer {
 			return {
 				kind: 'error',
-				code: 'io',
+				code: kind.ioCode,
 				message: endedMessage ?? 'The connection to the machine was lost.'
 			};
 		}
@@ -157,7 +197,7 @@ export function createFilesChannels(relay: Relay, limits: { idleMs: number }) {
 			active -= 1;
 			if (active === 0 && endedMessage === undefined) {
 				idleTimer = setTimeout(() => {
-					relay.end(sessionId, 'unused', 'Files were not used for 5 minutes.');
+					relay.end(sessionId, 'unused', kind.idleMessage);
 				}, limits.idleMs);
 				idleTimer.unref();
 			}
@@ -165,32 +205,30 @@ export function createFilesChannels(relay: Relay, limits: { idleMs: number }) {
 
 		/** Sends one request; `after` runs once it is sent (a chunk's data follows). */
 		async function request(
-			body: Record<string, unknown>,
+			body: Op,
 			timeoutMs: number,
 			onBytes: ((data: Uint8Array) => void) | undefined,
 			after: (id: number) => boolean
-		): Promise<
-			{ id: number; answer: Promise<AgentAnswer> } | { id: undefined; answer: AgentAnswer }
-		> {
+		): Promise<{ id: number; answer: Promise<Answer> } | { id: undefined; answer: Answer }> {
 			if (!(await ready)) {
 				return { id: undefined, answer: gone() };
 			}
 			const id = nextId;
 			nextId = (nextId % 0xffff_fff0) + 1;
-			const answer = new Promise<AgentAnswer>((resolve) => {
+			const answer = new Promise<Answer>((resolve) => {
 				let timer: ReturnType<typeof setTimeout> | undefined;
 				const touch = (): void => {
 					clearTimeout(timer);
 					timer = setTimeout(() => {
 						entry.settle({
 							kind: 'error',
-							code: 'io',
+							code: kind.ioCode,
 							message: 'The machine did not answer in time.'
 						});
 					}, timeoutMs);
 					timer.unref();
 				};
-				const entry: Pending = {
+				const entry: Pending<Code> = {
 					settle: (result) => {
 						clearTimeout(timer);
 						if (pending.delete(id)) {
@@ -210,7 +248,7 @@ export function createFilesChannels(relay: Relay, limits: { idleMs: number }) {
 			return { id, answer };
 		}
 
-		const channel: FilesChannel = {
+		const channel: Channel<Op, Code> = {
 			sessionId,
 			async ask(body, timeoutMs) {
 				begin();
@@ -221,10 +259,10 @@ export function createFilesChannels(relay: Relay, limits: { idleMs: number }) {
 					finish();
 				}
 			},
-			async chunk(target, data, timeoutMs) {
+			async chunk(body, data, timeoutMs) {
 				begin();
 				try {
-					const sent = await request({ op: 'write-chunk', ...target }, timeoutMs, undefined, (id) =>
+					const sent = await request(body, timeoutMs, undefined, (id) =>
 						relay.toAgent(sessionId, framed(id, data))
 					);
 					return await sent.answer;
@@ -232,9 +270,9 @@ export function createFilesChannels(relay: Relay, limits: { idleMs: number }) {
 					finish();
 				}
 			},
-			async read(target, onBytes, timeoutMs) {
+			async read(body, onBytes, timeoutMs) {
 				begin();
-				const sent = await request({ op: 'read', ...target }, timeoutMs, onBytes, () => true);
+				const sent = await request(body, timeoutMs, onBytes, () => true);
 				if (sent.id === undefined) {
 					finish();
 					return { kind: 'failed', answer: sent.answer };
@@ -260,8 +298,7 @@ export function createFilesChannels(relay: Relay, limits: { idleMs: number }) {
 	}
 
 	return {
-		/** The person's channel to the machine, asking for a session with `open` if there is none. */
-		get(userId: string, machineId: string, open: OpenSession): ChannelLookup {
+		get(userId, machineId, open) {
 			const key = `${userId}/${machineId}`;
 			const existing = channels.get(key);
 			return existing === undefined ? create(key, open) : { kind: 'channel', channel: existing };

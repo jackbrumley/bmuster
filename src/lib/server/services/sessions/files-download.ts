@@ -148,7 +148,7 @@ async function stream(
 		{ highWaterMark: BUFFER_BYTES, size: (chunk) => chunk.byteLength }
 	);
 	const reading = await channel.read(
-		target,
+		{ op: 'read', ...target },
 		(data) => {
 			if (over || controller === undefined) {
 				return;

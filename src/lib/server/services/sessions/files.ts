@@ -315,7 +315,10 @@ export async function uploadChunk(
 		return refused(413, 'An upload piece must hold between 1 byte and 8 MB.');
 	}
 	return withChannel(context, async (channel) =>
-		outcomeOf(await channel.chunk(target, data, ANSWER_MS.chunk), partReplySchema)
+		outcomeOf(
+			await channel.chunk({ op: 'write-chunk', ...target }, data, ANSWER_MS.chunk),
+			partReplySchema
+		)
 	);
 }
 
