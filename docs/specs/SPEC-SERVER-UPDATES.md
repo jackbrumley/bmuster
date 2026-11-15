@@ -115,6 +115,36 @@ The SU10 tests live in `rescue.rs` (`rescue::tests`), not `launcher::tests`.
 - **Run natively here** (Linux x64, no root): the Rust unit tests, plus the scratch end-to-end test. That test builds the real launcher and updater, uses the real Node with stand-in apps, and installs with `install --no-service`. It covers the `releases/` and `current` layout, a request with no flag, A→B kept healthy with A as previous and a database copy, a release signed by another key refused, a broken release that declares compatibility rolled back, a broken one that does not stopped with instructions naming the copy, and `update --recover` finishing an interrupted rollback. Also run natively: install.sh with real OpenSSL, and the console tests.
 - **Only unit-tested or compiled:** the systemd units for real (the path unit starting the updater, boot ordering, `install --refresh-units` and `systemctl` as root), root ownership and modes on `/opt` and `/var/lib`, the GitHub source over HTTPS, a real `npm run release:server-local` bundle, the agent's rescue under systemd (`OnFailure`, `StartLimitBurst`, `systemd-run` refresh), and all Windows behaviour: the server service through the `current` link, the scheduled task, `MoveFileEx`, the agent's recovery actions and rescue copy. Windows code was type- and clippy-checked only, with `x86_64-pc-windows-gnu`. The release workflow's dry run was not run.
 
+## Open tabs after an update (2026-11-15)
+
+**Status:** `IMPLEMENTED (after 0.5.1)` · asked for by Jack, 2026-11-15 · version bump and changelog left for the release step.
+
+### Problem
+
+A console tab left open while the server updates still runs the old build's code. Its next client-side navigation asks for code chunks that only the old build had, and SvelteKit shows "Error 500" until the person reloads by hand.
+
+### Behaviour
+
+1. **Learn of the new version.** The client asks the server for its version every minute (`kit.version.pollInterval`, besides SvelteKit's own checks on focus and on server responses), so `updated.current` turns true soon after an update.
+2. **The next navigation is a full page load.** Once a new version is known, the root layout's `beforeNavigate` sends the navigation's target to `window.location` instead of navigating inside the page.
+3. **A missing chunk reloads its target.** A navigation that still fails to load a code chunk (before the poll noticed, or while the server was restarting) loads its target as a whole page. The same address reloads at most once in 30 seconds, so code that never loads (a network fault) shows the error page instead of looping.
+4. **Nothing reloads by itself.** Only navigations reload: a desktop session stays up across a server update until the person navigates (or the session ends with the restart, as before).
+
+### Acceptance criteria
+
+| #    | Criterion                                                                                                                                                                  | Named test                   |
+| :--- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------- |
+| SU17 | The client polls for a new version every 60 s (`version.pollInterval` in `vite.config.ts`).                                                                                | `app-version.test.ts` "SU17" |
+| SU18 | Once a new version is known, a navigation that would stay in the page loads its target as a whole page; one where the browser unloads anyway, or with no target, does not. | `app-version.test.ts` "SU18" |
+| SU19 | A navigation error for a missing code chunk (Chrome's, Safari's, Firefox's and Vite's wording) reloads the target, once per address in 30 s; other errors do not.          | `app-version.test.ts` "SU19" |
+
+### As built
+
+- `src/lib/utils/app-version.ts` holds `VERSION_POLL_MS`, `fullLoadTarget`, `staleCode` and the loop guard `mayReload` (sessionStorage, inside `try`/`catch`; blocked storage still reloads). `vite.config.ts` passes `version: { pollInterval: VERSION_POLL_MS }` to the SvelteKit plugin (SvelteKit 3 takes its options there; the option names are unchanged from SvelteKit 2).
+- `src/routes/+layout.svelte` has the `beforeNavigate` (as SvelteKit's documentation suggests); `src/hooks.client.ts` has `handleError`, which reloads only while `navigating.to` is set, so an error outside a navigation never reloads a page.
+- SvelteKit itself already falls back to a full page load when a navigation fails and `updated.check()` finds a new version; the hook covers the case where that check cannot tell (the server still restarting).
+- **Still to try on a real install:** leave a console tab open across an update, wait a minute, then click to another page.
+
 ## Version 1 (v0.3.0–v0.3.3, replaced)
 
 The unprivileged launcher downloaded a version named by the app (`request.json`), verified it and switched between `current`/`previous`/`incoming` application slots under the data folder, with a durable state file and readiness check. The launcher and Node runtime were fixed. The verification, archive, download and readiness code carries over into the updater; the slot supervisor, `request.json`, `prepare.json`/`prepared.json` and the app-side preparation step are deleted.

@@ -5,6 +5,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { CSP_DIRECTIVES } from './src/lib/server/hooks/content-security-policy.ts';
+import { VERSION_POLL_MS } from './src/lib/utils/app-version.ts';
 import { webSockets } from './src/lib/server/sockets/vite-plugin.ts';
 
 const packageJson: unknown = JSON.parse(readFileSync('package.json', 'utf8'));
@@ -40,7 +41,11 @@ export default defineConfig(({ command, mode }) => ({
 			csrf: { trustedOrigins: ['*'] },
 			// The Content-Security-Policy of every page, with a nonce for SvelteKit's own inline
 			// script (SPEC-SIGN-IN S20); the security headers hook sends it on other responses.
-			csp: { mode: 'auto', directives: CSP_DIRECTIVES }
+			csp: { mode: 'auto', directives: CSP_DIRECTIVES },
+			// A tab left open across a server update learns of the new version within a
+			// minute, so its next navigation loads the whole page instead of asking for
+			// code chunks the new build no longer has (SPEC-SERVER-UPDATES SU17).
+			version: { pollInterval: VERSION_POLL_MS }
 		}),
 		// Attaches the socket routes (agents' live sockets) to the dev server.
 		webSockets(),
