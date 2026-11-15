@@ -5,7 +5,7 @@ import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import '#lib/ui/design-tokens.css';
 import { openPopOut } from './desktop-test-harness.ts';
 
-// SPEC-DESKTOP-FLOATING FB3, FB4, FB5, FB7: the floating bar and the button it collapses into,
+// SPEC-DESKTOP-FLOATING FB3, FB4, FB5, FB7, FB11: the floating bar and the button it collapses into,
 // tried in the pop-out window, whose size the test sets.
 
 const SESSION = '77777777-7777-4777-8777-777777777777';
@@ -180,6 +180,23 @@ describe('the floating bar', () => {
 		await expect.element(bar).toBeVisible();
 		expect(box(bar).right).toBeCloseTo(1200 - BAR_GAP, 0);
 		expect(centre(handle).y).toBeCloseTo(snappedTo.y, 0);
+	});
+
+	it('FB11: every icon on the bar and the button has a tooltip that says what it does', async () => {
+		const { bar, handle, button } = await openWindow();
+		await expect.element(bar).toBeVisible();
+		const icons = [...bar.element().querySelectorAll('button')].filter(
+			(control) => control.querySelector('svg') !== null && control.textContent.trim() === ''
+		);
+		expect(icons.length).toBeGreaterThan(3);
+		for (const icon of icons) {
+			expect(icon.title, icon.outerHTML).not.toBe('');
+			expect(icon.getAttribute('aria-label'), icon.outerHTML).not.toBeNull();
+		}
+		await handle.click();
+		await expect.element(button).toBeVisible();
+		expect(button.element().getAttribute('title')).toMatch(/^Session controls/);
+		expect(button.element().getAttribute('aria-label')).toMatch(/^Session controls/);
 	});
 
 	it('FB7: the bar or the button, and their places, are remembered for the pop-out', async () => {
