@@ -507,25 +507,21 @@ fn message_loop() -> Result<()> {
 pub fn install(binary: &Path) -> Result<()> {
     let dir = status::directory()?;
     std::fs::create_dir_all(&dir)?;
-    for arguments in [
-        vec![dir.as_os_str().to_owned(), "/reset".into()],
-        bmuster_service::windows::restrict_dir_arguments(
-            &dir,
-            &["*S-1-5-32-545:(OI)(CI)RX".into()],
-        ),
-        vec![
-            dir.as_os_str().to_owned(),
-            "/setowner".into(),
-            "*S-1-5-18".into(),
-        ],
-    ] {
-        if !std::process::Command::new("icacls")
-            .args(arguments)
-            .status()?
-            .success()
-        {
-            bail!("Could not protect the public status folder");
-        }
+    // Users may read the status; only SYSTEM and Administrators may change it.
+    bmuster_service::windows::restrict_dir(
+        &dir,
+        &[bmuster_service::windows::Grant {
+            sid: "S-1-5-32-545",
+            rights: bmuster_service::windows::Rights::ReadExecute,
+        }],
+    )
+    .context("Could not protect the public status folder")?;
+    if !std::process::Command::new("icacls")
+        .args([dir.as_os_str(), "/setowner".as_ref(), "*S-1-5-18".as_ref()])
+        .status()?
+        .success()
+    {
+        bail!("Could not protect the public status folder");
     }
     // The service's starter is the one way the tray starts.
     remove_sign_in_entry()?;
