@@ -70,7 +70,7 @@
 		frame,
 		start
 	}: {
-		machine: ChromeMachine & { id: string };
+		machine: ChromeMachine;
 		route: SessionRoute;
 		canControl: boolean;
 		files: ViewFiles;

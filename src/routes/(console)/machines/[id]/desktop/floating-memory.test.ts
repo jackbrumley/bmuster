@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defaultControls, readControls, rememberControls } from './floating-memory.ts';
 
-// SPEC-DESKTOP-FLOATING FB7: the floating controls are remembered per device and per view.
+// SPEC-DESKTOP-FLOATING FB7, FB15: the floating controls are remembered per device, per view and per machine.
+
+const MACHINE = '11111111-1111-4111-8111-111111111111';
+const OTHER = '22222222-2222-4222-8222-222222222222';
 
 function memoryStorage(): Storage {
 	const items = new Map<string, string>();
@@ -54,12 +57,41 @@ describe('the floating controls memory', () => {
 			bar: { x: 0.25, y: 1 },
 			button: { edge: 'top', at: 0.75 }
 		} as const;
-		rememberControls('window', moved);
-		expect(readControls('window', false)).toEqual(moved);
-		expect(readControls('full-screen', false)).toEqual(defaultControls(false));
+		rememberControls('window', MACHINE, moved);
+		expect(readControls('window', MACHINE, false)).toEqual(moved);
+		expect(readControls('full-screen', MACHINE, false)).toEqual(defaultControls(false));
 		expect(JSON.parse(localStorage.getItem('bmuster.desktop.controls.window') ?? 'null')).toEqual(
 			moved
 		);
+	});
+
+	it("FB15: each machine keeps its own; one with nothing saved starts at the device's last-used", () => {
+		vi.stubGlobal('localStorage', memoryStorage());
+		const first = {
+			shown: 'button',
+			bar: { x: 0.25, y: 1 },
+			button: { edge: 'top', at: 0.75 }
+		} as const;
+		const second = {
+			shown: 'bar',
+			bar: { x: 1, y: 0.5 },
+			button: { edge: 'left', at: 0.1 }
+		} as const;
+		rememberControls('full-screen', MACHINE, first);
+		// A machine with nothing saved starts where the controls were last left.
+		expect(readControls('full-screen', OTHER, false)).toEqual(first);
+		rememberControls('full-screen', OTHER, second);
+		// Each machine then keeps its own.
+		expect(readControls('full-screen', MACHINE, false)).toEqual(first);
+		expect(readControls('full-screen', OTHER, false)).toEqual(second);
+		// A third machine starts at the last-used one, the second's.
+		expect(readControls('full-screen', 'a-third-machine', false)).toEqual(second);
+		expect(
+			JSON.parse(localStorage.getItem(`bmuster.desktop.controls.full-screen.${MACHINE}`) ?? 'null')
+		).toEqual(first);
+		// A bad value for this machine falls back to the device's.
+		localStorage.setItem(`bmuster.desktop.controls.full-screen.${MACHINE}`, 'not json');
+		expect(readControls('full-screen', MACHINE, false)).toEqual(second);
 	});
 
 	it('FB7: blocked storage or a bad value gives the defaults', () => {
@@ -73,12 +105,13 @@ describe('the floating controls memory', () => {
 			'{"shown":"bar","bar":{"x":0,"y":0},"button":{"edge":"middle","at":0}}'
 		]) {
 			storage.setItem('bmuster.desktop.controls.full-screen', bad);
-			expect(readControls('full-screen', true)).toEqual(defaultControls(true));
+			storage.setItem(`bmuster.desktop.controls.full-screen.${MACHINE}`, bad);
+			expect(readControls('full-screen', MACHINE, true)).toEqual(defaultControls(true));
 		}
 		vi.stubGlobal('localStorage', blockedStorage());
-		expect(readControls('full-screen', false)).toEqual(defaultControls(false));
+		expect(readControls('full-screen', MACHINE, false)).toEqual(defaultControls(false));
 		expect(() => {
-			rememberControls('full-screen', defaultControls(false));
+			rememberControls('full-screen', MACHINE, defaultControls(false));
 		}).not.toThrow();
 	});
 });

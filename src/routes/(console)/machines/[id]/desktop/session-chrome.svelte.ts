@@ -31,7 +31,7 @@ import { readTouchMode, saveTouchMode } from './touch-input.ts';
  */
 
 /** The machine as the controls need it. */
-export type ChromeMachine = { name: string; osFamily: OsFamily; agentVersion: string };
+export type ChromeMachine = { id: string; name: string; osFamily: OsFamily; agentVersion: string };
 
 /** The block under the bar: picture settings, the Keys menu or the clipboard, one at a time. */
 export type ChromePanel = 'none' | 'settings' | 'keys' | 'clipboard';

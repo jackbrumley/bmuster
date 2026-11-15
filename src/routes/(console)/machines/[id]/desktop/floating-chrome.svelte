@@ -27,7 +27,8 @@
 	 * whose tap expands the bar with its grip on it. On phones and narrow
 	 * windows (`form` 'sheet') it is always the button, and a tap opens the
 	 * sheet instead. Which shape shows and where each sits is
-	 * remembered in this browser, for full screen and the pop-out apart.
+	 * remembered in this browser, for full screen and the pop-out apart, per
+	 * machine (FB15).
 	 * Ctrl+Alt+Home collapses and expands the bar from the keyboard (FB14).
 	 */
 	let { chrome, form, exit }: { chrome: SessionChrome; form: 'bar' | 'sheet'; exit: ChromeExit } =
@@ -48,7 +49,7 @@
 
 	function remember(): void {
 		if (memory !== undefined) {
-			rememberControls(exit.kind, $state.snapshot(memory));
+			rememberControls(exit.kind, chrome.machine.id, $state.snapshot(memory));
 		}
 	}
 
@@ -79,7 +80,7 @@
 	}
 
 	onMount(() => {
-		memory = readControls(exit.kind, touch.current);
+		memory = readControls(exit.kind, chrome.machine.id, touch.current);
 		// The shortcut keeps the keyboard where it was: on the screen, as a rule.
 		return attachControlsShortcut(window, {
 			active: () => form === 'bar' && memory !== undefined,

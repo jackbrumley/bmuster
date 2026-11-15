@@ -5,7 +5,7 @@ import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import '#lib/ui/design-tokens.css';
 import { openPopOut } from './desktop-test-harness.ts';
 
-// SPEC-DESKTOP-FLOATING FB3, FB4, FB5, FB7, FB11, FB13, FB14: the floating bar and the button it collapses into,
+// SPEC-DESKTOP-FLOATING FB3, FB4, FB5, FB7, FB11, FB13, FB14, FB15: the floating bar and the button it collapses into,
 // tried in the pop-out window, whose size the test sets.
 
 const SESSION = '77777777-7777-4777-8777-777777777777';
@@ -279,6 +279,10 @@ describe('the floating bar', () => {
 		const where = box(first.button);
 		const saved: unknown = JSON.parse(localStorage.getItem(KEY) ?? 'null');
 		expect(saved).toMatchObject({ shown: 'button' });
+		// FB15: kept for this machine too.
+		const machineKeys = Object.keys(localStorage).filter((key) => key.startsWith(`${KEY}.`));
+		expect(machineKeys).toHaveLength(1);
+		expect(JSON.parse(localStorage.getItem(machineKeys[0] ?? '') ?? 'null')).toEqual(saved);
 		expect(localStorage.getItem('bmuster.desktop.controls.full-screen')).toBeNull();
 		await first.screen.unmount();
 
