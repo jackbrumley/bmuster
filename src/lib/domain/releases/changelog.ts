@@ -15,6 +15,24 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.5.1',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Pop-out window with a mouse: the floating bar has Download, Upload, Transfers, Clipboard, Keys, Display, Settings and Disconnect',
+				'Copy two files on the machine while in the pop-out and in full screen: “2 files copied on the machine · Download” appears, and the download is one zip',
+				'Full screen on a phone: the controls button’s sheet has the same actions; a toast shows inside full screen',
+				'Open a share link as a guest with control: Keys (Ctrl+Alt+Del) and Display work, and Disconnect asks first'
+			]
+		},
+		changes: [
+			'Every desktop view now has every session feature: the pop-out window and full screen get Download, Upload, Transfers, Clipboard, Keys with Ctrl+Alt+Del, Display, Settings and Disconnect, with session notices shown over the screen (toasts too, inside the browser’s own full screen)',
+			'When files are copied on the machine, every view shows “2 files copied on the machine · Download”; several files download as one zip and the button says so',
+			'Share-link guests get the Keys menu, display switch and picture settings within their link, and Disconnect asks first',
+			'After the desktop drops, the session stops asking the machine for copied files every two seconds and backs off instead'
+		]
+	},
+	{
 		version: '0.5.0',
 		testing: {
 			kind: 'steps',
