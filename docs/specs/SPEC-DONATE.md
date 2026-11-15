@@ -59,7 +59,7 @@ No schema change: one more key in the `settings` table, and the existing `settin
 
 None. Decided by Jack on 2026-11-14.
 
-## As built (pending release)
+## As built (v0.4.28)
 
 - **Rules:** `src/lib/domain/settings/donate-reminder.ts` (`donateReminder`, `nextDonateAnswer`, `DONATE_URL`). The answer is `{ kind: 'none' } | { kind: 'not-now'; atMs; donatedBefore } | { kind: 'donated'; atMs }`; `donatedBefore` carries the thank-you wording through a later "Not now".
 - **Store:** `src/lib/server/services/settings/donate-reminder.ts` reads and writes the `donate.reminder` row, parsed with zod on every read. The audit entry is `setting-changed` on "Donation reminder" with `from` and `to` as "not answered", "not now" or "donated". No new audit kind, so the Activity page needed no change.

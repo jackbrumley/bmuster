@@ -15,6 +15,23 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.5.2',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'Pop-out window with a mouse: drag the bar by its grip, tap the grip to collapse it into the button, drag the button to another edge, tap it: the bar opens beside it; close and reopen the window: it is where you left it',
+				'Watch the frames and speed figures for a minute: the bar keeps its width',
+				'Phone in full screen: the button opens the sheet with every action; copy files on the machine: the button shows a badge',
+				'With a console tab open, update the server, then click to another page: it loads normally, no Error 500'
+			]
+		},
+		changes: [
+			'Floating desktop controls: one bar with a grip on the left (drag it anywhere, tap to collapse) and Close window or Leave full screen on the right next to Disconnect; collapsed it is the round button you can drag to any edge, with a badge when files or clipboard text are waiting; where you leave it is remembered on each device. Phones keep the button and its sheet',
+			'The frames-per-second and speed figures keep a fixed width, so the bar no longer grows and shrinks',
+			'After a server update, the next click loads the new version instead of showing Error 500'
+		]
+	},
+	{
 		version: '0.5.1',
 		testing: {
 			kind: 'steps',
