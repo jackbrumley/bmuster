@@ -954,3 +954,32 @@ fn c31_x11_clipboard_notices_a_new_owner() {
     assert!(!session.changed().unwrap(), "once");
     assert_eq!(session.get().unwrap(), "copied by another program");
 }
+
+/// SPEC-SESSION-FILES SF21: a file list BMuster puts on the X clipboard is
+/// read back by another client, and text owners offer none.
+#[test]
+fn sf21_x11_file_list_round_trips() {
+    use bmuster_desktop::clipboard::files::{parse_list, CopiedItem};
+    use bmuster_desktop::clipboard::x11::X11Clipboard;
+    let Some(x) = NestedX::start() else { return };
+    let mut session = X11Clipboard::new(x.target.clone());
+    let mut reader = X11Clipboard::new(x.target.clone());
+    assert_eq!(reader.get_files().unwrap(), None, "nobody owns it yet");
+    let paths = vec![
+        b"/home/kim/Downloads/BMuster/report (2).pdf".to_vec(),
+        "/home/kim/Downloads/BMuster/naïve.txt".as_bytes().to_vec(),
+    ];
+    session.set_files(&paths).unwrap();
+    let (mime, text) = reader.get_files().unwrap().unwrap();
+    assert_eq!(mime, "text/uri-list");
+    assert_eq!(
+        parse_list(mime, &text),
+        [
+            CopiedItem::Local("/home/kim/Downloads/BMuster/report (2).pdf".into()),
+            CopiedItem::Local("/home/kim/Downloads/BMuster/naïve.txt".into())
+        ]
+    );
+    assert_eq!(reader.get().unwrap(), "", "a file list is not text");
+    session.set("just text").unwrap();
+    assert_eq!(reader.get_files().unwrap(), None, "text is not a file list");
+}
