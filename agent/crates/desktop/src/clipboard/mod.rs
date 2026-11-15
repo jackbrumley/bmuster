@@ -18,6 +18,7 @@ pub mod x11;
 #[cfg(target_os = "linux")]
 pub mod x11_watch;
 
+pub mod files;
 mod route;
 pub use route::{route, Route, LOCKED};
 
