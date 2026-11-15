@@ -1,6 +1,6 @@
 # SPEC-SIGN-IN: Accounts, sign-in and identity providers
 
-**Status:** `IMPLEMENTED` (S1–S19 built; version bump and changelog left for the release step) · approved 2026-11-07 · **Date:** 2026-11-07 · **Version target:** 0.3.0
+**Status:** `IMPLEMENTED` (S1–S21 built; version bump and changelog left for the release step) · approved 2026-11-07 · **Date:** 2026-11-07 · **Version target:** 0.3.0
 
 ## 1. Problem
 
@@ -95,7 +95,7 @@ Guards follow the portal's pattern: `route.public`, `route.user`, `route.admin`,
 3. **Session lengths:** 12 hours idle, 30 days at most.
 4. **Notice while connected:** on by default, with a server setting to turn it off (audited).
 
-## 9. As built (S1–S19)
+## 9. As built (S1–S21)
 
 Built as specified unless listed here.
 
