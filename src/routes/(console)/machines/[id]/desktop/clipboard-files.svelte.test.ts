@@ -47,7 +47,7 @@ describe('files copied on the machine', () => {
 			count: 2,
 			totalBytes: 10
 		};
-		const download = screen.getByRole('button', { name: 'Download 2 files' });
+		const download = screen.getByRole('button', { name: 'Download 2 files (zip)' });
 		await expect.element(download, { timeout: 5000 }).toBeVisible();
 		expect(asked.some((url) => url.includes(`desktopSessionId=${SESSION}`))).toBe(true);
 		server.offer = {

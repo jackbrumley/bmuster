@@ -45,12 +45,27 @@ export type ClipboardOffer =
 	| { kind: 'offer'; offerId: string; items: OfferItem[]; count: number; totalBytes: number }
 	| { kind: 'refused'; message: string };
 
-/** "Download report.pdf", or "Download 3 files". */
+/** The copied item when there is just one. */
+function onlyItem(offer: { items: readonly OfferItem[]; count: number }): OfferItem | undefined {
+	return offer.count === 1 ? offer.items[0] : undefined;
+}
+
+/**
+ * "Download report.pdf"; a folder or several items come as one zip, and say so:
+ * "Download Photos (zip)", "Download 3 files (zip)" (SPEC-DESKTOP 23, DP4).
+ */
 export function downloadLabel(offer: { items: readonly OfferItem[]; count: number }): string {
-	const only = offer.items[0];
-	return offer.count === 1 && only?.kind === 'file'
-		? `Download ${only.name}`
-		: `Download ${offer.count} ${offer.count === 1 ? 'item' : 'files'}`;
+	const only = onlyItem(offer);
+	if (only === undefined) {
+		return `Download ${offer.count} files (zip)`;
+	}
+	return only.kind === 'file' ? `Download ${only.name}` : `Download ${only.name} (zip)`;
+}
+
+/** The files-waiting notice: "report.pdf copied on the machine", "3 files copied on the machine". */
+export function copiedLabel(offer: { items: readonly OfferItem[]; count: number }): string {
+	const only = onlyItem(offer);
+	return `${only === undefined ? `${offer.count} files` : only.name} copied on the machine`;
 }
 
 export type TransferDirection = 'to-machine' | 'from-machine';
