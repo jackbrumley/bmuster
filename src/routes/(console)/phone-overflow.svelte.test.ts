@@ -186,6 +186,7 @@ const PAGES: PhonePage[] = [
 				guest: {
 					machineName: SHARE_LINK.machineName,
 					osFamily: 'windows',
+					agentVersion: '0.5.0',
 					recipient: LONG_RECIPIENT,
 					sharedByName: LONG_PERSON,
 					permissions: SHARE_LINK.permissions,

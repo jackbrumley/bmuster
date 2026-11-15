@@ -11,6 +11,7 @@ function guestView(overrides: Partial<GuestView>): GuestView {
 	return {
 		machineName: 'Front desk',
 		osFamily: 'windows',
+		agentVersion: '0.5.0',
 		recipient: 'Dave, Acme Printers',
 		sharedByName: 'Jack Brumley',
 		permissions: ['desktop-view'],

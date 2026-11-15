@@ -151,6 +151,8 @@ export type ShareLinkView = {
 export type GuestView = {
 	machineName: string;
 	osFamily: 'windows' | 'linux' | 'macos';
+	/** The machine's agent: which picture qualities the guest may pick. */
+	agentVersion: string;
 	recipient: string;
 	sharedByName: string;
 	permissions: ShareLinkPermission[];

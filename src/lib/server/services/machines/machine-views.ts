@@ -81,9 +81,13 @@ export function activeMachineNames(database: Queryable): Map<string, string> {
 export function activeMachineBasics(
 	database: Queryable,
 	id: string
-): { name: string; osFamily: OsFamily } | undefined {
+): { name: string; osFamily: OsFamily; agentVersion: string } | undefined {
 	return database
-		.select({ name: machines.name, osFamily: machines.osFamily })
+		.select({
+			name: machines.name,
+			osFamily: machines.osFamily,
+			agentVersion: machines.agentVersion
+		})
 		.from(machines)
 		.where(and(eq(machines.id, id), isNull(machines.removedAt)))
 		.get();

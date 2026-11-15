@@ -59,6 +59,7 @@ describe('a file dropped on a desktop page', () => {
 			guest: {
 				machineName: 'Front desk',
 				osFamily: 'windows',
+				agentVersion: '0.5.0',
 				recipient: 'Dave',
 				sharedByName: 'Jack Brumley',
 				permissions: ['desktop-view', 'desktop-control'],

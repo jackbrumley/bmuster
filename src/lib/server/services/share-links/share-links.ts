@@ -342,6 +342,8 @@ export type GuestGrant = {
 	machineId: string;
 	machineName: string;
 	osFamily: OsFamily;
+	/** The machine's agent, for the qualities its picture settings offer. */
+	agentVersion: string;
 	recipient: string;
 	permissions: ShareLinkPermission[];
 	sharedBy: { id: string; name: string };
@@ -352,6 +354,7 @@ export function guestViewOf(grant: GuestGrant): GuestView {
 	return {
 		machineName: grant.machineName,
 		osFamily: grant.osFamily,
+		agentVersion: grant.agentVersion,
 		recipient: grant.recipient,
 		sharedByName: grant.sharedBy.name,
 		permissions: grant.permissions,
@@ -360,7 +363,11 @@ export function guestViewOf(grant: GuestGrant): GuestView {
 }
 
 type CreatorCheck =
-	| { kind: 'ok'; machine: { name: string; osFamily: OsFamily }; creator: ConsoleUser }
+	| {
+			kind: 'ok';
+			machine: { name: string; osFamily: OsFamily; agentVersion: string };
+			creator: ConsoleUser;
+	  }
 	| { kind: 'lost'; reason: string };
 
 /** D2: the creator is enabled and still holds everything the link carries; the machine is enrolled. */
@@ -433,6 +440,7 @@ export function resolveShareToken(
 			machineId: row.machineId,
 			machineName: check.machine.name,
 			osFamily: check.machine.osFamily,
+			agentVersion: check.machine.agentVersion,
 			recipient: row.recipient,
 			permissions: permissionsOf(row),
 			sharedBy: { id: check.creator.id, name: check.creator.name },
