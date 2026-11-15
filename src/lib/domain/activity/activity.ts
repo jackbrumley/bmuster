@@ -60,6 +60,8 @@ const AUDIT_KINDS = [
 	// SPEC-DESKTOP
 	'session-disconnected-at-machine',
 	'desktop-clipboard',
+	// SPEC-SESSION-FILES
+	'desktop-files',
 	'machine-message-sent',
 	// SPEC-EMAIL
 	'email-sent',
@@ -278,6 +280,8 @@ export function activityLabel(kind: AuditKind): string {
 			return 'Disconnected at the machine';
 		case 'desktop-clipboard':
 			return 'Copied text to or from a screen';
+		case 'desktop-files':
+			return 'Sent or fetched files through a screen';
 		case 'machine-message-sent':
 			return 'Sent a message to the screen';
 		case 'email-sent':

@@ -58,6 +58,12 @@ function kindDetail(record: SessionRecord): Record<string, string> {
 			return { type: 'terminal', shell: record.shell, 'run as': RUN_AS_LABEL };
 		case 'files':
 			return { type: 'files', 'run as': RUN_AS_LABEL };
+		case 'session-files':
+			return {
+				type: 'files through the screen',
+				desktop: record.desktopSessionId,
+				'run as': 'the person signed in at the machine'
+			};
 		case 'exec':
 			return { type: 'command', shell: record.shell, run: record.runId, 'run as': RUN_AS_LABEL };
 		case 'desktop':

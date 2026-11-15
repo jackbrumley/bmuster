@@ -42,6 +42,8 @@ export type SessionRecord = {
 	/** One machine's part of a command run (SPEC-COMMANDS); the server is its other end. */
 	| { kind: 'exec'; shell: TerminalShell; runId: string }
 	| { kind: 'desktop'; mode: DesktopMode }
+	/** Files sent through this person's desktop session (SPEC-SESSION-FILES); the server is its other end. */
+	| { kind: 'session-files'; desktopSessionId: string }
 );
 
 /** The server's own end of a session, in the browser's place (file and exec sessions). */

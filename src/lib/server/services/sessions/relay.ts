@@ -565,6 +565,8 @@ export function createRelay(limits: RelayLimits) {
 						case 'terminal':
 						case 'files':
 							return { kind: record.kind, userName: record.userName };
+						case 'session-files':
+							return { kind: 'files', userName: record.userName };
 						case 'desktop':
 							return { kind: 'desktop', mode: record.mode, userName: record.userName };
 						case 'exec':
@@ -580,6 +582,11 @@ export function createRelay(limits: RelayLimits) {
 
 		isRunning(sessionId: string): boolean {
 			return sessions.has(sessionId);
+		},
+
+		/** What a running session is (SPEC-SESSION-FILES: the desktop session files go through). */
+		runningRecord(sessionId: string): SessionRecord | undefined {
+			return sessions.get(sessionId)?.record;
 		},
 
 		/**

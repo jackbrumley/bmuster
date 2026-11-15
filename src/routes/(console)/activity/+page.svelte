@@ -17,6 +17,7 @@
 		IconDownload,
 		IconEdit,
 		IconFileText,
+		IconFiles,
 		IconFolderPlus,
 		IconHandStop,
 		IconKey,
@@ -167,6 +168,8 @@
 				return IconPlugConnectedX;
 			case 'desktop-clipboard':
 				return IconClipboard;
+			case 'desktop-files':
+				return IconFiles;
 			case 'machine-message-sent':
 				return IconMessage;
 			case 'email-sent':
