@@ -1,3 +1,4 @@
+import type { AutoLevel } from '#lib/domain/desktop/messages.ts';
 import type { Connection } from '#lib/runes/session-link.svelte.ts';
 import type { Throughput } from './desktop-session.svelte.ts';
 
@@ -59,20 +60,51 @@ export function availableActions(state: ActionState): ChromeAction[] {
 	return CHROME_ACTIONS.filter((action) => shown[action]);
 }
 
+/** How the link to the machine is doing, for the dot beside the figures (SPEC-DESKTOP-FLOATING FB12). */
+export type LinkHealth = 'good' | 'slow' | 'struggling';
+
+/** What the session measures of its link: the agent's backlog guard and the level Auto picked. */
+export type LinkSignals = { stalled: boolean; autoLevel: AutoLevel | undefined };
+
+/** What the status reads from the running session. */
+export type StatusSource = LinkSignals & { throughput: Throughput };
+
+/**
+ * The link's health from what the session already measures. The agent's
+ * backlog guard stopping the picture (`stalled`), or Auto down at Low, is
+ * struggling; Auto at Medium is slow; anything else is good. Auto moves its
+ * level on the frames' backlog (SPEC-DESKTOP 20), so its level is the
+ * link's measure. The frame rate is not: a still screen sends no frames.
+ */
+export function linkHealth(signals: LinkSignals): LinkHealth {
+	if (signals.stalled || signals.autoLevel === 'low') {
+		return 'struggling';
+	}
+	return signals.autoLevel === 'medium' ? 'slow' : 'good';
+}
+
 /**
  * The session's status: words, or once the picture flows its frame rate and
- * speed apart, so the bars can draw them at a fixed width (SPEC-DESKTOP-FLOATING FB1).
+ * speed apart, so the bars can draw them at a fixed width (SPEC-DESKTOP-FLOATING
+ * FB1), with the link's health (FB12).
  */
 export type SessionStatus =
-	{ kind: 'text'; text: string } | { kind: 'figures'; fps: number; kilobytes: number };
+	| { kind: 'text'; text: string }
+	| { kind: 'figures'; fps: number; kilobytes: number; health: LinkHealth };
 
 function words(text: string): SessionStatus {
 	return { kind: 'text', text };
 }
 
+const NO_SIGNALS: StatusSource = {
+	throughput: { fps: 0, bytesPerSecond: 0 },
+	stalled: false,
+	autoLevel: undefined
+};
+
 export function connectionStatus(
 	connection: Connection,
-	throughput: Throughput | undefined
+	session: StatusSource | undefined
 ): SessionStatus {
 	switch (connection.kind) {
 		case 'idle':
@@ -84,8 +116,14 @@ export function connectionStatus(
 			if (!connection.ready) {
 				return words('Waiting for the machine…');
 			}
-			const { fps, bytesPerSecond } = throughput ?? { fps: 0, bytesPerSecond: 0 };
-			return { kind: 'figures', fps, kilobytes: Math.round(bytesPerSecond / 1024) };
+			const source = session ?? NO_SIGNALS;
+			const { fps, bytesPerSecond } = source.throughput;
+			return {
+				kind: 'figures',
+				fps,
+				kilobytes: Math.round(bytesPerSecond / 1024),
+				health: linkHealth(source)
+			};
 		}
 		case 'reconnecting':
 			return words('Reconnecting…');

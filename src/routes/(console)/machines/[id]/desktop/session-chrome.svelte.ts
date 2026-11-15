@@ -120,7 +120,7 @@ export class SessionChrome {
 	}
 
 	get status(): SessionStatus {
-		return connectionStatus(this.connection, this.session?.throughput);
+		return connectionStatus(this.connection, this.session);
 	}
 
 	/** The screen picker: each display, and All screens when the agent can (SPEC-DESKTOP-ALL-SCREENS). */

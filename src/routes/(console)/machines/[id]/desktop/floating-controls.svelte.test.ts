@@ -61,7 +61,7 @@ async function setup(
 		status:
 			mode === undefined
 				? { kind: 'text', text: 'Not connected' }
-				: { kind: 'figures', fps: 15, kilobytes: 200 },
+				: { kind: 'figures', fps: 15, kilobytes: 200, health: 'good' },
 		attention: undefined,
 		transfers: undefined,
 		osFamily: 'windows',

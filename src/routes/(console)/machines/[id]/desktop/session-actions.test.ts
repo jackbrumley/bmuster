@@ -4,6 +4,7 @@ import {
 	availableActions,
 	CHROME_ACTIONS,
 	connectionStatus,
+	linkHealth,
 	FILE_ACTIONS,
 	type ActionState
 } from './session-actions.ts';
@@ -57,16 +58,17 @@ describe('the session actions', () => {
 describe('the session status', () => {
 	it('FB1: a flowing picture gives its figures apart, so the bars can give them a fixed width', () => {
 		const live = { kind: 'live', ready: true, sinceMs: 0 } as const;
-		expect(connectionStatus(live, { fps: 9, bytesPerSecond: 5 * 1024 })).toEqual({
-			kind: 'figures',
-			fps: 9,
-			kilobytes: 5
-		});
-		expect(connectionStatus(live, { fps: 30, bytesPerSecond: 1234.4 * 1024 })).toEqual({
-			kind: 'figures',
-			fps: 30,
-			kilobytes: 1234
-		});
+		const steady = { stalled: false, autoLevel: undefined };
+		expect(
+			connectionStatus(live, { ...steady, throughput: { fps: 9, bytesPerSecond: 5 * 1024 } })
+		).toEqual({ kind: 'figures', fps: 9, kilobytes: 5, health: 'good' });
+		expect(
+			connectionStatus(live, {
+				stalled: true,
+				autoLevel: undefined,
+				throughput: { fps: 30, bytesPerSecond: 1234.4 * 1024 }
+			})
+		).toEqual({ kind: 'figures', fps: 30, kilobytes: 1234, health: 'struggling' });
 		expect(connectionStatus({ kind: 'reconnecting' }, undefined)).toEqual({
 			kind: 'text',
 			text: 'Reconnecting…'
@@ -75,6 +77,18 @@ describe('the session status', () => {
 			kind: 'text',
 			text: 'Waiting for the machine…'
 		});
+	});
+});
+
+describe('the link health', () => {
+	it('FB12: a stall or Auto at Low is struggling, Auto at Medium is slow, anything else good', () => {
+		expect(linkHealth({ stalled: false, autoLevel: undefined })).toBe('good');
+		expect(linkHealth({ stalled: false, autoLevel: 'extra-high' })).toBe('good');
+		expect(linkHealth({ stalled: false, autoLevel: 'high' })).toBe('good');
+		expect(linkHealth({ stalled: false, autoLevel: 'medium' })).toBe('slow');
+		expect(linkHealth({ stalled: false, autoLevel: 'low' })).toBe('struggling');
+		expect(linkHealth({ stalled: true, autoLevel: 'high' })).toBe('struggling');
+		expect(linkHealth({ stalled: true, autoLevel: undefined })).toBe('struggling');
 	});
 });
 
