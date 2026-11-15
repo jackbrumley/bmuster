@@ -197,6 +197,8 @@ export const runViewSchema: z.ZodType<RunView> = z.object({
 			reason: z.string(),
 			exitCode: z.int().nullable(),
 			durationMs: z.int().nullable(),
+			errorsReported: z.int().min(0).nullable(),
+			wroteToStderr: z.boolean().nullable(),
 			output: z.discriminatedUnion('kind', [
 				z.object({ kind: z.literal('none') }),
 				z.object({ kind: z.literal('live'), bytes: z.int() }),

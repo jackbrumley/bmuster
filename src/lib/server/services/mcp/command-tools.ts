@@ -1,5 +1,9 @@
 import type { z } from 'zod';
-import { runHasEnded, runMachineStatusLabel } from '#lib/domain/commands/commands.ts';
+import {
+	machineResultLabel,
+	runHasEnded,
+	runMachineStatusLabel
+} from '#lib/domain/commands/commands.ts';
 import { savedEffectLabel } from '#lib/domain/commands/saved-commands.ts';
 import type {
 	CancelCommandOutput,
@@ -270,6 +274,8 @@ function resultOf(
 						: (machine.skipReason ?? ''),
 				exitCode: machine.exitCode,
 				durationMs: machine.durationMs,
+				errorsReported: machine.errorsReported,
+				wroteToStderr: machine.wroteToStderr,
 				runningForMs: live === undefined ? null : Math.max(0, now - live.startedAt),
 				lastOutputMsAgo:
 					live?.lastOutputAt === null || live === undefined
@@ -329,7 +335,7 @@ export function resultText(result: CommandResultOutput): string {
 	}
 	for (const machine of result.machines) {
 		const parts = [
-			runMachineStatusLabel(machine.status),
+			machineResultLabel(machine.status, machine.errorsReported),
 			...(machine.exitCode === null ? [] : [`exit ${String(machine.exitCode)}`]),
 			...(machine.reason === '' ? [] : [machine.reason]),
 			...runningText(machine.runningForMs, machine.lastOutputMsAgo)

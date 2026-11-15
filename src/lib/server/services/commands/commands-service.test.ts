@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { ServerSocketMessage } from '#lib/schemas/agents/agent-protocol.ts';
 import type { StartRunRequest } from '#lib/schemas/commands/commands.ts';
 import { grantAccess } from '#tests/helpers/access.ts';
+import { unwrapped } from '#tests/helpers/assistant-runs.ts';
 import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
 import { addTestUser, NOW, PASSWORD } from '#tests/helpers/people.ts';
 import type { AppDatabase } from '../../database/connection.ts';
@@ -478,10 +479,11 @@ describe('running (C13–C17)', () => {
 			}
 		});
 		expect(officeTickets[0]?.permissions).toContain('run-commands');
-		expect(deskTickets[0]).toMatchObject({
-			machineId: desk,
-			purpose: { shell: 'powershell', command: 'Restart-Service Spooler' }
-		});
+		const [deskTicket] = deskTickets;
+		if (deskTicket === undefined) throw new Error('desk was sent no ticket');
+		expect(deskTicket).toMatchObject({ machineId: desk, purpose: { shell: 'powershell' } });
+		// The exact command, inside the observe-only wrapper (C25).
+		expect(unwrapped(deskTicket)).toBe('Restart-Service Spooler');
 		expect(deskTickets[0]?.sessionId).not.toBe(officeTickets[0]?.sessionId);
 	});
 

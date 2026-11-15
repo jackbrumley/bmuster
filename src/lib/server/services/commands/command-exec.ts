@@ -5,6 +5,7 @@ import type { AppDatabase } from '../../database/connection.ts';
 import { sendToAgent } from '../agents/live-agents.ts';
 import { serverKey } from '../agents/server-keys.ts';
 import type { Relay } from '../sessions/relay.ts';
+import { hideReport, newNonce, readReport, wrapCommand, type Wrapped } from './command-wrapper.ts';
 import type { EndedSession, LocalEnd, SessionRecord } from '../sessions/session-record.ts';
 import { signTicket, TICKET_LIFETIME_MS } from '../sessions/session-ticket.ts';
 
@@ -14,6 +15,11 @@ import { signTicket, TICKET_LIFETIME_MS } from '../sessions/session-ticket.ts';
  * permissions the person holds there. The relay carries it like any session, with the server
  * as the other end: stdout and stderr frames (first byte 1 or 2) are kept up to 1 MB each, and
  * the agent's `exec-done` is the result. Until then, the output so far can be read (C22).
+ *
+ * The ticket names the command as the machine runs it: a PowerShell command inside the
+ * observe-only wrapper (C25), whose report is taken off the end of stderr and kept as
+ * `errorsReported` (C26). Everything else (the run's scripts, the audit) keeps the command as
+ * written.
  */
 
 /** First byte of an exec output frame (agent/crates/protocol/src/session.rs). */
@@ -53,6 +59,12 @@ export type ExecResult = {
 	outputBytes: number;
 	outputSha256: string;
 	sessionId: string;
+	/** The PowerShell wrapper's error count (C26); null for other shells or when none came. */
+	errorsReported: number | null;
+	/** Any stderr bytes, the report aside (C29). */
+	wroteToStderr: boolean;
+	/** Which wrapper ran the command, for the audit (C28). */
+	wrapper: Wrapped['kind'];
 };
 
 /** One stream's bytes, kept up to the cap. */
@@ -127,6 +139,7 @@ export function runOnMachine(
 ): { kind: 'sent'; sessionId: string; live: LiveStreams } | { kind: 'offline' } {
 	const { onOutput, onDone } = handlers;
 	const sessionId = crypto.randomUUID();
+	const wrapped = wrapCommand(request.shell, request.command, newNonce());
 	const stdout = new Kept();
 	const stderr = new Kept();
 	let done: { exitCode: number; durationMs: number; truncated: boolean; timedOut: boolean } | null =
@@ -163,7 +176,8 @@ export function runOnMachine(
 	const onEnded = (ended: EndedSession): void => {
 		clearTimeout(grace);
 		const out = stdout.all();
-		const err = stderr.all();
+		const report = readReport(wrapped, stderr.all());
+		const err = report.stderr;
 		const finished = done;
 		// The agent's cap counts both streams: when it cut output off, each stream may be short.
 		const agentCut = finished?.truncated === true;
@@ -174,7 +188,10 @@ export function runOnMachine(
 			stderrTruncated: stderr.truncated || agentCut,
 			outputBytes: out.byteLength + err.byteLength,
 			outputSha256: createHash('sha256').update(out).update(err).digest('hex'),
-			sessionId
+			sessionId,
+			errorsReported: report.errorsReported,
+			wroteToStderr: err.byteLength > 0,
+			wrapper: wrapped.kind
 		};
 		if (finished !== null) {
 			onDone({
@@ -223,7 +240,7 @@ export function runOnMachine(
 			purpose: {
 				kind: 'exec',
 				shell: request.shell,
-				command: request.command,
+				command: wrapped.command,
 				timeoutMs: request.timeoutMs,
 				maxOutputBytes: AGENT_OUTPUT_CAP
 			}
@@ -255,7 +272,7 @@ export function runOnMachine(
 			bytes: () => stdout.bytes + stderr.bytes,
 			read: () => ({
 				stdout: stdout.soFar(),
-				stderr: stderr.soFar(),
+				stderr: hideReport(wrapped, stderr.soFar()),
 				stdoutTruncated: stdout.truncated,
 				stderrTruncated: stderr.truncated
 			})

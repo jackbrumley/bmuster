@@ -190,6 +190,13 @@
       "when": 1794695577891,
       "tag": "0026_bizarre_beyonder",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1794700770806,
+      "tag": "0027_zippy_shocker",
+      "breakpoints": true
     }
   ]
 }

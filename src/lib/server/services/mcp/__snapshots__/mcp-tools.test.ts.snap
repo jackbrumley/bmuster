@@ -508,6 +508,19 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
                 },
               ],
             },
+            "errorsReported": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+              "description": "PowerShell only: how many errors the command wrote, even when it exited 0. Above 0 means it finished with errors. Null for other shells, before it finishes, or when no count came back.",
+            },
             "exitCode": {
               "anyOf": [
                 {
@@ -569,6 +582,13 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
               ],
               "type": "string",
             },
+            "wroteToStderr": {
+              "description": "Whether it wrote anything to stderr: information, not failure. Null before it finishes.",
+              "type": [
+                "boolean",
+                "null",
+              ],
+            },
           },
           "required": [
             "id",
@@ -577,6 +597,8 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
             "reason",
             "exitCode",
             "durationMs",
+            "errorsReported",
+            "wroteToStderr",
             "runningForMs",
             "lastOutputMsAgo",
           ],

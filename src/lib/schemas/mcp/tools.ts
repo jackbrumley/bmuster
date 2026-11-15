@@ -166,6 +166,18 @@ export const commandResultOutput = z.object({
 			reason: z.string(),
 			exitCode: z.int().nullable(),
 			durationMs: z.int().nullable(),
+			errorsReported: z
+				.int()
+				.nullable()
+				.describe(
+					'PowerShell only: how many errors the command wrote, even when it exited 0. Above 0 means it finished with errors. Null for other shells, before it finishes, or when no count came back.'
+				),
+			wroteToStderr: z
+				.boolean()
+				.nullable()
+				.describe(
+					'Whether it wrote anything to stderr: information, not failure. Null before it finishes.'
+				),
 			runningForMs: z
 				.int()
 				.nullable()

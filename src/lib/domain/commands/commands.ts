@@ -108,6 +108,19 @@ export function runMachineStatusLabel(status: RunMachineStatus): string {
 	}
 }
 
+/**
+ * A finished machine's result as people and assistants read it: "Finished with errors (3)" for a
+ * command that exited 0 but reported errors (C27), else its status. It still counts as succeeded.
+ */
+export function machineResultLabel(
+	status: RunMachineStatus,
+	errorsReported: number | null
+): string {
+	return status === 'succeeded' && errorsReported !== null && errorsReported > 0
+		? `Finished with errors (${String(errorsReported)})`
+		: runMachineStatusLabel(status);
+}
+
 /** What **Run again on failed and offline** picks up (C18). */
 export function needsRunAgain(status: RunMachineStatus): boolean {
 	switch (status) {
@@ -290,6 +303,13 @@ export type RunMachineView = {
 	reason: string;
 	exitCode: number | null;
 	durationMs: number | null;
+	/**
+	 * How many errors the PowerShell wrapper reported (C26): null for other shells, before it
+	 * finishes, or when no report came.
+	 */
+	errorsReported: number | null;
+	/** Whether it wrote anything to stderr (C29), as information; null before it finishes. */
+	wroteToStderr: boolean | null;
 	/** `live` while it runs (C22): the bytes so far, which the results page watches for change. */
 	output:
 		| { kind: 'none' }

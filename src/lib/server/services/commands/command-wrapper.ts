@@ -25,7 +25,7 @@ import type { CommandShell } from '#lib/domain/commands/commands.ts';
  * sh, bash and cmd run as written (C29): their exit codes are reliable.
  */
 
-export const POWERSHELL_WRAPPER = 'ps-1';
+const POWERSHELL_WRAPPER = 'ps-1';
 
 /**
  * The longest a wrapped command may be. Windows's command line holds 32,767 characters; the
@@ -137,7 +137,6 @@ export function hideReport(wrapped: Wrapped, stderr: string): string {
 	}
 	const last = stderr.slice(cut + 1);
 	const mayBecome =
-		head.startsWith(last) ||
-		(last.startsWith(head) && /^\d*\r?$/.test(last.slice(head.length)));
+		head.startsWith(last) || (last.startsWith(head) && /^\d*\r?$/.test(last.slice(head.length)));
 	return mayBecome ? stderr.slice(0, cut) : stderr;
 }

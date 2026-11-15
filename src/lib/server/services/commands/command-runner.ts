@@ -167,6 +167,7 @@ export function createCommandRunner(deps: RunnerDeps) {
 				outputBytes: null,
 				outputSha256: null,
 				sessionId: null,
+				observed: { kind: 'not-run' },
 				via: viaOf(run)
 			},
 			now
@@ -284,6 +285,12 @@ export function createCommandRunner(deps: RunnerDeps) {
 							outputBytes: result.outputBytes,
 							outputSha256: result.outputSha256,
 							sessionId: result.sessionId,
+							observed: {
+								kind: 'ran',
+								errorsReported: result.errorsReported,
+								wroteToStderr: result.wroteToStderr,
+								wrapper: result.wrapper
+							},
 							via: viaOf(run)
 						},
 						ended
