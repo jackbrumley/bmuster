@@ -13,6 +13,16 @@ import {
 const bytes = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
 const id = z.uuid();
 
+function hasControlCharacter(name: string): boolean {
+	for (let index = 0; index < name.length; index += 1) {
+		const code = name.charCodeAt(index);
+		if (code < 32 || code === 127) {
+			return true;
+		}
+	}
+	return false;
+}
+
 /**
  * One file's name: one part, no control characters, colons or slashes, at most 255 bytes. The
  * helper on the machine applies the full rules (Windows names, trailing dots) on every system.
@@ -23,7 +33,7 @@ export const sentNameSchema = z
 	.refine((name) => new TextEncoder().encode(name).byteLength <= 255, 'That name is too long.')
 	.refine((name) => name !== '.' && name !== '..', 'That is not a file name.')
 	.refine(
-		(name) => ![...name].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127),
+		(name) => !hasControlCharacter(name),
 		'A file name cannot hold control characters.'
 	)
 	.refine((name) => !/[/\\:]/.test(name), 'A file name cannot hold / \\ or :.');

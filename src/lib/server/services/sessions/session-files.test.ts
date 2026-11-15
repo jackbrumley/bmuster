@@ -254,9 +254,11 @@ describe('who may send files through a screen', () => {
 		});
 		// The ticket names the desktop session and carries files and control.
 		expect(agent.tickets[0]).toMatchObject({
-			purpose: { kind: 'session-files', desktopSessionId: mine },
-			permissions: expect.arrayContaining(['files', 'desktop-control'])
+			purpose: { kind: 'session-files', desktopSessionId: mine }
 		});
+		expect(agent.tickets[0]?.['permissions']).toEqual(
+			expect.arrayContaining(['files', 'desktop-control'])
+		);
 		const begun = await beginSend(context(pat), {
 			desktopSessionId: mine,
 			batchId: BATCH,
