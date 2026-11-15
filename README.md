@@ -49,6 +49,10 @@ BMuster is one place to reach and look after a fleet of computers, from a handfu
 - Connect an AI assistant such as Claude, Codex or ChatGPT to look at machines and ask to run commands, with a person approving every command ([how to connect](https://bmuster.com/ai-assistants))
 - Works on a private network too, with its own pinned certificate when there is no public domain
 
+## Help
+
+[Questions and answers](https://bmuster.com/faq): getting back into a locked server (password and two-factor reset commands), connecting an AI assistant, approving its commands, saved commands, copy and paste, files and backups.
+
 ## Build from source
 
 Needs the Node.js version in `.node-version` and, for the agent, Rust.

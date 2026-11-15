@@ -317,7 +317,7 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 		expect(parsed.total).toBe(1);
 	});
 
-	it('M39: the instructions and tool descriptions say which AI permission each tool needs', async () => {
+	it('M39, SC31: the instructions and tool descriptions say which AI permission each tool needs, and which saved commands skip approval', async () => {
 		const connected = await connectClaudeCode('localhost', 50_002);
 		const initialized = await rpcReply(
 			await mcp(
@@ -353,6 +353,16 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 		expect(described['list_machines']).toContain('AI can view');
 		expect(described['get_machine']).toContain('AI can view');
 		expect(described['run_command']).toContain('AI commands on every machine');
+		// SPEC-SAVED-COMMANDS SC31: only the saved commands an admin allowed skip approval.
+		expect(instructions).toContain(
+			'Only the saved commands an admin marked as allowed to run without approval run at once; every other saved command waits for a person'
+		);
+		expect(described['list_saved_commands']).toContain(
+			"Only commands an admin marked as allowed run without approval; the rest wait for a person. Each command and each of its machines says which: 'Runs at once (no approval needed)' or 'Needs a person's approval in BMuster'."
+		);
+		expect(described['run_saved_command']).toContain(
+			'It runs at once only when list_saved_commands says "Runs at once (no approval needed)" for every machine you name'
+		);
 	});
 
 	it('2026-07-28: server/discover and tools/call, every structuredContent valid; other versions refused', async () => {

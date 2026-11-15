@@ -370,6 +370,8 @@ export const COMMAND_RUN: RunView = {
 		reason: `The connection to the machine was lost: ${LONG_WORD}`,
 		exitCode: 2_147_483_647,
 		durationMs: 600_000,
+		errorsReported: 256,
+		wroteToStderr: true,
 		output: { kind: 'kept', bytes: 2 * 1024 * 1024 }
 	})),
 	counts: COMMAND_COUNTS,

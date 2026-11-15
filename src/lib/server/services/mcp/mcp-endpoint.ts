@@ -83,7 +83,7 @@ function bmusterMcpServer(context: McpRequestContext): McpServer {
 		{ name: 'BMuster', version: __BMUSTER_VERSION__ },
 		{
 			instructions:
-				'BMuster manages computers. You act as the signed-in person. You see only the machines an access rule opens to AI: AI can view lets you read them; AI commands also lets you ask to run commands there. Commands you ask for with run_command wait for a person to approve them in BMuster; nothing runs until they do. Saved commands (list_saved_commands, run_saved_command) are scripts an admin wrote; some may run at once without approval, the rest wait for a person like run_command. Prefer a saved command when one does the job.'
+				'BMuster manages computers. You act as the signed-in person. You see only the machines an access rule opens to AI: AI can view lets you read them; AI commands also lets you ask to run commands there. Commands you ask for with run_command wait for a person to approve them in BMuster; nothing runs until they do. Saved commands (list_saved_commands, run_saved_command) are scripts an admin wrote. Only the saved commands an admin marked as allowed to run without approval run at once; every other saved command waits for a person to approve it, like run_command. Read the approval of each command in list_saved_commands; never assume the answer for one command holds for another. Prefer a saved command when one does the job.'
 		}
 	);
 	server.registerTool(
@@ -136,7 +136,7 @@ function bmusterMcpServer(context: McpRequestContext): McpServer {
 		{
 			title: 'List saved commands',
 			description:
-				"The saved commands you may run with run_saved_command: scripts an admin wrote, with what each does, its parameters, its label (Reads only or Changes the machine), the machines you may run it on, and whether it runs at once without a person's approval. You never see the scripts themselves.",
+				"The saved commands you may run with run_saved_command: scripts an admin wrote, with what each does, its parameters, its label (Reads only or Changes the machine) and the machines you may run it on. Only commands an admin marked as allowed run without approval; the rest wait for a person. Each command and each of its machines says which: 'Runs at once (no approval needed)' or 'Needs a person's approval in BMuster'. You never see the scripts themselves.",
 			inputSchema: listSavedCommandsInput,
 			outputSchema: listSavedCommandsOutput,
 			annotations: READ_ONLY
@@ -151,7 +151,7 @@ function bmusterMcpServer(context: McpRequestContext): McpServer {
 		{
 			title: 'Run a saved command',
 			description:
-				'Runs a saved command from list_saved_commands on 1 to 10 machines of one system, with a value for each parameter. It runs at once when the list says it may run without approval on those machines; otherwise a person must approve it in BMuster first, as with run_command. It runs as root (Linux) or SYSTEM (Windows), with no input. Waits up to 45 seconds; if the run has not ended by then, call get_command_result with the runId until it has.',
+				'Runs a saved command from list_saved_commands on 1 to 10 machines of one system, with a value for each parameter. It runs at once only when list_saved_commands says "Runs at once (no approval needed)" for every machine you name, because an admin marked the command as allowed; otherwise it waits until a person approves it in BMuster, as with run_command. It runs as root (Linux) or SYSTEM (Windows), with no input. Waits up to 45 seconds; if the run has not ended by then, call get_command_result with the runId until it has.',
 			inputSchema: runSavedCommandInput,
 			outputSchema: commandResultOutput,
 			annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }

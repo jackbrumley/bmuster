@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # BMuster server image (docs/specs/SPEC-HOSTING.md, docs/hosting.md).
 #
 # Built FROM the release archives, not from source, so the image runs exactly
@@ -70,6 +71,22 @@ ENV ADDRESS_HEADER=X-Forwarded-For \
 ENV BODY_SIZE_LIMIT=16M
 
 ENV BMUSTER_DEPLOYMENT=docker
+
+# Account recovery (docs/hosting.md section 7, SPEC-SERVER-INSTALL I15):
+# `docker exec <container> bmuster-server reset-password | reset-two-factor
+# --email <email>`, the installed server's commands, run as the image user
+# with the container's settings. Root is refused so no file beside the
+# database ends up root's.
+COPY --chmod=755 <<'EOF' /usr/local/bin/bmuster-server
+#!/bin/sh
+if [ "$(id -u)" = 0 ]; then
+  echo "bmuster-server: run this as the image's user (leave out -u root)" >&2
+  exit 1
+fi
+cd /opt/bmuster/app || exit 1
+exec node account-recovery.js "$@"
+EOF
+
 WORKDIR /opt/bmuster/app
 USER node
 VOLUME /data

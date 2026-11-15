@@ -299,6 +299,15 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
         "items": {
           "additionalProperties": false,
           "properties": {
+            "approval": {
+              "description": "Whether running it waits for a person, over all its machines.",
+              "enum": [
+                "Runs at once (no approval needed)",
+                "Needs a person's approval in BMuster",
+                "Runs at once on the machines marked so; needs a person's approval in BMuster on the others",
+              ],
+              "type": "string",
+            },
             "description": {
               "type": "string",
             },
@@ -316,6 +325,14 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
               "items": {
                 "additionalProperties": false,
                 "properties": {
+                  "approval": {
+                    "description": "Whether running it on this machine waits for a person.",
+                    "enum": [
+                      "Runs at once (no approval needed)",
+                      "Needs a person's approval in BMuster",
+                    ],
+                    "type": "string",
+                  },
                   "id": {
                     "type": "string",
                   },
@@ -338,6 +355,7 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
                   "name",
                   "system",
                   "runsWithoutApproval",
+                  "approval",
                 ],
                 "type": "object",
               },
@@ -438,6 +456,7 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
             "systems",
             "parameters",
             "runsWithoutApproval",
+            "approval",
             "machines",
           ],
           "type": "object",
@@ -508,6 +527,19 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
                 },
               ],
             },
+            "errorsReported": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+              "description": "PowerShell only: how many errors the command wrote, even when it exited 0. Above 0 means it finished with errors. Null for other shells, before it finishes, or when no count came back.",
+            },
             "exitCode": {
               "anyOf": [
                 {
@@ -569,6 +601,13 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
               ],
               "type": "string",
             },
+            "wroteToStderr": {
+              "description": "Whether it wrote anything to stderr: information, not failure. Null before it finishes.",
+              "type": [
+                "boolean",
+                "null",
+              ],
+            },
           },
           "required": [
             "id",
@@ -577,6 +616,8 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
             "reason",
             "exitCode",
             "durationMs",
+            "errorsReported",
+            "wroteToStderr",
             "runningForMs",
             "lastOutputMsAgo",
           ],

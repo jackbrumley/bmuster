@@ -166,6 +166,18 @@ export const commandResultOutput = z.object({
 			reason: z.string(),
 			exitCode: z.int().nullable(),
 			durationMs: z.int().nullable(),
+			errorsReported: z
+				.int()
+				.nullable()
+				.describe(
+					'PowerShell only: how many errors the command wrote, even when it exited 0. Above 0 means it finished with errors. Null for other shells, before it finishes, or when no count came back.'
+				),
+			wroteToStderr: z
+				.boolean()
+				.nullable()
+				.describe(
+					'Whether it wrote anything to stderr: information, not failure. Null before it finishes.'
+				),
 			runningForMs: z
 				.int()
 				.nullable()
@@ -206,6 +218,18 @@ export const listSavedCommandsInput = z.object({});
 
 const savedLabel = z.enum(['Reads only', 'Changes the machine']);
 
+/**
+ * Whether a saved command waits for a person, in plain words beside the booleans (SC31): an
+ * assistant shown only allowed commands must not conclude that every saved command skips approval.
+ */
+export const SAVED_APPROVAL = {
+	atOnce: 'Runs at once (no approval needed)',
+	needsApproval: "Needs a person's approval in BMuster",
+	some: "Runs at once on the machines marked so; needs a person's approval in BMuster on the others"
+} as const;
+
+const machineApproval = z.enum([SAVED_APPROVAL.atOnce, SAVED_APPROVAL.needsApproval]);
+
 export const listSavedCommandsOutput = z.object({
 	commands: z.array(
 		z.object({
@@ -233,12 +257,18 @@ export const listSavedCommandsOutput = z.object({
 				.describe(
 					'True when it may run at once on the machines marked so; otherwise each run waits for a person to approve it.'
 				),
+			approval: z
+				.enum([SAVED_APPROVAL.atOnce, SAVED_APPROVAL.needsApproval, SAVED_APPROVAL.some])
+				.describe('Whether running it waits for a person, over all its machines.'),
 			machines: z.array(
 				z.object({
 					id: z.string(),
 					name: z.string(),
 					system: z.enum(['windows', 'linux']),
-					runsWithoutApproval: z.boolean()
+					runsWithoutApproval: z.boolean(),
+					approval: machineApproval.describe(
+						'Whether running it on this machine waits for a person.'
+					)
 				})
 			)
 		})

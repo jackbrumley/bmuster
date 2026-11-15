@@ -86,6 +86,8 @@ export function auditMachineResult(
 		outputBytes: number | null;
 		outputSha256: string | null;
 		sessionId: string | null;
+		/** What the command wrote, once it ran (SPEC-COMMANDS C26, C28, C29). */
+		observed: ObservedDetail;
 		/** "via" the assistant for an assistant's run (SPEC-MCP 12); empty otherwise. */
 		via: Record<string, string>;
 	},
@@ -107,11 +109,38 @@ export function auditMachineResult(
 				...(entry.outputBytes === null ? {} : { 'output bytes': String(entry.outputBytes) }),
 				...(entry.outputSha256 === null ? {} : { 'output SHA-256': entry.outputSha256 }),
 				...(entry.sessionId === null ? {} : { session: entry.sessionId }),
+				...observedDetail(entry.observed),
 				...entry.via
 			}
 		},
 		now
 	);
+}
+
+/** What a machine's command wrote, for its audit entry; nothing when it never ran. */
+export type ObservedDetail =
+	| { kind: 'not-run' }
+	| {
+			kind: 'ran';
+			errorsReported: number | null;
+			wroteToStderr: boolean;
+			wrapper: 'none' | 'ps-1';
+	  };
+
+/** The wrapper's name and count (C28), never its text; and whether stderr had anything (C29). */
+function observedDetail(observed: ObservedDetail): Record<string, string> {
+	switch (observed.kind) {
+		case 'not-run':
+			return {};
+		case 'ran':
+			return {
+				...(observed.wrapper === 'none' ? {} : { wrapper: observed.wrapper }),
+				...(observed.errorsReported === null
+					? {}
+					: { 'errors reported': String(observed.errorsReported) }),
+				'wrote to stderr': observed.wroteToStderr ? 'yes' : 'no'
+			};
+	}
 }
 
 /** Who cancelled a run (SPEC-MCP 12): a person, the assistant, a disconnect or the kill switch. */

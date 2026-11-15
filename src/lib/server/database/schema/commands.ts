@@ -116,6 +116,13 @@ export const commandRunMachines = sqliteTable(
 		/** Bytes kept, both streams, and the SHA-256 of stdout then stderr (for the audit). */
 		outputBytes: integer(),
 		outputSha256: text(),
+		/**
+		 * How many errors the PowerShell wrapper reported (SPEC-COMMANDS C26); null for other
+		 * shells, or when no report came. Kept after the output is deleted, like the exit code.
+		 */
+		errorsReported: integer(),
+		/** Whether the command wrote anything to stderr (C29): information, never failure. */
+		wroteToStderr: integer({ mode: 'boolean' }),
 		/** When stdout and stderr were deleted (30 days on). */
 		outputDeletedAt: integer({ mode: 'timestamp_ms' })
 	},

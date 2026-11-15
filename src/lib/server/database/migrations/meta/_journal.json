@@ -190,6 +190,20 @@
       "when": 1794695577891,
       "tag": "0026_bizarre_beyonder",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1794700099663,
+      "tag": "0027_starter_scripts_fail_loudly",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1794701122545,
+      "tag": "0028_solid_nehzno",
+      "breakpoints": true
     }
   ]
 }

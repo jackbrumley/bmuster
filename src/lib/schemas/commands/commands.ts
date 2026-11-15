@@ -36,11 +36,21 @@ const command = z
 
 /** One system's command and shell (C6, C7). */
 export const commandScriptSchema = z.discriminatedUnion('osFamily', [
-	z.object({
-		osFamily: z.literal('windows'),
-		shell: z.enum(COMMAND_SHELLS.windows),
-		command
-	}),
+	z
+		.object({
+			osFamily: z.literal('windows'),
+			shell: z.enum(COMMAND_SHELLS.windows),
+			command
+		})
+		.refine(
+			(script) =>
+				script.shell !== 'powershell' ||
+				new TextEncoder().encode(script.command).byteLength <= COMMAND_LIMITS.maxPowerShellBytes,
+			{
+				message: `A PowerShell command is at most ${COMMAND_LIMITS.maxPowerShellBytes.toLocaleString('en-AU')} bytes: about 7,600 characters of non-English text.`,
+				path: ['command']
+			}
+		),
 	z.object({ osFamily: z.literal('linux'), shell: z.enum(COMMAND_SHELLS.linux), command })
 ]);
 
@@ -187,6 +197,8 @@ export const runViewSchema: z.ZodType<RunView> = z.object({
 			reason: z.string(),
 			exitCode: z.int().nullable(),
 			durationMs: z.int().nullable(),
+			errorsReported: z.int().min(0).nullable(),
+			wroteToStderr: z.boolean().nullable(),
 			output: z.discriminatedUnion('kind', [
 				z.object({ kind: z.literal('none') }),
 				z.object({ kind: z.literal('live'), bytes: z.int() }),

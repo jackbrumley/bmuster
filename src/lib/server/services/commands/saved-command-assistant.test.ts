@@ -104,6 +104,80 @@ describe('list_saved_commands (SPEC-SAVED-COMMANDS SC15)', () => {
 	});
 });
 
+describe('list_saved_commands in plain words (SC31)', () => {
+	it('SC31: each command and machine says whether it runs at once or needs a person’s approval', async () => {
+		const { database, people, machine, tools, pat, assistantOf } = await setUp();
+		addSaved(
+			database,
+			people.admin.id,
+			savedFields({ name: 'Asks first', aiUnattended: false, effect: 'changes' })
+		);
+		// Kim may run commands herself on mint, and ask her AI about reception: a mixed list.
+		grantAccess(database, {
+			adminId: people.admin.id,
+			name: 'Kim runs',
+			memberIds: [people.kim.id],
+			machineIds: [machine.mint],
+			permissions: ['view', 'run-commands'],
+			consent: 'unattended'
+		});
+		grantAccess(database, {
+			adminId: people.admin.id,
+			name: 'Kim reception',
+			memberIds: [people.kim.id],
+			machineIds: [machine.reception],
+			permissions: ['view', 'ai-commands'],
+			consent: 'unattended'
+		});
+		const atOnce = 'Runs at once (no approval needed)';
+		const needsApproval = "Needs a person's approval in BMuster";
+		expect(listSavedCommandsTool(tools(pat))).toMatchObject({
+			kind: 'ok',
+			output: {
+				commands: [
+					{
+						name: 'Asks first',
+						runsWithoutApproval: false,
+						approval: needsApproval,
+						machines: [
+							{ name: 'mint', approval: needsApproval },
+							{ name: 'old', approval: needsApproval },
+							{ name: 'reception', approval: needsApproval }
+						]
+					},
+					{
+						name: 'Free space',
+						runsWithoutApproval: true,
+						approval: atOnce,
+						machines: [
+							{ name: 'mint', approval: atOnce },
+							{ name: 'old', approval: atOnce },
+							{ name: 'reception', approval: atOnce }
+						]
+					}
+				]
+			}
+		});
+		expect(listSavedCommandsTool(tools(await assistantOf('kim')))).toMatchObject({
+			kind: 'ok',
+			output: {
+				commands: [
+					{ name: 'Asks first', approval: needsApproval },
+					{
+						name: 'Free space',
+						approval:
+							"Runs at once on the machines marked so; needs a person's approval in BMuster on the others",
+						machines: [
+							{ name: 'mint', runsWithoutApproval: true, approval: atOnce },
+							{ name: 'reception', runsWithoutApproval: false, approval: needsApproval }
+						]
+					}
+				]
+			}
+		});
+	});
+});
+
 describe('run_saved_command (SC16)', () => {
 	it('SC16: refused for an unknown or switched-off command, bad values, and machines it cannot use', async () => {
 		const { database, people, machine, tools, pat, tickets } = await setUp();

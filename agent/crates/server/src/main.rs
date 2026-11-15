@@ -8,6 +8,7 @@ mod config;
 mod install;
 mod launcher;
 mod layout;
+mod recovery;
 mod releases;
 #[cfg(target_os = "linux")]
 mod service_linux;
@@ -34,6 +35,17 @@ struct Folders {
     /// Program folder (default: /opt/bmuster-server or C:\Program Files\BMuster Server)
     #[arg(long, value_name = "DIR")]
     prefix: Option<PathBuf>,
+    /// Data folder (default: /var/lib/bmuster-server or C:\ProgramData\BMuster Server)
+    #[arg(long, value_name = "DIR")]
+    data_dir: Option<PathBuf>,
+}
+
+/// The account to recover and the server it belongs to.
+#[derive(Args)]
+struct Account {
+    /// The account's email
+    #[arg(long, value_name = "EMAIL")]
+    email: String,
     /// Data folder (default: /var/lib/bmuster-server or C:\ProgramData\BMuster Server)
     #[arg(long, value_name = "DIR")]
     data_dir: Option<PathBuf>,
@@ -89,6 +101,12 @@ enum Command {
         #[command(flatten)]
         folders: Folders,
     },
+    /// Set a new password for an enabled admin, print it once and end their
+    /// sessions (root, Administrator or the service user)
+    ResetPassword(Account),
+    /// Turn off two-factor sign-in for an account whose owner lost their
+    /// authenticator and recovery codes (root, Administrator or the service user)
+    ResetTwoFactor(Account),
 }
 
 fn main() -> ExitCode {
@@ -156,7 +174,17 @@ fn dispatch(command: Command) -> Result<ExitCode> {
             install::status(&layout::resolve(folders.prefix, folders.data_dir)?);
             Ok(ExitCode::SUCCESS)
         }
+        Command::ResetPassword(account) => recover(recovery::Action::ResetPassword, account),
+        Command::ResetTwoFactor(account) => recover(recovery::Action::ResetTwoFactor, account),
     }
+}
+
+fn recover(action: recovery::Action, account: Account) -> Result<ExitCode> {
+    recovery::run(
+        action,
+        &account.email,
+        &data_dir_or_default(account.data_dir)?,
+    )
 }
 
 /// Node in the foreground, restarted if it crashes; SIGTERM stops it.
@@ -267,5 +295,55 @@ mod platform {
 
     pub fn log_hint(_layout: &Layout) -> String {
         "the terminal it runs in".into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(arguments: &[&str]) -> Result<Command, clap::Error> {
+        Cli::try_parse_from([&["bmuster-server"], arguments].concat()).map(|cli| cli.command)
+    }
+
+    #[test]
+    fn the_recovery_commands_take_an_email_and_an_optional_data_folder() {
+        let Ok(Command::ResetTwoFactor(account)) =
+            parse(&["reset-two-factor", "--email", "ada@example.com"])
+        else {
+            panic!("reset-two-factor did not parse");
+        };
+        assert_eq!(account.email, "ada@example.com");
+        assert_eq!(account.data_dir, None);
+
+        let Ok(Command::ResetPassword(account)) = parse(&[
+            "reset-password",
+            "--email",
+            "ada@example.com",
+            "--data-dir",
+            "/srv/bmuster",
+        ]) else {
+            panic!("reset-password did not parse");
+        };
+        assert_eq!(account.email, "ada@example.com");
+        assert_eq!(account.data_dir, Some(PathBuf::from("/srv/bmuster")));
+    }
+
+    #[test]
+    fn the_recovery_commands_refuse_a_missing_email_or_a_stray_word() {
+        for arguments in [
+            &["reset-two-factor"][..],
+            &["reset-password", "ada@example.com"],
+            &["reset-password", "--email"],
+            &[
+                "reset-two-factor",
+                "--email",
+                "a@example.com",
+                "--prefix",
+                "/opt",
+            ],
+        ] {
+            assert!(parse(arguments).is_err(), "{arguments:?}");
+        }
     }
 }

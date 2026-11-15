@@ -26,14 +26,30 @@ function pretendTouchScreen(): void {
 	);
 }
 
-/** Connects at phone size, which goes full screen at once (SPEC-DESKTOP-POPOUT PF2), with the touch layout. */
+/**
+ * Connects at phone size, which goes full screen at once (SPEC-DESKTOP-POPOUT PF2), with the touch layout.
+ * The browser sets `document.fullscreenElement` a frame before its `fullscreenchange` event reaches the
+ * tab, so this waits for the tab's own full-screen layout (the controls button), not only the browser's.
+ */
 async function fullScreenOnPhone() {
 	pretendTouchScreen();
 	await page.viewport(375, 667);
 	const opened = await open(CONTROL, 'Connect');
 	opened.socket.receive(batch(1, 1 | 4, [{ x: 0, y: 0, rgb: [1, 2, 3] }]));
 	await expect.poll(() => document.fullscreenElement !== null).toBe(true);
+	await expect
+		.element(opened.screen.getByRole('button', { name: 'Session controls' }))
+		.toBeVisible();
 	return opened;
+}
+
+/** Waits for the next animation frame: the stage sends a mouse move once per frame, so one held back has gone by then. */
+function nextFrame(): Promise<void> {
+	return new Promise((done) => {
+		requestAnimationFrame(() => {
+			done();
+		});
+	});
 }
 
 describe('the desktop tab', () => {
@@ -101,7 +117,7 @@ describe('the desktop tab', () => {
 		event(stage, 'pointermove', 150, 200, 'mouse');
 		event(stage, 'pointermove', 60, 300, 'mouse');
 		event(stage, 'pointerup', 60, 300, 'mouse');
-		await new Promise((done) => setTimeout(done, 50));
+		await nextFrame();
 		expect(inputSent()).toBe(before);
 		await expect
 			.poll(() => fab.getBoundingClientRect().left)
@@ -115,7 +131,7 @@ describe('the desktop tab', () => {
 		await expect
 			.element(screen.getByRole('group', { name: 'Session options' }))
 			.not.toBeInTheDocument();
-		await new Promise((done) => setTimeout(done, 50));
+		await nextFrame();
 		expect(inputSent()).toBe(before);
 		await document.exitFullscreen();
 	});

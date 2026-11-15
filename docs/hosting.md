@@ -156,30 +156,57 @@ Add a proxy host:
 
 ## 7. Locked out: host commands
 
-Two commands get an admin back in. They run on the server's machine, against its database, as someone who can read the database and `SECRETS_KEY`. Both are recorded on the Activity page with the actor _System_.
+The same steps, in plain words for people who aren't hosting experts, are in the public [questions and answers](https://bmuster.com/faq#getting-back-in).
 
-| Command                                        | Does                                                                                                                                                                                                                              |
-| :--------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run admin:reset -- --email <admin email>` | Sets a new password for an enabled admin, prints it once and ends their sessions ([SPEC-SIGN-IN](specs/SPEC-SIGN-IN.md) S19).                                                                                                     |
-| `npm run two-factor:reset -- --email <email>`  | Turns off two-factor sign-in for any account, for someone who lost their phone and their recovery codes ([SPEC-TWO-FACTOR](specs/SPEC-TWO-FACTOR.md) 2.9). If it is required, they set it up again straight after their password. |
+Two commands get an admin back in. They run on the server's machine, against its database, as someone who can already read the database and `SECRETS_KEY`. Both are recorded on the Activity page with the actor _System_. The server can keep running: SQLite lets both write, and the change applies to the next sign-in.
+
+| Command                                | Does                                                                                                                                                                                                                              |
+| :------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reset-password --email <admin email>` | Sets a new password for an enabled admin, prints it once and ends their sessions ([SPEC-SIGN-IN](specs/SPEC-SIGN-IN.md) S19).                                                                                                     |
+| `reset-two-factor --email <email>`     | Turns off two-factor sign-in for any account, for someone who lost their phone and their recovery codes ([SPEC-TWO-FACTOR](specs/SPEC-TWO-FACTOR.md) 2.9). If it is required, they set it up again straight after their password. |
 
 Try the gentler ways first: a recovery code at sign-in, or another admin's **Reset two-factor** on the Users page.
 
-Both are `npm run` scripts, so they need a **source checkout** of the same version, with Node and `npm ci`; the image and the server install do not carry them yet ([SPEC-TWO-FACTOR](specs/SPEC-TWO-FACTOR.md) open question 3).
+An unknown email, a member (for `reset-password`) or a disabled admin is refused with a plain message and exit code 1, and nothing changes.
 
-**On Coolify (Docker),** run them on the Coolify host, pointing at the volume:
+**On a server install, Linux** (root or the `bmuster-server` user; root runs it as that user, so the database keeps its owner):
 
-1. Check out the tag the server runs: `git clone --branch vX.Y.Z https://github.com/jackbrumley/bmuster.git && cd bmuster && npm ci`.
-2. Run the command as uid 1000, the image's user, so any `-wal` or `-shm` file it makes keeps the owner the server needs. Pass the three settings the scripts read:
+```bash
+sudo /opt/bmuster-server/current/bmuster-server reset-two-factor --email you@example.com
+sudo /opt/bmuster-server/current/bmuster-server reset-password --email you@example.com
+```
 
-   ```bash
-   sudo -u '#1000' env \
-     DATABASE_PATH=/var/lib/docker/volumes/<name>/_data/bmuster.db \
-     SECRETS_KEY='<from your password manager>' \
-     RELEASES_PATH=/tmp \
-     npm run two-factor:reset -- --email you@example.com
-   ```
+**On a server install, Windows** (an Administrator PowerShell):
 
-   The server can keep running: SQLite lets both write, and the change applies to the next sign-in.
+```powershell
+& "C:\Program Files\BMuster Server\current\bmuster-server.exe" reset-two-factor --email you@example.com
+& "C:\Program Files\BMuster Server\current\bmuster-server.exe" reset-password --email you@example.com
+```
 
-**On a server install** (Linux, `bmuster-server`), the database is `/var/lib/bmuster-server/bmuster.db` and `SECRETS_KEY` is in `/var/lib/bmuster-server/server.env`. Run the same command from a checkout as the `bmuster-server` user (`sudo -u bmuster-server env DATABASE_PATH=… SECRETS_KEY=… RELEASES_PATH=/tmp npm run …`), with the checkout readable by that user.
+A server installed with `--prefix` or `--data-dir` takes the same `--data-dir <dir>` on these commands.
+
+**In Docker (Coolify),** on the host, as the image's own user (leave out `-u root`; the command refuses root so the database keeps its owner):
+
+```bash
+docker exec <container> bmuster-server reset-two-factor --email you@example.com
+docker exec <container> bmuster-server reset-password --email you@example.com
+```
+
+Coolify names the container after the application; `docker ps` lists it. The command uses the container's own `DATABASE_PATH` and `SECRETS_KEY`. Images before this command was added do not have it: upgrade first (section 6), or run the script from a checkout as below.
+
+**From a source checkout** (development, or an older image), the same commands are npm scripts that read `.env` or the environment:
+
+```bash
+npm run admin:reset -- --email you@example.com
+npm run two-factor:reset -- --email you@example.com
+```
+
+For an older Docker image, check out the tag the server runs (`git clone --branch vX.Y.Z https://github.com/jackbrumley/bmuster.git && cd bmuster && npm ci`), then run the script as uid 1000, the image's user, pointing at the volume:
+
+```bash
+sudo -u '#1000' env \
+  DATABASE_PATH=/var/lib/docker/volumes/<name>/_data/bmuster.db \
+  SECRETS_KEY='<from your password manager>' \
+  RELEASES_PATH=/tmp \
+  npm run two-factor:reset -- --email you@example.com
+```
