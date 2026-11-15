@@ -1,8 +1,8 @@
 {
+  "id": "8de7bad5-4c63-483c-8223-ee978a1ed295",
+  "prevId": "1684ad3e-29a6-485f-98e8-04ad3f2e8abe",
   "version": "6",
   "dialect": "sqlite",
-  "id": "253bb530-41b1-4ca8-8ad6-3d8b6bfffb8a",
-  "prevId": "1684ad3e-29a6-485f-98e8-04ad3f2e8abe",
   "tables": {
     "access_rules": {
       "name": "access_rules",
@@ -62,41 +62,41 @@
         "access_rules_user_group_id_user_groups_id_fk": {
           "name": "access_rules_user_group_id_user_groups_id_fk",
           "tableFrom": "access_rules",
-          "tableTo": "user_groups",
           "columnsFrom": [
             "user_group_id"
           ],
+          "tableTo": "user_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "access_rules_machine_group_id_machine_groups_id_fk": {
           "name": "access_rules_machine_group_id_machine_groups_id_fk",
           "tableFrom": "access_rules",
-          "tableTo": "machine_groups",
           "columnsFrom": [
             "machine_group_id"
           ],
+          "tableTo": "machine_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "access_rules_created_by_users_id_fk": {
           "name": "access_rules_created_by_users_id_fk",
           "tableFrom": "access_rules",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -445,20 +445,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "errors_reported": {
-          "name": "errors_reported",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "wrote_to_stderr": {
-          "name": "wrote_to_stderr",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "output_deleted_at": {
           "name": "output_deleted_at",
           "type": "integer",
@@ -480,28 +466,28 @@
         "command_run_machines_run_id_command_runs_id_fk": {
           "name": "command_run_machines_run_id_command_runs_id_fk",
           "tableFrom": "command_run_machines",
-          "tableTo": "command_runs",
           "columnsFrom": [
             "run_id"
           ],
+          "tableTo": "command_runs",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "command_run_machines_machine_id_machines_id_fk": {
           "name": "command_run_machines_machine_id_machines_id_fk",
           "tableFrom": "command_run_machines",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -560,15 +546,15 @@
         "command_run_scripts_run_id_command_runs_id_fk": {
           "name": "command_run_scripts_run_id_command_runs_id_fk",
           "tableFrom": "command_run_scripts",
-          "tableTo": "command_runs",
           "columnsFrom": [
             "run_id"
           ],
+          "tableTo": "command_runs",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -749,41 +735,41 @@
         "command_runs_started_by_users_id_fk": {
           "name": "command_runs_started_by_users_id_fk",
           "tableFrom": "command_runs",
-          "tableTo": "users",
           "columnsFrom": [
             "started_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "command_runs_oauth_grant_id_oauth_grants_id_fk": {
           "name": "command_runs_oauth_grant_id_oauth_grants_id_fk",
           "tableFrom": "command_runs",
-          "tableTo": "oauth_grants",
           "columnsFrom": [
             "oauth_grant_id"
           ],
+          "tableTo": "oauth_grants",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "command_runs_decided_by_users_id_fk": {
           "name": "command_runs_decided_by_users_id_fk",
           "tableFrom": "command_runs",
-          "tableTo": "users",
           "columnsFrom": [
             "decided_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -855,15 +841,15 @@
         "console_sessions_user_id_users_id_fk": {
           "name": "console_sessions_user_id_users_id_fk",
           "tableFrom": "console_sessions",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -957,15 +943,15 @@
         "diagnostics_tokens_user_id_users_id_fk": {
           "name": "diagnostics_tokens_user_id_users_id_fk",
           "tableFrom": "diagnostics_tokens",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1242,15 +1228,15 @@
         "join_codes_created_by_users_id_fk": {
           "name": "join_codes_created_by_users_id_fk",
           "tableFrom": "join_codes",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1332,15 +1318,15 @@
         "machine_checks_machine_id_machines_id_fk": {
           "name": "machine_checks_machine_id_machines_id_fk",
           "tableFrom": "machine_checks",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1378,28 +1364,28 @@
         "machine_group_members_machine_group_id_machine_groups_id_fk": {
           "name": "machine_group_members_machine_group_id_machine_groups_id_fk",
           "tableFrom": "machine_group_members",
-          "tableTo": "machine_groups",
           "columnsFrom": [
             "machine_group_id"
           ],
+          "tableTo": "machine_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "machine_group_members_machine_id_machines_id_fk": {
           "name": "machine_group_members_machine_id_machines_id_fk",
           "tableFrom": "machine_group_members",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -1512,15 +1498,15 @@
         "machine_inventory_machine_id_machines_id_fk": {
           "name": "machine_inventory_machine_id_machines_id_fk",
           "tableFrom": "machine_inventory",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1571,15 +1557,15 @@
         "machine_local_pages_machine_id_machines_id_fk": {
           "name": "machine_local_pages_machine_id_machines_id_fk",
           "tableFrom": "machine_local_pages",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1653,28 +1639,28 @@
         "machine_notes_machine_id_machines_id_fk": {
           "name": "machine_notes_machine_id_machines_id_fk",
           "tableFrom": "machine_notes",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "machine_notes_author_user_id_users_id_fk": {
           "name": "machine_notes_author_user_id_users_id_fk",
           "tableFrom": "machine_notes",
-          "tableTo": "users",
           "columnsFrom": [
             "author_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1732,15 +1718,15 @@
         "machine_status_machine_id_machines_id_fk": {
           "name": "machine_status_machine_id_machines_id_fk",
           "tableFrom": "machine_status",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1785,15 +1771,15 @@
         "machine_storage_machine_id_machines_id_fk": {
           "name": "machine_storage_machine_id_machines_id_fk",
           "tableFrom": "machine_storage",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1896,15 +1882,15 @@
         "machine_updates_machine_id_machines_id_fk": {
           "name": "machine_updates_machine_id_machines_id_fk",
           "tableFrom": "machine_updates",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2085,15 +2071,15 @@
         "machines_join_code_id_join_codes_id_fk": {
           "name": "machines_join_code_id_join_codes_id_fk",
           "tableFrom": "machines",
-          "tableTo": "join_codes",
           "columnsFrom": [
             "join_code_id"
           ],
+          "tableTo": "join_codes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2224,15 +2210,15 @@
         "notification_rules_created_by_users_id_fk": {
           "name": "notification_rules_created_by_users_id_fk",
           "tableFrom": "notification_rules",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2407,15 +2393,15 @@
         "oauth_codes_grant_id_oauth_grants_id_fk": {
           "name": "oauth_codes_grant_id_oauth_grants_id_fk",
           "tableFrom": "oauth_codes",
-          "tableTo": "oauth_grants",
           "columnsFrom": [
             "grant_id"
           ],
+          "tableTo": "oauth_grants",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2509,28 +2495,28 @@
         "oauth_grants_user_id_users_id_fk": {
           "name": "oauth_grants_user_id_users_id_fk",
           "tableFrom": "oauth_grants",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "oauth_grants_oauth_client_id_oauth_clients_id_fk": {
           "name": "oauth_grants_oauth_client_id_oauth_clients_id_fk",
           "tableFrom": "oauth_grants",
-          "tableTo": "oauth_clients",
           "columnsFrom": [
             "oauth_client_id"
           ],
+          "tableTo": "oauth_clients",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2610,15 +2596,15 @@
         "oauth_tokens_grant_id_oauth_grants_id_fk": {
           "name": "oauth_tokens_grant_id_oauth_grants_id_fk",
           "tableFrom": "oauth_tokens",
-          "tableTo": "oauth_grants",
           "columnsFrom": [
             "grant_id"
           ],
+          "tableTo": "oauth_grants",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2685,15 +2671,15 @@
         "password_links_user_id_users_id_fk": {
           "name": "password_links_user_id_users_id_fk",
           "tableFrom": "password_links",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2753,15 +2739,15 @@
         "recovery_codes_user_id_users_id_fk": {
           "name": "recovery_codes_user_id_users_id_fk",
           "tableFrom": "recovery_codes",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2883,15 +2869,15 @@
         "saved_commands_updated_by_users_id_fk": {
           "name": "saved_commands_updated_by_users_id_fk",
           "tableFrom": "saved_commands",
-          "tableTo": "users",
           "columnsFrom": [
             "updated_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3219,41 +3205,41 @@
         "share_links_machine_id_machines_id_fk": {
           "name": "share_links_machine_id_machines_id_fk",
           "tableFrom": "share_links",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "share_links_created_by_users_id_fk": {
           "name": "share_links_created_by_users_id_fk",
           "tableFrom": "share_links",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "share_links_ended_by_users_id_fk": {
           "name": "share_links_ended_by_users_id_fk",
           "tableFrom": "share_links",
-          "tableTo": "users",
           "columnsFrom": [
             "ended_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3318,15 +3304,15 @@
         "sign_in_challenges_user_id_users_id_fk": {
           "name": "sign_in_challenges_user_id_users_id_fk",
           "tableFrom": "sign_in_challenges",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3454,28 +3440,28 @@
         "storage_cleanups_machine_id_machines_id_fk": {
           "name": "storage_cleanups_machine_id_machines_id_fk",
           "tableFrom": "storage_cleanups",
-          "tableTo": "machines",
           "columnsFrom": [
             "machine_id"
           ],
+          "tableTo": "machines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "storage_cleanups_user_id_users_id_fk": {
           "name": "storage_cleanups_user_id_users_id_fk",
           "tableFrom": "storage_cleanups",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3610,28 +3596,28 @@
         "support_codes_join_code_id_join_codes_id_fk": {
           "name": "support_codes_join_code_id_join_codes_id_fk",
           "tableFrom": "support_codes",
-          "tableTo": "join_codes",
           "columnsFrom": [
             "join_code_id"
           ],
+          "tableTo": "join_codes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "support_codes_created_by_users_id_fk": {
           "name": "support_codes_created_by_users_id_fk",
           "tableFrom": "support_codes",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3682,15 +3668,15 @@
         "totp_authenticators_user_id_users_id_fk": {
           "name": "totp_authenticators_user_id_users_id_fk",
           "tableFrom": "totp_authenticators",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3728,28 +3714,28 @@
         "user_group_members_user_group_id_user_groups_id_fk": {
           "name": "user_group_members_user_group_id_user_groups_id_fk",
           "tableFrom": "user_group_members",
-          "tableTo": "user_groups",
           "columnsFrom": [
             "user_group_id"
           ],
+          "tableTo": "user_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "user_group_members_user_id_users_id_fk": {
           "name": "user_group_members_user_id_users_id_fk",
           "tableFrom": "user_group_members",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -3857,28 +3843,28 @@
         "user_identities_user_id_users_id_fk": {
           "name": "user_identities_user_id_users_id_fk",
           "tableFrom": "user_identities",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "user_identities_provider_id_identity_providers_id_fk": {
           "name": "user_identities_provider_id_identity_providers_id_fk",
           "tableFrom": "user_identities",
-          "tableTo": "identity_providers",
           "columnsFrom": [
             "provider_id"
           ],
+          "tableTo": "identity_providers",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -3963,9 +3949,9 @@
   "views": {},
   "enums": {},
   "_meta": {
+    "columns": {},
     "schemas": {},
-    "tables": {},
-    "columns": {}
+    "tables": {}
   },
   "internal": {
     "indexes": {}

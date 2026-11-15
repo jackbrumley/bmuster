@@ -2,7 +2,8 @@
  * npm run release:server-local [-- --binaries <dir>]
  *
  * Builds the server release bundle for this computer (SPEC-SERVER-INSTALL
- * I1, section 5) in dist/release/: the SvelteKit build, server.ts bundled,
+ * I1, section 5) in dist/release/: the SvelteKit build, server.ts and the
+ * account-recovery entry bundled (scripts/release/app-entries.ts),
  * production node_modules, the migrations, the Node runtime pinned in
  * .node-version (checked against nodejs.org's SHASUMS256.txt), the agent
  * builds and the bmuster-server launcher and updater.
@@ -36,11 +37,11 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { build } from 'vite';
 import { z } from 'zod';
 import { AGENT_TARGETS, type AgentTarget } from '../src/lib/domain/machines/agent-release.ts';
 import { isPrereleaseVersion } from '../src/lib/domain/machines/agent-version.ts';
 import { AGENT_MANIFEST, agentVersion, binaryName, hostTarget } from './agent-build.ts';
+import { bundleAppEntries } from './release/app-entries.ts';
 
 function fail(message: string): never {
 	console.error(`release:server: ${message}`);
@@ -113,22 +114,6 @@ function buildServer(): void {
 			DATABASE_PATH: ':memory:',
 			SECRETS_KEY: Buffer.alloc(32).toString('base64'),
 			RELEASES_PATH: join(STAGE, 'no-releases')
-		}
-	});
-}
-
-/** server.ts as one ES module beside build/; node_modules stay external. */
-async function bundleServerEntry(): Promise<void> {
-	await build({
-		configFile: false,
-		logLevel: 'warn',
-		build: {
-			ssr: 'server.ts',
-			outDir: APP,
-			emptyOutDir: false,
-			target: 'node26',
-			minify: false,
-			rolldownOptions: { output: { entryFileNames: 'server.js' } }
 		}
 	});
 }
@@ -297,7 +282,7 @@ mkdirSync(APP, { recursive: true });
 
 buildServer();
 copyServer();
-await bundleServerEntry();
+await bundleAppEntries(APP);
 installDependencies();
 await addNode();
 addBinaries(options.binaries ?? buildHostBinaries(), options.binaries !== undefined);

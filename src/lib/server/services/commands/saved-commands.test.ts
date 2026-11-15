@@ -76,7 +76,8 @@ describe('the starter set (SPEC-SAVED-COMMANDS SC8)', () => {
 				aiUnattended: false,
 				effect: 'reads-only',
 				machineGroupIds: [ALL_MACHINES],
-				version: 1,
+				// Seeded at 1, then raised by the fail-loudly scripts migration (SC30).
+				version: 2,
 				systems: ['windows', 'linux']
 			});
 			expect(command.scripts.map((script) => script.shell)).toEqual(['powershell', 'sh']);
