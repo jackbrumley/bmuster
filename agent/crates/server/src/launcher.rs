@@ -33,6 +33,27 @@ pub struct Launcher {
     pub data: PathBuf,
 }
 
+/// The app entry the service runs (scripts/release/app-entries.ts).
+const SERVER_ENTRY: &str = "server.js";
+
+/// The release's Node on one of its app entries, with the installed
+/// server's settings file, database and agent builds: what the service and
+/// the account-recovery commands share.
+pub fn app_command(release: &Path, data: &Path, entry: &str) -> Command {
+    let mut env_file = OsString::from("--env-file=");
+    env_file.push(data.join(crate::layout::ENV_FILE));
+    let app = release.join("app");
+    let mut command = Command::new(node_in(release));
+    command
+        .arg(env_file)
+        .arg(app.join(entry))
+        .current_dir(&app)
+        .env("NODE_ENV", "production")
+        .env("DATABASE_PATH", data.join(crate::layout::DATABASE_FILE))
+        .env("RELEASES_PATH", release.join("releases"));
+    command
+}
+
 /// The program folder a release folder belongs to: `<program>/releases/<v>`.
 fn program_of(release: &Path) -> Option<PathBuf> {
     let releases = release.parent()?;
@@ -75,17 +96,8 @@ impl Launcher {
     }
 
     pub fn command(&self, nonce: &str) -> Command {
-        let mut env_file = OsString::from("--env-file=");
-        env_file.push(self.data.join(crate::layout::ENV_FILE));
-        let app = self.release.join("app");
-        let mut command = Command::new(node_in(&self.release));
+        let mut command = app_command(&self.release, &self.data, SERVER_ENTRY);
         command
-            .arg(env_file)
-            .arg(app.join("server.js"))
-            .current_dir(&app)
-            .env("NODE_ENV", "production")
-            .env("DATABASE_PATH", self.data.join("bmuster.db"))
-            .env("RELEASES_PATH", self.release.join("releases"))
             // Files uploads come in 8 MB pieces (SPEC-FILES F6); adapter-node's
             // default request limit is 512 KB.
             .env("BODY_SIZE_LIMIT", "16M")
