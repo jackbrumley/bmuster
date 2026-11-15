@@ -189,6 +189,8 @@ mod win {
             .chain(Some(0))
             .collect();
         let folder = wide(program.parent().unwrap_or(&program).as_os_str());
+        // The person's interactive desktop, where their clipboard is.
+        let mut desktop = wide(OsStr::new("winsta0\\default"));
         let inherited = [
             HANDLE(std::os::windows::io::AsRawHandle::as_raw_handle(&child_in)),
             HANDLE(std::os::windows::io::AsRawHandle::as_raw_handle(&child_out)),
@@ -216,6 +218,7 @@ mod win {
             let mut startup = STARTUPINFOEXW::default();
             startup.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
             startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+            startup.StartupInfo.lpDesktop = PWSTR(desktop.as_mut_ptr());
             startup.StartupInfo.hStdInput = inherited[0];
             startup.StartupInfo.hStdOutput = inherited[1];
             startup.StartupInfo.hStdError = inherited[1];

@@ -167,7 +167,8 @@ impl<M: Machine> Relay<M> {
                     log::warn!("Ignoring a session-files request this agent cannot read.");
                     return;
                 };
-                let needs_screen = matches!(op.as_str(), "target" | "send-begin");
+                // Nothing reaches the clipboard or a new file while nobody, or a locked screen, is there.
+                let needs_screen = matches!(op.as_str(), "target" | "send-begin" | "offer");
                 self.send(id, TEXT, text.as_bytes(), needs_screen);
             }
             Incoming::Bytes(bytes) => match split_frame(&bytes) {

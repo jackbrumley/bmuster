@@ -135,6 +135,8 @@ mod unix {
     /// Downloads/BMuster, opened once and used only through its handle.
     pub struct Folder {
         dir: OwnedFd,
+        /// Where it is, for the clipboard only (never opened by path).
+        path: PathBuf,
         /// The folder as the person names it.
         pub label: String,
         /// The person's name, for messages.
@@ -206,7 +208,12 @@ mod unix {
             if stat.st_mode & libc::S_IFMT != libc::S_IFDIR || stat.st_uid != me {
                 return Err(not_owned(&user, &label));
             }
-            Ok(Folder { dir, label, user })
+            Ok(Folder {
+                dir,
+                path: downloads.join(FOLDER_NAME),
+                label,
+                user,
+            })
         }
 
         fn open_at(&self, name: &str, flags: libc::c_int) -> io::Result<File> {
@@ -223,6 +230,11 @@ mod unix {
             })?;
             // SAFETY: just opened.
             Ok(unsafe { File::from_raw_fd(fd) })
+        }
+
+        /// Where the folder is, to name saved files on the clipboard.
+        pub fn path(&self) -> &Path {
+            &self.path
         }
 
         /// A new part file; fails if anything of that name exists.
@@ -463,6 +475,11 @@ mod win {
                 label,
                 user,
             })
+        }
+
+        /// Where the folder is, to name saved files on the clipboard.
+        pub fn path(&self) -> &Path {
+            &self.path
         }
 
         fn options() -> OpenOptions {

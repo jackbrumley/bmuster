@@ -19,9 +19,11 @@
 //! - [`screen`]: who is on the screen (logind, or the console session),
 //!   read by the agent before anything starts.
 
+pub mod clipboard;
 pub mod folder;
 pub mod names;
 pub mod notice;
+pub mod offers;
 pub mod screen;
 pub mod serve;
 pub mod start;

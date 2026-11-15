@@ -21,6 +21,16 @@ pub const KEEP_FREE_BYTES: u64 = 1024 * 1024 * 1024;
 /// The folder made inside the person's Downloads.
 pub const FOLDER_NAME: &str = "BMuster";
 
+/// Items listed in an offer at most; `count` is the full number.
+pub const MAX_OFFER_ITEMS: usize = 1_000;
+
+/// Files and folders in one download at most, and how deep folders are walked.
+pub const MAX_WALK_ITEMS: usize = 10_000;
+pub const MAX_WALK_DEPTH: usize = 32;
+
+/// An offer ends this long after the copy was noticed.
+pub const OFFER_MAX_AGE_MS: u64 = 60 * 60_000;
+
 /// One request from the server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserFilesRequest {
@@ -57,7 +67,69 @@ pub enum UserFilesOp {
         transfer_ids: Vec<String>,
         /// The sender's name, for the notice (cleaned by the tray).
         sender: String,
+        /// Share clipboard is on: put the saved files on the clipboard too.
+        clipboard: bool,
     },
+    /// The files copied on the machine now, as an offer (phase 2).
+    Offer,
+    /// The files of an offer to download: folders walked, never through links.
+    OfferStat { offer_id: String },
+    /// Streams entry `entry` of the last `offer-stat` walk; acknowledged with `ack`.
+    OfferRead {
+        offer_id: String,
+        entry: u32,
+        offset: u64,
+        length: u64,
+    },
+    /// The server has passed on this many more bytes of read `id`.
+    Ack { bytes: u64 },
+    /// Stop read `id`.
+    Cancel,
+}
+
+/// One item of an offer: a top-level name, never a path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfferItem {
+    pub name: String,
+    pub kind: OfferKind,
+    /// Bytes for a file; 0 for a folder (walked at download).
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OfferKind {
+    File,
+    Folder,
+}
+
+/// The files copied on the machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Offer {
+    /// 128 random bits, hex.
+    pub offer_id: String,
+    pub items: Vec<OfferItem>,
+    pub count: usize,
+    pub total_bytes: u64,
+}
+
+/// One file of a walked offer: its path inside the download, `/`-separated.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WalkEntry {
+    pub path: String,
+    pub size: u64,
+    pub modified_ms: u64,
+}
+
+/// Something left out of a download, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Skipped {
+    pub path: String,
+    pub reason: String,
 }
 
 /// Why a request failed.
@@ -81,6 +153,12 @@ pub enum UserFilesError {
     Mismatch,
     /// The file is over the size limit.
     TooBig,
+    /// The offer is gone: a new copy, or an hour passed.
+    Gone,
+    /// A copied file changed while it was read.
+    Changed,
+    /// The copied files are not on this machine's disks.
+    NotLocal,
     Busy,
     Io,
 }
@@ -121,6 +199,17 @@ pub enum UserFilesResult {
     },
     /// `send-finish`.
     Finished { on_clipboard: bool },
+    /// `offer`: the copied files, or `null` when there are none.
+    Offered { offer: Option<Offer> },
+    /// `offer-stat`: every file to send, and what was left out.
+    Walked {
+        entries: Vec<WalkEntry>,
+        skipped: Vec<Skipped>,
+        /// Whether the offer is one file at the top (downloaded as itself).
+        single: bool,
+    },
+    /// `offer-read`: bytes sent.
+    Read { bytes: u64 },
     /// `send-cancel`.
     Empty {},
 }

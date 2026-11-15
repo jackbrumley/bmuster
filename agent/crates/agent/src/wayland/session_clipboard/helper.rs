@@ -69,7 +69,7 @@ pub fn run(socket: &Path) -> Result<()> {
 
 /// The person's systemd user manager's environment, where desktops put
 /// `WAYLAND_DISPLAY`, `DISPLAY` and `XAUTHORITY`.
-fn session_environment() -> Result<HashMap<String, String>> {
+pub(crate) fn session_environment() -> Result<HashMap<String, String>> {
     let mut child = Process::new("systemctl")
         .args(["--user", "--no-pager", "show-environment"])
         .stdin(Stdio::null())

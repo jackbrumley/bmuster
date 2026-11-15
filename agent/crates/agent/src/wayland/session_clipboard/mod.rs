@@ -24,11 +24,11 @@
 //! Neither half ever logs the text; the agent log names the route that
 //! served each call and its byte count.
 
-mod data_control;
+pub(crate) mod data_control;
 pub mod helper;
-mod routes;
+pub(crate) mod routes;
 mod watch;
-mod xwayland;
+pub(crate) mod xwayland;
 
 use super::clipboard::{Replies, Reply, AGENT_WAIT};
 use super::wire::{self, Command, Event, Packet};
