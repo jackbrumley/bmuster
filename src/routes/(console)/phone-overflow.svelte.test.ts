@@ -391,7 +391,17 @@ const PAGES: PhonePage[] = [
 							setting('connectedNotice', true),
 							setting('localNetworkMode', true)
 						],
-						localTls: LOCAL_TLS
+						localTls: LOCAL_TLS,
+						// SPEC-SERVER-INSTALL I17: long paths and commands at phone width.
+						recovery: {
+							deployment: 'windows',
+							secrets: { kind: 'settings-file', path: `D:\\${LONG_GROUP}\\server.env` },
+							snapshots: { kind: 'daily', folder: `D:\\${LONG_GROUP}\\backups`, keep: 14 },
+							commands: {
+								resetPassword: `& "C:\\Program Files\\BMuster Server\\current\\bmuster-server.exe" reset-password --data-dir 'D:\\${LONG_GROUP}' --email ada@example.com`,
+								resetTwoFactor: `& "C:\\Program Files\\BMuster Server\\current\\bmuster-server.exe" reset-two-factor --data-dir 'D:\\${LONG_GROUP}' --email ada@example.com`
+							}
+						}
 					}
 				},
 				IN_CONSOLE
