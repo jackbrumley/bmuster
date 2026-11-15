@@ -1,8 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import ConfirmDialog from '#lib/ui/confirm-dialog.svelte';
 	import Logo from '#lib/ui/logo.svelte';
+	import ToastHost from '#lib/ui/toast-host.svelte';
 
-	/** Frame for pages outside the console (sign-in, setup): centred card, safe areas padded. */
+	/**
+	 * Frame for pages outside the console (sign-in, setup, a share link's
+	 * desktop): centred card, safe areas padded. Like the other frames it owns
+	 * the shared confirmation dialog and the toasts.
+	 */
 	let { children, width }: { children: Snippet; width: 'compact' | 'wide' } = $props();
 </script>
 
@@ -14,6 +20,8 @@
 	<div class="card" class:wide={width === 'wide'}>
 		{@render children()}
 	</div>
+	<ConfirmDialog />
+	<ToastHost />
 </div>
 
 <style>
