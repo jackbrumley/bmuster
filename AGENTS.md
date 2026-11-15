@@ -224,6 +224,9 @@ The design is in `docs/access-and-sign-in.md`.
 - The server relays session bytes and never decodes desktop video.
 - Each session has its own stream so a busy desktop never blocks control messages.
 - Sessions survive a browser reload: the browser re-subscribes to the running session.
+- **Every desktop view has every session feature:** the tab, full screen, the pop-out window, phones, and a share link's guest (within the link's permissions). A feature in one view and missing from another is a bug.
+- **Views share the session chrome.** Each view renders `desktop-view.svelte` and differs only in its frame and layout; the bars, panels, notices and menus come from the shared chrome (`session-chrome.svelte` and the components it renders). Never give one view controls of its own.
+- **A new action is listed twice:** in `CHROME_ACTIONS` (`session-actions.ts`), and in the parity test (`desktop-parity.svelte.test.ts`), which checks every action in every view and fails until each one has it.
 
 ---
 
