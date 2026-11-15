@@ -112,7 +112,7 @@ export function barPlaceAt(corner: { x: number; y: number }, area: Area, bar: Ar
 }
 
 /** How close to the top centre a dropped bar has to land to snap there (FB13). */
-export const TOP_CENTRE_SNAP_PX = 24;
+const TOP_CENTRE_SNAP_PX = 24;
 
 /**
  * A dropped bar's place: the top centre (the default place) when its
