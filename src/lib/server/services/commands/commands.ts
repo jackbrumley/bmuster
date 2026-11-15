@@ -128,10 +128,10 @@ export function planRun(
 
 /**
  * C10: a recent sign-in, or the password now (an authenticator code with two-factor on,
- * SPEC-TWO-FACTOR 2.7). Approving an assistant's command uses it too.
+ * SPEC-TWO-FACTOR 2.7). Approving an assistant's command, or its clean-up, uses it too.
  */
 export async function checkRecentSignIn(
-	context: CommandContext,
+	context: Pick<CommandContext, 'database' | 'user' | 'sessionToken' | 'secretsKey' | 'ip' | 'now'>,
 	recheck: RecheckRequest
 ): Promise<Refused | undefined> {
 	const check = signInCheck(

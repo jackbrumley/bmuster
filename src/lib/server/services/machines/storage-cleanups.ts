@@ -14,10 +14,19 @@ import { recordAudit } from '../audit/audit.ts';
  * recorded and audited once, by whichever comes first of the Storage tab and the next check-in.
  */
 
-/** A clean-up the machine accepted: its row and the `storage-cleanup-started` entry. */
+/**
+ * A clean-up the machine accepted: its row and the `storage-cleanup-started` entry. `asked` adds
+ * who asked for it, when a person approved an AI assistant's request (SPEC-MCP M54); else `{}`.
+ */
 export function recordCleanupStart(
 	database: Queryable,
-	run: { runId: string; machineId: string; userId: string; items: readonly CleanupItemId[] },
+	run: {
+		runId: string;
+		machineId: string;
+		userId: string;
+		items: readonly CleanupItemId[];
+		asked: Record<string, string>;
+	},
 	now: number
 ): void {
 	database
@@ -37,7 +46,7 @@ export function recordCleanupStart(
 			kind: 'storage-cleanup-started',
 			target: machineName(database, run.machineId),
 			machineId: run.machineId,
-			detail: cleanupStartDetail(run.items)
+			detail: { ...cleanupStartDetail(run.items), ...run.asked }
 		},
 		now
 	);

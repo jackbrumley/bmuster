@@ -2,12 +2,17 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { IconBell, IconX } from '@tabler/icons-svelte-runes';
-	import { machineNamesText, type ApprovalSummary } from '#lib/domain/commands/assistant-runs.ts';
+	import {
+		approvalId,
+		approvalText,
+		type ApprovalSummary
+	} from '#lib/domain/commands/assistant-runs.ts';
 	import { onLiveEvent } from '#lib/runes/live-events.svelte.ts';
 
 	/**
-	 * The live notice of an AI assistant's request (SPEC-MCP M26): every open console tab of a
-	 * person who may decide it shows the request with **Review**, which opens its approval card.
+	 * The live notice of an AI assistant's request (SPEC-MCP M26), a command or a clean-up (M54):
+	 * every open console tab of a person who may decide it shows the request with **Review**, which
+	 * opens its approval card.
 	 * It stays until it is reviewed, dismissed or decided elsewhere; the newest request shows.
 	 */
 
@@ -20,7 +25,7 @@
 					shown = event.approval;
 					return;
 				case 'approval-decided':
-					if (shown?.runId === event.runId) {
+					if (shown !== null && approvalId(shown) === event.id) {
 						shown = null;
 					}
 					return;
@@ -32,14 +37,20 @@
 {#if shown !== null}
 	<div class="notice" role="status">
 		<IconBell size={18} stroke={1.75} />
-		<span class="message"
-			>{shown.assistant} wants to run a command on {machineNamesText(shown.machineNames)}</span
-		>
-		<a
-			class="review"
-			href={resolve('/(console)/commands/[id=uuid]', { id: shown.runId })}
-			onclick={() => (shown = null)}>Review</a
-		>
+		<span class="message">{approvalText(shown)}</span>
+		{#if shown.kind === 'command'}
+			<a
+				class="review"
+				href={resolve('/(console)/commands/[id=uuid]', { id: shown.runId })}
+				onclick={() => (shown = null)}>Review</a
+			>
+		{:else}
+			<a
+				class="review"
+				href={resolve('/(console)/approvals/clean-ups/[id=uuid]', { id: shown.requestId })}
+				onclick={() => (shown = null)}>Review</a
+			>
+		{/if}
 		<button
 			type="button"
 			class="dismiss"

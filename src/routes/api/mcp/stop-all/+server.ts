@@ -2,6 +2,7 @@ import { database } from '#lib/server/database/app-database.ts';
 import { route } from '#lib/server/guards/route.ts';
 import { appRunner } from '#lib/server/services/commands/app-runner.ts';
 import { settleEndedGrantRuns } from '#lib/server/services/commands/assistant-pending.ts';
+import { settleEndedGrantCleanups } from '#lib/server/services/sessions/cleanup-requests.ts';
 import { stopAllAiAccess } from '#lib/server/services/oauth/grants.ts';
 import type { RequestHandler } from './$types';
 
@@ -14,5 +15,6 @@ export const POST: RequestHandler = route.admin((_event, { user }) => {
 	const now = Date.now();
 	const grantsEnded = stopAllAiAccess(database, user.id, now);
 	const runsCancelled = settleEndedGrantRuns({ database, runner: appRunner(), now });
+	settleEndedGrantCleanups(database, now);
 	return Response.json({ grantsEnded, runsCancelled });
 });

@@ -43,15 +43,24 @@ export const denyRequestSchema = z.object({
 
 export const decidedReplySchema = z.object({ runId: z.uuid() });
 
-const approvalSummarySchema: z.ZodType<ApprovalSummary> = z.object({
-	runId: z.uuid(),
+const asked = {
 	requestedBy: z.string(),
 	assistant: z.string(),
 	machineNames: z.array(z.string()),
-	firstLine: z.string(),
 	requestedIso: z.iso.datetime(),
 	expiresIso: z.iso.datetime()
-});
+};
+
+const approvalSummarySchema: z.ZodType<ApprovalSummary> = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('command'), runId: z.uuid(), firstLine: z.string(), ...asked }),
+	z.object({
+		kind: z.literal('clean-up'),
+		requestId: z.uuid(),
+		items: z.string(),
+		total: z.string(),
+		...asked
+	})
+]);
 
 export const liveEventSchema: z.ZodType<LiveEvent> = z.discriminatedUnion('kind', [
 	z.object({
@@ -59,5 +68,5 @@ export const liveEventSchema: z.ZodType<LiveEvent> = z.discriminatedUnion('kind'
 		approval: approvalSummarySchema,
 		pending: z.int()
 	}),
-	z.object({ kind: z.literal('approval-decided'), runId: z.uuid(), pending: z.int() })
+	z.object({ kind: z.literal('approval-decided'), id: z.uuid(), pending: z.int() })
 ]);

@@ -84,7 +84,7 @@ describe('the live channel (SPEC-MCP M26)', () => {
 		expect(kimTab.events).toEqual([]);
 		denyRun(consoleAs('pat'), runId, '');
 		await settle();
-		expect(patTab.events.at(-1)).toEqual({ kind: 'approval-decided', runId, pending: 0 });
+		expect(patTab.events.at(-1)).toEqual({ kind: 'approval-decided', id: runId, pending: 0 });
 		for (const tab of [patTab, secondTab, kimTab]) tab.stop();
 	});
 

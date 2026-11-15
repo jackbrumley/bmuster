@@ -46,7 +46,7 @@ describe('who may clean up (SPEC-STORAGE S19)', () => {
 			permissions: ['view'],
 			consent: 'unattended'
 		});
-		expect(await startCleanup(context(pat), ['old-var-tmp'])).toMatchObject({
+		expect(await startCleanup(context(pat), ['old-var-tmp'], {})).toMatchObject({
 			kind: 'refused',
 			status: 403
 		});
@@ -69,7 +69,7 @@ describe('who may clean up (SPEC-STORAGE S19)', () => {
 
 	it('refuses an offline machine', async () => {
 		const { admin, context } = await setUpFiles();
-		expect(await startCleanup(context(admin), ['old-var-tmp'])).toMatchObject({
+		expect(await startCleanup(context(admin), ['old-var-tmp'], {})).toMatchObject({
 			kind: 'refused',
 			status: 503
 		});
@@ -93,7 +93,7 @@ describe('a clean-up run (SPEC-STORAGE S19)', () => {
 	it('sends ids with a new run id, records the start and audits it', async () => {
 		const { database, admin, machineId, relay, context } = await setUpFiles();
 		const agent = fakeAgent(relay, machineId);
-		const started = await startCleanup(context(admin), ['old-var-tmp', 'journal']);
+		const started = await startCleanup(context(admin), ['old-var-tmp', 'journal'], {});
 		if (started.kind !== 'ok') throw new Error(started.message);
 		const request = agent.requests.find((sent) => sent.op === 'storage-cleanup-start');
 		expect(request).toMatchObject({
@@ -117,8 +117,8 @@ describe('a clean-up run (SPEC-STORAGE S19)', () => {
 	it('passes on the machine refusing a second clean-up, and records nothing', async () => {
 		const { database, admin, machineId, relay, context } = await setUpFiles();
 		fakeAgent(relay, machineId);
-		expect((await startCleanup(context(admin), ['old-var-tmp'])).kind).toBe('ok');
-		expect(await startCleanup(context(admin), ['old-var-tmp'])).toMatchObject({
+		expect((await startCleanup(context(admin), ['old-var-tmp'], {})).kind).toBe('ok');
+		expect(await startCleanup(context(admin), ['old-var-tmp'], {})).toMatchObject({
 			kind: 'refused',
 			status: 503
 		});
@@ -128,7 +128,7 @@ describe('a clean-up run (SPEC-STORAGE S19)', () => {
 	it('records and audits the result once, as the person who started it', async () => {
 		const { database, admin, machineId, relay, context } = await setUpFiles();
 		const agent = fakeAgent(relay, machineId);
-		const started = await startCleanup(context(admin), ['old-var-tmp']);
+		const started = await startCleanup(context(admin), ['old-var-tmp'], {});
 		if (started.kind !== 'ok') throw new Error(started.message);
 		expect(await cleanupStatus(context(admin))).toMatchObject({
 			kind: 'ok',
@@ -150,7 +150,7 @@ describe('a clean-up run (SPEC-STORAGE S19)', () => {
 	it('ignores a run id of another machine', async () => {
 		const { database, admin, machineId, relay, context } = await setUpFiles();
 		fakeAgent(relay, machineId);
-		const started = await startCleanup(context(admin), ['old-var-tmp']);
+		const started = await startCleanup(context(admin), ['old-var-tmp'], {});
 		if (started.kind !== 'ok') throw new Error(started.message);
 		expect(
 			recordCleanupResult(database, crypto.randomUUID(), finished(started.value.runId), 3)
@@ -164,12 +164,12 @@ describe('Rescan now says when a scan is already running (SPEC-STORAGE S26)', ()
 	it('an older agent’s empty answer means asked; already scanning is not audited', async () => {
 		const { database, admin, machineId, relay, context } = await setUpFiles();
 		const agent = fakeAgent(relay, machineId);
-		expect(await requestRescan(context(admin))).toEqual({
+		expect(await requestRescan(context(admin), {})).toEqual({
 			kind: 'ok',
 			value: { alreadyScanning: false }
 		});
 		agent.state.rescanReply = { alreadyScanning: true };
-		expect(await requestRescan(context(admin))).toEqual({
+		expect(await requestRescan(context(admin), {})).toEqual({
 			kind: 'ok',
 			value: { alreadyScanning: true }
 		});

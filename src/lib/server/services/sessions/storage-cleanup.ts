@@ -28,10 +28,37 @@ export function cleanupSizes(context: FilesContext) {
 	);
 }
 
-/** Starts a clean-up of `items` (already checked as ids); recorded and audited once accepted. */
+/** How long an AI assistant waits for the sizes before it is told to ask again (SPEC-MCP M50). */
+const ASSISTANT_SIZING_MS = 20_000;
+
+/**
+ * The sizes for an AI assistant's tool call, which must answer within its 45 s: a refusal after
+ * 20 s rather than the Storage tab's long wait. The machine finishes measuring regardless.
+ */
+export function cleanupSizesSoon(context: FilesContext) {
+	return new Promise<Awaited<ReturnType<typeof cleanupSizes>>>((resolve) => {
+		const timer = setTimeout(() => {
+			resolve({
+				kind: 'refused',
+				status: 504,
+				message: 'The machine took too long to measure the clean-up items. Ask again in a minute.'
+			});
+		}, ASSISTANT_SIZING_MS);
+		void cleanupSizes(context).then((sizes) => {
+			clearTimeout(timer);
+			resolve(sizes);
+		});
+	});
+}
+
+/**
+ * Starts a clean-up of `items` (already checked as ids); recorded and audited once accepted.
+ * `asked` names who asked for it when a person approved an AI assistant's request; else `{}`.
+ */
 export function startCleanup(
 	context: FilesContext,
-	items: CleanupItemId[]
+	items: CleanupItemId[],
+	asked: Record<string, string>
 ): Promise<FilesOutcome<{ runId: string }>> {
 	return withChannel(context, async (channel, machine) => {
 		const runId = crypto.randomUUID();
@@ -45,7 +72,7 @@ export function startCleanup(
 		context.database.transaction((transaction) => {
 			recordCleanupStart(
 				transaction,
-				{ runId, machineId: machine.id, userId: context.user.id, items },
+				{ runId, machineId: machine.id, userId: context.user.id, items, asked },
 				Date.now()
 			);
 		});

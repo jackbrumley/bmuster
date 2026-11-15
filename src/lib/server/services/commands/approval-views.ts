@@ -1,9 +1,14 @@
-import type { ApprovalDecide, ApprovalView } from '#lib/domain/commands/assistant-runs.ts';
+import type {
+	ApprovalDecide,
+	ApprovalSummary,
+	ApprovalView
+} from '#lib/domain/commands/assistant-runs.ts';
 import { COMMAND_LIMITS } from '#lib/domain/commands/commands.ts';
 import { assistantLabel } from '#lib/domain/mcp/mcp.ts';
 import { permissionsFor } from '../access/access.ts';
 import { signInCheck } from '../auth/recent-sign-in.ts';
 import { findGrant } from '../oauth/grants.ts';
+import { listCleanupApprovals } from '../sessions/cleanup-approval-views.ts';
 import { approvalSummaries, pendingFor } from './approvers.ts';
 import { expirePendingRuns } from './assistant-pending.ts';
 import { machinePlans } from './assistant-runs.ts';
@@ -19,10 +24,16 @@ import { savedMarkOf } from './run-views.ts';
 
 type ViewContext = Pick<CommandContext, 'database' | 'runner' | 'user' | 'sessionToken' | 'now'>;
 
-/** The Approvals page: expired requests are settled first, so none is offered after its time. */
-export function listApprovals(context: ViewContext) {
+/**
+ * The Approvals page: commands and clean-ups (M54), newest first. Expired requests are settled
+ * first, so none is offered after its time.
+ */
+export function listApprovals(context: ViewContext): ApprovalSummary[] {
 	expirePendingRuns(context);
-	return approvalSummaries(context.database, pendingFor(context.database, context.user));
+	return [
+		...approvalSummaries(context.database, pendingFor(context.database, context.user)),
+		...listCleanupApprovals(context.database, context.user, context.now)
+	].sort((a, b) => b.requestedIso.localeCompare(a.requestedIso));
 }
 
 /** One pending request as its approval card shows it; undefined when this person may not see it. */

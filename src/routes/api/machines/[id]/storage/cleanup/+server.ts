@@ -19,5 +19,5 @@ export const POST: RequestHandler = route.user(async (event, { user }) => {
 	if (!parsed.success) {
 		return invalidRequest(parsed.error);
 	}
-	return filesReply(await startCleanup(filesContext(event, user), parsed.data.items));
+	return filesReply(await startCleanup(filesContext(event, user), parsed.data.items, {}));
 });
