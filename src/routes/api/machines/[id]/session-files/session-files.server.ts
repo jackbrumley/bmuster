@@ -1,4 +1,6 @@
 import type { RequestEvent } from '@sveltejs/kit';
+import { targetQuerySchema } from '#lib/schemas/session-files/session-files.ts';
+import { invalidRequest } from '../../../replies.server.ts';
 import type { ConsoleUser } from '#lib/domain/users/user.ts';
 import { database } from '#lib/server/database/app-database.ts';
 import { env } from '#lib/server/env.ts';
@@ -33,4 +35,16 @@ export function sessionFilesReply<T>(outcome: Outcome<T>): Response {
 	return outcome.kind === 'ok'
 		? Response.json(outcome.value)
 		: Response.json({ message: outcome.message }, { status: outcome.status });
+}
+
+/** The `desktopSessionId` query parameter, or the 400 reply for a bad one. */
+export function desktopSessionOf(
+	event: RequestEvent
+): { kind: 'ok'; desktopSessionId: string } | { kind: 'invalid'; reply: Response } {
+	const query = targetQuerySchema.safeParse({
+		desktopSessionId: event.url.searchParams.get('desktopSessionId') ?? ''
+	});
+	return query.success
+		? { kind: 'ok', desktopSessionId: query.data.desktopSessionId }
+		: { kind: 'invalid', reply: invalidRequest(query.error) };
 }

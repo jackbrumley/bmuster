@@ -49,8 +49,16 @@ export class SessionFileSender {
 	/** Rows put away with Clear finished; the server keeps them for its hour. */
 	readonly #cleared = new SvelteSet<string>();
 
-	constructor(api: SessionFilesApi, machineName: string, hooks: SenderHooks) {
+	readonly #sharing: () => boolean;
+
+	constructor(
+		api: SessionFilesApi,
+		machineName: string,
+		sharing: () => boolean,
+		hooks: SenderHooks
+	) {
 		this.#api = api;
+		this.#sharing = sharing;
 		this.#machineName = machineName;
 		this.#hooks = hooks;
 		this.queue = new UploadQueue(api.uploads, {
@@ -141,7 +149,7 @@ export class SessionFileSender {
 		);
 		void this.refreshRows();
 		await this.#settled(uploads);
-		const finished = await this.#api.finish(batchId);
+		const finished = await this.#api.finish(batchId, this.#sharing());
 		void this.refreshRows();
 		const results = uploads
 			.filter((upload) => upload.state.kind !== 'cancelled')
@@ -158,10 +166,15 @@ export class SessionFileSender {
 			folderLabel: target.folderLabel,
 			machine: this.#machineName
 		});
-		const clipboard =
-			finished.ok && finished.data.onClipboard
-				? " It's on the machine's clipboard: paste with Ctrl+V."
-				: '';
+		// SF20: where the saved files are besides Downloads.
+		const anySaved = results.some((result) => result.kind === 'saved');
+		const clipboard = !anySaved
+			? ''
+			: !this.#sharing()
+				? " Share clipboard is off, so they are not on the machine's clipboard."
+				: finished.ok && finished.data.onClipboard
+					? " They're on the machine's clipboard: paste with Ctrl+V."
+					: '';
 		this.#hooks.notify(notice.tone, `${notice.text}${clipboard}`);
 		// The folder or the person may have changed by the next drop.
 		this.#target = undefined;

@@ -13,7 +13,7 @@ async function setup(text = '') {
 		sent.push(message);
 	});
 	clipboard.text = text;
-	const screen = await render(ClipboardPanel, { clipboard });
+	const screen = await render(ClipboardPanel, { clipboard, getCopied: undefined });
 	const panel = screen.getByRole('region', { name: 'Clipboard' });
 	const box = panel.getByRole('textbox', { name: 'Text' });
 	return { sent, clipboard, panel, box };
@@ -111,7 +111,7 @@ describe('the clipboard panel with clipboard sharing (SPEC-DESKTOP 21.11)', () =
 		});
 		vi.spyOn(document, 'hasFocus').mockReturnValue(false);
 		await clipboard.changed('copied at the machine');
-		const screen = await render(ClipboardPanel, { clipboard });
+		const screen = await render(ClipboardPanel, { clipboard, getCopied: undefined });
 		const panel = screen.getByRole('region', { name: 'Clipboard' });
 		await expect
 			.element(panel.getByRole('heading', { name: 'To paste on the machine' }))

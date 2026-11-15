@@ -52,11 +52,14 @@ struct Atoms {
     property: Atom,
     /// Tells the owner thread to stop.
     stop: Atom,
+    /// File lists (SPEC-SESSION-FILES 4.6).
+    uri_list: Atom,
+    gnome_files: Atom,
 }
 
 impl Atoms {
     fn intern(connection: &RustConnection) -> InputResult<Atoms> {
-        let names: [&[u8]; 8] = [
+        let names: [&[u8]; 10] = [
             b"CLIPBOARD",
             b"TARGETS",
             b"UTF8_STRING",
@@ -65,6 +68,8 @@ impl Atoms {
             b"INCR",
             b"BMUSTER_CLIPBOARD",
             b"BMUSTER_CLIPBOARD_STOP",
+            b"text/uri-list",
+            b"x-special/gnome-copied-files",
         ];
         let cookies = names
             .iter()
@@ -84,6 +89,8 @@ impl Atoms {
             incr: atoms[5],
             property: atoms[6],
             stop: atoms[7],
+            uri_list: atoms[8],
+            gnome_files: atoms[9],
         })
     }
 }
@@ -159,7 +166,28 @@ impl X11Clipboard {
         let Some(owner) = self.owner.as_ref() else {
             return Err(InputError("X clipboard owner did not start".into()));
         };
-        owner.own(text.as_bytes().to_vec())
+        owner.own(Held::Text(text.as_bytes().to_vec()))
+    }
+
+    /// Makes `paths` the selection's contents as files (`text/uri-list`
+    /// and `x-special/gnome-copied-files`, SPEC-SESSION-FILES 4.6).
+    pub fn set_files(&mut self, paths: &[Vec<u8>]) -> InputResult<()> {
+        if self.owner.is_none() {
+            self.owner = Some(Owner::start(&self.target)?);
+        }
+        let Some(owner) = self.owner.as_ref() else {
+            return Err(InputError("X clipboard owner did not start".into()));
+        };
+        owner.own(Held::Files {
+            uri_list: super::files::uri_list(paths).into_bytes(),
+            gnome: super::files::gnome_copied_files(paths).into_bytes(),
+        })
+    }
+
+    /// The selection as a file list: its type and text, or `None` when it
+    /// holds no files.
+    pub fn get_files(&mut self) -> InputResult<Option<(&'static str, String)>> {
+        read_files(&self.target)
     }
 
     /// The selection's text; empty when nobody owns it or it holds no text.
@@ -168,12 +196,28 @@ impl X11Clipboard {
     }
 }
 
+/// What the owner offers: text, or a file list in both forms.
+#[derive(Clone)]
+enum Held {
+    Text(Vec<u8>),
+    Files { uri_list: Vec<u8>, gnome: Vec<u8> },
+}
+
+impl Held {
+    fn len(&self) -> usize {
+        match self {
+            Held::Text(text) => text.len(),
+            Held::Files { uri_list, gnome } => uri_list.len().max(gnome.len()),
+        }
+    }
+}
+
 /// The hidden window that owns the selection, and its answering thread.
 struct Owner {
     connection: Arc<RustConnection>,
     window: Window,
     atoms: Atoms,
-    text: Arc<Mutex<Vec<u8>>>,
+    text: Arc<Mutex<Held>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -181,7 +225,7 @@ impl Owner {
     fn start(target: &X11Target) -> InputResult<Owner> {
         let (connection, window, atoms) = open_window(target)?;
         let connection = Arc::new(connection);
-        let text = Arc::new(Mutex::new(Vec::new()));
+        let text = Arc::new(Mutex::new(Held::Text(Vec::new())));
         let thread = {
             let (connection, text) = (Arc::clone(&connection), Arc::clone(&text));
             std::thread::Builder::new()
@@ -198,7 +242,7 @@ impl Owner {
         })
     }
 
-    fn own(&self, text: Vec<u8>) -> InputResult<()> {
+    fn own(&self, text: Held) -> InputResult<()> {
         if text.len() + REQUEST_OVERHEAD > self.connection.maximum_request_bytes() {
             return Err(InputError(
                 "The text is longer than this X server accepts in one piece".into(),
@@ -245,7 +289,7 @@ impl Drop for Owner {
 
 /// The owner thread: answers requests for the selection until told to stop
 /// or the connection fails.
-fn serve(connection: &RustConnection, window: Window, atoms: Atoms, text: &Mutex<Vec<u8>>) {
+fn serve(connection: &RustConnection, window: Window, atoms: Atoms, text: &Mutex<Held>) {
     loop {
         let event = match connection.wait_for_event() {
             Ok(event) => event,
@@ -268,7 +312,7 @@ fn serve(connection: &RustConnection, window: Window, atoms: Atoms, text: &Mutex
             }
             Event::SelectionClear(clear) if clear.owner == window => {
                 // Another program copied something: forget ours.
-                text.lock().unwrap_or_else(PoisonError::into_inner).clear();
+                *text.lock().unwrap_or_else(PoisonError::into_inner) = Held::Text(Vec::new());
             }
             _ => {}
         }
@@ -280,9 +324,15 @@ fn serve(connection: &RustConnection, window: Window, atoms: Atoms, text: &Mutex
 fn answer(
     connection: &RustConnection,
     atoms: Atoms,
-    text: &[u8],
+    held: &Held,
     request: &SelectionRequestEvent,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if let Held::Files { uri_list, gnome } = held {
+        return answer_files(connection, atoms, uri_list, gnome, request);
+    }
+    let Held::Text(text) = held else {
+        return Ok(());
+    };
     // Obsolete clients leave the property out; ICCCM says use the target.
     let property = if request.property == NONE {
         request.target
@@ -343,6 +393,87 @@ fn answer(
     connection.send_event(false, request.requestor, EventMask::NO_EVENT, notify)?;
     connection.flush()?;
     Ok(())
+}
+
+/// Answers a request while the owner holds a file list.
+fn answer_files(
+    connection: &RustConnection,
+    atoms: Atoms,
+    uri_list: &[u8],
+    gnome: &[u8],
+    request: &SelectionRequestEvent,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let property = if request.property == NONE {
+        request.target
+    } else {
+        request.property
+    };
+    let target = request.target;
+    let fits =
+        uri_list.len().max(gnome.len()) + REQUEST_OVERHEAD <= connection.maximum_request_bytes();
+    let answered = if request.selection != atoms.clipboard {
+        false
+    } else if target == atoms.targets {
+        connection.change_property32(
+            PropMode::REPLACE,
+            request.requestor,
+            property,
+            AtomEnum::ATOM,
+            &[atoms.targets, atoms.uri_list, atoms.gnome_files],
+        )?;
+        true
+    } else if fits && (target == atoms.uri_list || target == atoms.gnome_files) {
+        let bytes = if target == atoms.uri_list {
+            uri_list
+        } else {
+            gnome
+        };
+        connection.change_property8(
+            PropMode::REPLACE,
+            request.requestor,
+            property,
+            target,
+            bytes,
+        )?;
+        true
+    } else {
+        false
+    };
+    let notify = SelectionNotifyEvent {
+        response_type: SELECTION_NOTIFY_EVENT,
+        sequence: 0,
+        time: request.time,
+        requestor: request.requestor,
+        selection: request.selection,
+        target,
+        property: if answered { property } else { NONE },
+    };
+    connection.send_event(false, request.requestor, EventMask::NO_EVENT, notify)?;
+    connection.flush()?;
+    Ok(())
+}
+
+/// Reads the selection as a file list, `text/uri-list` first.
+fn read_files(target: &X11Target) -> InputResult<Option<(&'static str, String)>> {
+    let (connection, window, atoms) = open_window(target)?;
+    let owner = connection
+        .get_selection_owner(atoms.clipboard)
+        .map_err(failed("finding the owner"))?
+        .reply()
+        .map_err(failed("finding the owner"))?
+        .owner;
+    if owner == NONE {
+        return Ok(None);
+    }
+    for (form, mime) in [
+        (atoms.uri_list, super::files::URI_LIST),
+        (atoms.gnome_files, super::files::GNOME_COPIED_FILES),
+    ] {
+        if let Some(bytes) = convert(&connection, window, atoms, form)? {
+            return Ok(Some((mime, String::from_utf8_lossy(&bytes).into_owned())));
+        }
+    }
+    Ok(None)
 }
 
 /// UTF-8 as ISO Latin-1 (the `STRING` form): characters past U+00FF become `?`.

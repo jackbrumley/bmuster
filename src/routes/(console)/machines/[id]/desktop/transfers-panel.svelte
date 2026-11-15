@@ -66,14 +66,17 @@
 							value={sender.sentFor(row)}
 							aria-label="Sending {row.name}"
 						></progress>
-						<Button
-							variant="secondary"
-							size="compact"
-							type="button"
-							onclick={() => {
-								sender.cancel(row.id);
-							}}>Cancel</Button
-						>
+						{#if row.direction === 'to-machine'}
+							<!-- A download is cancelled in the browser's own download manager. -->
+							<Button
+								variant="secondary"
+								size="compact"
+								type="button"
+								onclick={() => {
+									sender.cancel(row.id);
+								}}>Cancel</Button
+							>
+						{/if}
 					{/if}
 					<span class="result" class:failed={row.state.kind === 'failed'}>{result(row)}</span>
 				</li>

@@ -272,7 +272,7 @@
 	{/if}
 
 	{#if clipboardOpen && clipboardShown && session !== undefined}
-		<ClipboardPanel clipboard={session.clipboard} />
+		<ClipboardPanel clipboard={session.clipboard} getCopied={undefined} />
 	{/if}
 
 	<div

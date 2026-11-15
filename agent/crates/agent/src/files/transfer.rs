@@ -67,7 +67,7 @@ impl Credit {
 
     /// Up to `want` bytes the read may send now; waits for an ack when it
     /// may send none. None: cancelled, stopped, or the server went quiet.
-    fn take(&self, want: u64, stop: &AtomicBool) -> Option<u64> {
+    pub(crate) fn take(&self, want: u64, stop: &AtomicBool) -> Option<u64> {
         let until = Instant::now() + ACK_WAIT;
         let mut state = lock(&self.state);
         loop {

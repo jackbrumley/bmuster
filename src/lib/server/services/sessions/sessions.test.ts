@@ -341,7 +341,8 @@ describe('desktop tickets (SPEC-DESKTOP R2, R3)', () => {
 			openDesktopSession(database, relay, SECRETS_KEY, admin, machineId, request, 'ip', NOW);
 		expect(open(CONTROL).kind).toBe('opened');
 		expect(lastTicket(sent)).toMatchObject({
-			permissions: ['desktop-view', 'desktop-control'],
+			// SPEC-SESSION-FILES 3.4: a control ticket names files when the person has it.
+			permissions: ['desktop-view', 'desktop-control', 'files'],
 			purpose: { kind: 'desktop', consent: 'unattended', notice: true }
 		});
 		updateSetting(database, admin.id, 'connectedNotice', false, NOW);

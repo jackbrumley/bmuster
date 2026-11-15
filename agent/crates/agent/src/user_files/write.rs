@@ -259,6 +259,14 @@ impl Sends {
         }
     }
 
+    /// Where the transfers were saved, for the clipboard; unknown ids are left out.
+    pub fn saved_paths(&self, transfer_ids: &[String]) -> Vec<std::path::PathBuf> {
+        self.saved_names(transfer_ids)
+            .into_iter()
+            .map(|name| self.folder.path().join(name))
+            .collect()
+    }
+
     /// The names the transfers were saved as, in order; unknown ids are left out.
     pub fn saved_names(&self, transfer_ids: &[String]) -> Vec<String> {
         transfer_ids

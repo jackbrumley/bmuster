@@ -4,11 +4,13 @@
 		IconDeviceDesktop,
 		IconEye,
 		IconPlugConnectedX,
+		IconDownload,
 		IconUpload,
 		IconX
 	} from '@tabler/icons-svelte-runes';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 	import Button from '#lib/ui/button.svelte';
+	import type { SheetFiles } from './desktop-files.svelte.ts';
 	import type { TouchMode } from './touch-gestures.ts';
 	import TouchInputChoice from './touch-input-choice.svelte';
 
@@ -26,7 +28,7 @@
 		onswitch,
 		onexit,
 		ondisconnect,
-		onupload
+		files
 	}: {
 		/** Undefined while no session runs: then only the exit action shows. */
 		mode: DesktopMode | undefined;
@@ -37,8 +39,8 @@
 		onswitch: (mode: DesktopMode) => void;
 		onexit: () => void;
 		ondisconnect: () => void;
-		/** Upload files (SPEC-SESSION-FILES 3.1), when sending is allowed. */
-		onupload: (() => void) | undefined;
+		/** Upload files and Download N files (SPEC-SESSION-FILES), when sending is allowed. */
+		files: SheetFiles | undefined;
 	} = $props();
 
 	const control = $derived(mode === 'control');
@@ -67,10 +69,15 @@
 			}}>{control ? 'Switch to view only' : 'Take control'}</Button
 		>
 	{/if}
-	{#if onupload !== undefined}
-		<Button variant="secondary" size="compact" type="button" onclick={onupload}
+	{#if files !== undefined}
+		<Button variant="secondary" size="compact" type="button" onclick={files.upload}
 			><IconUpload size={18} /> Upload files</Button
 		>
+		{#if files.download !== undefined}
+			<Button variant="secondary" size="compact" type="button" onclick={files.download.run}
+				><IconDownload size={18} /> {files.download.label}</Button
+			>
+		{/if}
 	{/if}
 	<Button variant="secondary" size="compact" type="button" onclick={onexit}
 		>{#if exit === 'window'}<IconX size={18} /> Close window{:else}<IconArrowsMinimize size={18} /> Leave
