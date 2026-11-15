@@ -4,6 +4,7 @@ import { hasPermission, type Grant } from '#lib/domain/access/access.ts';
 import {
 	MAX_FILES_PER_DROP,
 	sizeText,
+	type ClipboardOffer,
 	type SendTarget,
 	type SessionFileErrorCode,
 	type TransferRow
@@ -15,7 +16,8 @@ import {
 	agentSessionFilesReplySchema,
 	agentTargetSchema,
 	partReplySchema as partSchema,
-	sendFinishReplySchema as finishedSchema
+	sendFinishReplySchema as finishedSchema,
+	agentOfferSchema
 } from '#lib/schemas/session-files/session-files.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { permissionsFor } from '../access/access.ts';
@@ -43,9 +45,19 @@ type SessionFilesOp =
 	| { op: 'send-chunk'; transferId: string; offset: number }
 	| { op: 'send-end'; transferId: string; size: number; sha256: string }
 	| { op: 'send-cancel'; transferId: string }
-	| { op: 'send-finish'; batchId: string; transferIds: string[]; sender: string };
+	| {
+			op: 'send-finish';
+			batchId: string;
+			transferIds: string[];
+			sender: string;
+			clipboard: boolean;
+	  }
+	// Phase 2: the files copied on the machine.
+	| { op: 'offer' }
+	| { op: 'offer-stat'; offerId: string }
+	| { op: 'offer-read'; offerId: string; entry: number; offset: number; length: number };
 
-type SessionFilesChannel = Channel<SessionFilesOp, SessionFileErrorCode>;
+export type SessionFilesChannel = Channel<SessionFilesOp, SessionFileErrorCode>;
 export type SessionFilesChannels = Channels<SessionFilesOp, SessionFileErrorCode>;
 
 export type SessionFilesContext = {
@@ -63,9 +75,9 @@ export type SessionFilesContext = {
 type Refusal = { kind: 'refused'; status: number; message: string };
 export type Outcome<T> = { kind: 'ok'; value: T } | Refusal;
 
-const ANSWER_MS = { quick: 30_000, chunk: 120_000, slow: 15 * 60_000 } as const;
+export const ANSWER_MS = { quick: 30_000, chunk: 120_000, slow: 15 * 60_000 } as const;
 
-function refused(status: number, message: string): Refusal {
+export function refused(status: number, message: string): Refusal {
 	return { kind: 'refused', status, message };
 }
 
@@ -84,7 +96,12 @@ function statusFor(code: SessionFileErrorCode): number {
 		case 'offset':
 			return 412;
 		case 'mismatch':
+		case 'not-local':
 			return 422;
+		case 'gone':
+			return 410;
+		case 'changed':
+			return 409;
 		case 'no-space':
 		case 'quota':
 			return 507;
@@ -95,7 +112,7 @@ function statusFor(code: SessionFileErrorCode): number {
 	}
 }
 
-type Allowed = { machineName: string; grants: Grant[] };
+export type Allowed = { machineName: string; grants: Grant[] };
 
 /** SF1: who may send files, checked on every request. */
 function allowed(context: SessionFilesContext, desktopSessionId: string): Outcome<Allowed> {
@@ -150,7 +167,7 @@ function channelFor(
 	return { kind: 'ok', value: found.channel };
 }
 
-async function withChannel<T>(
+export async function withChannel<T>(
 	context: SessionFilesContext,
 	desktopSessionId: string,
 	work: (channel: SessionFilesChannel, access: Allowed) => Promise<Outcome<T>>
@@ -167,7 +184,7 @@ async function withChannel<T>(
 }
 
 /** The agent's answer read with `schema`, or the refusal (machine-named where it helps). */
-function outcomeOf<T>(
+export function outcomeOf<T>(
 	answer: AgentAnswer<SessionFileErrorCode>,
 	schema: z.ZodType<T>,
 	machineName: string
@@ -176,7 +193,9 @@ function outcomeOf<T>(
 		const message =
 			answer.code === 'nobody'
 				? `Nobody is signed in on ${machineName}, so there is no Downloads folder to send to.`
-				: answer.message;
+				: answer.code === 'gone'
+					? "Those files are no longer on the machine's clipboard. Copy them again."
+					: answer.message;
 		return refused(statusFor(answer.code), message);
 	}
 	const parsed = schema.safeParse(answer.result);
@@ -425,7 +444,9 @@ export async function cancelSend(
 /** The drop is over: the tray notice for what was saved (phase 2: the clipboard too). */
 export function finishSend(
 	context: SessionFilesContext,
-	batchId: string
+	batchId: string,
+	/** Share clipboard is on in the viewer's session: the files go on the clipboard too (SF20). */
+	shareClipboard: boolean
 ): Promise<Outcome<{ onClipboard: boolean }>> {
 	const batch = context.transfers.inBatch(context.user.id, batchId);
 	const first = batch[0];
@@ -443,13 +464,41 @@ export function finishSend(
 					op: 'send-finish',
 					batchId,
 					transferIds: saved.map((transfer) => transfer.id),
-					sender: context.user.name
+					sender: context.user.name,
+					clipboard: shareClipboard
 				},
 				ANSWER_MS.quick
 			),
 			finishedSchema,
 			access.machineName
 		);
+	});
+}
+
+/**
+ * The files copied on the machine now (SF22, SF27), asked while Share clipboard is on or by Get
+ * copied files. Names, kinds and sizes only; the agent keeps the paths.
+ */
+export function clipboardOffer(
+	context: SessionFilesContext,
+	desktopSessionId: string
+): Promise<Outcome<ClipboardOffer>> {
+	return withChannel<ClipboardOffer>(context, desktopSessionId, async (channel, access) => {
+		const answer = outcomeOf(
+			await channel.ask({ op: 'offer' }, ANSWER_MS.quick),
+			agentOfferSchema,
+			access.machineName
+		);
+		if (answer.kind === 'refused') {
+			return answer.status === 409 || answer.status === 422
+				? { kind: 'ok', value: { kind: 'refused', message: answer.message } }
+				: answer;
+		}
+		const offer = answer.value.offer;
+		return {
+			kind: 'ok',
+			value: offer === null ? { kind: 'none' } : { kind: 'offer', ...offer }
+		};
 	});
 }
 

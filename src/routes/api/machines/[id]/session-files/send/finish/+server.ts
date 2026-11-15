@@ -11,5 +11,11 @@ export const POST: RequestHandler = route.user(async (event, { user }) => {
 	if (!parsed.success) {
 		return invalidRequest(parsed.error);
 	}
-	return sessionFilesReply(await finishSend(sessionFilesContext(event, user), parsed.data.batchId));
+	return sessionFilesReply(
+		await finishSend(
+			sessionFilesContext(event, user),
+			parsed.data.batchId,
+			parsed.data.shareClipboard
+		)
+	);
 });

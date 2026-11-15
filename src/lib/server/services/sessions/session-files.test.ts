@@ -1,19 +1,19 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ConsoleUser } from '#lib/domain/users/user.ts';
 import { grantAccess } from '#tests/helpers/access.ts';
-import { enrolFakeAgent, testDatabase } from '#tests/helpers/fake-agent.ts';
-import { SECRETS_KEY, sha256 } from '#tests/helpers/files-agent.ts';
-import { addTestUser, NOW } from '#tests/helpers/people.ts';
+import { sha256 } from '#tests/helpers/files-agent.ts';
+import { NOW } from '#tests/helpers/people.ts';
+import {
+	disconnectSessionFilesAgents,
+	fakeAgent,
+	setUp
+} from '#tests/helpers/session-files-agent.ts';
 import { deleteRule } from '../access/rules.ts';
-import { agentConnected, agentDisconnected, type LivePeer } from '../agents/live-agents.ts';
 import { listAudit } from '../audit/audit.ts';
 import { updateSetting } from '../settings/settings.ts';
-import { toConsoleUser } from '../users/users.ts';
-import { createRelay, RELAY_LIMITS, type Relay, type RelayPeer } from './relay.ts';
 import {
 	beginSend,
 	cancelSend,
-	createSessionFilesChannels,
+	clipboardOffer,
 	endSend,
 	finishSend,
 	listTransfers,
@@ -21,177 +21,11 @@ import {
 	sendTarget,
 	type SessionFilesContext
 } from './session-files.ts';
-import { createTransferStore } from './session-files-transfers.ts';
+import { downloadOffer } from './session-files-download.ts';
 
 // SPEC-SESSION-FILES: files sent through a desktop session, on the server.
 
-const disconnects: (() => void)[] = [];
-afterEach(() => {
-	for (const disconnect of disconnects.splice(0)) disconnect();
-});
-
-type Request = { id: number; op: string } & Record<string, unknown>;
-
-/** A pretend agent and user files helper: a little Downloads/BMuster in memory. */
-function fakeAgent(relay: Relay, machineId: string) {
-	const requests: Request[] = [];
-	const tickets: Record<string, unknown>[] = [];
-	const saved = new Map<string, Uint8Array>();
-	const parts = new Map<string, Uint8Array>();
-	const names = new Map<string, string>();
-	const state = { screen: 'person' as 'person' | 'locked' | 'nobody' };
-	let sessionId = '';
-	let chunkFor: Request | undefined;
-	const done = (id: number, result: unknown): void => {
-		relay.agentText(sessionId, peer, JSON.stringify({ type: 'done', id, result }));
-	};
-	const refuse = (id: number, code: string, message: string): void => {
-		relay.agentText(sessionId, peer, JSON.stringify({ type: 'error', id, code, message }));
-	};
-	const free = (name: string): string => {
-		let candidate = name;
-		for (let n = 2; saved.has(candidate); n += 1) candidate = `${name} (${n})`;
-		return candidate;
-	};
-	function handle(request: Request): void {
-		const { id } = request;
-		const transferId = String(request['transferId']);
-		if (state.screen !== 'person' && (request.op === 'target' || request.op === 'send-begin')) {
-			refuse(
-				id,
-				state.screen,
-				state.screen === 'locked'
-					? 'The machine is locked. Unlock it, then send the files again.'
-					: 'Nobody is signed in on this machine.'
-			);
-			return;
-		}
-		switch (request.op) {
-			case 'target':
-				done(id, { user: 'kim', folderLabel: 'Downloads/BMuster', free: 50 * 1024 ** 3 });
-				return;
-			case 'send-begin':
-				names.set(transferId, String(request['name']));
-				done(id, { partSize: parts.get(transferId)?.byteLength ?? 0 });
-				return;
-			case 'send-end': {
-				const part = parts.get(transferId) ?? new Uint8Array();
-				if (sha256(part) !== request['sha256']) {
-					refuse(id, 'mismatch', 'report.pdf arrived changed on the way. Send it again.');
-					return;
-				}
-				const savedAs = free(names.get(transferId) ?? '');
-				saved.set(savedAs, part);
-				done(id, { savedAs, size: part.byteLength, sha256: sha256(part) });
-				return;
-			}
-			case 'send-cancel':
-				parts.delete(transferId);
-				done(id, {});
-				return;
-			case 'send-finish':
-				done(id, { onClipboard: false });
-				return;
-			default:
-				return;
-		}
-	}
-	const peer: RelayPeer = {
-		sendText: (text) => {
-			const request = JSON.parse(text) as Request;
-			requests.push(request);
-			if (request.op === 'send-chunk') {
-				chunkFor = request;
-				return;
-			}
-			queueMicrotask(() => {
-				handle(request);
-			});
-		},
-		sendBytes: (data, sent) => {
-			sent();
-			const request = chunkFor;
-			chunkFor = undefined;
-			if (request === undefined) return;
-			const key = String(request['transferId']);
-			const before = parts.get(key) ?? new Uint8Array();
-			const after = new Uint8Array(before.byteLength + data.byteLength - 4);
-			after.set(before);
-			after.set(data.subarray(4), before.byteLength);
-			parts.set(key, after);
-			queueMicrotask(() => {
-				done(request.id, { partSize: after.byteLength });
-			});
-		},
-		pause: () => undefined,
-		resume: () => undefined,
-		close: () => undefined
-	};
-	const live: LivePeer = {
-		send: (message) => {
-			if (message.type === 'session-open') {
-				const ticket = JSON.parse(Buffer.from(message.ticket, 'base64').toString('utf8')) as {
-					sessionId: string;
-				} & Record<string, unknown>;
-				tickets.push(ticket);
-				sessionId = ticket.sessionId;
-				relay.attachAgent(sessionId, machineId, peer);
-			}
-		},
-		close: () => undefined
-	};
-	agentConnected(machineId, live);
-	disconnects.push(() => {
-		agentDisconnected(machineId, live);
-	});
-	return { requests, tickets, saved, state };
-}
-
-async function setUp() {
-	const database = testDatabase();
-	const admin = toConsoleUser(
-		await addTestUser(database, { email: 'ada@example.com', role: 'admin', password: null })
-	);
-	const pat = toConsoleUser(
-		await addTestUser(database, { email: 'pat@example.com', role: 'member', password: null })
-	);
-	const machineId = enrolFakeAgent(database, NOW).machineId;
-	const relay = createRelay(RELAY_LIMITS);
-	const channels = createSessionFilesChannels(relay, { idleMs: 60_000 });
-	const transfers = createTransferStore();
-	const context = (user: ConsoleUser): SessionFilesContext => ({
-		database,
-		relay,
-		channels,
-		transfers,
-		secretsKey: SECRETS_KEY,
-		user,
-		machineId,
-		ip: '192.0.2.7',
-		now: NOW
-	});
-	/** A desktop session of `user` on the machine, as the relay holds it. */
-	const desktop = (user: ConsoleUser, mode: 'control' | 'watch'): string => {
-		const id = crypto.randomUUID();
-		relay.start(
-			{
-				id,
-				machineId,
-				userId: user.id,
-				userName: user.name,
-				viewer: { kind: 'user' },
-				kind: 'desktop',
-				mode,
-				ip: '192.0.2.7',
-				openedAt: NOW
-			},
-			() => undefined,
-			() => undefined
-		);
-		return id;
-	};
-	return { database, admin, pat, machineId, relay, context, desktop };
-}
+afterEach(disconnectSessionFilesAgents);
 
 const BATCH = '0f0e0d0c-0b0a-4908-8706-050403020100';
 
@@ -362,12 +196,16 @@ describe('sending', () => {
 		});
 		if (cancelled.kind !== 'ok') throw new Error('not begun');
 		await cancelSend(context(admin), cancelled.value.transferId);
-		expect(await finishSend(context(admin), BATCH)).toEqual({
+		expect(await finishSend(context(admin), BATCH, true)).toEqual({
 			kind: 'ok',
-			value: { onClipboard: false }
+			value: { onClipboard: true }
 		});
 		const finish = agent.requests.find((request) => request.op === 'send-finish');
-		expect(finish).toMatchObject({ transferIds: [transferId], sender: admin.name });
+		expect(finish).toMatchObject({
+			transferIds: [transferId],
+			sender: admin.name,
+			clipboard: true
+		});
 
 		const entries = listAudit(database, 50).filter((entry) => entry.kind === 'desktop-files');
 		expect(entries).toHaveLength(2);
@@ -425,6 +263,81 @@ describe('sending', () => {
 			listAudit(database, 10).find((entry) => entry.kind === 'desktop-files')?.detail
 		).toMatchObject({
 			completed: 'no'
+		});
+	});
+});
+
+describe('files copied on the machine', () => {
+	const OFFER = '0123456789abcdef0123456789abcdef';
+
+	it("SF26: offers need files and control and the person's own control session, checked on every request", async () => {
+		const { database, admin, pat, machineId, relay, context, desktop } = await setUp();
+		const agent = fakeAgent(relay, machineId);
+		agent.copied.offerId = OFFER;
+		agent.copied.files = [{ path: 'report.pdf', data: new Uint8Array([1, 2, 3]) }];
+		const watching = desktop(pat, 'watch');
+		const { ruleId } = grantAccess(database, {
+			adminId: admin.id,
+			name: 'Helpdesk',
+			memberIds: [pat.id],
+			machineIds: [machineId],
+			permissions: ['view', 'desktop-view', 'desktop-control'],
+			consent: 'unattended'
+		});
+		const mine = desktop(pat, 'control');
+		// Control without files: refused.
+		expect(await clipboardOffer(context(pat), mine)).toMatchObject({
+			kind: 'refused',
+			status: 403
+		});
+		deleteRule(database, admin.id, ruleId, NOW);
+		grantAccess(database, {
+			adminId: admin.id,
+			name: 'Helpdesk with files',
+			memberIds: [pat.id],
+			machineIds: [machineId],
+			permissions: ['view', 'files', 'desktop-view', 'desktop-control'],
+			consent: 'unattended'
+		});
+		// A watch-only session never gets an offer.
+		expect(await clipboardOffer(context(pat), watching)).toMatchObject({
+			kind: 'refused',
+			status: 409
+		});
+		expect(agent.requests.filter((request) => request.op === 'offer')).toHaveLength(0);
+		expect(await clipboardOffer(context(pat), mine)).toEqual({
+			kind: 'ok',
+			value: {
+				kind: 'offer',
+				offerId: OFFER,
+				items: [{ name: 'report.pdf', kind: 'file', size: 3 }],
+				count: 1,
+				totalBytes: 3
+			}
+		});
+	});
+
+	it('SF28: downloading an offer that has ended says to copy again', async () => {
+		const { admin, machineId, relay, context, desktop } = await setUp();
+		const agent = fakeAgent(relay, machineId);
+		agent.copied.offerId = OFFER;
+		agent.copied.files = [{ path: 'report.pdf', data: new Uint8Array([1]) }];
+		const mine = desktop(admin, 'control');
+		// A new copy replaced it.
+		agent.copied.offerId = 'ffffffffffffffffffffffffffffffff';
+		expect(
+			await downloadOffer(context(admin), {
+				desktopSessionId: mine,
+				offerId: OFFER,
+				method: 'GET',
+				range: null,
+				ifRange: null,
+				zipName: 'PC files.zip'
+			})
+		).toEqual({
+			kind: 'refused',
+			status: 410,
+			message: "Those files are no longer on the machine's clipboard. Copy them again."
 		});
 	});
 });

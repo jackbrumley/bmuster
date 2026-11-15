@@ -242,8 +242,15 @@ export function openDesktopSession(
 		record,
 		machine.name,
 		{
+			// A control session with `files` names it too: files through the screen (SPEC-SESSION-FILES 3.4).
 			permissions:
-				request.mode === 'control' ? ['desktop-view', 'desktop-control'] : ['desktop-view'],
+				request.mode === 'control'
+					? [
+							'desktop-view',
+							'desktop-control',
+							...(grants.some((held) => held.permission === 'files') ? ['files'] : [])
+						]
+					: ['desktop-view'],
 			purpose: {
 				kind: 'desktop',
 				consent: grant.consent,

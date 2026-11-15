@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import {
+	type ClipboardOffer,
 	SESSION_FILE_ERROR_CODES,
 	type SendTarget,
 	type TransferRow
@@ -81,7 +82,7 @@ export const sendCancelRequestSchema = z.object({ transferId: id });
 export const emptyReplySchema = z.object({});
 
 /** `POST …/session-files/send/finish` */
-export const sendFinishRequestSchema = z.object({ batchId: id });
+export const sendFinishRequestSchema = z.object({ batchId: id, shareClipboard: z.boolean() });
 
 export const sendFinishReplySchema = z.object({ onClipboard: z.boolean() });
 
@@ -125,3 +126,49 @@ export const agentSavedSchema = z.object({
 	size: bytes,
 	sha256: z.string().regex(/^[0-9a-f]{64}$/)
 });
+
+const offerItemSchema = z.object({
+	name: z.string().max(1024),
+	kind: z.enum(['file', 'folder']),
+	size: bytes
+});
+
+/** The offer's id: 128 random bits, hex. */
+export const offerIdSchema = z.string().regex(/^[0-9a-f]{32}$/);
+
+export const agentOfferSchema = z.object({
+	offer: z
+		.object({
+			offerId: offerIdSchema,
+			items: z.array(offerItemSchema).max(1000),
+			count: z.int().min(0),
+			totalBytes: bytes
+		})
+		.nullable()
+});
+
+/** `GET …/session-files/offer?desktopSessionId=` */
+export const clipboardOfferSchema: z.ZodType<ClipboardOffer> = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('none') }),
+	z.object({
+		kind: z.literal('offer'),
+		offerId: offerIdSchema,
+		items: z.array(offerItemSchema),
+		count: z.int().min(0),
+		totalBytes: bytes
+	}),
+	z.object({ kind: z.literal('refused'), message: z.string() })
+]);
+
+export const agentWalkSchema = z.object({
+	entries: z
+		.array(z.object({ path: z.string().max(8192), size: bytes, modifiedMs: bytes }))
+		.max(10_000),
+	skipped: z.array(z.object({ path: z.string().max(8192), reason: z.string().max(1000) })),
+	single: z.boolean()
+});
+
+export const agentReadDoneSchema = z.object({ bytes });
+
+/** `GET …/session-files/offers/<offerId>/download?desktopSessionId=` */
+export const offerDownloadQuerySchema = z.object({ desktopSessionId: id, offerId: offerIdSchema });

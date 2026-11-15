@@ -23,7 +23,10 @@ export const SESSION_FILE_ERROR_CODES = [
 	'mismatch',
 	'too-big',
 	'busy',
-	'io'
+	'io',
+	'gone',
+	'changed',
+	'not-local'
 ] as const;
 
 export type SessionFileErrorCode = (typeof SESSION_FILE_ERROR_CODES)[number];
@@ -32,6 +35,23 @@ export type SessionFileErrorCode = (typeof SESSION_FILE_ERROR_CODES)[number];
 export type SendTarget =
 	| { kind: 'ready'; user: string; folderLabel: string; free: number }
 	| { kind: 'refused'; message: string };
+
+/** One copied item the viewer may download: a name, never a path. */
+export type OfferItem = { name: string; kind: 'file' | 'folder'; size: number };
+
+/** What is copied on the machine (SPEC-SESSION-FILES 3.2). */
+export type ClipboardOffer =
+	| { kind: 'none' }
+	| { kind: 'offer'; offerId: string; items: OfferItem[]; count: number; totalBytes: number }
+	| { kind: 'refused'; message: string };
+
+/** "Download report.pdf", or "Download 3 files". */
+export function downloadLabel(offer: { items: readonly OfferItem[]; count: number }): string {
+	const only = offer.items[0];
+	return offer.count === 1 && only?.kind === 'file'
+		? `Download ${only.name}`
+		: `Download ${offer.count} ${offer.count === 1 ? 'item' : 'files'}`;
+}
 
 export type TransferDirection = 'to-machine' | 'from-machine';
 
