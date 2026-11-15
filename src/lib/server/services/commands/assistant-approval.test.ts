@@ -79,8 +79,16 @@ describe('who may approve (SPEC-MCP M19)', () => {
 	it('M19: requester-or-group and group-only add or replace the approvers group', async () => {
 		const { database, people, consoleAs, runId, clock } = await requested();
 		const groupId = adaApproves({ database, people, clock });
-		expect(listApprovals(consoleAs('admin')).map((approval) => approval.runId)).toEqual([runId]);
-		expect(listApprovals(consoleAs('pat')).map((approval) => approval.runId)).toEqual([runId]);
+		expect(
+			listApprovals(consoleAs('admin')).map((approval) =>
+				approval.kind === 'command' ? approval.runId : approval.requestId
+			)
+		).toEqual([runId]);
+		expect(
+			listApprovals(consoleAs('pat')).map((approval) =>
+				approval.kind === 'command' ? approval.runId : approval.requestId
+			)
+		).toEqual([runId]);
 		writeApproverSettings(database, people.admin.id, { mode: 'group-only', groupId }, clock.now);
 		expect(listApprovals(consoleAs('pat'))).toEqual([]);
 		expect(await approveRun(consoleAs('pat'), runId, asAsked('uptime', 60_000, 1))).toMatchObject({

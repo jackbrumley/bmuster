@@ -261,9 +261,13 @@
 				return IconHandStop;
 			case 'mcp-tool-called':
 			case 'command-run-requested':
+			case 'storage-cleanup-requested':
 				return IconRobot;
 			case 'command-run-denied':
 			case 'command-run-expired':
+			case 'storage-cleanup-denied':
+			case 'storage-cleanup-expired':
+			case 'storage-cleanup-withdrawn':
 				return IconHandStop;
 			case 'saved-command-created':
 			case 'saved-command-changed':

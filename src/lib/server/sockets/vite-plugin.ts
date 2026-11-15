@@ -14,6 +14,9 @@ export function webSockets(): Plugin {
 		name: 'bmuster-web-sockets',
 		configureServer(server) {
 			if (server.config.mode === 'test' || server.httpServer === null) {
+				// Vitest's browser runs serve plain HTTP and no sockets. Pages still ask what is
+				// served (the security headers hook, SPEC-SIGN-IN S20), so say so.
+				registerServedCertificate({ kind: 'plain' });
 				return;
 			}
 			registerServedCertificate(devCertificate(server.config.server.https?.cert));
