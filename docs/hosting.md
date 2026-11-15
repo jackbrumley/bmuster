@@ -156,6 +156,8 @@ Add a proxy host:
 
 ## 7. Locked out: host commands
 
+The same steps, in plain words for people who aren't hosting experts, are in the public [questions and answers](https://bmuster.com/faq#getting-back-in).
+
 Two commands get an admin back in. They run on the server's machine, against its database, as someone who can already read the database and `SECRETS_KEY`. Both are recorded on the Activity page with the actor _System_. The server can keep running: SQLite lets both write, and the change applies to the next sign-in.
 
 | Command                                | Does                                                                                                                                                                                                                              |

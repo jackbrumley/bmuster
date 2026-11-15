@@ -19,6 +19,9 @@ export type GuideAssistant = (typeof GUIDE_ASSISTANTS)[number];
 /** The public guide, linked from the help panel. */
 export const FULL_GUIDE_URL = 'https://bmuster.com/ai-assistants';
 
+/** Common questions: approvals, saved commands, getting back in (bmuster.com/faq). */
+export const FAQ_URL = 'https://bmuster.com/faq';
+
 export function guideAssistantLabel(assistant: GuideAssistant): string {
 	switch (assistant) {
 		case 'claude-code':

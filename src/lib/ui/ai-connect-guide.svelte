@@ -1,5 +1,6 @@
 <script lang="ts">
 	import {
+		FAQ_URL,
 		FULL_GUIDE_URL,
 		GUIDE_ASSISTANTS,
 		guideAssistantLabel,
@@ -55,7 +56,9 @@
 </ul>
 <p>
 	<a href={FULL_GUIDE_URL} target="_blank" rel="external noopener noreferrer">Full guide</a>, with
-	the steps for admins, on bmuster.com.
+	the steps for admins, and
+	<a href={FAQ_URL} target="_blank" rel="external noopener noreferrer">questions and answers</a>
+	(approvals, saved commands) on bmuster.com.
 </p>
 
 <style>
