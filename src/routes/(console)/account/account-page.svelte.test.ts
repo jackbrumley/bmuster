@@ -50,7 +50,8 @@ function renderAccount(grants: GrantView[]) {
 			serverUrl: 'https://bmuster.example.com/mcp',
 			grants,
 			origin: 'https://bmuster.example.com',
-			twoFactor: { kind: 'off', required: false }
+			twoFactor: { kind: 'off', required: false },
+			otherSessions: 0
 		}
 	});
 }

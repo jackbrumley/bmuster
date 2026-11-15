@@ -130,7 +130,9 @@ const PAGES: readonly PhonePage[] = [
 							sinceIso: new Date(NOW - 86_400_000).toISOString(),
 							recoveryCodesLeft: 2,
 							required: false
-						}
+						},
+						// SPEC-SIGN-IN S21: the count and Sign out everywhere else, at phone width.
+						otherSessions: 12
 					}
 				},
 				IN_CONSOLE
