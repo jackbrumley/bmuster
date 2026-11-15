@@ -5,7 +5,7 @@ import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import '#lib/ui/design-tokens.css';
 import { openPopOut } from './desktop-test-harness.ts';
 
-// SPEC-DESKTOP-FLOATING FB3, FB4, FB5, FB7, FB11, FB13: the floating bar and the button it collapses into,
+// SPEC-DESKTOP-FLOATING FB3, FB4, FB5, FB7, FB11, FB13, FB14: the floating bar and the button it collapses into,
 // tried in the pop-out window, whose size the test sets.
 
 const SESSION = '77777777-7777-4777-8777-777777777777';
@@ -85,6 +85,22 @@ function dragHandle(handle: Locator, x: number, y: number): void {
 	mouse(handle.element(), 'pointermove', start.x + 20, start.y + 20);
 	mouse(handle.element(), 'pointermove', x, y);
 	mouse(handle.element(), 'pointerup', x, y);
+}
+
+/** The keys the machine got, as `+Code` for a press and `-Code` for a release. */
+function keyMessages(socket: FakeSocket): string[] {
+	return socket
+		.messages()
+		.flatMap((message) =>
+			typeof message === 'object' &&
+			message !== null &&
+			'type' in message &&
+			message.type === 'key' &&
+			'code' in message &&
+			'down' in message
+				? [`${message.down === true ? '+' : '-'}${String(message.code)}`]
+				: []
+		);
 }
 
 function pointerMessages(socket: FakeSocket): unknown[] {
@@ -214,6 +230,45 @@ describe('the floating bar', () => {
 		await expect.element(button).toBeVisible();
 		expect(button.element().getAttribute('title')).toMatch(/^Session controls/);
 		expect(button.element().getAttribute('aria-label')).toMatch(/^Session controls/);
+	});
+
+	it('FB14: Ctrl+Alt+Home collapses and expands the controls, and never reaches the machine', async () => {
+		const { screen, socket, bar, handle, button } = await openWindow();
+		await expect.element(bar).toBeVisible();
+		const stage = screen.getByRole('application', { name: /Screen of/ });
+		stage.element().focus();
+
+		await userEvent.keyboard('{Control>}{Alt>}{Home}{/Alt}{/Control}');
+		await expect.element(bar).not.toBeInTheDocument();
+		await expect.element(button).toBeVisible();
+		await expect.element(stage).toHaveFocus();
+		expect(button.element().getAttribute('title')).toContain('Ctrl+Alt+Home');
+
+		await userEvent.keyboard('{Control>}{Alt>}{Home}{/Alt}{/Control}');
+		await expect.element(bar).toBeVisible();
+		await expect.element(stage).toHaveFocus();
+		expect(handle.element().getAttribute('title')).toContain('Ctrl+Alt+Home');
+
+		// Home itself never went to the machine; other keys, Home alone included, still do.
+		expect(keyMessages(socket).filter((key) => key.endsWith('Home'))).toEqual([]);
+		await userEvent.keyboard('{Home}a');
+		await expect
+			.poll(() => keyMessages(socket))
+			.toEqual(expect.arrayContaining(['+Home', '-Home', '+KeyA', '-KeyA']));
+		// Ctrl and Alt went down and up again, so nothing is left held on the machine.
+		const modifiers = keyMessages(socket).filter((key) => /Control|Alt/.test(key));
+		expect(modifiers.filter((key) => key.startsWith('+')).length).toBe(
+			modifiers.filter((key) => key.startsWith('-')).length
+		);
+	});
+
+	it('FB14: the floating Keys panel tells of the shortcut', async () => {
+		const { screen, bar } = await openWindow();
+		await expect.element(bar).toBeVisible();
+		await screen.getByRole('button', { name: 'Keys', exact: true }).click();
+		await expect
+			.element(screen.getByText(/Ctrl\+Alt\+Home collapses and expands these controls/))
+			.toBeVisible();
 	});
 
 	it('FB7: the bar or the button, and their places, are remembered for the pop-out', async () => {

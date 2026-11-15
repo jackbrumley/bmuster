@@ -6,6 +6,7 @@
 		InputMessage
 	} from '#lib/domain/desktop/messages.ts';
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
+	import { attachControlsShortcut } from './controls-shortcut.ts';
 	import FloatingBar from './floating-bar.svelte';
 	import FloatingControls from './floating-controls.svelte';
 	import {
@@ -27,6 +28,7 @@
 	 * windows (`form` 'sheet') it is always the button, and a tap opens the
 	 * sheet instead. Which shape shows and where each sits is
 	 * remembered in this browser, for full screen and the pop-out apart.
+	 * Ctrl+Alt+Home collapses and expands the bar from the keyboard (FB14).
 	 */
 	let { chrome, form, exit }: { chrome: SessionChrome; form: 'bar' | 'sheet'; exit: ChromeExit } =
 		$props();
@@ -39,6 +41,8 @@
 	let opened = $state<BarOpening>({ kind: 'restored' });
 	/** The round button, focused after Enter or Space collapsed the bar. */
 	let fab = $state<HTMLButtonElement>();
+	/** Set by the expanded bar, which works out where the button goes when the shortcut collapses it. */
+	let collapseBar = $state<(keyboard: boolean) => void>();
 
 	const expanded = $derived(form === 'bar' && memory?.shown === 'bar');
 
@@ -76,12 +80,24 @@
 
 	onMount(() => {
 		memory = readControls(exit.kind, touch.current);
+		// The shortcut keeps the keyboard where it was: on the screen, as a rule.
+		return attachControlsShortcut(window, {
+			active: () => form === 'bar' && memory !== undefined,
+			toggle: () => {
+				if (collapseBar !== undefined) {
+					collapseBar(false);
+				} else {
+					expand(false);
+				}
+			}
+		});
 	});
 </script>
 
 {#if memory !== undefined}
 	{#if expanded}
 		<FloatingBar
+			bind:collapser={collapseBar}
 			{chrome}
 			{opened}
 			{exit}

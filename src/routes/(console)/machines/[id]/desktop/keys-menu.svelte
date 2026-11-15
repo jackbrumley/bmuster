@@ -30,11 +30,14 @@
 	let {
 		osFamily,
 		send,
-		afterSend
+		afterSend,
+		footnote
 	}: {
 		osFamily: OsFamily;
 		send: (message: InputMessage) => void;
 		afterSend: () => void;
+		/** A line of help under the keys, such as the floating bar's own shortcut. */
+		footnote: string | undefined;
 	} = $props();
 
 	const uid = $props.id();
@@ -220,6 +223,9 @@
 			</div>
 		</div>
 	{/if}
+	{#if footnote !== undefined}
+		<p class="hint footnote">{footnote}</p>
+	{/if}
 </Panel>
 
 <style>
@@ -233,6 +239,10 @@
 	.hint {
 		color: var(--muted);
 		font-size: var(--text-xs);
+	}
+
+	.footnote {
+		margin: var(--space-2) 0 0;
 	}
 
 	.extra,

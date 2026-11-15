@@ -16,7 +16,8 @@ async function setup(osFamily: OsFamily) {
 		send: (message: InputMessage) => {
 			sent.push(message);
 		},
-		afterSend
+		afterSend,
+		footnote: undefined
 	});
 	return { screen, sent, afterSend };
 }

@@ -20,6 +20,7 @@
 		attention,
 		expanded,
 		controls,
+		shortcut,
 		ondragstart,
 		onmoved,
 		ontap
@@ -34,6 +35,8 @@
 		expanded: boolean;
 		/** The id of what it opens, while that is the sheet. */
 		controls: string | undefined;
+		/** The keyboard shortcut that expands the bar, for the tooltip; undefined where a tap opens the sheet. */
+		shortcut: string | undefined;
 		ondragstart: () => void;
 		/** A drag put the button somewhere new. */
 		onmoved: () => void;
@@ -91,7 +94,7 @@
 	style:--x={drag === undefined ? undefined : `${drag.x}px`}
 	style:--y={drag === undefined ? undefined : `${drag.y}px`}
 	aria-label={label}
-	title={label}
+	title={shortcut === undefined ? label : `${label} (${shortcut})`}
 	aria-expanded={expanded}
 	aria-controls={controls}
 	onpointerdown={(event: PointerEvent) => {

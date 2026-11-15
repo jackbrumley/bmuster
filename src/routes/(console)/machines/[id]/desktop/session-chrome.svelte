@@ -46,7 +46,7 @@
 	{/if}
 	<SessionNotices {chrome} over={false} {moved} {refused} />
 	{#if layout.kind === 'bar'}
-		<SessionPanels {chrome} touch={false} />
+		<SessionPanels {chrome} touch={false} floating={false} />
 		{#if hint !== undefined}
 			<GestureHint ondismiss={hint} />
 		{/if}

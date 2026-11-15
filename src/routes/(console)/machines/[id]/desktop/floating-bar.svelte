@@ -14,6 +14,7 @@
 		type BarPlace,
 		type FloatingPosition
 	} from './floating-position.ts';
+	import { CONTROLS_SHORTCUT } from './controls-shortcut.ts';
 	import { PressDrag, type Point } from './press-drag.ts';
 	import type { BarOpening } from './floating-memory.ts';
 	import type { ChromeExit, SessionChrome } from './session-chrome.svelte.ts';
@@ -40,7 +41,8 @@
 		place = $bindable(),
 		opened,
 		onmoved,
-		oncollapse
+		oncollapse,
+		collapser = $bindable()
 	}: {
 		chrome: SessionChrome;
 		exit: ChromeExit;
@@ -53,6 +55,8 @@
 		onmoved: () => void;
 		/** The handle was tapped: the button goes to `button`; `keyboard` when a key did it. */
 		oncollapse: (button: FloatingPosition, keyboard: boolean) => void;
+		/** Set while the bar shows: collapses it as a tap on the handle does, for the keyboard shortcut (FB14). */
+		collapser: ((keyboard: boolean) => void) | undefined;
 	} = $props();
 
 	/** How far one arrow key press moves the bar, and with Shift. */
@@ -143,7 +147,10 @@
 		}
 	});
 
-	/** The button takes the grip's place: centred on it, then snapped to the nearest edge (FB5). */
+	/**
+	 * The button takes the grip's place: centred on it, then snapped to the
+	 * nearest edge (FB5). Also run by the keyboard shortcut (FB14).
+	 */
 	function collapse(keyboard: boolean): void {
 		const now = sizes();
 		const grip = now === undefined ? undefined : gripInBar(now.bar);
@@ -177,6 +184,7 @@
 	}
 
 	onMount(() => {
+		collapser = collapse;
 		// Expanded from the button: the bar opens with its grip on the button (FB5), and
 		// the keyboard goes to the handle when a key pressed the button, else back to the screen.
 		if (opened.kind === 'expanded') {
@@ -199,6 +207,7 @@
 			}
 		}
 		return () => {
+			collapser = undefined;
 			drags.release();
 		};
 	});
@@ -227,7 +236,7 @@
 				type="button"
 				class="handle"
 				aria-label="Collapse the controls"
-				title="Drag to move, tap to collapse; the arrow keys move it"
+				title="Drag to move, tap to collapse ({CONTROLS_SHORTCUT}); the arrow keys move it"
 				onpointerdown={(event: PointerEvent) => {
 					if (float !== undefined) drags.down(event, float);
 				}}
@@ -277,7 +286,7 @@
 						/>
 					</div>
 				{/if}
-				<SessionPanels {chrome} {touch} />
+				<SessionPanels {chrome} {touch} floating={true} />
 			</div>
 		{/if}
 	</div>

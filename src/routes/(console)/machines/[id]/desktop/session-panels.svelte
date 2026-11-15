@@ -4,6 +4,7 @@
 		InputMessage
 	} from '#lib/domain/desktop/messages.ts';
 	import ClipboardPanel from './clipboard-panel.svelte';
+	import { CONTROLS_SHORTCUT } from './controls-shortcut.ts';
 	import DesktopSettings from './desktop-settings.svelte';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
@@ -20,7 +21,16 @@
 	 * keyboard toggle and the touch input choice (SPEC-DESKTOP-FLOATING FB8),
 	 * which the page shows under the screen instead.
 	 */
-	let { chrome, touch }: { chrome: SessionChrome; touch: boolean } = $props();
+	let {
+		chrome,
+		touch,
+		floating
+	}: {
+		chrome: SessionChrome;
+		touch: boolean;
+		/** Under the floating bar: the Keys panel tells of the shortcut that collapses it (FB14). */
+		floating: boolean;
+	} = $props();
 
 	function send(message: InputMessage): void {
 		chrome.send(message);
@@ -64,6 +74,9 @@
 		afterSend={() => {
 			chrome.focusScreen();
 		}}
+		footnote={floating
+			? `${CONTROLS_SHORTCUT} collapses and expands these controls; it is never sent to the machine.`
+			: undefined}
 	/>
 {/if}
 {#if chrome.transfersOpen && chrome.files !== undefined}

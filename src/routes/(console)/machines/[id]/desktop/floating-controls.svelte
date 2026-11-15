@@ -9,6 +9,7 @@
 	import ChipGroup from '#lib/ui/chip-group.svelte';
 	import Panel from '#lib/ui/panel.svelte';
 	import TabBar from '#lib/ui/tab-bar.svelte';
+	import { CONTROLS_SHORTCUT } from './controls-shortcut.ts';
 	import DesktopSettings from './desktop-settings.svelte';
 	import FloatingButton from './floating-button.svelte';
 	import { BUTTON_SIZE, type FloatingPosition } from './floating-position.ts';
@@ -224,6 +225,7 @@
 			{attention}
 			expanded={open}
 			controls={expand === undefined ? `${uid}-sheet` : undefined}
+			shortcut={expand === undefined ? undefined : CONTROLS_SHORTCUT}
 			ondragstart={close}
 			{onmoved}
 			ontap={onTap}
@@ -269,7 +271,7 @@
 											}}
 										/>
 										{#if !typing}
-											<KeysMenu {osFamily} {send} afterSend={backToScreen} />
+											<KeysMenu {osFamily} {send} afterSend={backToScreen} footnote={undefined} />
 										{/if}
 									{:else if shown === 'clipboard' && control}
 										<ClipboardPanel {clipboard} getCopied={files?.getCopied} />
