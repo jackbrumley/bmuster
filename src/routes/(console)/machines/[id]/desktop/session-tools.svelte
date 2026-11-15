@@ -13,6 +13,7 @@
 	} from '@tabler/icons-svelte-runes';
 	import { screenLabel } from '#lib/domain/desktop/screen.ts';
 	import Button from '#lib/ui/button.svelte';
+	import LiveStatus from './live-status.svelte';
 	import type { SessionChrome } from './session-chrome.svelte.ts';
 	import ToolButton from './tool-button.svelte';
 
@@ -57,12 +58,7 @@
 {#if look === 'bar' && screen !== undefined}
 	<span class="screen-state" data-screen={screen.kind}>{screenLabel(screen)}</span>
 {/if}
-<span
-	class="status"
-	role="status"
-	data-fps={chrome.session?.throughput.fps ?? 0}
-	data-bytes-per-second={chrome.session?.throughput.bytesPerSecond ?? 0}>{chrome.status}</span
->
+<LiveStatus status={chrome.status} />
 {#if chrome.has('mode')}
 	{#if look === 'bar'}
 		<Button
@@ -195,13 +191,6 @@
 		color: var(--text-soft);
 		font-size: var(--text-xs);
 		font-weight: var(--weight-medium);
-		white-space: nowrap;
-	}
-
-	.status {
-		color: var(--muted);
-		font-size: var(--text-xs);
-		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 	}
 

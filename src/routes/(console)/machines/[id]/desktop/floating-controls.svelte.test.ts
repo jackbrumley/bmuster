@@ -51,7 +51,10 @@ async function setup(
 			transfersOpen: false,
 			displays: displays.length
 		}),
-		status: mode === undefined ? 'Not connected' : '15 fps · 200 KB/s',
+		status:
+			mode === undefined
+				? { kind: 'text', text: 'Not connected' }
+				: { kind: 'figures', fps: 15, kilobytes: 200 },
 		waiting: undefined,
 		transfers: undefined,
 		osFamily: 'windows',

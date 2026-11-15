@@ -10,7 +10,12 @@ import type { Connection } from '#lib/runes/session-link.svelte.ts';
 import { confirmAction } from '#lib/ui/confirm-action.svelte.ts';
 import type { DesktopFiles } from './desktop-files.svelte.ts';
 import type { DesktopSession } from './desktop-session.svelte.ts';
-import { availableActions, connectionStatus, type ChromeAction } from './session-actions.ts';
+import {
+	availableActions,
+	connectionStatus,
+	type ChromeAction,
+	type SessionStatus
+} from './session-actions.ts';
 import { isRunning } from './stage-state.ts';
 import type { TouchMode } from './touch-gestures.ts';
 import { readTouchMode, saveTouchMode } from './touch-input.ts';
@@ -112,7 +117,7 @@ export class SessionChrome {
 		return this.session?.mode === 'watch';
 	}
 
-	get status(): string {
+	get status(): SessionStatus {
 		return connectionStatus(this.connection, this.session?.throughput);
 	}
 

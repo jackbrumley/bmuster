@@ -12,6 +12,8 @@
 	import type { DesktopMode } from '#lib/domain/sessions/session.ts';
 	import Button from '#lib/ui/button.svelte';
 	import type { SheetFiles, SheetTransfers } from './desktop-files.svelte.ts';
+	import LiveStatus from './live-status.svelte';
+	import type { SessionStatus } from './session-actions.ts';
 	import type { TouchMode } from './touch-gestures.ts';
 	import TouchInputChoice from './touch-input-choice.svelte';
 	import TransfersPanel from './transfers-panel.svelte';
@@ -35,7 +37,7 @@
 		ondisconnect,
 		files
 	}: {
-		status: string;
+		status: SessionStatus;
 		/** The Transfers panel; undefined without files. */
 		transfers: SheetTransfers | undefined;
 		/** Undefined while no session runs: then only the exit action shows. */
@@ -64,7 +66,7 @@
 			{/if}
 		</span>
 	{/if}
-	<span class="status" role="status">{status}</span>
+	<LiveStatus {status} />
 </div>
 {#if control}
 	<TouchInputChoice value={touchMode} onchange={ontouchmode} />
@@ -116,12 +118,6 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: var(--space-2);
-	}
-
-	.status {
-		color: var(--muted);
-		font-size: var(--text-xs);
-		font-variant-numeric: tabular-nums;
 	}
 
 	.mode {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	availableActions,
 	CHROME_ACTIONS,
+	connectionStatus,
 	FILE_ACTIONS,
 	type ActionState
 } from './session-actions.ts';
@@ -49,5 +50,29 @@ describe('the session actions', () => {
 		expect(
 			availableActions({ ...CONTROLLING, canSend: false, filesWaiting: false, transfersOpen: true })
 		).toContain('transfers');
+	});
+});
+
+describe('the session status', () => {
+	it('FB1: a flowing picture gives its figures apart, so the bars can give them a fixed width', () => {
+		const live = { kind: 'live', ready: true, sinceMs: 0 } as const;
+		expect(connectionStatus(live, { fps: 9, bytesPerSecond: 5 * 1024 })).toEqual({
+			kind: 'figures',
+			fps: 9,
+			kilobytes: 5
+		});
+		expect(connectionStatus(live, { fps: 30, bytesPerSecond: 1234.4 * 1024 })).toEqual({
+			kind: 'figures',
+			fps: 30,
+			kilobytes: 1234
+		});
+		expect(connectionStatus({ kind: 'reconnecting' }, undefined)).toEqual({
+			kind: 'text',
+			text: 'Reconnecting…'
+		});
+		expect(connectionStatus({ kind: 'live', ready: false, sinceMs: 0 }, undefined)).toEqual({
+			kind: 'text',
+			text: 'Waiting for the machine…'
+		});
 	});
 });

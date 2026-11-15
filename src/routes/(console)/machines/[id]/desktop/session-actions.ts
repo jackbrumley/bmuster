@@ -59,29 +59,39 @@ export function availableActions(state: ActionState): ChromeAction[] {
 	return CHROME_ACTIONS.filter((action) => shown[action]);
 }
 
-/** The session's status in a few words: fps and speed once the picture flows. */
+/**
+ * The session's status: words, or once the picture flows its frame rate and
+ * speed apart, so the bars can draw them at a fixed width (SPEC-DESKTOP-FLOATING FB1).
+ */
+export type SessionStatus =
+	{ kind: 'text'; text: string } | { kind: 'figures'; fps: number; kilobytes: number };
+
+function words(text: string): SessionStatus {
+	return { kind: 'text', text };
+}
+
 export function connectionStatus(
 	connection: Connection,
 	throughput: Throughput | undefined
-): string {
+): SessionStatus {
 	switch (connection.kind) {
 		case 'idle':
-			return 'Not connected';
+			return words('Not connected');
 		case 'starting':
 		case 'connecting':
-			return 'Connecting…';
+			return words('Connecting…');
 		case 'live': {
 			if (!connection.ready) {
-				return 'Waiting for the machine…';
+				return words('Waiting for the machine…');
 			}
 			const { fps, bytesPerSecond } = throughput ?? { fps: 0, bytesPerSecond: 0 };
-			return `${fps} fps · ${Math.round(bytesPerSecond / 1024)} KB/s`;
+			return { kind: 'figures', fps, kilobytes: Math.round(bytesPerSecond / 1024) };
 		}
 		case 'reconnecting':
-			return 'Reconnecting…';
+			return words('Reconnecting…');
 		case 'moved':
-			return 'Open in another window';
+			return words('Open in another window');
 		case 'ended':
-			return 'Ended';
+			return words('Ended');
 	}
 }

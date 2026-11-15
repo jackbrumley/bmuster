@@ -27,7 +27,7 @@
 	import type { DesktopClipboard } from './clipboard.svelte.ts';
 	import KeyBar from './key-bar.svelte';
 	import KeysMenu from './keys-menu.svelte';
-	import type { ChromeAction } from './session-actions.ts';
+	import type { ChromeAction, SessionStatus } from './session-actions.ts';
 	import { scrollEdges, sheetLayout, sheetTabs, type SheetTab as Tab } from './sheet-layout.ts';
 	import type { TouchMode } from './touch-gestures.ts';
 
@@ -73,7 +73,7 @@
 		/** What the session offers now (`session-actions.ts`). */
 		actions: readonly ChromeAction[];
 		/** The session's status in a few words, for the Session tab. */
-		status: string;
+		status: SessionStatus;
 		/** Files copied on the machine, for the badge on the button ("2 files copied on the machine"). */
 		waiting: string | undefined;
 		/** The Transfers panel, in the Session tab; undefined without files. */
