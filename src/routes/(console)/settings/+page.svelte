@@ -16,6 +16,7 @@
 		type SettingView
 	} from '#lib/domain/settings/settings-definitions.ts';
 	import LocalNetworkMode from './local-network-mode.svelte';
+	import RecoveryPanel from './recovery-panel.svelte';
 	import SettingText from './setting-text.svelte';
 	import SettingsTabs from './settings-tabs.svelte';
 	import type { PageProps } from './$types';
@@ -159,6 +160,8 @@
 		empty="No settings here."
 	/>
 {/each}
+
+<RecoveryPanel facts={data.recovery} />
 
 <style>
 	.setting {

@@ -126,6 +126,9 @@ export type EventOptions = {
 	address: string;
 };
 
+/** The headers the last `invoke`d load or action set with `setHeaders`. */
+export const setByLastCall = new Headers();
+
 /** Calls a handler, load or action with just enough of a request event for it and its guard. */
 export function invoke<E extends RequestEvent, R>(
 	handler: (event: E) => R,
@@ -144,11 +147,15 @@ export function invoke<E extends RequestEvent, R>(
 			)
 	);
 	const cookies: Pick<RequestEvent['cookies'], 'get'> = { get: (name) => cookieJar.get(name) };
+	for (const name of [...setByLastCall.keys()]) setByLastCall.delete(name);
 	const partial: Pick<
 		RequestEvent,
-		'request' | 'url' | 'getClientAddress' | 'locals' | 'params' | 'route'
+		'request' | 'url' | 'getClientAddress' | 'locals' | 'params' | 'route' | 'setHeaders'
 	> & { cookies: Pick<RequestEvent['cookies'], 'get'> } = {
 		cookies,
+		setHeaders: (headers) => {
+			for (const [name, value] of Object.entries(headers)) setByLastCall.set(name, value);
+		},
 		url,
 		request: new Request(url, {
 			method: options.method,

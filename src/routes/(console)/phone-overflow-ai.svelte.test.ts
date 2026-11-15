@@ -101,7 +101,8 @@ const PAGES: readonly PhonePage[] = [
 							identity: { kind: 'verified', host: LONG_HOSTNAME }
 						},
 						redirect: { kind: 'web', host: LONG_HOSTNAME },
-						scopes: ['machines:read', 'offline_access']
+						scopes: ['machines:read', 'offline_access'],
+						formTarget: `https://${LONG_HOSTNAME}`
 					}
 				}
 			})
@@ -129,7 +130,9 @@ const PAGES: readonly PhonePage[] = [
 							sinceIso: new Date(NOW - 86_400_000).toISOString(),
 							recoveryCodesLeft: 2,
 							required: false
-						}
+						},
+						// SPEC-SIGN-IN S21: the count and Sign out everywhere else, at phone width.
+						otherSessions: 12
 					}
 				},
 				IN_CONSOLE

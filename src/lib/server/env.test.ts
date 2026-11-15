@@ -15,9 +15,18 @@ describe('environment (S15)', () => {
 			'agentTestBuildsPath',
 			'firstAdmin',
 			'localNetworkModeAtFirstRun',
-			'backupSchedule'
+			'backupSchedule',
+			'protocolHeader'
 		]);
 		expect(env.firstAdmin).toEqual({ kind: 'none' });
+	});
+
+	it('S20: reads the proxy scheme header for HSTS, lower-cased, or none', async () => {
+		vi.resetModules();
+		expect((await import('#lib/server/env.ts')).env.protocolHeader).toBeUndefined();
+		vi.stubEnv('PROTOCOL_HEADER', 'X-Forwarded-Proto');
+		vi.resetModules();
+		expect((await import('#lib/server/env.ts')).env.protocolHeader).toBe('x-forwarded-proto');
 	});
 
 	it('keeps test agent builds beside the database (SPEC-TEST-CHANNEL)', async () => {

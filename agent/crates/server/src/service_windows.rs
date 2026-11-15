@@ -9,7 +9,9 @@ use crate::config;
 use crate::launcher::Launcher;
 use crate::layout::{Layout, LOG_FILE};
 use anyhow::{bail, Context as _, Result};
-use bmuster_service::windows::{self as service, status, Account, ServiceSpec, LOCAL_SERVICE_SID};
+use bmuster_service::windows::{
+    self as service, status, Account, Grant, Rights, ServiceSpec, LOCAL_SERVICE_SID,
+};
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::Write as _;
@@ -44,8 +46,11 @@ pub fn service_spec(layout: &Layout) -> ServiceSpec {
 }
 
 /// LocalService may change the data folder; nobody else but SYSTEM and Administrators may read it.
-pub fn data_grants() -> Vec<String> {
-    vec![format!("*{LOCAL_SERVICE_SID}:(OI)(CI)M")]
+pub fn data_grants() -> Vec<Grant> {
+    vec![Grant {
+        sid: LOCAL_SERVICE_SID,
+        rights: Rights::Modify,
+    }]
 }
 
 pub fn firewall_rule_arguments(port: u16) -> Vec<String> {
@@ -135,7 +140,6 @@ pub fn start_service() -> Result<()> {
 }
 
 pub fn install_service(layout: &Layout) -> Result<()> {
-    service::restrict_dir(&layout.data, &data_grants())?;
     let listen = config::read_listen(&layout.env_file())?;
     remove_firewall_rule();
     let status = Command::new("netsh")
@@ -312,7 +316,12 @@ mod tests {
 
     #[test]
     fn local_service_may_change_the_data_and_the_port_is_opened() {
-        assert_eq!(data_grants(), vec!["*S-1-5-19:(OI)(CI)M".to_string()]);
+        // I16: SYSTEM and Administrators full control, LocalService modify,
+        // nothing inherited from C:\ProgramData.
+        assert_eq!(
+            service::restricted_dir_sddl(&data_grants()),
+            "D:P(A;OICI;FA;;;S-1-5-18)(A;OICI;FA;;;S-1-5-32-544)(A;OICI;0x1301bf;;;S-1-5-19)"
+        );
         assert_eq!(
             firewall_rule_arguments(8443).join(" "),
             "advfirewall firewall add rule name=BMuster Server dir=in action=allow protocol=TCP localport=8443"

@@ -4,16 +4,20 @@
 	import PageHeader from '#lib/ui/page-header.svelte';
 	import Panel from '#lib/ui/panel.svelte';
 	import ConnectedAssistants from '../connected-assistants.svelte';
+	import OtherSessionsPanel from './other-sessions-panel.svelte';
 	import TwoFactorPanel from './two-factor-panel.svelte';
 	import type { PageProps } from './$types';
 
-	/** Account (SPEC-MCP 8.5, M10): the person's details, two-factor sign-in and connected AI assistants. */
+	/**
+	 * Account (SPEC-MCP 8.5, M10): the person's details, two-factor sign-in, where else they are
+	 * signed in (SPEC-SIGN-IN S21) and connected AI assistants.
+	 */
 	let { data }: PageProps = $props();
 </script>
 
 <PageHeader
 	title="Account"
-	summary="Your details, two-factor sign-in, and the AI assistants connected as you."
+	summary="Your details, two-factor sign-in, where you are signed in, and the AI assistants connected as you."
 	actions={undefined}
 />
 
@@ -36,6 +40,8 @@
 	origin={data.origin}
 	now={data.now}
 />
+
+<OtherSessionsPanel others={data.otherSessions} />
 
 <ConnectedAssistants grants={data.grants} now={data.now} showPerson={false} />
 

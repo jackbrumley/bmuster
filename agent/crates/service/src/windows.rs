@@ -5,7 +5,6 @@
 use anyhow::{bail, Context as _, Result};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant};
 use windows_service::service::{
     Service, ServiceAccess, ServiceAction, ServiceActionType, ServiceControlAccept,
@@ -229,30 +228,103 @@ pub fn state(name: &str) -> String {
     }
 }
 
-/// The `icacls` arguments that give SYSTEM and Administrators full control
-/// of `dir` and everything in it, plus `extra` (`*<SID>:(OI)(CI)<rights>`),
-/// and drop every inherited rule.
-pub fn restrict_dir_arguments(dir: &Path, extra: &[String]) -> Vec<OsString> {
-    let mut arguments = vec![dir.as_os_str().to_owned(), "/inheritance:r".into()];
-    let grants = [
-        format!("*{SYSTEM_SID}:(OI)(CI)F"),
-        format!("*{ADMINISTRATORS_SID}:(OI)(CI)F"),
-    ];
-    for grant in grants.iter().chain(extra) {
-        arguments.push("/grant:r".into());
-        arguments.push(grant.into());
-    }
-    arguments
+/// What an extra rule on a restricted folder allows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rights {
+    /// Read, write and delete, but never change the rules or the owner
+    /// (icacls `M`).
+    Modify,
+    /// Read and list only (icacls `RX`).
+    ReadExecute,
 }
 
-/// Restricts `dir` as [`restrict_dir_arguments`] describes.
-pub fn restrict_dir(dir: &Path, extra: &[String]) -> Result<()> {
-    let status = Command::new("icacls")
-        .args(restrict_dir_arguments(dir, extra))
-        .status()
-        .context("could not run icacls")?;
-    if !status.success() {
-        bail!("icacls could not restrict {} ({status})", dir.display());
+/// One extra allow rule on a restricted folder, for a SID such as
+/// [`LOCAL_SERVICE_SID`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Grant {
+    pub sid: &'static str,
+    pub rights: Rights,
+}
+
+/// The rules of a restricted folder in SDDL: a protected DACL (`P`, so no
+/// rule is inherited from the folder above) giving SYSTEM and Administrators
+/// full control, plus `extra`, every rule inherited by files (`OI`) and
+/// folders (`CI`) inside.
+pub fn restricted_dir_sddl(extra: &[Grant]) -> String {
+    let mut sddl = format!("D:P(A;OICI;FA;;;{SYSTEM_SID})(A;OICI;FA;;;{ADMINISTRATORS_SID})");
+    for grant in extra {
+        let rights = match grant.rights {
+            Rights::Modify => "0x1301bf",
+            Rights::ReadExecute => "0x1200a9",
+        };
+        sddl.push_str(&format!("(A;OICI;{rights};;;{})", grant.sid));
+    }
+    sddl
+}
+
+/// Sets `dir` to [`restricted_dir_sddl`] and resets everything already
+/// inside it to inherit those rules alone: any rule set on a file or folder
+/// inside (and any protection from inheritance there) is removed, so an
+/// existing settings file or database ends up exactly as private as a new
+/// one. Needs an Administrator or SYSTEM (WRITE_DAC on every object).
+pub fn restrict_dir(dir: &Path, extra: &[Grant]) -> Result<()> {
+    use ::windows::core::{BOOL, PCWSTR};
+    use ::windows::Win32::Foundation::{LocalFree, ERROR_SUCCESS, HLOCAL};
+    use ::windows::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, ProgressInvokeNever,
+        TreeResetNamedSecurityInfoW, SDDL_REVISION_1, SE_FILE_OBJECT,
+    };
+    use ::windows::Win32::Security::{
+        GetSecurityDescriptorDacl, ACL, DACL_SECURITY_INFORMATION,
+        PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR,
+    };
+    use std::os::windows::ffi::OsStrExt as _;
+
+    let sddl: Vec<u16> = restricted_dir_sddl(extra)
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    let path: Vec<u16> = dir.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut descriptor = PSECURITY_DESCRIPTOR::default();
+    // SAFETY: both strings are NUL-terminated and outlive the calls; the
+    // descriptor is allocated by Windows, the DACL points into it, and it is
+    // freed only after TreeResetNamedSecurityInfoW has copied the rules.
+    unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            PCWSTR(sddl.as_ptr()),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            None,
+        )
+        .context("could not build the folder's rules")?;
+        let mut present = BOOL::default();
+        let mut defaulted = BOOL::default();
+        let mut dacl: *mut ACL = std::ptr::null_mut();
+        let reset = GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted)
+            .map(|()| {
+                TreeResetNamedSecurityInfoW(
+                    PCWSTR(path.as_ptr()),
+                    SE_FILE_OBJECT,
+                    DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                    None,
+                    None,
+                    Some(dacl.cast_const()),
+                    None,
+                    false,
+                    None,
+                    ProgressInvokeNever,
+                    None,
+                )
+            });
+        let _ = LocalFree(Some(HLOCAL(descriptor.0)));
+        let error = reset.context("could not read the folder's rules")?;
+        if error != ERROR_SUCCESS {
+            bail!(
+                "could not restrict {}: {}",
+                dir.display(),
+                std::io::Error::from_raw_os_error(error.0 as i32)
+            );
+        }
     }
     Ok(())
 }
@@ -330,27 +402,24 @@ mod tests {
     }
 
     #[test]
-    fn data_folders_drop_inherited_rules() {
-        let arguments = restrict_dir_arguments(
-            Path::new(r"C:\Data"),
-            &[format!("*{LOCAL_SERVICE_SID}:(OI)(CI)M")],
-        );
-        let text: Vec<String> = arguments
-            .iter()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
+    fn restricted_folders_keep_only_system_administrators_and_the_extras() {
         assert_eq!(
-            text,
-            [
-                r"C:\Data",
-                "/inheritance:r",
-                "/grant:r",
-                "*S-1-5-18:(OI)(CI)F",
-                "/grant:r",
-                "*S-1-5-32-544:(OI)(CI)F",
-                "/grant:r",
-                "*S-1-5-19:(OI)(CI)M"
-            ]
+            restricted_dir_sddl(&[]),
+            "D:P(A;OICI;FA;;;S-1-5-18)(A;OICI;FA;;;S-1-5-32-544)"
+        );
+        assert_eq!(
+            restricted_dir_sddl(&[
+                Grant {
+                    sid: LOCAL_SERVICE_SID,
+                    rights: Rights::Modify
+                },
+                Grant {
+                    sid: "S-1-5-32-545",
+                    rights: Rights::ReadExecute
+                }
+            ]),
+            "D:P(A;OICI;FA;;;S-1-5-18)(A;OICI;FA;;;S-1-5-32-544)\
+             (A;OICI;0x1301bf;;;S-1-5-19)(A;OICI;0x1200a9;;;S-1-5-32-545)"
         );
     }
 }

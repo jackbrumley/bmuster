@@ -293,6 +293,7 @@ version = "0.4.34"
 dependencies = [
  "anyhow",
  "libc",
+ "windows",
  "windows-service",
 ]
 

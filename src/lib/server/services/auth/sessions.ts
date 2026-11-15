@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { eq, lt, or } from 'drizzle-orm';
+import { and, eq, gt, lt, ne, or } from 'drizzle-orm';
 import { consoleSessions } from '../../database/schema.ts';
 import type { Queryable } from '../../database/connection.ts';
 import { recordAudit } from '../audit/audit.ts';
@@ -118,6 +118,62 @@ export function sessionCount(database: Queryable, userId: string): number {
 		.from(consoleSessions)
 		.where(eq(consoleSessions.userId, userId))
 		.all().length;
+}
+
+/** The person's sessions other than `token`'s that are still open (not run out or idle). */
+function otherOpenSessions(userId: string, token: string, now: number) {
+	return and(
+		eq(consoleSessions.userId, userId),
+		ne(consoleSessions.idHash, hashSessionToken(token)),
+		gt(consoleSessions.expiresAt, new Date(now)),
+		gt(consoleSessions.lastSeenAt, new Date(now - SESSION_IDLE_MS))
+	);
+}
+
+/** How many other browsers or devices the person is signed in on (S21). */
+export function otherSessionCount(
+	database: Queryable,
+	userId: string,
+	token: string,
+	now: number
+): number {
+	return database
+		.select({ idHash: consoleSessions.idHash })
+		.from(consoleSessions)
+		.where(otherOpenSessions(userId, token, now))
+		.all().length;
+}
+
+/**
+ * "Sign out everywhere else" (S21): every other console session of the person ends; the one
+ * holding `token` stays. AI assistant connections are not sessions and are left alone. Returns
+ * how many ended; the audit log records it as a sign-out.
+ */
+export function signOutOtherSessions(
+	database: Queryable,
+	token: string,
+	user: { id: string; email: string },
+	now: number
+): number {
+	const ended = otherSessionCount(database, user.id, token, now);
+	database
+		.delete(consoleSessions)
+		.where(
+			and(eq(consoleSessions.userId, user.id), ne(consoleSessions.idHash, hashSessionToken(token)))
+		)
+		.run();
+	recordAudit(
+		database,
+		{
+			actor: { kind: 'user', userId: user.id },
+			kind: 'sign-out',
+			target: user.email,
+			machineId: null,
+			detail: { sessions: 'every other session', ended: String(ended) }
+		},
+		now
+	);
+	return ended;
 }
 
 /** Sign-out (S6): the session row goes, and the audit log says so. */
