@@ -87,6 +87,12 @@ Assistants read the list of tools when a conversation or the app starts. Start a
 
 Everything is recorded in Activity as "you via the assistant". The assistant can never approve its own request: approving only happens in BMuster, signed in as you.
 
+### Can the AI see where disk space went?
+
+Yes, on machines where it has **AI can view** and you have **Files**, the same permission the **Storage** tab needs. Ask "what is filling the disk on mint?" and it reads the scan BMuster's agent already keeps of each drive: the biggest folders and files, how old the scan is, and how much each safe clean-up item would free. It needs no approval and starts no new disk walk; it can ask for a fresh scan at most once every 10 minutes per machine.
+
+It can also ask to clean up items from BMuster's fixed safe list (temporary files, update downloads, package caches, crash dumps, Recycle Bins and the like). That needs **AI commands** and **Files**, and always waits for you on **Approvals**, showing each item, its size and the total. Deleting anything else is an ordinary command you approve like any other.
+
 ### Can I disconnect an assistant?
 
 Yes. Disconnect one on your **Account** page, or stop every assistant at once with **Stop all AI access** on **Settings → AI assistants**.
