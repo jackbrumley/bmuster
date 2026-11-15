@@ -5,7 +5,7 @@ import { FakeSocket } from '#tests/helpers/fake-socket.ts';
 import '#lib/ui/design-tokens.css';
 import { openPopOut } from './desktop-test-harness.ts';
 
-// SPEC-DESKTOP-FLOATING FB3, FB4, FB5, FB7, FB11: the floating bar and the button it collapses into,
+// SPEC-DESKTOP-FLOATING FB3, FB4, FB5, FB7, FB11, FB13: the floating bar and the button it collapses into,
 // tried in the pop-out window, whose size the test sets.
 
 const SESSION = '77777777-7777-4777-8777-777777777777';
@@ -121,6 +121,23 @@ describe('the floating bar', () => {
 		await page.viewport(950, 600);
 		await expect.poll(() => box(bar).right).toBeCloseTo(950 - BAR_GAP, 0);
 		expect(box(bar).bottom).toBeCloseTo(600 - BAR_GAP, 0);
+	});
+
+	it('FB13: a bar dropped near the top centre snaps to it, inside the safe gap', async () => {
+		const { bar, handle } = await openWindow();
+		await expect.element(bar).toBeVisible();
+		dragHandle(handle, 400, 500);
+		await expect.poll(() => centre(handle).y).toBeCloseTo(500, 0);
+		const grip = centre(handle).x - box(bar).left;
+		const width = box(bar).width;
+		// Dropped 15px right of and 12px below the top centre: it snaps there.
+		const topCentreGrip = 600 - width / 2 + grip;
+		dragHandle(handle, topCentreGrip + 15, BAR_GAP + box(bar).height / 2 + 12);
+		await expect.poll(() => box(bar).top).toBeCloseTo(BAR_GAP, 0);
+		expect(box(bar).left + box(bar).width / 2).toBeCloseTo(600, 0);
+		// Dropped 60px off it, it stays where it was let go.
+		dragHandle(handle, topCentreGrip + 60, BAR_GAP + box(bar).height / 2);
+		await expect.poll(() => box(bar).left + box(bar).width / 2).toBeCloseTo(660, 0);
 	});
 
 	it('FB4: Enter on the handle collapses the bar; arrows move it; Space collapses it too', async () => {

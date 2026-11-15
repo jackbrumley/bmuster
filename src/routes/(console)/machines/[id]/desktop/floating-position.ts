@@ -111,6 +111,20 @@ export function barPlaceAt(corner: { x: number; y: number }, area: Area, bar: Ar
 	};
 }
 
+/** How close to the top centre a dropped bar has to land to snap there (FB13). */
+export const TOP_CENTRE_SNAP_PX = 24;
+
+/**
+ * A dropped bar's place: the top centre (the default place) when its
+ * corner lands within `TOP_CENTRE_SNAP_PX` of the top centre's, else where
+ * it was dropped.
+ */
+export function droppedBar(place: BarPlace, area: Area, bar: Area): BarPlace {
+	const at = barCorner(place, area, bar);
+	const top = barCorner(DEFAULT_BAR, area, bar);
+	return Math.hypot(at.x - top.x, at.y - top.y) <= TOP_CENTRE_SNAP_PX ? DEFAULT_BAR : place;
+}
+
 /** The place after the arrow keys moved the bar by `delta` page pixels. */
 export function nudged(
 	place: BarPlace,

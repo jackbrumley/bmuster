@@ -9,6 +9,7 @@
 		BUTTON_SIZE,
 		buttonAtGrip,
 		buttonCentre,
+		droppedBar,
 		nudged,
 		type BarPlace,
 		type FloatingPosition
@@ -134,8 +135,9 @@
 		dropped: (client) => {
 			drag = undefined;
 			const at = placeOf(client);
-			if (at !== undefined) {
-				place = at;
+			const now = sizes();
+			if (at !== undefined && now !== undefined) {
+				place = droppedBar(at, now.area, now.bar);
 				onmoved();
 			}
 		}

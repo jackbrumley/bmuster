@@ -6,11 +6,13 @@ import {
 	buttonAtGrip,
 	buttonCentre,
 	clampCorner,
+	DEFAULT_BAR,
+	droppedBar,
 	nudged,
 	snapped
 } from './floating-position.ts';
 
-// SPEC-DESKTOP-FLOATING F2, FA1, FB3, FB4, FB5.
+// SPEC-DESKTOP-FLOATING F2, FA1, FB3, FB4, FB5, FB13.
 
 describe('the floating button position', () => {
 	it('FA1: snaps to the nearest of the four edges and keeps its place along it', () => {
@@ -45,6 +47,19 @@ describe('the floating bar position', () => {
 		expect(barCorner({ x: 1, y: 0 }, { width: 500, height: 600 }, bar)).toEqual({ x: 100, y: 0 });
 		// A bar as wide as the screen has no room to move: it sits at the start.
 		expect(barPlaceAt({ x: 10, y: 0 }, { width: 400, height: 600 }, bar).x).toBe(0);
+	});
+
+	it('FB13: a bar dropped within 24px of the top centre snaps there; farther away it stays', () => {
+		// The top centre's corner here is (300, 0).
+		const near = barPlaceAt({ x: 315, y: 10 }, area, bar);
+		expect(droppedBar(near, area, bar)).toEqual(DEFAULT_BAR);
+		const edge = barPlaceAt({ x: 300 - 24, y: 0 }, area, bar);
+		expect(droppedBar(edge, area, bar)).toEqual(DEFAULT_BAR);
+		const far = barPlaceAt({ x: 330, y: 20 }, area, bar);
+		expect(droppedBar(far, area, bar)).toEqual(far);
+		// A bar as wide as the screen has its top centre at the start, and still snaps.
+		const wide = { width: 400, height: 600 };
+		expect(droppedBar(barPlaceAt({ x: 0, y: 12 }, wide, bar), wide, bar)).toEqual(DEFAULT_BAR);
 	});
 
 	it('FB4: the arrow keys move it, never past the edge', () => {
