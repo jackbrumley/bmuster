@@ -55,6 +55,10 @@ export class DesktopFiles {
 	readonly #sessionId: () => string | undefined;
 	readonly #sharing: () => boolean;
 	readonly #api: SessionFilesApi;
+	/** Looks in a row that failed; the watch waits longer after each (SF27, quiet when stuck). */
+	#failedLooks = 0;
+	/** The watch's next look, in `Date.now()` time. */
+	#nextLookAt = 0;
 	readonly #machineId: string;
 
 	constructor(
@@ -122,6 +126,12 @@ export class DesktopFiles {
 			return;
 		}
 		const answer = await this.#api.offer(sessionId);
+		if (!answer.ok || answer.data.kind === 'refused') {
+			this.#failedLooks += 1;
+		} else {
+			this.#failedLooks = 0;
+		}
+		this.#nextLookAt = Date.now() + lookDelayMs(this.#failedLooks);
 		if (!answer.ok) {
 			if (!quiet) {
 				showToast(answer.message, 'error');
@@ -146,7 +156,12 @@ export class DesktopFiles {
 	watch(everyMs: number): () => void {
 		const tick = (): void => {
 			if (this.#sharing() && this.canSend) {
-				void this.look(true);
+				// A refusal (the machine's desktop has gone, files not allowed) backs off, so a broken
+				// session doesn't open a refused files channel every couple of seconds.
+				if (Date.now() >= this.#nextLookAt) {
+					this.#nextLookAt = Date.now() + lookDelayMs(this.#failedLooks) + everyMs;
+					void this.look(true);
+				}
 			} else if (this.offer.kind !== 'none' && !this.canSend) {
 				this.offer = { kind: 'none' };
 			}
@@ -201,4 +216,9 @@ export class DesktopFiles {
 			void this.sender.refreshRows();
 		}
 	}
+}
+
+/** How long the watch waits after `failed` refused looks in a row: none, then 4 s doubling to 60 s. */
+export function lookDelayMs(failed: number): number {
+	return failed === 0 ? 0 : Math.min(60_000, 2_000 * 2 ** failed);
 }
