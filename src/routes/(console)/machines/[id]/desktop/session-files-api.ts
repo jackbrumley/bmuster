@@ -15,7 +15,7 @@ import type { SessionDestination, UploadApi } from '../files/upload-queue.svelte
 export function sessionFilesApi(machineId: string) {
 	const params = { id: machineId };
 	const urls = {
-		target: resolve('/api/machines/[id]/session-files/target', params),
+		target: resolve('/api/machines/[id]/session-files/destination', params),
 		send: resolve('/api/machines/[id]/session-files/send', params),
 		begin: resolve('/api/machines/[id]/session-files/send/begin', params),
 		end: resolve('/api/machines/[id]/session-files/send/end', params),

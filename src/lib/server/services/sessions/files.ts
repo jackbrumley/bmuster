@@ -17,18 +17,14 @@ import {
 import type { AppDatabase } from '../../database/connection.ts';
 import type { Grant } from '#lib/domain/access/access.ts';
 import { permissionsFor } from '../access/access.ts';
-import { isAgentConnected, sendToAgent } from '../agents/live-agents.ts';
+import { isAgentConnected } from '../agents/live-agents.ts';
 import { unreachableMessage } from '../agents/presence.ts';
-import { serverKey } from '../agents/server-keys.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { activeMachineBasics } from '../machines/machine-views.ts';
 import { getSetting } from '../settings/settings.ts';
 import type { AgentAnswer, FilesChannel, FilesChannels, FilesOp } from './files-channel.ts';
 import type { Relay } from './relay.ts';
-import type { SessionRecord } from './session-record.ts';
-import { auditSessionEnded, auditSessionOpened } from './session-audit.ts';
-import { signTicket, TICKET_LIFETIME_MS } from './session-ticket.ts';
-import { MAX_SESSIONS_PER_PERSON } from './sessions.ts';
+import { localSessionOpener } from './local-session.ts';
 
 /**
  * File actions (SPEC-FILES). Every request checks `view` and `files`
@@ -125,55 +121,16 @@ function allowed(context: FilesContext): FilesOutcome<Allowed> {
 
 /** The person's files session with the machine, opened with a signed ticket if there is none. */
 function channelFor(context: FilesContext, access: Allowed): FilesOutcome<FilesChannel> {
-	const { database, relay, secretsKey, user, machineId, ip, now } = context;
-	const found = context.channels.get(user.id, machineId, (local, onEnded) => {
-		if (relay.countFor(user.id) >= MAX_SESSIONS_PER_PERSON) {
-			return {
-				kind: 'refused',
-				status: 409,
-				message: `You already have ${MAX_SESSIONS_PER_PERSON} sessions open. End one first.`
-			};
-		}
-		const sessionId = crypto.randomUUID();
-		const key = serverKey(database, secretsKey, now);
-		const signed = signTicket(
-			{
-				sessionId,
-				machineId,
-				user: { id: user.id, name: user.name },
-				permissions: access.grants.map((grant) => grant.permission),
-				runAs: { kind: 'admin' },
-				issuedAtMs: now,
-				expiresAtMs: now + TICKET_LIFETIME_MS,
-				purpose: { kind: 'files' }
-			},
-			key.privateKey
-		);
-		const record: SessionRecord = {
-			id: sessionId,
-			machineId,
-			userId: user.id,
-			userName: user.name,
-			viewer: { kind: 'user' },
-			kind: 'files',
-			ip,
-			openedAt: now
-		};
-		relay.startLocal(
-			record,
-			(ended) => {
-				onEnded(ended);
-				auditSessionEnded(database, ended, access.machine.name);
-			},
-			local
-		);
-		auditSessionOpened(database, record, access.machine.name);
-		if (!sendToAgent(machineId, { type: 'session-open', ...signed })) {
-			relay.end(sessionId, 'agent-lost', 'This machine is offline.');
-			return { kind: 'refused', status: 503, message: 'This machine is offline.' };
-		}
-		return { kind: 'opened', sessionId };
-	});
+	const found = context.channels.get(
+		context.user.id,
+		context.machineId,
+		localSessionOpener(context, {
+			machineName: access.machine.name,
+			permissions: access.grants.map((grant) => grant.permission),
+			purpose: { kind: 'files' },
+			kind: { kind: 'files' }
+		})
+	);
 	return found.kind === 'channel'
 		? { kind: 'ok', value: found.channel }
 		: refused(found.status, found.message);

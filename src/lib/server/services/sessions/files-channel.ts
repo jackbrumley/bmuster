@@ -90,7 +90,7 @@ export type OpenSession = (
 	| { kind: 'opened'; sessionId: string }
 	| { kind: 'refused'; status: 403 | 404 | 409 | 503; message: string };
 
-export type ChannelLookup<C> =
+type ChannelLookup<C> =
 	| { kind: 'channel'; channel: C }
 	| { kind: 'refused'; status: 403 | 404 | 409 | 503; message: string };
 

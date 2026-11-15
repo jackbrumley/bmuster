@@ -27,18 +27,15 @@ function hasControlCharacter(name: string): boolean {
  * One file's name: one part, no control characters, colons or slashes, at most 255 bytes. The
  * helper on the machine applies the full rules (Windows names, trailing dots) on every system.
  */
-export const sentNameSchema = z
+const sentNameSchema = z
 	.string()
 	.min(1, 'A file needs a name.')
 	.refine((name) => new TextEncoder().encode(name).byteLength <= 255, 'That name is too long.')
 	.refine((name) => name !== '.' && name !== '..', 'That is not a file name.')
-	.refine(
-		(name) => !hasControlCharacter(name),
-		'A file name cannot hold control characters.'
-	)
+	.refine((name) => !hasControlCharacter(name), 'A file name cannot hold control characters.')
 	.refine((name) => !/[/\\:]/.test(name), 'A file name cannot hold / \\ or :.');
 
-/** `GET …/session-files/target?desktopSessionId=` */
+/** `GET …/session-files/destination?desktopSessionId=` */
 export const targetQuerySchema = z.object({ desktopSessionId: id });
 
 export const sendTargetSchema: z.ZodType<SendTarget> = z.discriminatedUnion('kind', [

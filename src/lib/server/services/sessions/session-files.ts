@@ -19,18 +19,14 @@ import {
 } from '#lib/schemas/session-files/session-files.ts';
 import type { AppDatabase } from '../../database/connection.ts';
 import { permissionsFor } from '../access/access.ts';
-import { isAgentConnected, sendToAgent } from '../agents/live-agents.ts';
+import { isAgentConnected } from '../agents/live-agents.ts';
 import { unreachableMessage } from '../agents/presence.ts';
-import { serverKey } from '../agents/server-keys.ts';
 import { recordAudit } from '../audit/audit.ts';
 import { activeMachineBasics } from '../machines/machine-views.ts';
 import { getSetting } from '../settings/settings.ts';
 import { createChannels, type AgentAnswer, type Channel, type Channels } from './files-channel.ts';
 import { sessionRelay, type Relay } from './relay.ts';
-import type { SessionRecord } from './session-record.ts';
-import { auditSessionEnded, auditSessionOpened } from './session-audit.ts';
-import { signTicket, TICKET_LIFETIME_MS } from './session-ticket.ts';
-import { MAX_SESSIONS_PER_PERSON } from './sessions.ts';
+import { localSessionOpener } from './local-session.ts';
 import type { Transfer, TransferStore } from './session-files-transfers.ts';
 
 /**
@@ -41,7 +37,7 @@ import type { Transfer, TransferStore } from './session-files-transfers.ts';
  * every file operation as the person on the screen. Each transfer is audited (SF18).
  */
 
-export type SessionFilesOp =
+type SessionFilesOp =
 	| { op: 'target' }
 	| { op: 'send-begin'; transferId: string; name: string; size: number }
 	| { op: 'send-chunk'; transferId: string; offset: number }
@@ -49,7 +45,7 @@ export type SessionFilesOp =
 	| { op: 'send-cancel'; transferId: string }
 	| { op: 'send-finish'; batchId: string; transferIds: string[]; sender: string };
 
-export type SessionFilesChannel = Channel<SessionFilesOp, SessionFileErrorCode>;
+type SessionFilesChannel = Channel<SessionFilesOp, SessionFileErrorCode>;
 export type SessionFilesChannels = Channels<SessionFilesOp, SessionFileErrorCode>;
 
 export type SessionFilesContext = {
@@ -137,60 +133,16 @@ function channelFor(
 	access: Allowed,
 	desktopSessionId: string
 ): Outcome<SessionFilesChannel> {
-	const { database, relay, secretsKey, user, machineId, ip, now } = context;
 	// One channel per desktop session: its ticket names that session, and it ends with it.
 	const found = context.channels.get(
-		user.id,
-		`${machineId}/${desktopSessionId}`,
-		(local, onEnded) => {
-			if (relay.countFor(user.id) >= MAX_SESSIONS_PER_PERSON) {
-				return {
-					kind: 'refused',
-					status: 409,
-					message: `You already have ${MAX_SESSIONS_PER_PERSON} sessions open. End one first.`
-				};
-			}
-			const sessionId = crypto.randomUUID();
-			const key = serverKey(database, secretsKey, now);
-			const signed = signTicket(
-				{
-					sessionId,
-					machineId,
-					user: { id: user.id, name: user.name },
-					permissions: access.grants.map((grant) => grant.permission),
-					runAs: { kind: 'admin' },
-					issuedAtMs: now,
-					expiresAtMs: now + TICKET_LIFETIME_MS,
-					purpose: { kind: 'session-files', desktopSessionId }
-				},
-				key.privateKey
-			);
-			const record: SessionRecord = {
-				id: sessionId,
-				machineId,
-				userId: user.id,
-				userName: user.name,
-				viewer: { kind: 'user' },
-				kind: 'session-files',
-				desktopSessionId,
-				ip,
-				openedAt: now
-			};
-			relay.startLocal(
-				record,
-				(ended) => {
-					onEnded(ended);
-					auditSessionEnded(database, ended, access.machineName);
-				},
-				local
-			);
-			auditSessionOpened(database, record, access.machineName);
-			if (!sendToAgent(machineId, { type: 'session-open', ...signed })) {
-				relay.end(sessionId, 'agent-lost', 'This machine is offline.');
-				return { kind: 'refused', status: 503, message: 'This machine is offline.' };
-			}
-			return { kind: 'opened', sessionId };
-		}
+		context.user.id,
+		`${context.machineId}/${desktopSessionId}`,
+		localSessionOpener(context, {
+			machineName: access.machineName,
+			permissions: access.grants.map((grant) => grant.permission),
+			purpose: { kind: 'session-files', desktopSessionId },
+			kind: { kind: 'session-files', desktopSessionId }
+		})
 	);
 	if (found.kind === 'refused') {
 		return refused(found.status, found.message);

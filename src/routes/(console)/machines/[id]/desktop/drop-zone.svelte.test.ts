@@ -100,7 +100,7 @@ function stubFilesServer(): void {
 		'fetch',
 		vi.fn((url: string) => {
 			asked.push(url);
-			if (url.includes('/session-files/target')) {
+			if (url.includes('/session-files/destination')) {
 				return Promise.resolve(
 					Response.json({
 						kind: 'ready',
@@ -148,7 +148,7 @@ describe('the drop zone', () => {
 		drag(stage, 'dragenter', true);
 		await expect.element(page.getByText(`Drop to send to ${TEST_MACHINE.name}`)).toBeVisible();
 		await expect.element(page.getByText("Saved to kim's Downloads/BMuster")).toBeVisible();
-		expect(asked.some((url) => url.includes('/session-files/target'))).toBe(true);
+		expect(asked.some((url) => url.includes('/session-files/destination'))).toBe(true);
 		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 		await expect
 			.element(page.getByText(`Drop to send to ${TEST_MACHINE.name}`))

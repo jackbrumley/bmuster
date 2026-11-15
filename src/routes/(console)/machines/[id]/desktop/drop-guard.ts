@@ -7,7 +7,7 @@
  */
 
 /** True when a drag carries files from the computer (rather than text or a link). */
-export function carriesFiles(event: DragEvent): boolean {
+function carriesFiles(event: DragEvent): boolean {
 	return event.dataTransfer?.types.includes('Files') === true;
 }
 

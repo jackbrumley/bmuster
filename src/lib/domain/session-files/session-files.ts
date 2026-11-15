@@ -8,7 +8,7 @@
 export const MAX_FILES_PER_DROP = 100;
 
 /** Bytes that must stay free on the machine's Downloads disk. */
-export const KEEP_FREE_BYTES = 1024 * 1024 * 1024;
+const KEEP_FREE_BYTES = 1024 * 1024 * 1024;
 
 /** Why the agent refused a request (`UserFilesError`). */
 export const SESSION_FILE_ERROR_CODES = [
