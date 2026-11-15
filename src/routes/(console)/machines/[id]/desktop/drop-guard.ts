@@ -55,3 +55,73 @@ export function attachDropGuard(target: Window, onstray: (() => void) | undefine
 		target.removeEventListener('drop', drop);
 	};
 }
+
+/** What the stage's drop zone tells its page (SPEC-SESSION-FILES 3.1). */
+export type DropZoneHandlers = {
+	/** Files are being dragged over the stage. */
+	enter: () => void;
+	/** The drag left the stage, was dropped, or Escape was pressed. */
+	leave: () => void;
+	/** Files were dropped on the stage. */
+	drop: (transfer: DataTransfer) => void;
+	/** Whether a drop would be taken (the drag's cursor shows copy or not). */
+	accepting: () => boolean;
+};
+
+/**
+ * Makes `stage` the drop zone: drags carrying files show the overlay, a drop
+ * sends them. Events are marked handled, so the window's guard leaves them.
+ * Pointer and keys reach the machine only through the stage's own input
+ * handlers, which a drag does not trigger; Escape closes the overlay first.
+ */
+export function attachDropZone(stage: HTMLElement, handlers: DropZoneHandlers): () => void {
+	let inside = false;
+	const over = (event: DragEvent): void => {
+		if (!carriesFiles(event)) {
+			return;
+		}
+		event.preventDefault();
+		if (event.dataTransfer !== null) {
+			event.dataTransfer.dropEffect = handlers.accepting() ? 'copy' : 'none';
+		}
+		if (!inside) {
+			inside = true;
+			handlers.enter();
+		}
+	};
+	const leaveStage = (event: DragEvent): void => {
+		const to = event.relatedTarget;
+		if (inside && !(to instanceof Node && stage.contains(to))) {
+			inside = false;
+			handlers.leave();
+		}
+	};
+	const drop = (event: DragEvent): void => {
+		if (!carriesFiles(event) || event.dataTransfer === null) {
+			return;
+		}
+		event.preventDefault();
+		inside = false;
+		handlers.leave();
+		handlers.drop(event.dataTransfer);
+	};
+	const key = (event: KeyboardEvent): void => {
+		if (inside && event.key === 'Escape') {
+			event.stopPropagation();
+			inside = false;
+			handlers.leave();
+		}
+	};
+	stage.addEventListener('dragenter', over);
+	stage.addEventListener('dragover', over);
+	stage.addEventListener('dragleave', leaveStage);
+	stage.addEventListener('drop', drop);
+	window.addEventListener('keydown', key, true);
+	return () => {
+		stage.removeEventListener('dragenter', over);
+		stage.removeEventListener('dragover', over);
+		stage.removeEventListener('dragleave', leaveStage);
+		stage.removeEventListener('drop', drop);
+		window.removeEventListener('keydown', key, true);
+	};
+}

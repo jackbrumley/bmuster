@@ -2,10 +2,12 @@
 	import {
 		IconAdjustmentsHorizontal,
 		IconArrowsMaximize,
+		IconArrowsTransferUpDown,
 		IconArrowsMinimize,
 		IconClipboard,
 		IconEye,
 		IconKeyboard,
+		IconUpload,
 		IconWindowMaximize
 	} from '@tabler/icons-svelte-runes';
 	import type { DisplayChoice } from '#lib/domain/desktop/displays.ts';
@@ -37,11 +39,16 @@
 		keysOpen,
 		clipboardOpen,
 		settingsOpen,
+		canSend,
+		transfersOpen,
+		transfersRunning,
 		ondisplay,
 		onswitch,
 		onkeys,
 		onclipboard,
 		onsettings,
+		onupload,
+		ontransfers,
 		onfullscreen,
 		onpopout,
 		ondisconnect
@@ -63,11 +70,18 @@
 		keysOpen: boolean;
 		clipboardOpen: boolean;
 		settingsOpen: boolean;
+		/** Files may be sent through the screen now (SPEC-SESSION-FILES 3.1). */
+		canSend: boolean;
+		transfersOpen: boolean;
+		/** Uploads still running, for the Transfers button's count. */
+		transfersRunning: number;
 		ondisplay: (id: string) => void;
 		onswitch: (mode: DesktopMode) => void;
 		onkeys: () => void;
 		onclipboard: () => void;
 		onsettings: () => void;
+		onupload: () => void;
+		ontransfers: () => void;
 		onfullscreen: () => void;
 		onpopout: () => void;
 		ondisconnect: () => void;
@@ -143,6 +157,24 @@
 		{#if running && !watchOnly}
 			<ToolButton label="Clipboard" pressed={clipboardOpen} disabled={false} onclick={onclipboard}>
 				<IconClipboard size={20} />
+			</ToolButton>
+		{/if}
+		{#if canSend}
+			<ToolButton label="Upload files" pressed={undefined} disabled={false} onclick={onupload}>
+				<IconUpload size={20} />
+			</ToolButton>
+		{/if}
+		{#if canSend || transfersOpen}
+			<ToolButton
+				label={transfersRunning > 0 ? `Transfers (${transfersRunning} running)` : 'Transfers'}
+				pressed={transfersOpen}
+				disabled={false}
+				onclick={ontransfers}
+			>
+				<IconArrowsTransferUpDown size={20} />
+				{#if transfersRunning > 0}
+					<span class="count" aria-hidden="true">{transfersRunning}</span>
+				{/if}
 			</ToolButton>
 		{/if}
 		{#if running}
@@ -226,6 +258,16 @@
 		font-size: var(--text-xs);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
+	}
+
+	.count {
+		min-width: 16px;
+		padding: 0 var(--space-1);
+		border-radius: var(--radius-pill);
+		background: var(--brand);
+		color: var(--brand-contrast);
+		font-size: var(--text-xs);
+		line-height: 16px;
 	}
 
 	.screen-state {

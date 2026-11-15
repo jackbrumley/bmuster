@@ -30,6 +30,9 @@
 	import GestureHint from './gesture-hint.svelte';
 	import { attachStageInput } from './stage-input.ts';
 	import { attachDropGuard } from './drop-guard.ts';
+	import { DesktopFiles, sendBlock } from './desktop-files.svelte.ts';
+	import DropOverlay from './drop-overlay.svelte';
+	import TransfersPanel from './transfers-panel.svelte';
 	import { watchViewport } from './viewport-watch.ts';
 	import type { Geometry, TouchMode } from './touch-gestures.ts';
 	import { readTouchMode, saveTouchMode } from './touch-input.ts';
@@ -95,6 +98,17 @@
 	const phone = $derived(phoneLayout.current);
 	/** The window this tab popped the session out into (SPEC-DESKTOP-POPOUT 8). */
 	const popOut = new PopOutWindow();
+	/** Files sent through the screen (SPEC-SESSION-FILES): the drop zone, Upload files, Transfers. */
+	const files = new DesktopFiles(() => data.machine, {
+		block: () =>
+			sendBlock({
+				canFiles: hasPermission(data.grants, 'files'),
+				canControl,
+				running,
+				watchOnly
+			}),
+		sessionId: () => session?.handover?.sessionId
+	});
 
 	const connection = $derived(session?.connection ?? { kind: 'idle' as const });
 	const running = $derived(isRunning(connection));
@@ -291,12 +305,14 @@
 			cursor
 		});
 		const detachFullScreen = screenMode.attach();
+		const detachDrop = files.attach(surface);
 		const detachViewport = watchViewport(surface, () => {
 			current.viewportChanged();
 		});
 		return () => {
 			detachInput();
 			detachFullScreen();
+			detachDrop();
 			detachViewport();
 			current.detach();
 			cursor.detach();
@@ -331,6 +347,9 @@
 			{keysOpen}
 			clipboardOpen={open === 'clipboard'}
 			settingsOpen={open === 'settings'}
+			canSend={files.canSend}
+			transfersOpen={files.panelOpen}
+			transfersRunning={files.sender.running}
 			ondisplay={(id: string) => session?.selectDisplay(id)}
 			onswitch={switchMode}
 			onkeys={() => {
@@ -341,6 +360,12 @@
 			}}
 			onsettings={() => {
 				toggle('settings');
+			}}
+			onupload={() => {
+				files.pick();
+			}}
+			ontransfers={() => {
+				files.togglePanel();
 			}}
 			onfullscreen={() => void toggleFullScreen()}
 			onpopout={popOutWindow}
@@ -380,6 +405,10 @@
 
 		{#if open === 'clipboard' && session !== undefined && running && !watchOnly && !fullScreen}
 			<ClipboardPanel clipboard={session.clipboard} />
+		{/if}
+
+		{#if files.panelOpen && !fullScreen}
+			<TransfersPanel sender={files.sender} />
 		{/if}
 
 		{#if keysOpen && !fullScreen}
@@ -430,6 +459,7 @@
 				waiting={connectingTitle}
 				onapprove={() => session?.askApproval()}
 			/>
+			<DropOverlay overlay={files.sender.overlay} machine={machine.name} />
 			{#if fullScreen && touchLayout.current && session !== undefined}
 				<FloatingControls
 					osFamily={machine.osFamily}

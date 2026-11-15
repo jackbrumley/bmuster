@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Grant } from '#lib/domain/access/access.ts';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { TEST_MACHINE } from '#tests/helpers/machines.ts';
 import '#lib/ui/design-tokens.css';
 import GuestPage from '../../../../s/[token]/guest-page.svelte';
-import { CONTROL, renderTab, stubDesktopServer } from './desktop-test-harness.ts';
+import { CONTROL, open, renderTab, stubDesktopServer } from './desktop-test-harness.ts';
 import DesktopWindow from './window/+page@.svelte';
 
 // SPEC-SESSION-FILES: dropping files on a desktop page.
@@ -85,5 +86,114 @@ describe('a file dropped on a desktop page', () => {
 		box.dispatchEvent(over);
 		box.remove();
 		expect(over.defaultPrevented).toBe(false);
+	});
+});
+
+const FILES: Grant[] = [...CONTROL, { permission: 'files', consent: 'unattended' }];
+
+/** The session-files calls the page made, and a server that answers them. */
+const asked: string[] = [];
+
+function stubFilesServer(): void {
+	asked.length = 0;
+	vi.stubGlobal(
+		'fetch',
+		vi.fn((url: string) => {
+			asked.push(url);
+			if (url.includes('/session-files/target')) {
+				return Promise.resolve(
+					Response.json({
+						kind: 'ready',
+						user: 'kim',
+						folderLabel: 'Downloads/BMuster',
+						free: 50 * 1024 ** 3
+					})
+				);
+			}
+			return Promise.resolve(
+				Response.json({ sessionId: '33333333-3333-4333-8333-333333333333', browserTicket: 't-1' })
+			);
+		})
+	);
+}
+
+function drag(
+	target: Element,
+	type: 'dragenter' | 'dragover' | 'dragleave' | 'drop',
+	files: boolean
+) {
+	const transfer = new DataTransfer();
+	if (files) {
+		transfer.items.add(new File(['x'], 'a.txt'));
+	} else {
+		transfer.setData('text/plain', 'just text');
+	}
+	const event = new DragEvent(type, {
+		bubbles: true,
+		cancelable: true,
+		dataTransfer: transfer,
+		relatedTarget: type === 'dragleave' ? document.body : null
+	});
+	target.dispatchEvent(event);
+	return event;
+}
+
+describe('the drop zone', () => {
+	it('SF13: dragging files over the screen shows where they go; Escape and leaving close it; text does nothing', async () => {
+		const { screen } = await open(FILES, 'Connect');
+		stubFilesServer();
+		const stage = screen
+			.getByRole('application', { name: `Screen of ${TEST_MACHINE.name}` })
+			.element();
+		drag(stage, 'dragenter', true);
+		await expect.element(page.getByText(`Drop to send to ${TEST_MACHINE.name}`)).toBeVisible();
+		await expect.element(page.getByText("Saved to kim's Downloads/BMuster")).toBeVisible();
+		expect(asked.some((url) => url.includes('/session-files/target'))).toBe(true);
+		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+		await expect
+			.element(page.getByText(`Drop to send to ${TEST_MACHINE.name}`))
+			.not.toBeInTheDocument();
+		drag(stage, 'dragover', true);
+		await expect.element(page.getByText(`Drop to send to ${TEST_MACHINE.name}`)).toBeVisible();
+		drag(stage, 'dragleave', true);
+		await expect
+			.element(page.getByText(`Drop to send to ${TEST_MACHINE.name}`))
+			.not.toBeInTheDocument();
+		const text = drag(stage, 'dragover', false);
+		expect(text.defaultPrevented).toBe(true);
+		await expect
+			.element(page.getByText(`Drop to send to ${TEST_MACHINE.name}`))
+			.not.toBeInTheDocument();
+	});
+
+	it('SF14: where sending is not allowed the overlay says why and a drop sends nothing', async () => {
+		const { screen } = await open(CONTROL, 'Connect');
+		stubFilesServer();
+		const stage = screen
+			.getByRole('application', { name: `Screen of ${TEST_MACHINE.name}` })
+			.element();
+		const over = drag(stage, 'dragover', true);
+		expect(over.dataTransfer?.dropEffect).toBe('none');
+		await expect
+			.element(
+				page.getByText("You don't have permission to send files to this machine.", { exact: false })
+			)
+			.toBeVisible();
+		expect(drag(stage, 'drop', true).defaultPrevented).toBe(true);
+		expect(asked).toEqual([]);
+	});
+
+	it('SF15: Upload files and Transfers are on the bar only when sending is allowed', async () => {
+		const allowed = await open(FILES, 'Connect');
+		await expect
+			.element(allowed.screen.getByRole('button', { name: 'Upload files' }))
+			.toBeVisible();
+		await expect.element(allowed.screen.getByRole('button', { name: 'Transfers' })).toBeVisible();
+		await allowed.screen.unmount();
+		const refused = await open(CONTROL, 'Connect');
+		await expect.element(refused.screen.getByRole('button', { name: 'Keys' })).toBeVisible();
+		await expect
+			.element(refused.screen.getByRole('button', { name: 'Upload files' }))
+			.not.toBeInTheDocument();
 	});
 });
