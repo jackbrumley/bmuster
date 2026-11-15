@@ -8,13 +8,16 @@
 //! files, desktop) decides what the bytes mean.
 
 mod desktop;
+pub(crate) mod desktops;
 mod exec;
 mod files;
 #[cfg(target_os = "linux")]
 pub mod files_helper;
+pub(crate) mod frames;
 pub mod live;
-mod pump;
+pub(crate) mod pump;
 mod readiness;
+mod session_files;
 mod terminal;
 #[cfg(test)]
 mod testing;
@@ -218,6 +221,7 @@ fn purpose_kind(purpose: &SessionPurpose) -> &'static str {
         SessionPurpose::Exec { .. } => "exec",
         SessionPurpose::Files {} => "files",
         SessionPurpose::Desktop { .. } => "desktop",
+        SessionPurpose::SessionFiles { .. } => "session-files",
     }
 }
 
@@ -227,6 +231,7 @@ fn purpose_label(purpose: &SessionPurpose) -> String {
         SessionPurpose::Exec { shell, .. } => format!("command, {}", shell.as_str()),
         SessionPurpose::Files {} => "files".into(),
         SessionPurpose::Desktop { .. } => "desktop".into(),
+        SessionPurpose::SessionFiles { .. } => "files through the screen".into(),
     }
 }
 
@@ -246,6 +251,16 @@ fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<End
         SessionPurpose::Desktop { notice: true, .. } => {
             Some(crate::tray::viewers::add(&ticket.user.name))
         }
+        _ => None,
+    };
+    // A session-files session finds this desktop session by id (SPEC-SESSION-FILES 4.2).
+    let _desktop = match ticket.purpose {
+        SessionPurpose::Desktop { .. } => Some(desktops::enter(
+            &ticket.session_id,
+            &ticket.user.id,
+            bmuster_desktop::Mode::from_permissions(&ticket.permissions)
+                .is_ok_and(|mode| mode == bmuster_desktop::Mode::Control),
+        )),
         _ => None,
     };
     // Windows: session 0 has no screen; the helper in the console session
@@ -334,6 +349,20 @@ fn serve(inner: &Inner, ticket: &SessionTicket, text: &TicketText) -> Result<End
                 fail(&mut socket, &e)
             }
         },
+        SessionPurpose::SessionFiles { desktop_session_id } => {
+            match desktops::refuse_link(desktop_session_id, &ticket.user.id) {
+                Some(reason) => fail(
+                    &mut socket,
+                    &anyhow::anyhow!("The agent refused to send files: {reason}."),
+                ),
+                None => session_files::run(
+                    &mut socket,
+                    session_files::System,
+                    desktop_session_id,
+                    &inner.stop,
+                ),
+            }
+        }
         SessionPurpose::Desktop { consent, notice } => {
             let request = desktop::Request {
                 permissions: &ticket.permissions,
@@ -372,7 +401,7 @@ fn failed_to_start(purpose: &SessionPurpose) {
         SessionPurpose::Terminal { .. } => crate::diagnostics::session_failed("terminal"),
         SessionPurpose::Files {} => crate::diagnostics::session_failed("files"),
         SessionPurpose::Desktop { .. } => crate::diagnostics::session_failed("desktop"),
-        SessionPurpose::Exec { .. } => {}
+        SessionPurpose::Exec { .. } | SessionPurpose::SessionFiles { .. } => {}
     }
 }
 

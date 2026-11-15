@@ -55,7 +55,7 @@ const EXIT_WAIT_MS: u32 = 5000;
 const RESCUE_NAME: &str = "bmuster-agent.exe";
 
 /// Closes a handle when dropped.
-struct Owned(HANDLE);
+pub(crate) struct Owned(pub(crate) HANDLE);
 
 impl Drop for Owned {
     fn drop(&mut self) {
@@ -299,7 +299,7 @@ fn token_user(token: HANDLE) -> Result<String, String> {
 /// A primary token for `session`'s person: the session's own token, or
 /// its filtered half when it is elevated. Refuses anything that is not a
 /// person's unelevated token in that session.
-fn person_token(session: u32) -> Result<Owned, String> {
+pub(crate) fn person_token(session: u32) -> Result<Owned, String> {
     let mut given = HANDLE::default();
     // SAFETY: an out-parameter; the token is owned at once.
     unsafe { WTSQueryUserToken(session, &mut given) }
@@ -354,7 +354,24 @@ fn person_token(session: u32) -> Result<Owned, String> {
 }
 
 /// The person's environment block, destroyed when dropped.
-struct Environment(*mut c_void);
+pub(crate) struct Environment(pub(crate) *mut c_void);
+
+impl Environment {
+    /// The environment of `token`'s person, without the service's own.
+    pub(crate) fn of(token: &Owned) -> Result<Environment, String> {
+        let mut block: *mut c_void = std::ptr::null_mut();
+        // SAFETY: an out-parameter, owned at once.
+        unsafe { CreateEnvironmentBlock(&mut block, Some(token.0), false) }
+            .map_err(|e| format!("CreateEnvironmentBlock: {e}"))?;
+        Ok(Environment(block))
+    }
+}
+
+/// This version's tray copy in Program Files, which every person may run:
+/// the user files helper (SPEC-SESSION-FILES) is the same program.
+pub(crate) fn installed_tray_program() -> Result<PathBuf> {
+    Ok(Programs::installed()?.tray)
+}
 
 impl Drop for Environment {
     fn drop(&mut self) {
@@ -368,11 +385,7 @@ impl Drop for Environment {
 /// Starts `program tray` in `session` as its person.
 fn start_helper(program: &Path, session: u32) -> Result<(), String> {
     let token = person_token(session)?;
-    let mut block: *mut c_void = std::ptr::null_mut();
-    // SAFETY: an out-parameter, owned at once.
-    unsafe { CreateEnvironmentBlock(&mut block, Some(token.0), false) }
-        .map_err(|e| format!("CreateEnvironmentBlock: {e}"))?;
-    let environment = Environment(block);
+    let environment = Environment::of(&token)?;
     let application = wide(program.as_os_str());
     let mut line: Vec<u16> = rules::command_line(&program.to_string_lossy())
         .encode_utf16()

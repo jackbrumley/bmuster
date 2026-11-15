@@ -34,8 +34,20 @@ describe('session tickets (T3)', () => {
 			'terminal',
 			'exec',
 			'files',
-			'desktop'
+			'desktop',
+			'session-files'
 		]);
+	});
+
+	it('SF2: the session-files vector carries files and desktop-control and names the desktop session', () => {
+		const vector = vectors.tickets.find((entry) => entry.ticket.purpose.kind === 'session-files');
+		if (vector === undefined) throw new Error('no session-files vector');
+		expect(vector.ticket.permissions).toEqual(
+			expect.arrayContaining(['files', 'desktop-control'])
+		);
+		expect(vector.ticketJson).toContain(
+			'"purpose":{"kind":"session-files","desktopSessionId":"7da0be30-3f4c-4e5d-8a91-2c3d4e5f6071"}'
+		);
 	});
 
 	for (const vector of vectors.tickets) {

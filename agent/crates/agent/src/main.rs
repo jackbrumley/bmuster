@@ -40,6 +40,7 @@ mod totp;
 mod tray;
 mod trust;
 mod updates;
+mod user_files;
 #[cfg(target_os = "linux")]
 mod wayland;
 mod worker;
@@ -218,6 +219,19 @@ enum Command {
         #[arg(long)]
         data_dir: PathBuf,
     },
+    /// Saves files sent through a desktop session, as the person on the
+    /// screen (started by the agent; SPEC-SESSION-FILES; not for use by hand)
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    UserFiles {
+        /// The agent's connect-back socket for this unit
+        socket: PathBuf,
+    },
+    /// Saves files sent through a desktop session, as the person on the
+    /// screen, over stdin and stdout (started by the service; not for use by hand)
+    #[cfg(windows)]
+    #[command(hide = true)]
+    UserFiles,
     /// Scan every local drive once, slowly, at the lowest priority (started
     /// by the agent; SPEC-STORAGE 3; not for use by hand)
     #[command(hide = true)]
@@ -503,6 +517,16 @@ fn dispatch(command: Command) -> Result<ExitCode> {
         }
         Command::StorageClean { data_dir } => {
             storage::cleanup::run(&data_dir)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        #[cfg(target_os = "linux")]
+        Command::UserFiles { socket } => {
+            user_files::serve::run(&socket)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        #[cfg(windows)]
+        Command::UserFiles => {
+            user_files::serve::run()?;
             Ok(ExitCode::SUCCESS)
         }
         #[cfg(target_os = "linux")]

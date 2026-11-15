@@ -25,7 +25,7 @@ impl LiveKind {
         match purpose {
             SessionPurpose::Desktop { .. } => Self::Desktop,
             SessionPurpose::Terminal { .. } => Self::Terminal,
-            SessionPurpose::Files {} => Self::Files,
+            SessionPurpose::Files {} | SessionPurpose::SessionFiles { .. } => Self::Files,
             SessionPurpose::Exec { .. } => Self::Command,
         }
     }

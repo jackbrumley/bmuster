@@ -15,6 +15,7 @@
 //! systemd.
 
 use super::files::{Requests, OUTPUT_QUEUE};
+use super::frames::{read_frame, write_frame, write_message, BINARY, TEXT};
 use super::pump::{pump, Ended, Incoming, Outgoing};
 use crate::exec::host::{self, HostProgram, InputWriter, Started};
 use crate::exec::spawn::{Launch, Program};
@@ -23,70 +24,15 @@ use crate::socket::Socket;
 use anyhow::{Context as _, Result};
 use bmuster_protocol::session::SessionEvent;
 use std::ffi::OsString;
-use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
 use std::time::Duration;
 
-const TEXT: u8 = 0;
-const BINARY: u8 = 1;
-/// The largest frame either side accepts: a chunk is at most 8 MB and a
-/// listing at most 5,000 entries, so anything bigger is a broken stream.
-const MAX_FRAME: usize = 64 * 1024 * 1024;
 /// How long the helper gets to finish after its input closes.
 const EXIT_WAIT: Duration = Duration::from_secs(2);
-
-fn write_frame(output: &mut impl Write, kind: u8, payload: &[u8]) -> io::Result<()> {
-    let length = u32::try_from(payload.len())
-        .ok()
-        .filter(|&length| length as usize <= MAX_FRAME)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "frame too large"))?;
-    output.write_all(&[kind])?;
-    output.write_all(&length.to_be_bytes())?;
-    output.write_all(payload)?;
-    output.flush()
-}
-
-fn write_message(output: &mut impl Write, message: &Outgoing) -> io::Result<()> {
-    match message {
-        Outgoing::Text(text) => write_frame(output, TEXT, text.as_bytes()),
-        Outgoing::Bytes(bytes) => write_frame(output, BINARY, bytes),
-        Outgoing::Done(event) => write_frame(output, TEXT, &serde_json::to_vec(event)?),
-    }
-}
-
-/// The next frame, or `None` when the stream ended between frames.
-fn read_frame(input: &mut impl Read) -> io::Result<Option<Incoming>> {
-    let mut kind = [0u8; 1];
-    match input.read_exact(&mut kind) {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(e),
-    }
-    let mut length = [0u8; 4];
-    input.read_exact(&mut length)?;
-    let length = u32::from_be_bytes(length) as usize;
-    if length > MAX_FRAME {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("a frame of {length} bytes is too large"),
-        ));
-    }
-    let mut payload = vec![0u8; length];
-    input.read_exact(&mut payload)?;
-    match kind[0] {
-        TEXT => String::from_utf8(payload)
-            .map(|text| Some(Incoming::Text(text)))
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)),
-        BINARY => Ok(Some(Incoming::Bytes(payload))),
-        other => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("unknown frame kind {other}"),
-        )),
-    }
-}
 
 fn write_all(output: impl Write, outgoing: &Receiver<Outgoing>) {
     let mut output = BufWriter::new(output);
@@ -252,34 +198,6 @@ mod tests {
     use super::*;
     use bmuster_protocol::files::frame;
     use serde_json::{json, Value};
-
-    #[test]
-    fn frames_keep_their_kind_and_bytes() {
-        let mut wire = Vec::new();
-        write_message(&mut wire, &Outgoing::Text("{\"id\":1}".into())).unwrap();
-        write_message(&mut wire, &Outgoing::Bytes(vec![0, 1, 2, 255])).unwrap();
-        assert_eq!(&wire[..5], &[TEXT, 0, 0, 0, 8]);
-        let mut reader = wire.as_slice();
-        assert!(matches!(
-            read_frame(&mut reader).unwrap(),
-            Some(Incoming::Text(text)) if text == "{\"id\":1}"
-        ));
-        assert!(matches!(
-            read_frame(&mut reader).unwrap(),
-            Some(Incoming::Bytes(bytes)) if bytes == [0, 1, 2, 255]
-        ));
-        assert!(read_frame(&mut reader).unwrap().is_none());
-    }
-
-    #[test]
-    fn broken_frames_are_errors() {
-        let oversized = [BINARY, 0xff, 0xff, 0xff, 0xff];
-        assert!(read_frame(&mut oversized.as_slice()).is_err());
-        let unknown = [7, 0, 0, 0, 0];
-        assert!(read_frame(&mut unknown.as_slice()).is_err());
-        let cut_short = [TEXT, 0, 0, 0, 9, b'x'];
-        assert!(read_frame(&mut cut_short.as_slice()).is_err());
-    }
 
     /// The relay and a helper joined by pipes, as `stdio-host` joins them.
     fn start() -> (Server, std::thread::JoinHandle<Ended>) {

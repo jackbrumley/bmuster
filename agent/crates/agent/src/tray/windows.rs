@@ -179,6 +179,9 @@ thread_local! {
     };
     /// Whether the notification area shows the icon now.
     static SHOWN: Cell<bool> = const { Cell::new(false) };
+    /// What clicking the last files balloon opens: the folder and the first file in it.
+    static BALLOON: std::cell::RefCell<Option<(PathBuf, Option<PathBuf>)>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// The program this helper started from, and which file it was then.
@@ -322,6 +325,58 @@ fn icon(window: HWND, event: IconEvent) {
     }
 }
 
+/// `NIN_BALLOONUSERCLICK`: the person clicked the balloon.
+const BALLOON_CLICK: u32 = WM_USER + 5;
+
+/// Files sent through a desktop session arrived (SPEC-SESSION-FILES 4.7):
+/// a notification-area balloon, which Windows 10 and 11 show as a normal
+/// notification.
+fn files_balloons(window: HWND) {
+    for (summary, folder, files) in super::files_notice::arrived() {
+        let mut data = NOTIFYICONDATAW {
+            cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: window,
+            uID: 1,
+            uFlags: NIF_INFO,
+            dwInfoFlags: NIIF_INFO,
+            ..Default::default()
+        };
+        for (to, from) in data.szInfo.iter_mut().take(255).zip(summary.encode_utf16()) {
+            *to = from;
+        }
+        for (to, from) in data
+            .szInfoTitle
+            .iter_mut()
+            .take(63)
+            .zip("BMuster".encode_utf16())
+        {
+            *to = from;
+        }
+        // SAFETY: a filled-in structure for our own icon.
+        let shown = unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) }.as_bool();
+        if shown {
+            BALLOON.replace(Some((folder, files.into_iter().next())));
+        }
+    }
+}
+
+/// Opens Explorer on the folder of the last balloon, the first file selected.
+fn open_balloon() {
+    let Some((folder, first)) = BALLOON.take() else {
+        return;
+    };
+    use std::os::windows::process::CommandExt as _;
+    let mut explorer = std::process::Command::new("explorer.exe");
+    match first {
+        // Windows paths cannot hold a quote, so quoting is enough here.
+        Some(file) => explorer.raw_arg(format!("/select,\"{}\"", file.display())),
+        None => explorer.arg(&folder),
+    };
+    if let Err(error) = explorer.spawn() {
+        log::warn!("Could not open the BMuster folder: {error}");
+    }
+}
+
 unsafe extern "system" fn procedure(window: HWND, message: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     match message {
         _ if message == unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) } => {
@@ -344,11 +399,16 @@ unsafe extern "system" fn procedure(window: HWND, message: u32, wp: WPARAM, lp: 
                 return LRESULT(0);
             }
             icon(window, IconEvent::Tick);
+            if SHOWN.get() {
+                files_balloons(window);
+            }
             LRESULT(0)
         }
         CALLBACK => {
             let event = lp.0 as u32;
-            if event == WM_LBUTTONUP {
+            if event == BALLOON_CLICK {
+                open_balloon();
+            } else if event == WM_LBUTTONUP {
                 if let Err(error) = super::open_management() {
                     log::warn!("Open management: {error:#}");
                 }

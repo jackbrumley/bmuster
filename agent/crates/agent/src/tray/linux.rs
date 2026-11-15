@@ -45,6 +45,9 @@ impl AgentTray {
         if let Some(text) = connected::notification_text(&joined) {
             self.notifier.show(text);
         }
+        for (summary, folder, files) in super::files_notice::arrived() {
+            self.notifier.files(summary, folder, files);
+        }
     }
     fn action(&mut self, copy: bool) {
         let result = if copy {

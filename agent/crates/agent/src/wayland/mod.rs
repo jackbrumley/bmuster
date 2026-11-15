@@ -16,7 +16,7 @@ use bmuster_desktop::{
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-fn next_id() -> u64 {
+pub(crate) fn next_id() -> u64 {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }

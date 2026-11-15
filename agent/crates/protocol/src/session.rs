@@ -126,6 +126,12 @@ pub enum SessionPurpose {
         /// Show "<name> is connected (BMuster) · Disconnect" at the machine.
         notice: bool,
     },
+    /// Files sent or fetched through a desktop session
+    /// (SPEC-SESSION-FILES): the server sends requests as for `files`
+    /// ([`crate::user_files`]), and the agent does them as the person
+    /// signed in on the screen of `desktop_session_id`, which must be a
+    /// live control session of the same user on this agent.
+    SessionFiles { desktop_session_id: String },
 }
 
 /// Whether a desktop session connects at once or asks the person at the
@@ -138,13 +144,15 @@ pub enum Consent {
 }
 
 impl SessionPurpose {
-    /// The permission a ticket must carry for this purpose.
-    pub fn required_permission(&self) -> &'static str {
+    /// The permissions a ticket must carry for this purpose, all of them.
+    pub fn required_permissions(&self) -> &'static [&'static str] {
         match self {
-            SessionPurpose::Terminal { .. } => "terminal",
-            SessionPurpose::Exec { .. } => "run-commands",
-            SessionPurpose::Files {} => "files",
-            SessionPurpose::Desktop { .. } => "desktop-view",
+            SessionPurpose::Terminal { .. } => &["terminal"],
+            SessionPurpose::Exec { .. } => &["run-commands"],
+            SessionPurpose::Files {} => &["files"],
+            SessionPurpose::Desktop { .. } => &["desktop-view"],
+            // Sending files puts them on the screen's person (SPEC-SESSION-FILES question 1).
+            SessionPurpose::SessionFiles { .. } => &["files", "desktop-control"],
         }
     }
 }
@@ -223,9 +231,10 @@ pub fn open_ticket(
     if now_ms > ticket.expires_at_ms + TICKET_CLOCK_GRACE_MS {
         return Err(TicketError::Expired);
     }
-    let needed = ticket.purpose.required_permission();
-    if !ticket.permissions.iter().any(|held| held == needed) {
-        return Err(TicketError::MissingPermission(needed));
+    for needed in ticket.purpose.required_permissions() {
+        if !ticket.permissions.iter().any(|held| held == needed) {
+            return Err(TicketError::MissingPermission(needed));
+        }
     }
     Ok(ticket)
 }
@@ -512,6 +521,48 @@ mod tests {
             }
         }));
         assert_eq!(open(&key, &ticket, NOW), Err(TicketError::WrongMachine));
+    }
+
+    /// SPEC-SESSION-FILES SF2: a session-files ticket needs both `files`
+    /// and `desktop-control`, and names the desktop session it serves.
+    #[test]
+    fn sf2_session_files_needs_files_and_control() {
+        let key = SigningKey::from_bytes(&[9; 32]);
+        let purpose = json!({ "kind": "session-files", "desktopSessionId": "d-1" });
+        let with = |permissions: serde_json::Value| {
+            ticket_json(json!({ "permissions": permissions, "purpose": purpose }))
+        };
+        assert_eq!(
+            open(&key, &with(json!(["view", "desktop-control"])), NOW),
+            Err(TicketError::MissingPermission("files"))
+        );
+        assert_eq!(
+            open(&key, &with(json!(["view", "files", "desktop-view"])), NOW),
+            Err(TicketError::MissingPermission("desktop-control"))
+        );
+        assert_eq!(
+            open(
+                &key,
+                &with(json!(["view", "files", "desktop-control"])),
+                NOW
+            )
+            .unwrap()
+            .purpose,
+            SessionPurpose::SessionFiles {
+                desktop_session_id: "d-1".into()
+            }
+        );
+        assert!(matches!(
+            open(
+                &key,
+                &ticket_json(json!({
+                    "permissions": ["files", "desktop-control"],
+                    "purpose": { "kind": "session-files", "desktopSessionId": "d-1", "path": "/" }
+                })),
+                NOW
+            ),
+            Err(TicketError::NotATicket(_))
+        ));
     }
 
     #[test]

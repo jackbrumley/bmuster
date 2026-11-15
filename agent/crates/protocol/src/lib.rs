@@ -20,6 +20,7 @@ pub mod power;
 pub mod session;
 pub mod storage;
 mod updates;
+pub mod user_files;
 pub use display::{
     ConsoleSession, DisplayReport, DrmCard, DrmConnector, DxgiOutput, DxgiOutputs, LauncherVersion,
     LinuxDisplay, LockedHint, NvidiaModeset, Programs, SasPolicy, SeLinux, SeatSession,

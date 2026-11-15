@@ -3,6 +3,8 @@
 mod connected;
 #[cfg(target_os = "linux")]
 mod disconnect;
+#[cfg(any(target_os = "linux", windows))]
+mod files_notice;
 #[cfg(any(windows, test))]
 mod ico;
 #[cfg(any(windows, all(test, target_os = "linux")))]

@@ -34,7 +34,12 @@ export type TicketPurpose =
 	 * A remote desktop (SPEC-DESKTOP); the agent needs `desktop-view`, and
 	 * reads `desktop-control` in the permissions as leave to control.
 	 */
-	| { kind: 'desktop'; consent: Consent; notice: boolean };
+	| { kind: 'desktop'; consent: Consent; notice: boolean }
+	/**
+	 * Files sent or fetched through a desktop session (SPEC-SESSION-FILES 4.2): the agent needs
+	 * `files` and `desktop-control`, and a live control session of the same person with this id.
+	 */
+	| { kind: 'session-files'; desktopSessionId: string };
 
 export type SessionTicket = {
 	sessionId: string;
@@ -81,6 +86,8 @@ function purposeJson(purpose: TicketPurpose): TicketPurpose {
 			return { kind: 'files' };
 		case 'desktop':
 			return { kind: 'desktop', consent: purpose.consent, notice: purpose.notice };
+		case 'session-files':
+			return { kind: 'session-files', desktopSessionId: purpose.desktopSessionId };
 	}
 }
 
