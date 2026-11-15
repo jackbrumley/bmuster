@@ -1,6 +1,6 @@
 # SPEC-SESSION-FILES: Sending files through a desktop session
 
-**Status:** `APPROVED` · decisions 1–7 and all 11 open questions approved as recommended by Jack, 2026-11-15 · **Date:** 2026-11-15 · Builds on SPEC-FILES (the files channel, chunked uploads, streamed downloads), SPEC-DESKTOP section 21 (copy and paste, the KMS clipboard helper, clipboard sharing), SPEC-SESSION-UNITS (helpers in transient units), SPEC-AGENT-TRAY and SPEC-TRAY-SESSIONS (the tray in every signed-in desktop).
+**Status:** phase 1 `IMPLEMENTED` (version set at release; As built: section 10) · phase 2 `APPROVED`, not built beyond the Linux clipboard formats · decisions 1–7 and all 11 open questions approved as recommended by Jack, 2026-11-15 · **Date:** 2026-11-15 · Builds on SPEC-FILES (the files channel, chunked uploads, streamed downloads), SPEC-DESKTOP section 21 (copy and paste, the KMS clipboard helper, clipboard sharing), SPEC-SESSION-UNITS (helpers in transient units), SPEC-AGENT-TRAY and SPEC-TRAY-SESSIONS (the tray in every signed-in desktop).
 
 > **Security work** (AGENTS.md, "This tool controls other people's computers"). This spec adds a program that a root or SYSTEM service starts as the signed-in person to write into, and read from, their home folder; it puts file lists on their clipboard and reads file lists from it; it adds a ticket purpose and a channel. Every check below is in addition to the existing ones; none is relaxed.
 
@@ -284,3 +284,26 @@ Run each on: Windows 11 (and Windows 10), Fedora KDE Plasma (Wayland, KMS path),
 ## 9. Not in this spec
 
 Guests over share links (open question 11); dropping at the pointer position or into a particular window (D1); folders from your computer (open question 4); Flatpak document-portal and network (`sftp://`, `smb://`) file lists (open question 9); macOS until a macOS agent exists (its pieces are listed so the design does not change).
+
+## 10. As built (phase 1, 2026-11-15)
+
+Phase 1 (SF1–SF19) is built on the server, the browser and the agent. Linux was run in tests; Windows was compiled and linted only (`cargo clippy --target x86_64-pc-windows-gnu`), never run. Phase 2 has only the Linux clipboard file-list formats (`bmuster_desktop::clipboard::files`, SF21's Linux serialisation and SF23), which nothing calls yet; SF20, SF22 and SF24–SF28 are not built.
+
+Where the build differs from sections 3 and 4:
+
+- **Drop safety first.** Every desktop page (the Desktop tab with its full screen and phone layouts, the pop-out window, the share-link guest page) catches `dragover` and `drop` at the window (`desktop/drop-guard.ts`). Text dragged into a text box still lands there. Guests see "Files can't be sent through a share link."
+- **The overlay's route is `…/session-files/destination`**, not `…/target`: the repository's ignore rule for Rust build folders (`target/`) would have kept a `target` route folder out of git.
+- **Channels are per desktop session** (key `<user>/<machine>/<desktop session>`), not per person per machine, since the ticket names the desktop session and the agent ends the channel with it.
+- **Part files are named `<transferId>.bmuster-part`**, never after anything the browser sent; the transfer id is the server's UUID, checked by the helper as hex and dashes.
+- **The helper serves one request at a time.** Uploads are sequential anyway; a long SHA-256 check holds up the next `target` until it ends.
+- **Windows folder handling:** `Downloads\BMuster` is opened with `FILE_FLAG_OPEN_REPARSE_POINT` and must be a directory, not a reparse point, owned by the helper's own user SID. The handle is then held **without delete sharing** for the helper's life, so the folder cannot be renamed or replaced, and the files inside are opened by path with `FILE_FLAG_OPEN_REPARSE_POINT` and `CREATE_NEW`, and renamed with `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`. This replaces the handle-relative `NtCreateFile` of 4.3. The helper is this version's tray copy in Program Files (`bmuster-tray-<version>.exe user-files`), since the ProgramData version folder is not readable by the person; its stdin and stdout are the only handles it inherits (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`).
+- **Who is on the screen:** Linux reads seat0's active logind session (greeter or no session: `nobody`; `lock-screen` class or `LockedHint` not `no`: `locked`); Windows reads the active console session and `WTSSessionInfoEx`'s lock flag (unreadable counts as locked).
+- **`XDG_CONFIG_HOME`** is not taken from the person's systemd user environment: the helper uses its own environment's value if set, else `~/.config`.
+- **Limits in the browser:** a dropped folder, more than 100 files and too little room (from the overlay's free space) are refused before anything is sent. The size limit is checked by the server on each file (the browser does not know `maxUploadGb`), so an oversized file fails in the notice with its own message.
+- **Errors:** admins and members see the same message; the agent's I/O messages already carry the operating system's reason.
+- **Pointer and keys during a drag:** a drag sends no pointer or key events, and the overlay covers the stage, so nothing reaches the machine; Escape closes the overlay and is not sent.
+- **The Transfers panel** is on the Desktop tab's session bar only (with a running count). Upload files is on the session bar, the full-screen bar and the full-screen sheet's Session tab (phones, tablets and the pop-out window); the sheet has no Transfers tab yet, and the notices show everywhere.
+- **The tray notice** on Linux uses the existing notification thread with a Show action (`FileManager1.ShowItems`, else `xdg-open` on the folder); on Windows a notification-area balloon whose click runs `explorer.exe /select,"<first file>"`.
+- **Audit:** one `desktop-files` entry per transfer with `direction`, `desktop` (the desktop session id), `signed in at the machine`, `folder`, `name` (the saved name, plus `sent` when it was renamed), `size`, `bytes`, `completed`, and `sha-256` or `reason`.
+
+Tests by criterion: SF1, SF9 (server), SF11 (server text), SF18 in `session-files.test.ts`; SF2 in `session-ticket.test.ts`, the protocol's `sf2_session_files_needs_files_and_control` and `sessions::desktops::tests::sf2_…`; SF3 `user_files::start::tests`; SF4, SF5 `user_files::folder::tests`; SF6, SF7 `user_files::names::tests` and `user_files::write::tests::sf7_saved_names_never_replace`; SF8–SF10 `user_files::write::tests`; SF11 `user_files::screen::tests` and `sessions::session_files::tests`; SF12 `tray::files_notice::tests`; SF13–SF15 `drop-zone.svelte.test.ts`, `desktop-window.svelte.test.ts`, `floating-controls.svelte.test.ts`; SF15–SF17 `session-file-sender.svelte.test.ts`; SF16 also in `session-files.test.ts`; SF19 `upload-queue.svelte.test.ts`.
