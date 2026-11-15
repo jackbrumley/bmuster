@@ -9,8 +9,9 @@
 	 * The round controls button over the screen (SPEC-DESKTOP-FLOATING): a
 	 * finger or the mouse drags it anywhere and, let go, it snaps to the
 	 * nearest edge. A tap opens the sheet, or on a wide screen expands the
-	 * bar. A badge shows while something waits (FB6). It sits inside `area`,
-	 * the screen less the safe-area insets, which its parent draws.
+	 * bar. A badge shows while something waits (FB6). It is white in both
+	 * themes, so it stands out over any remote screen (FB10). It sits inside
+	 * `area`, the screen less the safe-area insets, which its parent draws.
 	 */
 	let {
 		element = $bindable(),
@@ -119,14 +120,21 @@
 		width: var(--size);
 		height: var(--size);
 		padding: 0;
-		border: 2px solid var(--brand-contrast);
+		border: 1px solid var(--floating-button-rim);
 		border-radius: var(--radius-round);
-		background: var(--brand);
-		color: var(--brand-contrast);
+		background: var(--floating-button-bg);
+		box-shadow: var(--shadow-floating-button);
+		color: var(--floating-button-fg);
 		pointer-events: auto;
 		touch-action: none;
 		user-select: none;
 		cursor: grab;
+	}
+
+	/* White in both themes (FB10), so the theme's focus ring could vanish over a light screen. */
+	.fab:focus-visible {
+		outline: 2px solid transparent;
+		box-shadow: var(--shadow-floating-button-focus);
 	}
 
 	.fab.edge-left {
@@ -167,9 +175,9 @@
 		justify-content: center;
 		width: 20px;
 		height: 20px;
-		border: 2px solid var(--brand);
+		border: 2px solid var(--floating-button-bg);
 		border-radius: var(--radius-round);
-		background: var(--brand-contrast);
-		color: var(--brand);
+		background: var(--brand);
+		color: var(--brand-contrast);
 	}
 </style>

@@ -109,6 +109,15 @@
 	 */
 	--qr-light: light-dark(#ffffff, #ffffff);
 	--qr-dark: light-dark(#000000, #000000);
+	/*
+	 * The collapsed floating controls button (SPEC-DESKTOP-FLOATING FB10): white with a
+	 * dark icon in both themes, so it stands out over any remote screen; a dark rim and
+	 * a shadow keep it visible over a white one.
+	 */
+	--floating-button-bg: light-dark(#ffffff, #ffffff);
+	--floating-button-fg: light-dark(#161d14, #161d14);
+	--floating-button-rim: light-dark(rgba(22, 29, 20, 0.35), rgba(22, 29, 20, 0.35));
+	--floating-button-shadow-tint: light-dark(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4));
 	--focus-ring: var(--brand);
 	--success: light-dark(#16a34a, #4ade80);
 	--success-bg: light-dark(#dcfce7, rgba(74, 222, 128, 0.14));
@@ -131,6 +140,11 @@
 	--shadow-bar: 0 -1px 0 var(--border);
 	--shadow-popover: 0 8px 24px var(--shadow-tint);
 	--shadow-status-online: 0 0 0 3px var(--success-bg);
+	--shadow-floating-button: 0 2px 8px var(--floating-button-shadow-tint);
+	/* A dark ring inside a white one: one of the two shows over any remote screen. */
+	--shadow-floating-button-focus:
+		0 0 0 2px var(--floating-button-fg), 0 0 0 4px var(--floating-button-bg),
+		0 2px 8px var(--floating-button-shadow-tint);
 }
 
 /* Phones: less space beside and between blocks, so the content gets the screen. */

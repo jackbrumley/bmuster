@@ -9,7 +9,7 @@ import FloatingControls from './floating-controls.svelte';
 import { DEFAULT_POSITION, type FloatingPosition } from './floating-position.ts';
 import { availableActions } from './session-actions.ts';
 
-// SPEC-DESKTOP-FLOATING F2, F3, F4, F6, FA1, FA4, FA5, FA6, FA7, FA8, FA9. Remembering the
+// SPEC-DESKTOP-FLOATING F2, F3, F4, F6, FA1, FA4, FA5, FA6, FA7, FA8, FA9, FB10. Remembering the
 // button's place is the floating chrome's (FB7, floating-chrome.svelte.test.ts).
 
 const TWO_SCREENS = [
@@ -184,6 +184,39 @@ describe('the floating controls', () => {
 		expect(fab.getBoundingClientRect().left).toBeCloseTo(at.left, 0);
 		await button.click();
 		await expect.element(screen.getByRole('group', { name: 'Session options' })).toBeVisible();
+	});
+
+	it('FB10: the button is white with a dark icon in both themes, with a rim, a shadow and a focus ring', async () => {
+		const { button } = await setup('control');
+		const fab = button.element();
+		/** What a token resolves to here, read through a probe element. */
+		function token(name: string, property: 'color' | 'backgroundColor' = 'color'): string {
+			const probe = document.createElement('span');
+			probe.style[property] = `var(${name})`;
+			fab.append(probe);
+			const value = getComputedStyle(probe)[property];
+			probe.remove();
+			return value;
+		}
+		try {
+			for (const theme of ['light', 'dark']) {
+				document.documentElement.setAttribute('data-theme', theme);
+				const look = getComputedStyle(fab);
+				expect(look.backgroundColor).toBe('rgb(255, 255, 255)');
+				expect(look.backgroundColor).toBe(token('--floating-button-bg', 'backgroundColor'));
+				expect(look.color).toBe(token('--floating-button-fg'));
+				expect(look.color).toBe('rgb(22, 29, 20)');
+				expect(look.borderTopColor).toBe(token('--floating-button-rim'));
+				expect(look.boxShadow).not.toBe('none');
+			}
+			const resting = getComputedStyle(fab).boxShadow;
+			await userEvent.keyboard('{Tab}');
+			fab.focus();
+			await expect.poll(() => fab.matches(':focus-visible')).toBe(true);
+			expect(getComputedStyle(fab).boxShadow).not.toBe(resting);
+		} finally {
+			document.documentElement.removeAttribute('data-theme');
+		}
 	});
 
 	it('F3: starts at the place it is given', async () => {
