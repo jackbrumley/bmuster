@@ -10,6 +10,11 @@ import {
 	listMachinesOutput,
 	listSavedCommandsOutput
 } from '#lib/schemas/mcp/tools.ts';
+import {
+	cleanupResultOutput,
+	getStorageOutput,
+	rescanStorageOutput
+} from '#lib/schemas/mcp/storage-tools.ts';
 import { grantAccess } from '#tests/helpers/access.ts';
 import {
 	enrolFakeAgent,
@@ -184,7 +189,10 @@ describe('never exposed (SPEC-MCP M12)', () => {
 			get_machine: z.toJSONSchema(getMachineOutput),
 			list_saved_commands: z.toJSONSchema(listSavedCommandsOutput),
 			run_command: z.toJSONSchema(commandResultOutput),
-			cancel_command: z.toJSONSchema(cancelCommandOutput)
+			cancel_command: z.toJSONSchema(cancelCommandOutput),
+			get_storage: z.toJSONSchema(getStorageOutput),
+			rescan_storage: z.toJSONSchema(rescanStorageOutput),
+			clean_up_storage: z.toJSONSchema(cleanupResultOutput)
 		};
 		const keys = JSON.stringify(schemas).match(/"([A-Za-z]+)":/g) ?? [];
 		const forbidden = /code|secret|key|ticket|token|note|email|password|share|link/i;

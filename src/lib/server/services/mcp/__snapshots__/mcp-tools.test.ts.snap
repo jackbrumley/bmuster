@@ -31,6 +31,197 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
     ],
     "type": "object",
   },
+  "clean_up_storage": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "approvalUrl": {
+        "type": "string",
+      },
+      "decidedBy": {
+        "type": [
+          "string",
+          "null",
+        ],
+      },
+      "denyNote": {
+        "type": [
+          "string",
+          "null",
+        ],
+      },
+      "expiresAt": {
+        "type": [
+          "string",
+          "null",
+        ],
+      },
+      "items": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "errorMessages": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "errors": {
+              "type": [
+                "number",
+                "null",
+              ],
+            },
+            "filesRemoved": {
+              "type": [
+                "number",
+                "null",
+              ],
+            },
+            "filesSkipped": {
+              "type": [
+                "number",
+                "null",
+              ],
+            },
+            "freedBytes": {
+              "type": [
+                "number",
+                "null",
+              ],
+            },
+            "id": {
+              "enum": [
+                "windows-user-temp",
+                "windows-temp",
+                "windows-update-cache",
+                "delivery-optimisation-cache",
+                "windows-crash-dumps",
+                "recycle-bins",
+                "component-store",
+                "package-cache",
+                "journal",
+                "linux-crash-dumps",
+                "old-var-tmp",
+                "unused-flatpaks",
+                "thumbnail-caches",
+              ],
+              "type": "string",
+            },
+            "label": {
+              "type": "string",
+            },
+            "sizeWhenAskedBytes": {
+              "type": [
+                "number",
+                "null",
+              ],
+            },
+            "state": {
+              "enum": [
+                "waiting",
+                "running",
+                "done",
+              ],
+              "type": "string",
+            },
+          },
+          "required": [
+            "id",
+            "label",
+            "sizeWhenAskedBytes",
+            "state",
+            "freedBytes",
+            "filesRemoved",
+            "filesSkipped",
+            "errors",
+            "errorMessages",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "machine": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+          },
+          "name": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+          "name",
+        ],
+        "type": "object",
+      },
+      "message": {
+        "type": "string",
+      },
+      "requestId": {
+        "type": "string",
+      },
+      "status": {
+        "enum": [
+          "pending-approval",
+          "running",
+          "finished",
+          "interrupted",
+          "denied",
+          "expired",
+          "cancelled",
+        ],
+        "type": "string",
+      },
+      "totals": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "errors": {
+                "type": "number",
+              },
+              "filesRemoved": {
+                "type": "number",
+              },
+              "filesSkipped": {
+                "type": "number",
+              },
+              "freedBytes": {
+                "type": "number",
+              },
+            },
+            "required": [
+              "freedBytes",
+              "filesRemoved",
+              "filesSkipped",
+              "errors",
+            ],
+            "type": "object",
+          },
+          {
+            "type": "null",
+          },
+        ],
+        "description": "Over the items done so far; null before the clean-up starts.",
+      },
+    },
+    "required": [
+      "requestId",
+      "status",
+      "message",
+      "approvalUrl",
+      "expiresAt",
+      "decidedBy",
+      "denyNote",
+      "machine",
+      "items",
+      "totals",
+    ],
+    "type": "object",
+  },
   "get_machine": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "additionalProperties": false,
@@ -209,6 +400,311 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
       "groups",
       "inUse",
       "recentActivity",
+    ],
+    "type": "object",
+  },
+  "get_storage": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "cleanUp": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "explanation": {
+                  "type": "string",
+                },
+                "files": {
+                  "type": [
+                    "number",
+                    "null",
+                  ],
+                },
+                "id": {
+                  "enum": [
+                    "windows-user-temp",
+                    "windows-temp",
+                    "windows-update-cache",
+                    "delivery-optimisation-cache",
+                    "windows-crash-dumps",
+                    "recycle-bins",
+                    "component-store",
+                    "package-cache",
+                    "journal",
+                    "linux-crash-dumps",
+                    "old-var-tmp",
+                    "unused-flatpaks",
+                    "thumbnail-caches",
+                  ],
+                  "type": "string",
+                },
+                "label": {
+                  "type": "string",
+                },
+                "sizeBytes": {
+                  "description": "Null when the size cannot be known before cleaning.",
+                  "type": [
+                    "number",
+                    "null",
+                  ],
+                },
+              },
+              "required": [
+                "id",
+                "label",
+                "explanation",
+                "sizeBytes",
+                "files",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+          "measured": {
+            "type": "boolean",
+          },
+          "why": {
+            "description": "Why the items were not measured.",
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+        },
+        "required": [
+          "measured",
+          "why",
+          "items",
+        ],
+        "type": "object",
+      },
+      "drive": {
+        "description": "The drive the folder and files below are on.",
+        "type": [
+          "string",
+          "null",
+        ],
+      },
+      "drives": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "freeBytes": {
+              "type": "number",
+            },
+            "lastScanAgeMinutes": {
+              "type": [
+                "number",
+                "null",
+              ],
+            },
+            "lastScanFinishedAt": {
+              "description": "When the last complete scan finished.",
+              "type": [
+                "string",
+                "null",
+              ],
+            },
+            "mount": {
+              "type": "string",
+            },
+            "scanningPercent": {
+              "description": "How far a scan running now has got; null when none runs.",
+              "type": [
+                "number",
+                "null",
+              ],
+            },
+            "sizeBytes": {
+              "type": "number",
+            },
+            "usedBytes": {
+              "type": "number",
+            },
+            "usedPercent": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "mount",
+            "sizeBytes",
+            "usedBytes",
+            "freeBytes",
+            "usedPercent",
+            "lastScanFinishedAt",
+            "lastScanAgeMinutes",
+            "scanningPercent",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "folder": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "type": "number",
+              },
+              "files": {
+                "type": "number",
+              },
+              "nextFolderOffset": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer",
+                  },
+                  {
+                    "type": "null",
+                  },
+                ],
+                "description": "More sub-folders follow: call again with this folderOffset.",
+              },
+              "notScannedBytes": {
+                "description": "At a drive's top: used space the scan could not see (system or no access).",
+                "type": "number",
+              },
+              "ownFilesBytes": {
+                "description": "The folder's own files, outside its sub-folders.",
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+              "scanFinishedAt": {
+                "type": "string",
+              },
+              "smallFoldersBytes": {
+                "description": "Sub-folders too small to keep separately, counted here instead.",
+                "type": "number",
+              },
+              "subfolders": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "type": "number",
+                    },
+                    "files": {
+                      "type": "number",
+                    },
+                    "hasSubfolders": {
+                      "type": "boolean",
+                    },
+                    "name": {
+                      "type": "string",
+                    },
+                    "path": {
+                      "type": "string",
+                    },
+                    "percentOfFolder": {
+                      "type": "number",
+                    },
+                  },
+                  "required": [
+                    "name",
+                    "path",
+                    "bytes",
+                    "files",
+                    "percentOfFolder",
+                    "hasSubfolders",
+                  ],
+                  "type": "object",
+                },
+                "type": "array",
+              },
+            },
+            "required": [
+              "path",
+              "scanFinishedAt",
+              "bytes",
+              "files",
+              "ownFilesBytes",
+              "smallFoldersBytes",
+              "notScannedBytes",
+              "subfolders",
+              "nextFolderOffset",
+            ],
+            "type": "object",
+          },
+          {
+            "type": "null",
+          },
+        ],
+        "description": "Null when the drive has not been scanned yet.",
+      },
+      "largestFiles": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "number",
+            },
+            "modifiedAt": {
+              "type": [
+                "string",
+                "null",
+              ],
+            },
+            "path": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "path",
+            "bytes",
+            "modifiedAt",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "machine": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+          },
+          "name": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+          "name",
+        ],
+        "type": "object",
+      },
+      "message": {
+        "type": "string",
+      },
+      "problem": {
+        "description": "The scanner's last problem, if any.",
+        "type": [
+          "string",
+          "null",
+        ],
+      },
+      "scanRunning": {
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "machine",
+      "drives",
+      "scanRunning",
+      "problem",
+      "drive",
+      "folder",
+      "largestFiles",
+      "cleanUp",
+      "message",
     ],
     "type": "object",
   },
@@ -473,6 +969,44 @@ exports[`never exposed (SPEC-MCP M12) > M12: no output field could carry a code,
     "required": [
       "commands",
       "runsWithoutApprovalLeftThisHour",
+    ],
+    "type": "object",
+  },
+  "rescan_storage": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "machine": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+          },
+          "name": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+          "name",
+        ],
+        "type": "object",
+      },
+      "message": {
+        "type": "string",
+      },
+      "status": {
+        "enum": [
+          "scan-started",
+          "already-scanning",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "machine",
+      "status",
+      "message",
     ],
     "type": "object",
   },

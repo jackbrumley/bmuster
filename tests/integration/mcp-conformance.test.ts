@@ -300,6 +300,10 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 					{ name: 'list_saved_commands' },
 					{ name: 'run_saved_command' },
 					{ name: 'get_command_result' },
+					{ name: 'get_storage' },
+					{ name: 'rescan_storage' },
+					{ name: 'clean_up_storage' },
+					{ name: 'get_cleanup_result' },
 					{ name: 'cancel_command' }
 				]
 			}
@@ -317,7 +321,7 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 		expect(parsed.total).toBe(1);
 	});
 
-	it('M39, SC31: the instructions and tool descriptions say which AI permission each tool needs, and which saved commands skip approval', async () => {
+	it('M39, SC31, M57: the instructions and tool descriptions say which AI permission each tool needs, which saved commands skip approval, and when to use the storage tools', async () => {
 		const connected = await connectClaudeCode('localhost', 50_002);
 		const initialized = await rpcReply(
 			await mcp(
@@ -363,6 +367,23 @@ describe('MCP conformance (SPEC-MCP 14.1)', () => {
 		expect(described['run_saved_command']).toContain(
 			'It runs at once only when list_saved_commands says "Runs at once (no approval needed)" for every machine you name'
 		);
+		// SPEC-MCP M57: disk questions go to get_storage; clean-ups are BMuster's safe list only.
+		expect(instructions).toContain(
+			'use get_storage rather than running du, find, Get-ChildItem or similar'
+		);
+		expect(instructions).toContain(
+			"clean_up_storage clears only BMuster's fixed list of safe items"
+		);
+		expect(instructions).toContain(
+			'deleting anything else is an ordinary command through run_command, approved like any other'
+		);
+		expect(described['get_storage']).toContain('prefer it to running du, find or Get-ChildItem');
+		expect(described['get_storage']).toContain('Needs AI can view and the Files permission');
+		expect(described['clean_up_storage']).toContain(
+			'Only that list: to delete anything else, ask with run_command'
+		);
+		expect(described['clean_up_storage']).toContain('A person must approve it in BMuster first');
+		expect(described['rescan_storage']).toContain('At most once every 10 minutes per machine');
 	});
 
 	it('2026-07-28: server/discover and tools/call, every structuredContent valid; other versions refused', async () => {

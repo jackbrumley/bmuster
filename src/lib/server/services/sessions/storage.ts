@@ -42,16 +42,17 @@ export function storageLargest(context: FilesContext, mount: string, path: strin
 
 /**
  * Rescan now: the agent starts a pass within a second, or says one is already running (S25,
- * S26). Audited when a pass was asked for.
+ * S26). Audited when a pass was asked for; `via` names the AI assistant that asked (SPEC-MCP
+ * M52), else `{}`.
  */
-export function requestRescan(context: FilesContext) {
+export function requestRescan(context: FilesContext, via: Record<string, string>) {
 	return withChannel(context, async (channel, machine) => {
 		const asked = outcomeOf(
 			await channel.ask({ op: 'storage-rescan' }, ANSWER_MS.quick),
 			rescanReplySchema
 		);
 		if (asked.kind === 'ok' && !asked.value.alreadyScanning) {
-			auditFiles(context, machine, 'storage-rescan-requested', {});
+			auditFiles(context, machine, 'storage-rescan-requested', via);
 		}
 		return asked;
 	});
