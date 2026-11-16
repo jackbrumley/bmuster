@@ -170,7 +170,7 @@
 				<a class="name" href={resolve('/(console)/machines/[id]/manage', { id: machine.id })}
 					>{machine.name}</a
 				>
-				<UpdateBadge state={machine.update} />
+				<UpdateBadge state={machine.update} link={{ kind: 'plain' }} />
 			</p>
 			<p class="muted">
 				Version {machine.agentVersion} · {channelLabel(machine.channel)} · {presenceText(

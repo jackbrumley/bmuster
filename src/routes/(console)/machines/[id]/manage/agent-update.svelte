@@ -71,7 +71,7 @@
 
 <div class="state">
 	<p class="version">Version {version}</p>
-	<UpdateBadge state={update} />
+	<UpdateBadge state={update} link={{ kind: 'plain' }} />
 </div>
 
 {#if needsReinstall}

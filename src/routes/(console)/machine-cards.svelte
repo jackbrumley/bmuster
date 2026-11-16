@@ -9,7 +9,7 @@
 	import UsageBar from '#lib/ui/usage-bar.svelte';
 	import LowDiskTag from './low-disk-tag.svelte';
 	import { formatBytes, formatRelative } from '#lib/utils/format.ts';
-	import { updateBadge } from '#lib/domain/machines/agent-updates.ts';
+	import { updateBadge, updateBadgeLink } from '#lib/domain/machines/agent-updates.ts';
 	import { osLabel } from '#lib/domain/machines/machine.ts';
 	import InUseList from '#lib/ui/in-use-list.svelte';
 	import type { MachineRow } from '#lib/domain/machines/machine-row.ts';
@@ -25,13 +25,16 @@
 		now,
 		batchSize,
 		resetKey,
-		ticks
+		ticks,
+		canUpdateAgents
 	}: {
 		rows: readonly MachineRow[];
 		now: number;
 		batchSize: number;
 		resetKey: string;
 		ticks: TickBoxes;
+		/** Update badges link to the machine's Agent update section (SPEC-AGENT-UPDATES U15). */
+		canUpdateAgents: boolean;
 	} = $props();
 </script>
 
@@ -90,21 +93,26 @@
 									)}
 								</p>
 							{/if}
-
-							{#if updates > 0 || machine.lowDisk.length > 0 || updateBadge(machine.update).kind === 'shown'}
-								<div class="tags">
-									{#if machine.lowDisk.length > 0}
-										<LowDiskTag drives={machine.lowDisk} />
-									{/if}
-									{#if updates > 0}
-										<span class="tag warn">{updates} updates</span>
-									{/if}
-									<UpdateBadge state={machine.update} />
-								</div>
-							{/if}
 						</a>
 
-						<!-- Outside the card's link: a command in use links to its own run (C24). -->
+						<!--
+							Outside the card's link: the update badge links to Manage → Agent update (U15), and a
+							command in use links to its own run (C24); a link cannot sit inside a link.
+						-->
+						{#if updates > 0 || machine.lowDisk.length > 0 || updateBadge(machine.update).kind === 'shown'}
+							<div class="tags">
+								{#if machine.lowDisk.length > 0}
+									<LowDiskTag drives={machine.lowDisk} />
+								{/if}
+								{#if updates > 0}
+									<span class="tag warn">{updates} updates</span>
+								{/if}
+								<UpdateBadge
+									state={machine.update}
+									link={updateBadgeLink(machine, canUpdateAgents)}
+								/>
+							</div>
+						{/if}
 						{#if machine.inUse.length > 0}
 							<p class="in-use">
 								In use: <InUseList machineId={machine.id} sessions={machine.inUse} />
@@ -204,10 +212,12 @@
 		overflow-wrap: anywhere;
 	}
 
+	/* Below the card's link, inset like it, as the In use line is. */
 	.tags {
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
+		padding: 0 var(--space-4) var(--space-4);
 	}
 
 	.tag {

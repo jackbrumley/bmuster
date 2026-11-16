@@ -16,6 +16,7 @@
 	import OsIcon from '#lib/ui/os-icon.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import UpdateBadge from '#lib/ui/update-badge.svelte';
+	import { updateBadgeLink } from '#lib/domain/machines/agent-updates.ts';
 	import TabNav from '#lib/ui/tab-nav.svelte';
 	import { MachinePresence, provideMachinePresence } from '#lib/runes/machine-presence.svelte.ts';
 	import type { LayoutProps } from './$types';
@@ -76,7 +77,10 @@
 		</div>
 		<div class="badges">
 			<StatusBadge status={presence.status} now={presence.now} since="shown" />
-			<UpdateBadge state={data.machine.update} />
+			<UpdateBadge
+				state={data.machine.update}
+				link={updateBadgeLink(data.machine, data.canUpdateAgents)}
+			/>
 		</div>
 	</div>
 	{#if data.machine.description !== ''}

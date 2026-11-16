@@ -6,6 +6,7 @@
 	import OsIcon from '#lib/ui/os-icon.svelte';
 	import StatusBadge from '#lib/ui/status-badge.svelte';
 	import UpdateBadge from '#lib/ui/update-badge.svelte';
+	import { updateBadgeLink } from '#lib/domain/machines/agent-updates.ts';
 	import { formatRelative } from '#lib/utils/format.ts';
 	import { inUseLabel } from '#lib/domain/sessions/session.ts';
 	import { machineSortValue, type MachineRow } from '#lib/domain/machines/machine-row.ts';
@@ -23,6 +24,7 @@
 		batchSize,
 		resetKey,
 		ticks,
+		canUpdateAgents,
 		sort = $bindable()
 	}: {
 		rows: readonly MachineRow[];
@@ -31,6 +33,8 @@
 		resetKey: string;
 		/** Select mode's tick boxes (SPEC-COMMANDS C1, C5), first on each row. */
 		ticks: TickBoxes;
+		/** Update badges link to the machine's Agent update section (SPEC-AGENT-UPDATES U15). */
+		canUpdateAgents: boolean;
 		sort: DataTableSort;
 	} = $props();
 
@@ -44,7 +48,7 @@
 						sortable: false,
 						value: () => null,
 						cell: tickCell,
-						link: false,
+						link: 'none',
 						phone: 'lead',
 						medium: 'show'
 					}
@@ -62,7 +66,7 @@
 			sortable: true,
 			value: machineSortValue('name', now),
 			cell: nameCell,
-			link: true,
+			link: 'cell',
 			phone: 'primary',
 			medium: 'show'
 		},
@@ -73,7 +77,8 @@
 			sortable: true,
 			value: machineSortValue('status', now),
 			cell: statusCell,
-			link: true,
+			// The update badge may be a link of its own (SPEC-AGENT-UPDATES U15).
+			link: 'behind',
 			phone: 'badge',
 			medium: 'show'
 		},
@@ -84,7 +89,7 @@
 			sortable: true,
 			value: machineSortValue('os', now),
 			cell: undefined,
-			link: true,
+			link: 'cell',
 			phone: 'hidden',
 			medium: 'hide'
 		},
@@ -95,7 +100,7 @@
 			sortable: true,
 			value: machineSortValue('lastUser', now),
 			cell: undefined,
-			link: true,
+			link: 'cell',
 			phone: 'hidden',
 			medium: 'hide'
 		},
@@ -106,7 +111,7 @@
 			sortable: true,
 			value: machineSortValue('lastSeen', now),
 			cell: lastSeenCell,
-			link: true,
+			link: 'cell',
 			phone: 'hidden',
 			medium: 'show'
 		},
@@ -117,7 +122,7 @@
 			sortable: false,
 			value: () => null,
 			cell: actionsCell,
-			link: false,
+			link: 'none',
 			phone: 'hidden',
 			medium: 'show'
 		}
@@ -156,7 +161,7 @@
 {#snippet statusCell({ machine }: MachineRow)}
 	<span class="status">
 		<StatusBadge status={machine.status} {now} since="hidden" />
-		<UpdateBadge state={machine.update} />
+		<UpdateBadge state={machine.update} link={updateBadgeLink(machine, canUpdateAgents)} />
 	</span>
 	{#if machine.inUse.length > 0}
 		<span class="in-use wide-only">In use: {inUseLabel(machine.inUse)}</span>

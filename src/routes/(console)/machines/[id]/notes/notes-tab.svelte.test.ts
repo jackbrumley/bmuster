@@ -54,6 +54,7 @@ function renderTab(notes: NoteView[]) {
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
 			localNetworkMode: false,
+			canUpdateAgents: true,
 			serverUpdate: null,
 			runCommands: false,
 			assistant: { kind: 'none' },

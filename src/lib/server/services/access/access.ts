@@ -228,6 +228,14 @@ export function canReadDiagnostics(user: ConsoleUser): boolean {
 	}
 }
 
+/**
+ * Updating agents (Update now, Pin, Manage → Agent update) is admin-only (SPEC-AGENT-UPDATES U10);
+ * the update badge links there only for them (U15).
+ */
+export function canUpdateAgents(user: ConsoleUser): boolean {
+	return user.role === 'admin';
+}
+
 /** Managing the server and viewing release/update metadata is admin-only. */
 export function canManageServer(user: ConsoleUser): boolean {
 	return user.role === 'admin';

@@ -25,7 +25,13 @@ export const CONSOLE = {
 	signedIn: true
 };
 const GRANTS: Grant[] = PERMISSIONS.map((permission) => ({ permission, consent: 'unattended' }));
-export const MACHINE_DATA = { ...CONSOLE, now: NOW, machine: MACHINE, grants: GRANTS };
+export const MACHINE_DATA = {
+	...CONSOLE,
+	now: NOW,
+	machine: MACHINE,
+	grants: GRANTS,
+	canUpdateAgents: true
+};
 export const IN_CONSOLE = {
 	wrapper: ConsoleFrame,
 	wrapperProps: { frame: { kind: 'console' as const, data: CONSOLE } }

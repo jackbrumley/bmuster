@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import { resolve } from '$app/paths';
 import type { MachineStatusEvent } from '#lib/domain/machines/machine-events.ts';
 import type { Machine } from '#lib/domain/machines/machine.ts';
 import { FakeEventSource, feed } from '#tests/helpers/fake-event-source.ts';
@@ -65,13 +66,18 @@ function fleet(count: number): Machine[] {
 
 type Rollout = PageData['rollout'];
 
-function renderPage(machines: Machine[] = MACHINES, rollout: Rollout = { kind: 'none' }) {
+function renderPage(
+	machines: Machine[] = MACHINES,
+	rollout: Rollout = { kind: 'none' },
+	canUpdateAgents = true
+) {
 	return render(MachinesPage, {
 		params: {},
 		form: undefined,
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' },
 			localNetworkMode: false,
+			canUpdateAgents,
 			serverUpdate: null,
 			runCommands: false,
 			assistant: { kind: 'none' },
@@ -251,9 +257,10 @@ describe('Machines views: cards and table', () => {
 		const list = screen.getByRole('list', { name: 'Machines' });
 		await expect.element(list).toBeVisible();
 		expect(screen.container.querySelector('table')?.checkVisibility()).toBe(false);
-		await expect
-			.element(list.getByRole('link', { name: /Machine 002/ }))
-			.toHaveTextContent('Machine 002 machine-002 Offline');
+		const row = list.getByRole('link', { name: /Machine 002/ });
+		await expect.element(row).toHaveTextContent('Machine 002 machine-002');
+		// The status sits beside the row's link (it may hold a link of its own) and describes it.
+		await expect.element(row).toHaveAccessibleDescription('Offline');
 	});
 
 	it('SPEC-AGENT-UPDATES: an out-of-date agent is badged on its card and its table row', async () => {
@@ -288,6 +295,85 @@ describe('Machines views: cards and table', () => {
 		await expect.element(row.getByText('Update available')).toBeVisible();
 		const current = screen.getByRole('row').filter({ hasText: 'Current' });
 		expect(current.getByText(/Update|Pinned|Rolled back/).all()).toHaveLength(0);
+	});
+
+	describe('the update badge links to Manage → Agent update (SPEC-AGENT-UPDATES U15)', () => {
+		const OUT_OF_DATE = machine({
+			id: '77777777-7777-4777-8777-777777777777',
+			name: 'AUADRNBK00007',
+			update: { kind: 'available', version: '0.5.3', needsReinstall: false }
+		});
+		const FLEET = [
+			OUT_OF_DATE,
+			machine({ id: '88888888-8888-4888-8888-888888888888', name: 'Current' })
+		];
+		const NAME = "Update available: update AUADRNBK00007's agent to 0.5.3";
+		const HREF = `${resolve('/(console)/machines/[id]/manage', { id: OUT_OF_DATE.id })}#agent-update`;
+
+		/** HTML validity: no link anywhere inside another link. */
+		function nestedLinks(container: HTMLElement): number {
+			return container.querySelectorAll('a a').length;
+		}
+
+		/** The one shown badge link, after checking its name, address and that it is reachable with Tab. */
+		async function badgeLink(screen: Awaited<ReturnType<typeof renderPage>>) {
+			const link = screen.getByRole('link', { name: NAME });
+			await expect.element(link).toBeVisible();
+			await expect.element(link).toHaveAttribute('href', HREF);
+			expect(link.element().getAttribute('tabindex')).toBeNull();
+			return link;
+		}
+
+		it('U15: in the cards, outside the card link', async () => {
+			localStorage.setItem('bmuster-machines-view', 'cards');
+			const screen = await renderPage(FLEET);
+			const link = await badgeLink(screen);
+			expect(link.element().parentElement?.closest('a')).toBeNull();
+			expect(nestedLinks(screen.container)).toBe(0);
+			// The rest of the card still opens the machine.
+			await expect
+				.element(screen.getByRole('link', { name: /^AUADRNBK00007/ }))
+				.toHaveAttribute('href', resolve('/(console)/machines/[id]', { id: OUT_OF_DATE.id }));
+		});
+
+		it('U15: in the table, in front of the row link behind the status cell', async () => {
+			localStorage.setItem('bmuster-machines-view', 'table');
+			const screen = await renderPage(FLEET);
+			const link = await badgeLink(screen);
+			expect(link.element().parentElement?.closest('a')).toBeNull();
+			expect(nestedLinks(screen.container)).toBe(0);
+			// A click elsewhere in the status cell still opens the machine.
+			const cell = link.element().closest('td');
+			expect(cell?.querySelector('a.cover')?.getAttribute('href')).toBe(
+				resolve('/(console)/machines/[id]', { id: OUT_OF_DATE.id })
+			);
+		});
+
+		it('U15: in the phone list at 360 px, beside the row link', async () => {
+			await page.viewport(360, 780);
+			localStorage.setItem('bmuster-machines-view', 'table');
+			const screen = await renderPage(FLEET);
+			const list = screen.getByRole('list', { name: 'Machines' });
+			const link = list.getByRole('link', { name: NAME });
+			await expect.element(link).toBeVisible();
+			await expect.element(link).toHaveAttribute('href', HREF);
+			expect(link.element().parentElement?.closest('a')).toBeNull();
+			expect(nestedLinks(screen.container)).toBe(0);
+			expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(360);
+		});
+
+		it('U15: plain text for someone who may not update agents, in every view', async () => {
+			for (const view of ['cards', 'table'] as const) {
+				localStorage.setItem('bmuster-machines-view', view);
+				const screen = await renderPage(FLEET, { kind: 'none' }, false);
+				await expect.element(screen.getByText('Update available').first()).toBeVisible();
+				expect(screen.getByRole('link', { name: /Update available/ }).all()).toHaveLength(0);
+				for (const badge of screen.container.querySelectorAll('[data-update-state]')) {
+					expect(badge.tagName, view).toBe('SPAN');
+				}
+				await screen.unmount();
+			}
+		});
 	});
 
 	it('SPEC-AGENT-UPDATES: tells an admin when a failed update paused the roll-out', async () => {

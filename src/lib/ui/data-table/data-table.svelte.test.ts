@@ -18,18 +18,20 @@ const shiftsCell = createRawSnippet((person: () => Person) => ({
 	render: () => `<span>${String(person().shifts ?? 'none')} shifts</span>`
 }));
 
+const nameColumn: DataTableColumn<Person> = {
+	key: 'name',
+	label: 'Name',
+	align: 'left',
+	sortable: true,
+	value: (person) => person.name,
+	cell: undefined,
+	link: 'cell',
+	phone: 'primary',
+	medium: 'show'
+};
+
 const columns: DataTableColumn<Person>[] = [
-	{
-		key: 'name',
-		label: 'Name',
-		align: 'left',
-		sortable: true,
-		value: (person) => person.name,
-		cell: undefined,
-		link: true,
-		phone: 'primary',
-		medium: 'show'
-	},
+	nameColumn,
 	{
 		key: 'shifts',
 		label: 'Shifts',
@@ -37,7 +39,7 @@ const columns: DataTableColumn<Person>[] = [
 		sortable: true,
 		value: (person) => person.shifts,
 		cell: shiftsCell,
-		link: true,
+		link: 'cell',
 		phone: 'badge',
 		medium: 'show'
 	},
@@ -48,7 +50,7 @@ const columns: DataTableColumn<Person>[] = [
 		sortable: false,
 		value: () => 'no notes',
 		cell: undefined,
-		link: false,
+		link: 'none',
 		phone: 'hidden',
 		medium: 'hide'
 	}
@@ -158,6 +160,67 @@ describe('DataTable', () => {
 		await expect
 			.element(alice)
 			.toHaveAttribute('href', resolve('/(console)/machines/[id]', { id: 'p2' }));
-		await expect.element(alice).toHaveTextContent('Alice 3 shifts');
+		await expect.element(alice).toHaveTextContent('Alice');
+		// The badge column sits beside the link (it may hold links of its own) and describes it.
+		await expect.element(alice).toHaveAccessibleDescription('3 shifts');
+	});
+
+	describe("a `link: 'behind'` cell with a link of its own", () => {
+		const rosterCell = createRawSnippet((person: () => Person) => ({
+			render: () => `<span>On <a href="/roster/${person().id}">the roster</a></span>`
+		}));
+		const withRoster: DataTableColumn<Person>[] = [
+			nameColumn,
+			{
+				key: 'roster',
+				label: 'Roster',
+				align: 'left',
+				sortable: false,
+				value: () => null,
+				cell: rosterCell,
+				link: 'behind',
+				phone: 'badge',
+				medium: 'show'
+			}
+		];
+
+		function renderRoster() {
+			return render(DataTable<Person>, {
+				label: 'People',
+				columns: withRoster,
+				rows: people,
+				rowKey: (person: Person) => person.id,
+				rowHref: (person: Person) => resolve('/(console)/machines/[id]', { id: person.id }),
+				sort: { column: 'name', direction: 'asc' },
+				batchSize: 60,
+				resetKey: ''
+			});
+		}
+
+		it('keeps its own link out of the row link, with the row link behind it for the mouse', async () => {
+			const screen = await renderRoster();
+			const href = resolve('/(console)/machines/[id]', { id: 'p2' });
+			expect(screen.container.querySelectorAll('a a')).toHaveLength(0);
+			const cover = screen.container.querySelector(`td a.cover[href="${href}"]`);
+			expect(cover?.getAttribute('tabindex')).toBe('-1');
+			expect(cover?.getAttribute('aria-hidden')).toBe('true');
+			await expect
+				.element(screen.getByRole('table').getByRole('link', { name: 'the roster' }).first())
+				.toHaveAttribute('href', '/roster/p2');
+		});
+
+		it('on a phone, puts the cell beside the row link, never inside it', async () => {
+			await page.viewport(390, 844);
+			const screen = await renderRoster();
+			const list = screen.getByRole('list', { name: 'People' });
+			await expect.element(list).toBeVisible();
+			expect(screen.container.querySelectorAll('a a')).toHaveLength(0);
+			await expect
+				.element(list.getByRole('link', { name: 'the roster' }).first())
+				.toHaveAttribute('href', '/roster/p2');
+			await expect
+				.element(list.getByRole('link', { name: 'Alice' }))
+				.toHaveAccessibleDescription('On the roster');
+		});
 	});
 });

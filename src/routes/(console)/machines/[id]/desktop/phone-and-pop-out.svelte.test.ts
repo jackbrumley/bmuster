@@ -78,6 +78,7 @@ async function connect(button: 'Connect' | 'Watch only') {
 			data: {
 				user: { id: 'u', name: 'Uma', email: 'uma@example.com', role: 'member' as const },
 				localNetworkMode: false,
+				canUpdateAgents: false,
 				serverUpdate: null,
 				runCommands: false,
 				assistant: { kind: 'none' },

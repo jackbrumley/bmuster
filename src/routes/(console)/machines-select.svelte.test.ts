@@ -56,6 +56,7 @@ function renderPage(commands: CommandSelection = ALLOWED) {
 		data: {
 			user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'member' },
 			localNetworkMode: false,
+			canUpdateAgents: false,
 			serverUpdate: null,
 			runCommands: commands.kind === 'allowed',
 			assistant: { kind: 'none' },

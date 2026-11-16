@@ -3,7 +3,7 @@ import { database } from '#lib/server/database/app-database.ts';
 import { env } from '#lib/server/env.ts';
 import { page } from '#lib/server/guards/page.ts';
 import { signedReleases } from '#lib/server/services/agents/releases.ts';
-import { permissionsFor } from '#lib/server/services/access/access.ts';
+import { canUpdateAgents, permissionsFor } from '#lib/server/services/access/access.ts';
 import { watchAgent } from '#lib/server/services/agents/live-agents.ts';
 import { findMachine } from '#lib/server/services/machines/machine-views.ts';
 import type { LayoutServerLoad } from './$types';
@@ -11,7 +11,8 @@ import type { LayoutServerLoad } from './$types';
 /**
  * A machine's pages, for anyone who may see it (SPEC-ACCESS A6). Everyone
  * else gets 404, so a member cannot tell a hidden machine from a missing one.
- * `grants` say which tabs the person may use.
+ * `grants` say which tabs the person may use; `canUpdateAgents` makes the header's update badge a
+ * link to Manage → Agent update (SPEC-AGENT-UPDATES U15).
  */
 export const load: LayoutServerLoad = page.user(({ params }, { user }) => {
 	const grants = permissionsFor(database, user, params.id);
@@ -29,5 +30,5 @@ export const load: LayoutServerLoad = page.user(({ params }, { user }) => {
 		error(404, 'No machine with this id');
 	}
 	watchAgent(machine.id);
-	return { now, machine, grants };
+	return { now, machine, grants, canUpdateAgents: canUpdateAgents(user) };
 });

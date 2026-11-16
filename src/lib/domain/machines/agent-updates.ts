@@ -187,6 +187,51 @@ export function updateBadge(state: MachineUpdateState): UpdateBadge {
 	}
 }
 
+/** The id of Manage's Agent update section, the fragment the update badge links to (U15). */
+export const AGENT_UPDATE_SECTION = 'agent-update';
+
+/**
+ * Whether the badge links to the machine's Agent update section (U15): only for people who may
+ * update the agent; everyone else sees it as plain text.
+ */
+export type UpdateBadgeLink =
+	{ kind: 'plain' } | { kind: 'link'; machineId: string; machineName: string };
+
+/** The badge link for a machine, as the person may use it (U15). */
+export function updateBadgeLink(
+	machine: { id: string; name: string },
+	canUpdateAgents: boolean
+): UpdateBadgeLink {
+	return canUpdateAgents
+		? { kind: 'link', machineId: machine.id, machineName: machine.name }
+		: { kind: 'plain' };
+}
+
+/**
+ * The badge link's name (U15): it starts with the badge's own words, so people who speak to their
+ * screen reader can say what they see, then names the machine.
+ */
+export function updateLinkLabel(machineName: string, state: MachineUpdateState): string {
+	const agent = `${machineName}'s agent`;
+	switch (state.kind) {
+		case 'no-release':
+		case 'up-to-date':
+			return `Updates for ${agent}`;
+		case 'pinned':
+			return `Pinned: updates for ${agent}`;
+		case 'available':
+			return state.needsReinstall
+				? `Update available: reinstall ${agent} to get ${state.version}`
+				: `Update available: update ${agent} to ${state.version}`;
+		case 'updating':
+			return `Updating: ${agent} to ${state.version}`;
+		case 'rolled-back':
+			return `Rolled back: ${agent} update to ${state.version}`;
+		case 'refused':
+			return `Update refused: ${agent} update to ${state.version}`;
+	}
+}
+
 /** One sentence about the state, for the Agent panel and the Updates page. */
 export function updateStateText(state: MachineUpdateState): string {
 	switch (state.kind) {

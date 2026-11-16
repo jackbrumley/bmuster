@@ -50,7 +50,8 @@ const PAGES: PhonePage[] = (['first', 'again', 'thanks'] as const).map((wording)
 					rollout: { kind: 'none' },
 					view: { kind: 'machines', machines: MACHINES },
 					commands: { kind: 'none' },
-					donate: { kind: 'shown', wording }
+					donate: { kind: 'shown', wording },
+					canUpdateAgents: true
 				}
 			},
 			IN_CONSOLE

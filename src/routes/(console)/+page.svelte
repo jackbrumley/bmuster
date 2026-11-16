@@ -264,9 +264,24 @@
 			children={undefined}
 		/>
 	{:else if view === 'table'}
-		<MachineTable rows={visible} {now} batchSize={BATCH_SIZE} {resetKey} {ticks} bind:sort />
+		<MachineTable
+			rows={visible}
+			{now}
+			batchSize={BATCH_SIZE}
+			{resetKey}
+			{ticks}
+			canUpdateAgents={data.canUpdateAgents}
+			bind:sort
+		/>
 	{:else}
-		<MachineCards rows={visible} {now} batchSize={BATCH_SIZE} {resetKey} {ticks} />
+		<MachineCards
+			rows={visible}
+			{now}
+			batchSize={BATCH_SIZE}
+			{resetKey}
+			{ticks}
+			canUpdateAgents={data.canUpdateAgents}
+		/>
 	{/if}
 {/if}
 

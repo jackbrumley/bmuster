@@ -33,6 +33,7 @@ function props(grants: Grant[]) {
 		data: {
 			user: { id: 'm', name: 'Mo', email: 'mo@example.com', role: 'member' as const },
 			localNetworkMode: false,
+			canUpdateAgents: false,
 			serverUpdate: null,
 			runCommands: false,
 			assistant: { kind: 'none' as const },

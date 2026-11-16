@@ -53,7 +53,7 @@
 	const sorted = $derived(sortRows(rows, sortColumn.value, sort.direction));
 
 	/** The first link cell in a row is the one the keyboard stops at. */
-	const firstLinkKey = $derived(columns.find((column) => column.link)?.key);
+	const firstLinkKey = $derived(columns.find((column) => column.link === 'cell')?.key);
 
 	function sortBy(column: DataTableColumn<T>): void {
 		sort = {
@@ -115,8 +115,12 @@
 							{@const href = rowHref(row)}
 							<tr>
 								{#each columns as column (column.key)}
-									<td class="align-{column.align}" class:medium-hidden={column.medium === 'hide'}>
-										{#if column.link}
+									<td
+										class="align-{column.align}"
+										class:medium-hidden={column.medium === 'hide'}
+										class:behind={column.link === 'behind'}
+									>
+										{#if column.link === 'cell'}
 											<a
 												class="cell"
 												{href}
@@ -124,6 +128,10 @@
 											>
 												<CellContent {column} {row} />
 											</a>
+										{:else if column.link === 'behind'}
+											<!-- A mouse target only: the keyboard and screen readers open the row from its first cell. -->
+											<a class="cover" {href} tabindex="-1" aria-hidden="true"></a>
+											<div class="cell above"><CellContent {column} {row} /></div>
 										{:else}
 											<div class="cell"><CellContent {column} {row} /></div>
 										{/if}
@@ -228,6 +236,28 @@
 		padding: var(--space-2) var(--space-4);
 		color: var(--text);
 		white-space: nowrap;
+	}
+
+	/*
+	 * `link: 'behind'`: the row's link fills the cell under its content. The content lets clicks
+	 * through to it, except on its own links.
+	 */
+	td.behind {
+		position: relative;
+	}
+
+	.cover {
+		position: absolute;
+		inset: 0;
+	}
+
+	.above {
+		position: relative;
+		pointer-events: none;
+	}
+
+	.above :global(a) {
+		pointer-events: auto;
 	}
 
 	/* Columns marked `medium: 'hide'` make room when the table itself is narrow. */

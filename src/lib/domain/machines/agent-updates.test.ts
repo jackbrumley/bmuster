@@ -9,6 +9,8 @@ import {
 	shouldOffer,
 	channelLabel,
 	updateBadge,
+	updateBadgeLink,
+	updateLinkLabel,
 	type UpdateRecord
 } from './agent-updates.ts';
 
@@ -184,5 +186,46 @@ describe('update state and badges (SPEC-AGENT-UPDATES)', () => {
 		const pinned = state({ ...LAUNCHED, pinned: true });
 		expect(pinned).toEqual({ kind: 'pinned', available: { kind: 'version', version: '0.2.0' } });
 		expect(updateBadge(pinned)).toMatchObject({ label: 'Pinned' });
+	});
+});
+
+describe('the update badge link (SPEC-AGENT-UPDATES U15)', () => {
+	it('U15: links only for someone who may update agents', () => {
+		const desk = { id: 'm1', name: 'Desk' };
+		expect(updateBadgeLink(desk, true)).toEqual({
+			kind: 'link',
+			machineId: 'm1',
+			machineName: 'Desk'
+		});
+		expect(updateBadgeLink(desk, false)).toEqual({ kind: 'plain' });
+	});
+
+	it('U15: names the machine and starts with the words the badge shows', () => {
+		expect(
+			updateLinkLabel('AUADRNBK00007', {
+				kind: 'available',
+				version: '0.5.3',
+				needsReinstall: false
+			})
+		).toBe("Update available: update AUADRNBK00007's agent to 0.5.3");
+		expect(
+			updateLinkLabel('AUADRNBK00007', {
+				kind: 'available',
+				version: '0.5.3',
+				needsReinstall: true
+			})
+		).toBe("Update available: reinstall AUADRNBK00007's agent to get 0.5.3");
+		expect(updateLinkLabel('Desk', { kind: 'updating', version: '0.5.3' })).toBe(
+			"Updating: Desk's agent to 0.5.3"
+		);
+		expect(
+			updateLinkLabel('Desk', { kind: 'rolled-back', version: '0.5.3', reason: 'no check-in' })
+		).toBe("Rolled back: Desk's agent update to 0.5.3");
+		expect(updateLinkLabel('Desk', { kind: 'refused', version: '0.5.3', reason: 'bad' })).toBe(
+			"Update refused: Desk's agent update to 0.5.3"
+		);
+		expect(updateLinkLabel('Desk', { kind: 'pinned', available: { kind: 'none' } })).toBe(
+			"Pinned: updates for Desk's agent"
+		);
 	});
 });

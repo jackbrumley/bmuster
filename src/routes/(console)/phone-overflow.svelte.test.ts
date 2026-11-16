@@ -92,7 +92,8 @@ function machinesPage(view: 'cards' | 'table') {
 				rollout: { kind: 'none' },
 				view: { kind: 'machines', machines: MACHINES },
 				commands: SELECTION,
-				donate: { kind: 'hidden' }
+				donate: { kind: 'hidden' },
+				canUpdateAgents: true
 			}
 		},
 		IN_CONSOLE

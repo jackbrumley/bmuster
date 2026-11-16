@@ -150,6 +150,7 @@ async function openTab(
 			data: {
 				user: { id: 'a', name: 'Ada', email: 'ada@example.com', role: 'admin' as const },
 				localNetworkMode: false,
+				canUpdateAgents: true,
 				serverUpdate: null,
 				runCommands: false,
 				assistant: { kind: 'none' },
