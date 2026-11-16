@@ -15,6 +15,21 @@ export type Release = {
 
 export const CHANGELOG = [
 	{
+		version: '0.5.4',
+		testing: {
+			kind: 'steps',
+			steps: [
+				'As an admin, find a machine with "Update available": click the badge on its card, table row, phone list line and machine header; each opens Manage at Agent update, which takes the focus and is outlined for a moment',
+				'As someone who may not update agents: the badge is plain text, not a link',
+				"On a Windows test machine, use Uninstall on the agent's local page: a few seconds later the service stops and the program folder is removed"
+			]
+		},
+		changes: [
+			'The "Update available" badge now takes admins straight to the machine\'s Agent update section',
+			"Uninstall from the agent's local page on Windows now starts its clean-up in a hidden console of its own, the way every app's updater does, instead of a detached process that could exit without doing anything"
+		]
+	},
+	{
 		version: '0.5.3',
 		testing: {
 			kind: 'steps',
