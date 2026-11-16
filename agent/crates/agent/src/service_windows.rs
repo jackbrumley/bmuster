@@ -205,10 +205,15 @@ pub fn refresh_service() -> Result<()> {
 /// program outside the program folder (so that folder can be deleted) runs
 /// `uninstall --purge` a few seconds later, after the page has replied. It
 /// stops this service first. The copy in the temp folder stays behind.
+///
+/// It runs in its own hidden console, as every app's updater does. It must
+/// not be `DETACHED_PROCESS`: a console program started with no console can
+/// exit at once without running a line (it did for Windows PowerShell), and
+/// Windows ignores `CREATE_NO_WINDOW` when the two are combined.
 pub fn schedule_uninstall() -> Result<()> {
     use std::os::windows::process::CommandExt as _;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     let program = std::env::current_exe().context("could not find this program's path")?;
     let copy = std::env::temp_dir().join("bmuster-agent-uninstall.exe");
     std::fs::copy(&program, &copy)
@@ -218,7 +223,7 @@ pub fn schedule_uninstall() -> Result<()> {
             "/d /c \"ping -n 4 127.0.0.1 >nul & \"{}\" uninstall --purge\"",
             copy.display()
         ))
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP)
         .spawn()
         .context("could not start the uninstall")?;
     Ok(())
